@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { signIn } from 'aws-amplify/auth';
+import { useAuth } from '../contexts/AuthContext';
 
 interface LoginProps {
   onSignUpPress: () => void;
@@ -19,6 +20,7 @@ export const Login: React.FC<LoginProps> = ({ onSignUpPress, onLoginSuccess }) =
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const { refreshAuth } = useAuth();
 
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) {
@@ -32,9 +34,22 @@ export const Login: React.FC<LoginProps> = ({ onSignUpPress, onLoginSuccess }) =
         username: email.trim(),
         password: password,
       });
+      // Refresh auth state after successful login
+      await refreshAuth();
       onLoginSuccess();
     } catch (error: any) {
-      Alert.alert('Login Failed', error.message || 'An error occurred during login');
+      console.error('Login error:', error);
+      
+      // Check for common login errors
+      if (error.name === 'UserNotConfirmedException') {
+        Alert.alert('Account Not Confirmed', 'Please check your email and confirm your account before signing in.');
+      } else if (error.name === 'NotAuthorizedException') {
+        Alert.alert('Invalid Credentials', 'Incorrect email or password. Please try again.');
+      } else if (error.name === 'UserNotFoundException') {
+        Alert.alert('User Not Found', 'No account found with this email address.');
+      } else {
+        Alert.alert('Login Failed', error.message || 'An error occurred during login');
+      }
     } finally {
       setIsLoading(false);
     }
