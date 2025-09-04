@@ -1,14 +1,18 @@
+// Import crypto polyfills first for Hermes compatibility
+import 'react-native-get-random-values';
+
 import { useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { StyleSheet, View, ActivityIndicator } from 'react-native';
 import { Amplify } from 'aws-amplify';
+import '@aws-amplify/react-native';
 import amplifyconfig from './amplify_outputs.json';
 import { AuthProvider, useAuth } from './src/contexts/AuthContext';
 import { Login } from './src/components/Login';
 import { SignUp } from './src/components/SignUp';
 import { TodoList } from './src/components/TodoList';
-import 'react-native-get-random-values';
 
+// Configure Amplify for React Native with Hermes
 Amplify.configure(amplifyconfig);
 
 type AuthScreen = 'login' | 'signup';

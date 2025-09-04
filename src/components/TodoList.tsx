@@ -36,8 +36,8 @@ export const TodoList: React.FC<TodoListProps> = ({ onSignOut }) => {
 
   const fetchTodos = async () => {
     try {
-      const { data } = await client.models.Todo.list();
-      setTodos((data || []) as Todo[]);
+      const { data } = await client.models.Todo.list({});
+      setTodos(data as Todo[] || []);
     } catch (error) {
       console.error('Error fetching todos:', error);
       Alert.alert('Error', 'Failed to fetch todos');

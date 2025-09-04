@@ -41,8 +41,9 @@ export const SignUp: React.FC<SignUpProps> = ({ onLoginPress, onSignUpSuccess })
       });
       setStep('confirm');
       Alert.alert('Success', 'Please check your email for a confirmation code');
-    } catch (error: any) {
-      Alert.alert('Sign Up Failed', error.message || 'An error occurred during sign up');
+    } catch (error) {
+      const err = error as Error;
+      Alert.alert('Sign Up Failed', err.message || 'An error occurred during sign up');
     } finally {
       setIsLoading(false);
     }
@@ -62,8 +63,9 @@ export const SignUp: React.FC<SignUpProps> = ({ onLoginPress, onSignUpSuccess })
       });
       Alert.alert('Success', 'Account confirmed! You can now sign in.');
       onSignUpSuccess();
-    } catch (error: any) {
-      Alert.alert('Confirmation Failed', error.message || 'An error occurred during confirmation');
+    } catch (error) {
+      const err = error as Error;
+      Alert.alert('Confirmation Failed', err.message || 'An error occurred during confirmation');
     } finally {
       setIsLoading(false);
     }
