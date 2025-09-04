@@ -1,37 +1,37 @@
 {
   "expo": {
-    "name": "Betty Native",
-    "slug": "betty-native",
+    "name": "SideBet",
+    "slug": "sidebet",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#111827"
     },
     "assetBundlePatterns": [
       "**/*"
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.anonymous.bettynative",
+      "bundleIdentifier": "com.anonymous.sidebet",
       "jsEngine": "jsc"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#111827"
       },
       "jsEngine": "jsc",
-      "package": "com.anonymous.bettynative"
+      "package": "com.anonymous.sidebet"
     },
     "web": {
       "favicon": "./assets/icon.png"
     },
     "plugins": ["expo-dev-client"],
-    "scheme": "betty-native",
+    "scheme": "sidebet",
     "developmentClient": {
       "silentLaunch": false
     },
