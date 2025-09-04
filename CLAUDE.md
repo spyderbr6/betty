@@ -59,3 +59,39 @@ This is the Betty app built with React Native + Expo for Android and iOS deploym
 - Expo handles most Android configuration automatically
 - APK/AAB generation ready through Expo Application Services (EAS)
 - Native app store optimization built-in
+
+## Claude Workflow Instructions
+
+### Solution Proposal Process
+When given a task or request, Claude should:
+
+1. **Analyze & Plan**: First understand the full scope of the request and break it down into logical steps
+2. **Propose Solution**: Present a clear, numbered plan of what will be done, including:
+   - What files will be modified/created
+   - What changes will be made to each file
+   - Any potential risks or considerations
+   - Expected outcome
+3. **Wait for Approval**: Always wait for explicit user approval before proceeding with implementation
+4. **Implement Step-by-Step**: Execute each step methodically, explaining what's being done
+5. **Verify Results**: Test and verify the implementation works as expected
+
+### Communication Style
+- **Be Explicit**: Always explain what you're going to do before doing it
+- **Show Context**: When making changes, show the relevant code sections being modified
+- **Ask Before Major Changes**: Never make significant architectural decisions without discussion
+- **Provide Options**: When multiple approaches are possible, present options with pros/cons
+- **Use Todo Lists**: For complex multi-step tasks, use the TodoWrite tool to track progress
+
+### When to Pause for Approval
+- Any file creation or deletion
+- Significant code refactoring
+- Dependency changes (package.json, etc.)
+- Configuration changes (app.json, metro.config.js, etc.)
+- Database schema or API changes
+- Build or deployment related changes
+
+### Implementation Guidelines
+- Always read existing code first to understand patterns and conventions
+- Maintain consistent code style with the existing codebase
+- Test changes immediately after implementation when possible
+- Explain any trade-offs or limitations of the chosen approach
