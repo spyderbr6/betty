@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with the Betty React Native app.
+This file provides guidance to Claude Code (claude.ai/code) when working with the SideBet React Native app.
 
 ## Common Commands
 
@@ -11,11 +11,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with th
 
 ## Architecture Overview
 
-This is the Betty app built with React Native + Expo for Android and iOS deployment, using AWS Amplify for backend services.
+This is the SideBet app - a professional peer-to-peer betting platform built with React Native + Expo for Android and iOS deployment, using AWS Amplify Gen2 for backend services.
 
 ### Project Structure
 - **App.tsx** - Main entry point with Amplify configuration and AuthProvider
-- **src/MainApp.tsx** - Main app component with authentication routing and Todo functionality
+- **src/MainApp.tsx** - Main app component with authentication routing and betting functionality
 - **src/contexts/AuthContext.tsx** - Authentication context provider managing user state
 - **src/hooks/useAuth.ts** - Custom hook for accessing authentication context  
 - **src/components/Login.tsx** - Native login form using React Native components
@@ -24,14 +24,14 @@ This is the Betty app built with React Native + Expo for Android and iOS deploym
 ### Authentication System
 - **Custom Native UI**: Uses React Native components (TextInput, TouchableOpacity, etc.)
 - **AWS Cognito**: Uses AWS Cognito for secure authentication
-- **Native UX**: Uses Alert.alert() for error messages and Alert.prompt() for todo creation
+- **Native UX**: Uses Alert.alert() for error messages and native modals for bet creation
 - **Loading States**: Native ActivityIndicator components
 - **Form Validation**: Native keyboard types and input validation
 
 ### Backend Integration  
 - **AWS Amplify Gen2**: Modern serverless backend with GraphQL API
-- **Real-time Data**: GraphQL subscriptions with `observeQuery()` for live todo updates
-- **DynamoDB**: NoSQL database for todo storage
+- **Real-time Data**: GraphQL subscriptions with `observeQuery()` for live betting updates
+- **DynamoDB**: NoSQL database for betting data, user profiles, and transactions
 - **Mobile Optimizations**: Uses `@aws-amplify/react-native` for native performance
 
 ### Native Features
@@ -52,7 +52,7 @@ This is the Betty app built with React Native + Expo for Android and iOS deploym
 - **Styling**: StyleSheet instead of CSS
 - **User Interaction**: TouchableOpacity instead of button clicks
 - **Text Input**: TextInput with native keyboard support
-- **Lists**: FlatList for performant todo list rendering
+- **Lists**: FlatList for performant bet list rendering
 - **Alerts**: Native Alert API instead of web alerts
 
 ### Android Deployment Preparation
