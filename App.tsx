@@ -3,7 +3,7 @@ import 'react-native-gesture-handler';
 // Import crypto polyfills for Hermes compatibility
 import 'react-native-get-random-values';
 
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { StyleSheet, View, ActivityIndicator } from 'react-native';
 import { Amplify } from 'aws-amplify';
@@ -23,6 +23,10 @@ type AuthScreen = 'login' | 'signup';
 function MainApp() {
   const { user, isLoading } = useAuth();
   const [currentScreen, setCurrentScreen] = useState<AuthScreen>('login');
+
+  const handleLoginSuccess = () => {
+    // Auth context will automatically update user state
+  };
 
   const handleSignUpSuccess = () => {
     setCurrentScreen('login');
