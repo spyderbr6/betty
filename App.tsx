@@ -1,4 +1,6 @@
-// Import crypto polyfills first for Hermes compatibility
+// Import gesture handler first for React Navigation compatibility
+import 'react-native-gesture-handler';
+// Import crypto polyfills for Hermes compatibility
 import 'react-native-get-random-values';
 
 import React, { useState } from 'react';
@@ -19,12 +21,8 @@ Amplify.configure(amplifyconfig);
 type AuthScreen = 'login' | 'signup';
 
 function MainApp() {
-  const { user, isLoading, signOut } = useAuth();
+  const { user, isLoading } = useAuth();
   const [currentScreen, setCurrentScreen] = useState<AuthScreen>('login');
-
-  const handleLoginSuccess = () => {
-    // Auth context will automatically update user state
-  };
 
   const handleSignUpSuccess = () => {
     setCurrentScreen('login');
