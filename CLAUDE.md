@@ -82,6 +82,13 @@ When given a task or request, Claude should:
 - **Provide Options**: When multiple approaches are possible, present options with pros/cons
 - **Use Todo Lists**: For complex multi-step tasks, use the TodoWrite tool to track progress
 
+### Progress Reporting Guidelines
+- **Long-running processes**: For builds, installs, or compilation that take >30 seconds, start the process and only report key milestones (start, major progress points, completion)
+- **Avoid excessive monitoring**: Don't provide real-time updates for every build task or command output line
+- **Background processes**: Run long processes in background and check periodically, not continuously
+- **Key milestones only**: Report when processes begin, encounter errors, reach major checkpoints, or complete
+- **Quiet work**: Work silently on routine tasks unless there are issues or completion notifications needed
+
 ### When to Pause for Approval
 - Any file creation or deletion
 - Significant code refactoring
