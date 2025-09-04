@@ -30,25 +30,35 @@ export const Login: React.FC<LoginProps> = ({ onSignUpPress, onLoginSuccess }) =
 
     setIsLoading(true);
     try {
-      await signIn({
+      console.log('Attempting login for user:', email.trim());
+      const result = await signIn({
         username: email.trim(),
         password: password,
       });
+      console.log('Login successful:', result);
       // Refresh auth state after successful login
       await refreshAuth();
       onLoginSuccess();
-    } catch (error: any) {
+    } catch (error) {
+      const err = error as Error & { name?: string; code?: string; cause?: string; message?: string };
       console.error('Login error:', error);
+      console.error('Error name:', err?.name);
+      console.error('Error message:', err?.message);
+      console.error('Error code:', err?.code);
+      console.error('Error cause:', err?.cause);
+      console.error('Error stack:', err?.stack);
       
       // Check for common login errors
-      if (error.name === 'UserNotConfirmedException') {
+      if (err.name === 'UserNotConfirmedException') {
         Alert.alert('Account Not Confirmed', 'Please check your email and confirm your account before signing in.');
-      } else if (error.name === 'NotAuthorizedException') {
+      } else if (err.name === 'NotAuthorizedException') {
         Alert.alert('Invalid Credentials', 'Incorrect email or password. Please try again.');
-      } else if (error.name === 'UserNotFoundException') {
+      } else if (err.name === 'UserNotFoundException') {
         Alert.alert('User Not Found', 'No account found with this email address.');
+      } else if (err.name === 'NetworkError' || err.message?.includes('fetch')) {
+        Alert.alert('Network Error', 'Cannot connect to authentication service. Check your internet connection.');
       } else {
-        Alert.alert('Login Failed', error.message || 'An error occurred during login');
+        Alert.alert('Login Failed', `${err.name || 'Unknown'}: ${err.message || 'An error occurred during login'}`);
       }
     } finally {
       setIsLoading(false);
