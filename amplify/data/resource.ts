@@ -48,8 +48,7 @@ const schema = a.schema({
     })
     .authorization((allow) => [
       allow.owner(),
-      allow.authenticated().to(['read']),
-      allow.authenticated().to(['update']) // Allow participants to update
+      allow.authenticated().to(['read', 'update']) // Allow participants to read and update
     ]),
 
   Participant: a
@@ -68,8 +67,7 @@ const schema = a.schema({
     })
     .authorization((allow) => [
       allow.owner(),
-      allow.authenticated().to(['read']),
-      allow.authenticated().to(['create', 'update'])
+      allow.authenticated().to(['read', 'create', 'update'])
     ]),
 
   Evidence: a
