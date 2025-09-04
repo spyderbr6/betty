@@ -1,7 +1,7 @@
 // Import crypto polyfills first for Hermes compatibility
 import 'react-native-get-random-values';
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { StyleSheet, View, ActivityIndicator } from 'react-native';
 import { Amplify } from 'aws-amplify';
@@ -10,9 +10,10 @@ import amplifyconfig from './amplify_outputs.json';
 import { AuthProvider, useAuth } from './src/contexts/AuthContext';
 import { Login } from './src/components/Login';
 import { SignUp } from './src/components/SignUp';
-import { TodoList } from './src/components/TodoList';
+import { AppNavigator } from './src/navigation/AppNavigator';
+import { colors } from './src/styles';
 
-// Configure Amplify for React Native with Hermes
+// Configure Amplify for React Native
 Amplify.configure(amplifyconfig);
 
 type AuthScreen = 'login' | 'signup';
@@ -32,15 +33,17 @@ function MainApp() {
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#007AFF" />
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
 
+  // Show main app with navigation when user is authenticated
   if (user) {
-    return <TodoList onSignOut={signOut} />;
+    return <AppNavigator />;
   }
 
+  // Show authentication screens when user is not authenticated
   if (currentScreen === 'signup') {
     return (
       <SignUp
@@ -63,7 +66,7 @@ export default function App() {
     <AuthProvider>
       <View style={styles.container}>
         <MainApp />
-        <StatusBar style="auto" />
+        <StatusBar style="light" backgroundColor={colors.background} />
       </View>
     </AuthProvider>
   );
@@ -72,12 +75,12 @@ export default function App() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: colors.background,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f5f5f5',
+    backgroundColor: colors.background,
   },
 });
