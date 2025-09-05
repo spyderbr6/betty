@@ -15,7 +15,7 @@ import { Bet, BetStatus } from '../../types/betting';
 import { oddsUtils } from '../../utils/odds';
 import { formatCurrency, dateFormatting, formatParticipantCount } from '../../utils/formatting';
 
-interface BetCardProps {
+export interface BetCardProps {
   bet: Bet;
   onPress?: (bet: Bet) => void;
   showParticipants?: boolean;
