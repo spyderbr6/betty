@@ -3,6 +3,11 @@
  * Professional sportsbook design system exports
  */
 
+import { colors } from './colors';
+import { typography } from './typography';
+import { spacing } from './spacing';
+import { shadows } from './shadows';
+
 export { colors, semantic } from './colors';
 export { typography, textStyles } from './typography';
 export { spacing, responsiveSpacing } from './spacing';

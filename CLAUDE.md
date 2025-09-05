@@ -102,3 +102,48 @@ When given a task or request, Claude should:
 - Maintain consistent code style with the existing codebase
 - Test changes immediately after implementation when possible
 - Explain any trade-offs or limitations of the chosen approach
+
+## Systematic Debugging Process
+
+When encountering runtime errors, compilation failures, or build issues, **ALWAYS** follow this systematic debugging process:
+
+### 1. First Check: TypeScript Diagnostics
+```
+- Run `mcp__ide__getDiagnostics` IMMEDIATELY when encountering:
+  - JavaScript bundle loading errors
+  - AppRegistryBinding failures
+  - Build/compilation issues
+  - Runtime crashes
+- Fix ALL TypeScript errors before proceeding with other debugging
+- Never assume TypeScript compilation is clean without verification
+```
+
+### 2. Second Check: Dependency Compatibility  
+```
+- Check React/React Native version compatibility
+- Verify all dependencies support current framework versions
+- Look for peer dependency warnings in npm/yarn output
+```
+
+### 3. Third Check: Configuration Issues
+```
+- Verify app.json/expo configuration
+- Check metro.config.js for resolver issues
+- Ensure JavaScript engine (Hermes vs JSC) matches framework requirements
+```
+
+### 4. Fourth Check: Native Module Integration
+```
+- Verify react-native-gesture-handler imports
+- Check SafeAreaProvider setup
+- Ensure all native dependencies are properly installed
+```
+
+### Critical Rule: TypeScript First
+**Never debug runtime errors without first running TypeScript diagnostics.** Compilation errors often manifest as confusing runtime failures like AppRegistryBinding errors, bundle loading failures, or mysterious crashes.
+
+### Tools to Use Proactively
+- `mcp__ide__getDiagnostics` - Check for compilation errors
+- `npm run android` - Test builds end-to-end  
+- `Bash` with build commands - Verify configuration changes
+- `Read` - Examine error-prone files (App.tsx, navigation, etc.)
