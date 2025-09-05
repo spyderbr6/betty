@@ -17,9 +17,8 @@ import {
 import { colors, typography, spacing, textStyles, commonStyles } from '../../styles';
 import { Bet, BetFilters, BetStatus } from '../../types/betting';
 import { BetCard } from './BetCard';
-import { formatCurrency } from '../../utils/formatting';
 
-interface BetListProps {
+export interface BetListProps {
   bets: Bet[];
   isLoading?: boolean;
   isRefreshing?: boolean;
@@ -36,7 +35,6 @@ interface BetListProps {
 
 export const BetList: React.FC<BetListProps> = ({
   bets,
-  isLoading = false,
   isRefreshing = false,
   onRefresh,
   onLoadMore,
@@ -50,7 +48,6 @@ export const BetList: React.FC<BetListProps> = ({
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [filters, setFilters] = useState<BetFilters>(initialFilters || {});
-  const [showFilterModal, setShowFilterModal] = useState(false);
 
   // Filter and search logic
   const filteredBets = useMemo(() => {
@@ -131,7 +128,7 @@ export const BetList: React.FC<BetListProps> = ({
           <View style={styles.filtersContainer}>
             <TouchableOpacity
               style={styles.filterButton}
-              onPress={() => setShowFilterModal(true)}
+              onPress={() => {}}
             >
               <Text style={styles.filterButtonText}>Filter</Text>
               {hasActiveFilters() && <View style={styles.filterIndicator} />}
@@ -141,17 +138,17 @@ export const BetList: React.FC<BetListProps> = ({
             <View style={styles.quickFilters}>
               <FilterChip
                 label="Live"
-                active={filters.status?.includes('LIVE')}
+                active={filters.status?.includes('LIVE') ?? false}
                 onPress={() => toggleStatusFilter('LIVE')}
               />
               <FilterChip
                 label="Active"
-                active={filters.status?.includes('ACTIVE')}
+                active={filters.status?.includes('ACTIVE') ?? false}
                 onPress={() => toggleStatusFilter('ACTIVE')}
               />
               <FilterChip
                 label="Sports"
-                active={filters.category?.includes('SPORTS')}
+                active={filters.category?.includes('SPORTS') ?? false}
                 onPress={() => toggleCategoryFilter('SPORTS')}
               />
             </View>

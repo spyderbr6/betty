@@ -16,7 +16,7 @@ import { Bet } from '../../types/betting';
 import { oddsUtils } from '../../utils/odds';
 import { formatCurrency, dateFormatting } from '../../utils/formatting';
 
-interface LiveBetCardProps {
+export interface LiveBetCardProps {
   bet: Bet;
   onPress?: (bet: Bet) => void;
   onQuickBet?: (bet: Bet, side: string) => void;
