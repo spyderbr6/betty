@@ -113,10 +113,10 @@ export const LiveEventsScreen: React.FC = () => {
     // Handle quick bet placement
   };
 
-  const handleLocationSearch = () => {
-    console.log('Location search pressed');
+  //const handleLocationSearch = () => {
+  //  console.log('Location search pressed');
     // Navigate to location search
-  };
+//  };
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>

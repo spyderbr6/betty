@@ -9,7 +9,7 @@ import {
   StyleSheet,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { colors, commonStyles } from '../styles';
+import { commonStyles } from '../styles';
 import { Header } from '../components/ui/Header';
 import { BetList } from '../components/betting/BetList';
 import { Bet } from '../types/betting';
