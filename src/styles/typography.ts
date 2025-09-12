@@ -131,14 +131,14 @@ export const textStyles = {
     fontSize: typography.fontSize.xs,
     fontWeight: typography.fontWeight.normal,
     fontFamily: typography.fontFamily.regular,
-    lineHeight: typography.lineHeight.normal,
+    lineHeight: typography.lineHeight.snug,
     letterSpacing: typography.letterSpacing.wide,
   },
   label: {
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.medium,
     fontFamily: typography.fontFamily.regular,
-    lineHeight: typography.lineHeight.normal,
+    lineHeight: typography.lineHeight.snug,
     letterSpacing: typography.letterSpacing.wide,
   },
   
@@ -147,25 +147,25 @@ export const textStyles = {
     fontSize: typography.fontSize.odds,
     fontWeight: typography.fontWeight.bold,
     fontFamily: typography.fontFamily.mono,
-    lineHeight: typography.lineHeight.none,
+    lineHeight: typography.lineHeight.tight,
   },
   amount: {
     fontSize: typography.fontSize.amount,
     fontWeight: typography.fontWeight.bold,
     fontFamily: typography.fontFamily.regular,
-    lineHeight: typography.lineHeight.none,
+    lineHeight: typography.lineHeight.tight,
   },
   balance: {
     fontSize: typography.fontSize.balance,
     fontWeight: typography.fontWeight.bold,
     fontFamily: typography.fontFamily.regular,
-    lineHeight: typography.lineHeight.none,
+    lineHeight: typography.lineHeight.tight,
   },
   pot: {
     fontSize: typography.fontSize.pot,
     fontWeight: typography.fontWeight.semibold,
     fontFamily: typography.fontFamily.regular,
-    lineHeight: typography.lineHeight.none,
+    lineHeight: typography.lineHeight.tight,
   },
   
   // Status text
@@ -173,7 +173,7 @@ export const textStyles = {
     fontSize: typography.fontSize.xs,
     fontWeight: typography.fontWeight.semibold,
     fontFamily: typography.fontFamily.regular,
-    lineHeight: typography.lineHeight.none,
+    lineHeight: typography.lineHeight.tight,
     letterSpacing: typography.letterSpacing.widest,
     textTransform: 'uppercase' as const,
   },
@@ -183,19 +183,19 @@ export const textStyles = {
     fontSize: typography.fontSize.base,
     fontWeight: typography.fontWeight.semibold,
     fontFamily: typography.fontFamily.regular,
-    lineHeight: typography.lineHeight.none,
+    lineHeight: typography.lineHeight.tight,
   },
   buttonSmall: {
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.semibold,
     fontFamily: typography.fontFamily.regular,
-    lineHeight: typography.lineHeight.none,
+    lineHeight: typography.lineHeight.tight,
   },
   buttonLarge: {
     fontSize: typography.fontSize.lg,
     fontWeight: typography.fontWeight.semibold,
     fontFamily: typography.fontFamily.regular,
-    lineHeight: typography.lineHeight.none,
+    lineHeight: typography.lineHeight.tight,
   },
   
   // Navigation
@@ -203,7 +203,7 @@ export const textStyles = {
     fontSize: typography.fontSize.xs,
     fontWeight: typography.fontWeight.medium,
     fontFamily: typography.fontFamily.regular,
-    lineHeight: typography.lineHeight.none,
+    lineHeight: typography.lineHeight.tight,
   },
   
   // Special displays

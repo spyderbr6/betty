@@ -315,7 +315,7 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontSize: 10,
     fontWeight: typography.fontWeight.bold,
-    lineHeight: 12,
+    lineHeight: typography.lineHeight.tight * 10,
   },
   
   // Live banner

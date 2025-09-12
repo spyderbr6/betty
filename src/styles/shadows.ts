@@ -83,6 +83,14 @@ export const shadows = {
     elevation: 3,
   },
   
+  buttonPressed: {
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.15,
+    shadowRadius: 1.00,
+    elevation: 2,
+  },
+  
   header: {
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 1 },

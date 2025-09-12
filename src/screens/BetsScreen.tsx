@@ -13,7 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { commonStyles, colors, spacing, typography, textStyles } from '../styles';
 import { Header } from '../components/ui/Header';
-import { BetList } from '../components/betting/BetList';
+import { BetCard } from '../components/betting/BetCard';
 import { Bet } from '../types/betting';
 
 // Mock data for development
@@ -232,36 +232,36 @@ export const BetsScreen: React.FC = () => {
           </TouchableOpacity>
         </View>
         
-        <BetList
-          bets={activeBets}
-          isRefreshing={isRefreshing}
-          onRefresh={handleRefresh}
-          onBetPress={handleBetPress}
-          showSearch={false}
-          showFilters={false}
-          emptyTitle="No active bets"
-          emptyDescription="Create your first bet or join others!"
-        />
+        {activeBets.map((bet) => (
+          <BetCard
+            key={bet.id}
+            bet={bet}
+            onPress={handleBetPress}
+          />
+        ))}
         
-        {/* Quick Stats */}
-        <View style={styles.statsContainer}>
-          <View style={styles.statCard}>
-            <Text style={styles.statLabel}>WIN RATE</Text>
-            <Text style={[styles.statValue, { color: colors.success }]}>
-              {currentUser.winRate}%
-            </Text>
-          </View>
-          
-          <View style={styles.statCard}>
-            <Text style={styles.statLabel}>TOTAL BETS</Text>
-            <Text style={styles.statValue}>{currentUser.totalBets}</Text>
-          </View>
-          
-          <View style={styles.statCard}>
-            <Text style={styles.statLabel}>TRUST SCORE</Text>
-            <Text style={[styles.statValue, { color: colors.primary }]}>
-              {currentUser.trustScore}
-            </Text>
+        {/* Bottom Stats */}
+        <View style={styles.bottomStatsContainer}>
+          <View style={styles.statsRow}>
+            <View style={styles.statItem}>
+              <Text style={styles.statValue}>{activeBets.length}</Text>
+              <Text style={styles.statLabel}>bets</Text>
+            </View>
+            
+            <View style={styles.statItem}>
+              <Text style={styles.statValue}>{currentUser.winRate}%</Text>
+              <Text style={styles.statLabel}>WIN RATE</Text>
+            </View>
+            
+            <View style={styles.statItem}>
+              <Text style={styles.statValue}>{currentUser.totalBets}</Text>
+              <Text style={styles.statLabel}>TOTAL BETS</Text>
+            </View>
+            
+            <View style={styles.statItem}>
+              <Text style={styles.statValue}>{currentUser.trustScore}</Text>
+              <Text style={styles.statLabel}>TRUST SCORE</Text>
+            </View>
           </View>
         </View>
       </View>
@@ -305,28 +305,19 @@ const styles = StyleSheet.create({
     fontWeight: typography.fontWeight.semibold,
   },
   
-  // Quick Stats
-  statsContainer: {
-    flexDirection: 'row',
+  // Bottom Stats
+  bottomStatsContainer: {
+    marginTop: spacing.lg,
     paddingHorizontal: spacing.md,
-    paddingBottom: spacing.lg,
-    gap: spacing.sm,
+    paddingVertical: spacing.md,
   },
-  statCard: {
-    flex: 1,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.sm,
-    borderRadius: spacing.radius.sm,
+  statsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
     alignItems: 'center',
   },
-  statLabel: {
-    ...textStyles.caption,
-    color: colors.textMuted,
-    fontSize: 10,
-    marginBottom: 4,
-    textAlign: 'center',
+  statItem: {
+    alignItems: 'center',
   },
   statValue: {
     ...textStyles.h2,
@@ -334,5 +325,13 @@ const styles = StyleSheet.create({
     fontWeight: typography.fontWeight.bold,
     fontSize: typography.fontSize.xl,
     textAlign: 'center',
+  },
+  statLabel: {
+    ...textStyles.caption,
+    color: colors.textMuted,
+    fontSize: typography.fontSize.xs,
+    marginTop: spacing.xs,
+    textAlign: 'center',
+    textTransform: 'uppercase',
   },
 });

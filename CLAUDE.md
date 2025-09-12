@@ -103,50 +103,82 @@ When given a task or request, Claude should:
 - Test changes immediately after implementation when possible
 - Explain any trade-offs or limitations of the chosen approach
 
-## Systematic Debugging Process
+## Comprehensive Error Detection Process
 
-When encountering runtime errors, compilation failures, or build issues, **ALWAYS** follow this systematic debugging process:
+When encountering ANY errors, compilation failures, or build issues, **ALWAYS** follow this systematic debugging process:
 
-### 1. First Check: TypeScript Diagnostics
+### 1. Comprehensive TypeScript Check
 ```
-- Run `mcp__ide__getDiagnostics` IMMEDIATELY when encountering:
+- Run `mcp__ide__getDiagnostics` IMMEDIATELY for ALL scenarios:
+  - Before starting any task
+  - After making any code changes
+  - When encountering runtime errors
   - JavaScript bundle loading errors
   - AppRegistryBinding failures
   - Build/compilation issues
   - Runtime crashes
-- Fix ALL TypeScript errors before proceeding with other debugging
+  - Property access errors (like 'buttonPressed' does not exist)
+- Fix ALL TypeScript errors AND warnings before proceeding
 - Never assume TypeScript compilation is clean without verification
+- Run diagnostics on ALL files, not just current working files
 ```
 
-### 2. Second Check: Dependency Compatibility  
+### 2. Build Error Monitoring
+```
+- Monitor ALL active background bash processes with BashOutput
+- Check for compilation errors in Metro bundler output
+- Look for runtime errors in build logs
+- Check for property access errors in bundle compilation
+- Verify all imported modules/properties exist in their respective files
+```
+
+### 3. Design System Consistency Check
+```
+- When using design tokens (colors, typography, shadows, spacing):
+  - Verify the property exists in the design system file
+  - Check for typos in property names (e.g., 'buttonPressed' vs 'button')
+  - Ensure all referenced design tokens are exported properly
+- Common design system files to verify:
+  - src/styles/colors.ts
+  - src/styles/typography.ts  
+  - src/styles/shadows.ts
+  - src/styles/spacing.ts
+```
+
+### 4. Dependency Compatibility Check
 ```
 - Check React/React Native version compatibility
 - Verify all dependencies support current framework versions
 - Look for peer dependency warnings in npm/yarn output
 ```
 
-### 3. Third Check: Configuration Issues
+### 5. Configuration Issues Check
 ```
 - Verify app.json/expo configuration
 - Check metro.config.js for resolver issues
 - Ensure JavaScript engine (Hermes vs JSC) matches framework requirements
 ```
 
-### 4. Fourth Check: Native Module Integration
+### 6. Native Module Integration Check
 ```
 - Verify react-native-gesture-handler imports
 - Check SafeAreaProvider setup
 - Ensure all native dependencies are properly installed
 ```
 
-### Critical Rule: TypeScript First
-**Never debug runtime errors without first running TypeScript diagnostics.** Compilation errors often manifest as confusing runtime failures like AppRegistryBinding errors, bundle loading failures, or mysterious crashes.
+### CRITICAL RULES for Error Prevention:
+1. **Always run `mcp__ide__getDiagnostics` BEFORE and AFTER every change**
+2. **Never assume design system properties exist - always verify**
+3. **Check ALL build outputs with BashOutput for hidden errors**
+4. **Test every property access against the actual exported object**
+5. **Never skip error checking even for "simple" changes**
 
-### Tools to Use Proactively
-- `mcp__ide__getDiagnostics` - Check for compilation errors
+### Tools to Use Proactively (EVERY TIME):
+- `mcp__ide__getDiagnostics` - Check for ALL compilation errors/warnings
+- `BashOutput` - Monitor ALL background build processes for errors
+- `Read` - Verify design system files contain referenced properties
 - `npm run android` - Test builds end-to-end  
 - `Bash` with build commands - Verify configuration changes
-- `Read` - Examine error-prone files (App.tsx, navigation, etc.)
 
 ### Track your last few tasks in a file in case our sessions gets interrupted. 
 claudelog.md
