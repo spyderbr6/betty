@@ -147,3 +147,7 @@ When encountering runtime errors, compilation failures, or build issues, **ALWAY
 - `npm run android` - Test builds end-to-end  
 - `Bash` with build commands - Verify configuration changes
 - `Read` - Examine error-prone files (App.tsx, navigation, etc.)
+
+### Track your last few tasks in a file in case our sessions gets interrupted. 
+claudelog.md
+
