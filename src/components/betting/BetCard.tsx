@@ -155,16 +155,19 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   title: {
-    ...textStyles.body,
     color: colors.textPrimary,
-    fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.medium,
+    fontSize: 16,
+    fontWeight: '600',
+    fontFamily: 'System',
+    lineHeight: 20,
     marginBottom: 2,
   },
   description: {
-    ...textStyles.bodySmall,
     color: colors.textSecondary,
-    fontSize: typography.fontSize.sm,
+    fontSize: 14,
+    fontWeight: '400',
+    fontFamily: 'System',
+    lineHeight: 18,
   },
   
   // Bottom Section
