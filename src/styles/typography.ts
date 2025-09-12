@@ -83,22 +83,26 @@ export const textStyles = {
   h1: {
     fontSize: typography.fontSize['3xl'],
     fontWeight: typography.fontWeight.bold,
+    fontFamily: typography.fontFamily.bold,
     lineHeight: typography.lineHeight.tight,
     letterSpacing: typography.letterSpacing.tight,
   },
   h2: {
     fontSize: typography.fontSize['2xl'],
     fontWeight: typography.fontWeight.bold,
+    fontFamily: typography.fontFamily.bold,
     lineHeight: typography.lineHeight.tight,
   },
   h3: {
     fontSize: typography.fontSize.xl,
     fontWeight: typography.fontWeight.semibold,
+    fontFamily: typography.fontFamily.regular,
     lineHeight: typography.lineHeight.snug,
   },
   h4: {
     fontSize: typography.fontSize.lg,
     fontWeight: typography.fontWeight.semibold,
+    fontFamily: typography.fontFamily.regular,
     lineHeight: typography.lineHeight.snug,
   },
   
@@ -106,16 +110,19 @@ export const textStyles = {
   body: {
     fontSize: typography.fontSize.base,
     fontWeight: typography.fontWeight.normal,
+    fontFamily: typography.fontFamily.regular,
     lineHeight: typography.lineHeight.normal,
   },
   bodyLarge: {
     fontSize: typography.fontSize.lg,
     fontWeight: typography.fontWeight.normal,
+    fontFamily: typography.fontFamily.regular,
     lineHeight: typography.lineHeight.normal,
   },
   bodySmall: {
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.normal,
+    fontFamily: typography.fontFamily.regular,
     lineHeight: typography.lineHeight.normal,
   },
   
@@ -123,12 +130,14 @@ export const textStyles = {
   caption: {
     fontSize: typography.fontSize.xs,
     fontWeight: typography.fontWeight.normal,
+    fontFamily: typography.fontFamily.regular,
     lineHeight: typography.lineHeight.normal,
     letterSpacing: typography.letterSpacing.wide,
   },
   label: {
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.medium,
+    fontFamily: typography.fontFamily.regular,
     lineHeight: typography.lineHeight.normal,
     letterSpacing: typography.letterSpacing.wide,
   },
@@ -143,16 +152,19 @@ export const textStyles = {
   amount: {
     fontSize: typography.fontSize.amount,
     fontWeight: typography.fontWeight.bold,
+    fontFamily: typography.fontFamily.regular,
     lineHeight: typography.lineHeight.none,
   },
   balance: {
     fontSize: typography.fontSize.balance,
     fontWeight: typography.fontWeight.bold,
+    fontFamily: typography.fontFamily.regular,
     lineHeight: typography.lineHeight.none,
   },
   pot: {
     fontSize: typography.fontSize.pot,
     fontWeight: typography.fontWeight.semibold,
+    fontFamily: typography.fontFamily.regular,
     lineHeight: typography.lineHeight.none,
   },
   
@@ -160,6 +172,7 @@ export const textStyles = {
   status: {
     fontSize: typography.fontSize.xs,
     fontWeight: typography.fontWeight.semibold,
+    fontFamily: typography.fontFamily.regular,
     lineHeight: typography.lineHeight.none,
     letterSpacing: typography.letterSpacing.widest,
     textTransform: 'uppercase' as const,
@@ -169,16 +182,19 @@ export const textStyles = {
   button: {
     fontSize: typography.fontSize.base,
     fontWeight: typography.fontWeight.semibold,
+    fontFamily: typography.fontFamily.regular,
     lineHeight: typography.lineHeight.none,
   },
   buttonSmall: {
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.semibold,
+    fontFamily: typography.fontFamily.regular,
     lineHeight: typography.lineHeight.none,
   },
   buttonLarge: {
     fontSize: typography.fontSize.lg,
     fontWeight: typography.fontWeight.semibold,
+    fontFamily: typography.fontFamily.regular,
     lineHeight: typography.lineHeight.none,
   },
   
@@ -186,6 +202,7 @@ export const textStyles = {
   tabLabel: {
     fontSize: typography.fontSize.xs,
     fontWeight: typography.fontWeight.medium,
+    fontFamily: typography.fontFamily.regular,
     lineHeight: typography.lineHeight.none,
   },
   
@@ -193,6 +210,7 @@ export const textStyles = {
   hero: {
     fontSize: typography.fontSize['4xl'],
     fontWeight: typography.fontWeight.black,
+    fontFamily: typography.fontFamily.bold,
     lineHeight: typography.lineHeight.tight,
     letterSpacing: typography.letterSpacing.tight,
   },
