@@ -36,6 +36,7 @@ export const SignUp: React.FC<SignUpProps> = ({ onLoginPress, onSignUpSuccess })
         options: {
           userAttributes: {
             email: email.trim(),
+            preferred_username: email.trim(),
           },
         },
       });

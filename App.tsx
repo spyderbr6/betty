@@ -2,6 +2,9 @@
 import 'react-native-gesture-handler';
 // Import crypto polyfills for Hermes compatibility
 import 'react-native-get-random-values';
+// Import Intl polyfills for Hermes compatibility
+import '@formatjs/intl-numberformat/polyfill';
+import '@formatjs/intl-numberformat/locale-data/en';
 
 import { useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
