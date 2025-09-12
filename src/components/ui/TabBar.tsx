@@ -27,16 +27,16 @@ export const TabBar: React.FC<BottomTabBarProps> = ({
     
     switch (routeName) {
       case 'Bets':
-        iconName = focused ? 'list' : 'list-outline';
+        iconName = focused ? 'receipt' : 'receipt-outline';
         break;
       case 'Live':
-        iconName = focused ? 'radio-button-on' : 'radio-button-off';
+        iconName = focused ? 'pulse' : 'pulse-outline';
         break;
       case 'Create':
         iconName = focused ? 'add-circle' : 'add-circle-outline';
         break;
       case 'Resolve':
-        iconName = focused ? 'checkmark-circle' : 'checkmark-circle-outline';
+        iconName = focused ? 'trophy' : 'trophy-outline';
         break;
       case 'Account':
         iconName = focused ? 'person' : 'person-outline';
@@ -51,17 +51,32 @@ export const TabBar: React.FC<BottomTabBarProps> = ({
   const getTabLabel = (routeName: string) => {
     switch (routeName) {
       case 'Bets':
-        return 'Bets';
+        return 'My Bets';
       case 'Live':
         return 'Live';
       case 'Create':
         return 'Create';
       case 'Resolve':
-        return 'Resolve';
+        return 'Results';
       case 'Account':
-        return 'Account';
+        return 'Profile';
       default:
         return routeName;
+    }
+  };
+
+  const getTabCount = (routeName: string): number | null => {
+    switch (routeName) {
+      case 'Bets':
+        return 3; // Active bets count
+      case 'Live':
+        return 12; // Live events count
+      case 'Resolve':
+        return 2; // Pending resolutions count
+      case 'Account':
+        return 2; // Notifications count
+      default:
+        return null;
     }
   };
 
@@ -72,6 +87,7 @@ export const TabBar: React.FC<BottomTabBarProps> = ({
         const label = getTabLabel(route.name);
         const isFocused = state.index === index;
         const iconName = getTabIcon(route.name, isFocused);
+        const count = getTabCount(route.name);
 
         const onPress = () => {
           const event = navigation.emit({
@@ -92,9 +108,10 @@ export const TabBar: React.FC<BottomTabBarProps> = ({
           });
         };
 
-        // Special styling for Create button (center tab)
+        // Special styling for different tabs
         const isCreateTab = route.name === 'Create';
         const isLiveTab = route.name === 'Live';
+        const hasBadge = count !== null && count > 0;
 
         return (
           <TouchableOpacity
@@ -112,25 +129,44 @@ export const TabBar: React.FC<BottomTabBarProps> = ({
             ]}
             activeOpacity={0.7}
           >
-            {/* Live indicator for Live tab */}
+            {/* Active tab indicator line */}
+            {isFocused && !isCreateTab && (
+              <View style={styles.activeIndicator} />
+            )}
+            
+            {/* Live pulsing indicator for Live tab */}
             {isLiveTab && (
-              <View style={styles.liveIndicator} />
+              <View style={styles.livePulseIndicator} />
             )}
             
             <View style={[
               styles.iconContainer,
               isCreateTab && styles.createIconContainer,
               isFocused && isCreateTab && styles.createIconContainerFocused,
+              isFocused && !isCreateTab && styles.iconContainerFocused,
             ]}>
               <Ionicons
                 name={iconName}
-                size={isCreateTab ? 28 : 24}
+                size={isCreateTab ? 28 : 22}
                 color={
                   isFocused 
                     ? (isCreateTab ? colors.background : colors.primary)
                     : colors.textMuted
                 }
               />
+              
+              {/* Count badge on icon */}
+              {hasBadge && !isCreateTab && (
+                <View style={[
+                  styles.badge,
+                  route.name === 'Live' && styles.liveBadge,
+                  route.name === 'Resolve' && styles.resolveBadge,
+                ]}>
+                  <Text style={styles.badgeText}>
+                    {count > 99 ? '99+' : count.toString()}
+                  </Text>
+                </View>
+              )}
             </View>
             
             <Text style={[
@@ -140,13 +176,6 @@ export const TabBar: React.FC<BottomTabBarProps> = ({
             ]}>
               {label}
             </Text>
-
-            {/* Badge for notifications (example for Account tab) */}
-            {route.name === 'Account' && (
-              <View style={styles.badge}>
-                <Text style={styles.badgeText}>2</Text>
-              </View>
-            )}
           </TouchableOpacity>
         );
       })}
@@ -162,7 +191,7 @@ const styles = StyleSheet.create({
     borderTopColor: colors.border,
     paddingTop: spacing.sm,
     paddingHorizontal: spacing.xs,
-    minHeight: 80,
+    minHeight: 85,
     ...shadows.header,
   },
   
@@ -175,7 +204,19 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   tabFocused: {
-    // Additional focused styling if needed
+    backgroundColor: colors.surfaceLight,
+    borderRadius: spacing.radius.sm,
+  },
+  
+  // Active tab indicator
+  activeIndicator: {
+    position: 'absolute',
+    top: 0,
+    left: '25%',
+    right: '25%',
+    height: 3,
+    backgroundColor: colors.primary,
+    borderRadius: 1.5,
   },
   
   // Create tab (center) special styling
@@ -187,26 +228,34 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: spacing.xs / 2,
+    position: 'relative',
+  },
+  iconContainerFocused: {
+    transform: [{ scale: 1.05 }],
   },
   createIconContainer: {
     backgroundColor: colors.primary,
-    borderRadius: 20,
-    width: 40,
-    height: 40,
+    borderRadius: 22,
+    width: 44,
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
     ...shadows.button,
+    borderWidth: 3,
+    borderColor: colors.surface,
   },
   createIconContainerFocused: {
     backgroundColor: colors.primaryDark,
-    transform: [{ scale: 1.05 }],
+    transform: [{ scale: 1.08 }],
+    ...shadows.buttonPressed,
   },
   
   label: {
     ...textStyles.tabLabel,
     color: colors.textMuted,
-    fontSize: 11,
+    fontSize: 10,
     textAlign: 'center',
+    fontWeight: typography.fontWeight.medium,
   },
   labelFocused: {
     color: colors.primary,
@@ -214,38 +263,46 @@ const styles = StyleSheet.create({
   },
   createLabel: {
     marginTop: spacing.xs / 2,
+    fontSize: 9,
   },
   
-  // Live indicator
-  liveIndicator: {
+  // Live pulsing indicator
+  livePulseIndicator: {
     position: 'absolute',
-    top: 6,
-    right: '50%',
-    transform: [{ translateX: 10 }],
+    top: 4,
+    left: '50%',
+    transform: [{ translateX: -3 }],
     width: 6,
     height: 6,
     borderRadius: 3,
     backgroundColor: colors.live,
   },
   
-  // Notification badge
+  // Notification badges
   badge: {
     position: 'absolute',
-    top: 4,
-    right: '50%',
-    transform: [{ translateX: 8 }],
+    top: -4,
+    right: -8,
     backgroundColor: colors.error,
-    borderRadius: 8,
-    minWidth: 16,
-    height: 16,
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 4,
+    paddingHorizontal: 6,
+    borderWidth: 2,
+    borderColor: colors.surface,
+  },
+  liveBadge: {
+    backgroundColor: colors.live,
+  },
+  resolveBadge: {
+    backgroundColor: colors.warning,
   },
   badgeText: {
-    color: colors.textPrimary,
-    fontSize: 10,
+    color: colors.background,
+    fontSize: 9,
     fontWeight: typography.fontWeight.bold,
-    lineHeight: 12,
+    lineHeight: 11,
   },
 });

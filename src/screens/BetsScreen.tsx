@@ -6,10 +6,12 @@
 import React, { useState } from 'react';
 import {
   View,
+  Text,
+  TouchableOpacity,
   StyleSheet,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { commonStyles } from '../styles';
+import { commonStyles, colors, spacing, typography, textStyles } from '../styles';
 import { Header } from '../components/ui/Header';
 import { BetList } from '../components/betting/BetList';
 import { Bet } from '../types/betting';
@@ -141,6 +143,7 @@ const mockBets: Bet[] = [
 export const BetsScreen: React.FC = () => {
   const [bets] = useState<Bet[]>(mockBets);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -165,27 +168,102 @@ export const BetsScreen: React.FC = () => {
     // Navigate to notifications screen
   };
 
+  const handleSearchChange = (query: string) => {
+    setSearchQuery(query);
+  };
+
+  const handleFilterPress = () => {
+    console.log('Filter pressed');
+    // Show filter modal
+  };
+
+  const handleCreateBetPress = () => {
+    console.log('Create bet pressed');
+    // Navigate to create bet screen
+  };
+
+  // Mock user data
+  const currentUser = {
+    winRate: 67.3,
+    totalBets: 23,
+    totalWinnings: 1245.75,
+    trustScore: 8.4,
+  };
+
+  // Mock live game data
+  const liveGame = {
+    homeTeam: 'LAL',
+    awayTeam: 'GSW',
+    homeScore: 89,
+    awayScore: 92,
+    quarter: 'Q3',
+    timeLeft: '8:42',
+    venue: 'Crypto.com Arena',
+    liveBetsCount: 12,
+  };
+
+  const activeBets = bets.filter(bet => ['ACTIVE', 'LIVE', 'PENDING_RESOLUTION'].includes(bet.status));
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <Header
         showBalance={true}
-        balance={1245.75}
+        balance={currentUser.totalWinnings}
         onBalancePress={handleBalancePress}
         onNotificationsPress={handleNotificationsPress}
         notificationCount={2}
+        liveGame={liveGame}
+        onSearchChange={handleSearchChange}
+        searchQuery={searchQuery}
+        onFilterPress={handleFilterPress}
+        showSearch={true}
       />
       
       <View style={styles.content}>
+        {/* Active Bets Section */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>ACTIVE BETS</Text>
+          <TouchableOpacity
+            style={styles.createButton}
+            onPress={handleCreateBetPress}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.createButtonText}>+ NEW BET</Text>
+          </TouchableOpacity>
+        </View>
+        
         <BetList
-          bets={bets}
+          bets={activeBets}
           isRefreshing={isRefreshing}
           onRefresh={handleRefresh}
           onBetPress={handleBetPress}
-          showSearch={true}
-          showFilters={true}
+          showSearch={false}
+          showFilters={false}
           emptyTitle="No active bets"
           emptyDescription="Create your first bet or join others!"
         />
+        
+        {/* Quick Stats */}
+        <View style={styles.statsContainer}>
+          <View style={styles.statCard}>
+            <Text style={styles.statLabel}>WIN RATE</Text>
+            <Text style={[styles.statValue, { color: colors.success }]}>
+              {currentUser.winRate}%
+            </Text>
+          </View>
+          
+          <View style={styles.statCard}>
+            <Text style={styles.statLabel}>TOTAL BETS</Text>
+            <Text style={styles.statValue}>{currentUser.totalBets}</Text>
+          </View>
+          
+          <View style={styles.statCard}>
+            <Text style={styles.statLabel}>TRUST SCORE</Text>
+            <Text style={[styles.statValue, { color: colors.primary }]}>
+              {currentUser.trustScore}
+            </Text>
+          </View>
+        </View>
       </View>
     </SafeAreaView>
   );
@@ -197,5 +275,64 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+  },
+  
+  // Section Header
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.background,
+  },
+  sectionTitle: {
+    ...textStyles.h3,
+    color: colors.textPrimary,
+    fontWeight: typography.fontWeight.bold,
+    fontSize: typography.fontSize.lg,
+  },
+  createButton: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: spacing.radius.sm,
+  },
+  createButtonText: {
+    ...textStyles.button,
+    color: colors.textInverse,
+    fontSize: typography.fontSize.sm,
+    fontWeight: typography.fontWeight.semibold,
+  },
+  
+  // Quick Stats
+  statsContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.lg,
+    gap: spacing.sm,
+  },
+  statCard: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.sm,
+    borderRadius: spacing.radius.sm,
+    alignItems: 'center',
+  },
+  statLabel: {
+    ...textStyles.caption,
+    color: colors.textMuted,
+    fontSize: 10,
+    marginBottom: 4,
+    textAlign: 'center',
+  },
+  statValue: {
+    ...textStyles.h2,
+    color: colors.textPrimary,
+    fontWeight: typography.fontWeight.bold,
+    fontSize: typography.fontSize.xl,
+    textAlign: 'center',
   },
 });

@@ -30,10 +30,8 @@ export const LiveBetCard: React.FC<LiveBetCardProps> = ({
   showQuickBet = true,
 }) => {
   const pulseAnim = useRef(new Animated.Value(1)).current;
-  const glowAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    // Pulse animation for live indicator
     const pulseAnimation = Animated.loop(
       Animated.sequence([
         Animated.timing(pulseAnim, {
@@ -49,30 +47,12 @@ export const LiveBetCard: React.FC<LiveBetCardProps> = ({
       ])
     );
 
-    // Glow animation for card border
-    const glowAnimation = Animated.loop(
-      Animated.sequence([
-        Animated.timing(glowAnim, {
-          toValue: 1,
-          duration: 2000,
-          useNativeDriver: false,
-        }),
-        Animated.timing(glowAnim, {
-          toValue: 0,
-          duration: 2000,
-          useNativeDriver: false,
-        }),
-      ])
-    );
-
     pulseAnimation.start();
-    glowAnimation.start();
 
     return () => {
       pulseAnimation.stop();
-      glowAnimation.stop();
     };
-  }, []);
+  }, [pulseAnim]);
 
   const handlePress = () => {
     onPress?.(bet);
@@ -83,15 +63,10 @@ export const LiveBetCard: React.FC<LiveBetCardProps> = ({
   };
 
   const participantCount = bet.participants?.length || 0;
-
-  // Animated glow border color
-  const borderColor = glowAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [colors.live, colors.livePulse],
-  });
+  const totalPot = bet.participants?.reduce((sum, p) => sum + p.amount, 0) || bet.totalPot || 0;
 
   return (
-    <Animated.View style={[styles.container, { borderColor }]}>
+    <View style={styles.container}>
       <TouchableOpacity
         style={styles.card}
         onPress={handlePress}
@@ -115,7 +90,7 @@ export const LiveBetCard: React.FC<LiveBetCardProps> = ({
           </View>
           
           <View style={styles.potContainer}>
-            <Text style={styles.potAmount}>{formatCurrency(bet.totalPot, 'USD', false)}</Text>
+            <Text style={styles.potAmount}>{formatCurrency(totalPot, 'USD', false)}</Text>
             <Text style={styles.potLabel}>TOTAL POT</Text>
           </View>
         </View>
@@ -163,7 +138,7 @@ export const LiveBetCard: React.FC<LiveBetCardProps> = ({
               </Text>
               <Text style={[
                 styles.quickBetOdds,
-                { color: oddsUtils.getOddsColor(bet.odds.sideA) === 'positive' ? colors.oddsPositive : colors.oddsNegative }
+                { color: oddsUtils.getOddsColor(bet.odds.sideA) === 'positive' ? colors.success : colors.error }
               ]}>
                 {oddsUtils.formatAmerican(bet.odds.sideA)}
               </Text>
@@ -182,7 +157,7 @@ export const LiveBetCard: React.FC<LiveBetCardProps> = ({
               </Text>
               <Text style={[
                 styles.quickBetOdds,
-                { color: oddsUtils.getOddsColor(bet.odds.sideB) === 'positive' ? colors.oddsPositive : colors.oddsNegative }
+                { color: oddsUtils.getOddsColor(bet.odds.sideB) === 'positive' ? colors.success : colors.error }
               ]}>
                 {oddsUtils.formatAmerican(bet.odds.sideB)}
               </Text>
@@ -200,7 +175,7 @@ export const LiveBetCard: React.FC<LiveBetCardProps> = ({
           <Text style={styles.activityText}>Live betting active</Text>
         </View>
       </TouchableOpacity>
-    </Animated.View>
+    </View>
   );
 };
 
@@ -210,11 +185,12 @@ const styles = StyleSheet.create({
     marginHorizontal: spacing.md,
     borderRadius: spacing.radius.lg,
     borderWidth: 2,
-    ...shadows.liveBetCard,
+    borderColor: colors.live,
+    ...shadows.betCard,
   },
   card: {
     backgroundColor: colors.surface,
-    borderRadius: spacing.radius.lg - 2, // Account for border
+    borderRadius: spacing.radius.lg - 2,
     padding: spacing.betting.cardPadding,
   },
   
@@ -259,7 +235,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   potAmount: {
-    ...textStyles.pot,
+    ...textStyles.balance,
     color: colors.primary,
     fontSize: typography.fontSize.xl,
   },
@@ -317,7 +293,7 @@ const styles = StyleSheet.create({
   },
   quickBetButton: {
     flex: 1,
-    backgroundColor: colors.surfaceLight,
+    backgroundColor: colors.surface,
     borderRadius: spacing.radius.md,
     padding: spacing.sm,
     alignItems: 'center',
@@ -331,14 +307,14 @@ const styles = StyleSheet.create({
     // Could add side-specific styling
   },
   quickBetSide: {
-    ...textStyles.label,
+    ...textStyles.bodySmall,
     color: colors.textSecondary,
     fontSize: 12,
     marginBottom: 2,
     textAlign: 'center',
   },
   quickBetOdds: {
-    ...textStyles.odds,
+    ...textStyles.button,
     fontWeight: typography.fontWeight.bold,
   },
   quickBetDivider: {

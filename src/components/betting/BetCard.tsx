@@ -12,41 +12,21 @@ import {
 } from 'react-native';
 import { colors, typography, spacing, shadows, textStyles } from '../../styles';
 import { Bet, BetStatus } from '../../types/betting';
-import { oddsUtils } from '../../utils/odds';
-import { formatCurrency, dateFormatting, formatParticipantCount } from '../../utils/formatting';
+import { formatCurrency } from '../../utils/formatting';
 
 export interface BetCardProps {
   bet: Bet;
   onPress?: (bet: Bet) => void;
-  showParticipants?: boolean;
   variant?: 'default' | 'live' | 'compact';
 }
 
 export const BetCard: React.FC<BetCardProps> = ({
   bet,
   onPress,
-  showParticipants = true,
   variant = 'default',
 }) => {
   const handlePress = () => {
     onPress?.(bet);
-  };
-
-  const getStatusColor = (status: BetStatus): string => {
-    switch (status) {
-      case 'LIVE':
-        return colors.live;
-      case 'ACTIVE':
-        return colors.active;
-      case 'PENDING_RESOLUTION':
-        return colors.pending;
-      case 'RESOLVED':
-        return colors.resolved;
-      case 'CANCELLED':
-        return colors.cancelled;
-      default:
-        return colors.textMuted;
-    }
   };
 
   const getStatusText = (status: BetStatus): string => {
@@ -68,117 +48,93 @@ export const BetCard: React.FC<BetCardProps> = ({
 
   const participantCount = bet.participants?.length || 0;
   const isLive = bet.status === 'LIVE';
-  const isActive = bet.status === 'ACTIVE';
+  const totalPot = bet.participants?.reduce((sum, p) => sum + p.amount, 0) || bet.totalPot || 0;
+  
+  // Find user's side from participants
+  const userParticipant = bet.participants?.find(p => p.userId === '1'); // Mock user ID
+  const userSide = userParticipant?.side;
+  const userOdds = userSide && bet.odds ? 
+    (userSide === 'A' ? bet.odds.sideA : bet.odds.sideB) : null;
 
   const cardStyle = [
     styles.card,
     isLive && styles.liveCard,
     variant === 'compact' && styles.compactCard,
   ];
+  
+  // Status indicator animation for live bets
+  const getStatusIndicator = () => {
+    switch (bet.status) {
+      case 'LIVE':
+        return <View style={[styles.statusIndicator, styles.liveIndicator]} />;
+      case 'PENDING_RESOLUTION':
+        return <View style={[styles.statusIndicator, styles.pendingIndicator]} />;
+      case 'ACTIVE':
+        return <View style={[styles.statusIndicator, styles.activeIndicator]} />;
+      default:
+        return <View style={[styles.statusIndicator, styles.defaultIndicator]} />;
+    }
+  };
 
   return (
     <TouchableOpacity
       style={cardStyle}
       onPress={handlePress}
       disabled={!onPress}
-      activeOpacity={0.8}
+      activeOpacity={0.7}
     >
-      {/* Status Badge and Live Indicator */}
+      {/* Header with Status and Total Pot */}
       <View style={styles.header}>
-        <View style={styles.statusContainer}>
-          {isLive && <View style={styles.liveIndicator} />}
-          <View style={[styles.statusBadge, { backgroundColor: getStatusColor(bet.status) }]}>
-            <Text style={styles.statusText}>{getStatusText(bet.status)}</Text>
-          </View>
-          {bet.category && (
-            <Text style={styles.categoryText}>{bet.category}</Text>
-          )}
+        <View style={styles.headerLeft}>
+          {getStatusIndicator()}
+          <Text style={styles.statusLabel}>
+            {getStatusText(bet.status).replace('_', ' ')}
+          </Text>
         </View>
         
         <View style={styles.potContainer}>
+          <Text style={styles.potAmount}>{formatCurrency(totalPot, 'USD', false)}</Text>
           <Text style={styles.potLabel}>TOTAL POT</Text>
-          <Text style={styles.potAmount}>{formatCurrency(bet.totalPot, 'USD', false)}</Text>
         </View>
       </View>
 
-      {/* Bet Title and Description */}
-      <View style={styles.content}>
-        <Text style={styles.title} numberOfLines={2}>
-          {bet.title}
-        </Text>
-        
-        {variant !== 'compact' && (
-          <Text style={styles.description} numberOfLines={2}>
+      {/* Main Content */}
+      <View style={styles.mainContent}>
+        <View style={styles.contentLeft}>
+          <Text style={styles.title} numberOfLines={1}>
+            {bet.title}
+          </Text>
+          <Text style={styles.description} numberOfLines={1}>
             {bet.description}
           </Text>
-        )}
-
-        {/* Odds Display */}
-        {bet.odds && (
-          <View style={styles.oddsContainer}>
-            <View style={styles.oddsSide}>
-              <Text style={styles.sideLabel}>
-                {bet.odds.sideAName || 'Side A'}
-              </Text>
-              <Text style={[
-                styles.oddsText,
-                { color: oddsUtils.getOddsColor(bet.odds.sideA) === 'positive' ? colors.oddsPositive : colors.oddsNegative }
-              ]}>
-                {oddsUtils.formatAmerican(bet.odds.sideA)}
-              </Text>
-            </View>
-            
-            <Text style={styles.vsText}>VS</Text>
-            
-            <View style={styles.oddsSide}>
-              <Text style={styles.sideLabel}>
-                {bet.odds.sideBName || 'Side B'}
-              </Text>
-              <Text style={[
-                styles.oddsText,
-                { color: oddsUtils.getOddsColor(bet.odds.sideB) === 'positive' ? colors.oddsPositive : colors.oddsNegative }
-              ]}>
-                {oddsUtils.formatAmerican(bet.odds.sideB)}
-              </Text>
-            </View>
-          </View>
-        )}
+        </View>
       </View>
 
-      {/* Footer with participants and deadline */}
+      {/* Footer with User Pick and Participants */}
       <View style={styles.footer}>
-        <View style={styles.footerLeft}>
-          {showParticipants && (
-            <View style={styles.participantInfo}>
-              <Text style={styles.participantIcon}>👥</Text>
-              <Text style={styles.participantCount}>
-                {formatParticipantCount(participantCount).replace(' participants', '').replace(' participant', '')} PLAYERS
-              </Text>
-            </View>
-          )}
-        </View>
-        
-        <View style={styles.footerRight}>
-          {(isActive || isLive) && (
-            <View style={styles.deadlineContainer}>
-              <Text style={styles.deadlineLabel}>
-                {isLive ? 'LIVE' : dateFormatting.formatDeadline(bet.deadline)}
-              </Text>
-            </View>
-          )}
+        <View style={styles.footerContent}>
+          <View style={styles.userPickSection}>
+            {userSide && (
+              <>
+                <Text style={styles.userPickLabel}>Your Pick: </Text>
+                <Text style={styles.userPickValue}>{userSide}</Text>
+                {userOdds && (
+                  <Text style={styles.userOddsValue}>
+                    {userOdds > 0 ? `+${userOdds}` : userOdds.toString()}
+                  </Text>
+                )}
+              </>
+            )}
+          </View>
+          
+          <View style={styles.participantSection}>
+            <Text style={styles.participantIcon}>👥</Text>
+            <Text style={styles.participantCount}>
+              {participantCount} PLAYERS
+            </Text>
+          </View>
         </View>
       </View>
-
-      {/* User's Pick (if participant) */}
-      {bet.participants?.some(p => p.userId === 'current-user-id') && (
-        <View style={styles.userPickContainer}>
-          <Text style={styles.userPickLabel}>Your Pick:</Text>
-          <Text style={styles.userPickSide}>
-            {/* This would be dynamically determined */}
-            Yes - {oddsUtils.formatAmerican(-110)}
-          </Text>
-        </View>
-      )}
     </TouchableOpacity>
   );
 };
@@ -208,51 +164,60 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     marginBottom: spacing.sm,
   },
-  statusContainer: {
+  headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
   },
-  liveIndicator: {
+  statusIndicator: {
     width: 8,
     height: 8,
     borderRadius: 4,
+    marginRight: spacing.xs,
+  },
+  liveIndicator: {
     backgroundColor: colors.live,
-    marginRight: spacing.xs,
   },
-  statusBadge: {
-    paddingHorizontal: spacing.xs,
-    paddingVertical: 2,
-    borderRadius: spacing.radius.xs,
-    marginRight: spacing.xs,
+  pendingIndicator: {
+    backgroundColor: colors.pending,
   },
-  statusText: {
+  activeIndicator: {
+    backgroundColor: colors.active,
+  },
+  defaultIndicator: {
+    backgroundColor: colors.textMuted,
+  },
+  statusLabel: {
     ...textStyles.status,
-    color: colors.textPrimary,
-    fontSize: 10,
-  },
-  categoryText: {
-    ...textStyles.caption,
     color: colors.textMuted,
+    fontSize: 10,
+    fontWeight: typography.fontWeight.medium,
     textTransform: 'uppercase',
+    letterSpacing: 0.8,
   },
   potContainer: {
     alignItems: 'flex-end',
+    marginLeft: spacing.md,
+  },
+  potAmount: {
+    ...textStyles.balance,
+    color: colors.primary,
+    fontSize: typography.fontSize.lg,
+    fontWeight: typography.fontWeight.bold,
   },
   potLabel: {
     ...textStyles.caption,
     color: colors.textMuted,
     fontSize: 10,
-    marginBottom: 2,
-  },
-  potAmount: {
-    ...textStyles.pot,
-    color: colors.primary,
   },
   
-  // Content
-  content: {
+  // Main Content
+  mainContent: {
+    flexDirection: 'row',
     marginBottom: spacing.sm,
+  },
+  contentLeft: {
+    flex: 1,
   },
   title: {
     ...textStyles.h4,
@@ -265,97 +230,49 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   
-  // Odds
-  oddsContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: spacing.xs,
-    paddingHorizontal: spacing.sm,
-    backgroundColor: colors.background,
-    borderRadius: spacing.radius.sm,
-    marginTop: spacing.xs,
-  },
-  oddsSide: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  sideLabel: {
-    ...textStyles.caption,
-    color: colors.textSecondary,
-    marginBottom: 2,
-    textAlign: 'center',
-  },
-  oddsText: {
-    ...textStyles.odds,
-    fontWeight: typography.fontWeight.bold,
-  },
-  vsText: {
-    ...textStyles.caption,
-    color: colors.textMuted,
-    marginHorizontal: spacing.md,
-    fontWeight: typography.fontWeight.bold,
-  },
-  
   // Footer
   footer: {
+    marginTop: spacing.xs,
+  },
+  footerContent: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    borderTopWidth: 1,
-    borderTopColor: colors.borderSubtle,
-    paddingTop: spacing.xs,
   },
-  footerLeft: {
+  userPickSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
     flex: 1,
   },
-  footerRight: {
-    alignItems: 'flex-end',
+  userPickLabel: {
+    ...textStyles.bodySmall,
+    color: colors.textMuted,
+    fontSize: 12,
   },
-  participantInfo: {
+  userPickValue: {
+    ...textStyles.bodySmall,
+    color: colors.textPrimary,
+    fontWeight: typography.fontWeight.medium,
+    marginRight: spacing.xs,
+  },
+  userOddsValue: {
+    ...textStyles.bodySmall,
+    color: colors.active,
+    fontFamily: typography.fontFamily.mono,
+    fontWeight: typography.fontWeight.bold,
+  },
+  participantSection: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   participantIcon: {
-    fontSize: 12,
-    marginRight: spacing.xs / 2,
+    fontSize: 10,
+    marginRight: 4,
   },
   participantCount: {
     ...textStyles.caption,
     color: colors.textMuted,
-    fontSize: 11,
-  },
-  deadlineContainer: {
-    backgroundColor: colors.surfaceLight,
-    paddingHorizontal: spacing.xs,
-    paddingVertical: 2,
-    borderRadius: spacing.radius.xs,
-  },
-  deadlineLabel: {
-    ...textStyles.caption,
-    color: colors.textSecondary,
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: typography.fontWeight.medium,
-  },
-  
-  // User Pick
-  userPickContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.primary + '20', // 20% opacity
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs / 2,
-    borderRadius: spacing.radius.sm,
-    marginTop: spacing.xs,
-  },
-  userPickLabel: {
-    ...textStyles.caption,
-    color: colors.textSecondary,
-    marginRight: spacing.xs,
-  },
-  userPickSide: {
-    ...textStyles.caption,
-    color: colors.primary,
-    fontWeight: typography.fontWeight.semibold,
   },
 });
