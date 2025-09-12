@@ -9,6 +9,12 @@ export const formatCurrency = (
   currency = 'USD',
   showCents = true
 ): string => {
+  // Fallback for environments without Intl support
+  if (typeof Intl === 'undefined' || !Intl.NumberFormat) {
+    const fixed = showCents ? amount.toFixed(2) : Math.round(amount).toString();
+    return `$${fixed}`;
+  }
+  
   const options: Intl.NumberFormatOptions = {
     style: 'currency',
     currency,
