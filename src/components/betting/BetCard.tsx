@@ -3,7 +3,7 @@
  * Clean bet card matching the exact sportsbook mockup design
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -18,6 +18,7 @@ import type { Schema } from '../../../amplify/data/resource';
 import { colors, typography, spacing, textStyles } from '../../styles';
 import { Bet, BetStatus } from '../../types/betting';
 import { formatCurrency } from '../../utils/formatting';
+import { useAuth } from '../../contexts/AuthContext';
 
 // Initialize GraphQL client
 const client = generateClient<Schema>();
@@ -36,8 +37,30 @@ export const BetCard: React.FC<BetCardProps> = ({
   onJoinBet,
   showJoinOptions = true,
 }) => {
+  const { user } = useAuth();
   const [isJoining, setIsJoining] = useState(false);
   const [selectedSide, setSelectedSide] = useState<'A' | 'B' | null>(null);
+  const [userParticipation, setUserParticipation] = useState<{
+    hasJoined: boolean;
+    side: 'A' | 'B' | null;
+    amount: number;
+  }>({ hasJoined: false, side: null, amount: 0 });
+
+  // Check if current user has joined this bet
+  useEffect(() => {
+    if (user && bet.participants) {
+      const userParticipant = bet.participants.find(p => p.userId === user.userId);
+      if (userParticipant) {
+        setUserParticipation({
+          hasJoined: true,
+          side: userParticipant.side as 'A' | 'B',
+          amount: userParticipant.amount,
+        });
+      } else {
+        setUserParticipation({ hasJoined: false, side: null, amount: 0 });
+      }
+    }
+  }, [user, bet.participants]);
 
   const handlePress = () => {
     onPress?.(bet);
@@ -176,57 +199,70 @@ export const BetCard: React.FC<BetCardProps> = ({
       {/* Betting Options */}
       {showJoinOptions && bet.status === 'ACTIVE' && (
         <View style={styles.bettingOptions}>
-          <TouchableOpacity
-            style={[
-              styles.sideButton,
-              styles.sideButtonA,
-              isJoining && selectedSide === 'A' && styles.sideButtonLoading
-            ]}
-            onPress={() => handleJoinBet('A')}
-            disabled={isJoining}
-            activeOpacity={0.8}
-          >
-            {isJoining && selectedSide === 'A' ? (
-              <ActivityIndicator size="small" color={colors.background} />
-            ) : (
-              <>
-                <Text style={styles.sideName}>
-                  {bet.odds.sideAName || 'Side A'}
-                </Text>
-                <Text style={styles.sideOdds}>
-                  {formatOdds(bet.odds.sideA)}
-                </Text>
-              </>
-            )}
-          </TouchableOpacity>
+          {userParticipation.hasJoined ? (
+            // Show joined status
+            <View style={styles.joinedStatus}>
+              <Text style={styles.joinedText}>
+                ✓ You joined {userParticipation.side === 'A' ? bet.odds.sideAName || 'Side A' : bet.odds.sideBName || 'Side B'}
+                with {formatCurrency(userParticipation.amount)}
+              </Text>
+            </View>
+          ) : (
+            // Show join options
+            <>
+              <TouchableOpacity
+                style={[
+                  styles.sideButton,
+                  styles.sideButtonA,
+                  isJoining && selectedSide === 'A' && styles.sideButtonLoading
+                ]}
+                onPress={() => handleJoinBet('A')}
+                disabled={isJoining}
+                activeOpacity={0.8}
+              >
+                {isJoining && selectedSide === 'A' ? (
+                  <ActivityIndicator size="small" color={colors.background} />
+                ) : (
+                  <>
+                    <Text style={styles.sideName}>
+                      {bet.odds.sideAName || 'Side A'}
+                    </Text>
+                    <Text style={styles.sideOdds}>
+                      {formatOdds(bet.odds.sideA)}
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
 
-          <View style={styles.vsContainer}>
-            <Text style={styles.vsText}>VS</Text>
-          </View>
+              <View style={styles.vsContainer}>
+                <Text style={styles.vsText}>VS</Text>
+              </View>
 
-          <TouchableOpacity
-            style={[
-              styles.sideButton,
-              styles.sideButtonB,
-              isJoining && selectedSide === 'B' && styles.sideButtonLoading
-            ]}
-            onPress={() => handleJoinBet('B')}
-            disabled={isJoining}
-            activeOpacity={0.8}
-          >
-            {isJoining && selectedSide === 'B' ? (
-              <ActivityIndicator size="small" color={colors.background} />
-            ) : (
-              <>
-                <Text style={styles.sideName}>
-                  {bet.odds.sideBName || 'Side B'}
-                </Text>
-                <Text style={styles.sideOdds}>
-                  {formatOdds(bet.odds.sideB)}
-                </Text>
-              </>
-            )}
-          </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.sideButton,
+                  styles.sideButtonB,
+                  isJoining && selectedSide === 'B' && styles.sideButtonLoading
+                ]}
+                onPress={() => handleJoinBet('B')}
+                disabled={isJoining}
+                activeOpacity={0.8}
+              >
+                {isJoining && selectedSide === 'B' ? (
+                  <ActivityIndicator size="small" color={colors.background} />
+                ) : (
+                  <>
+                    <Text style={styles.sideName}>
+                      {bet.odds.sideBName || 'Side B'}
+                    </Text>
+                    <Text style={styles.sideOdds}>
+                      {formatOdds(bet.odds.sideB)}
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </>
+          )}
         </View>
       )}
 

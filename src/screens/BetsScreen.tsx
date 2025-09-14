@@ -194,12 +194,32 @@ export const BetsScreen: React.FC = () => {
         });
 
         if (betsData) {
-          // Transform Amplify data to our Bet type
-          const transformedBets: Bet[] = betsData
-            .map(transformAmplifyBet)
-            .filter((bet): bet is Bet => bet !== null);
+          // Fetch participants for each bet
+          const betsWithParticipants = await Promise.all(
+            betsData.map(async (bet) => {
+              const { data: participants } = await client.models.Participant.list({
+                filter: { betId: { eq: bet.id } }
+              });
 
-          setBets(transformedBets);
+              const transformedBet = transformAmplifyBet(bet);
+              if (transformedBet && participants) {
+                transformedBet.participants = participants.map(p => ({
+                  id: p.id,
+                  betId: p.betId,
+                  userId: p.userId,
+                  side: p.side,
+                  amount: p.amount,
+                  status: p.status as 'PENDING' | 'ACCEPTED' | 'DECLINED',
+                  payout: p.payout || 0,
+                  joinedAt: p.joinedAt || new Date().toISOString(),
+                }));
+              }
+              return transformedBet;
+            })
+          );
+
+          const validBets = betsWithParticipants.filter((bet): bet is Bet => bet !== null);
+          setBets(validBets);
         }
       } catch (error) {
         console.error('Error fetching bets:', error);
@@ -220,15 +240,35 @@ export const BetsScreen: React.FC = () => {
         ]
       }
     }).subscribe({
-      next: (data) => {
+      next: async (data) => {
         console.log('Real-time bet update:', data);
 
-        // Transform real-time data
-        const transformedBets: Bet[] = data.items
-          .map(transformAmplifyBet)
-          .filter((bet): bet is Bet => bet !== null);
+        // Fetch participants for real-time updates
+        const betsWithParticipants = await Promise.all(
+          data.items.map(async (bet) => {
+            const { data: participants } = await client.models.Participant.list({
+              filter: { betId: { eq: bet.id } }
+            });
 
-        setBets(transformedBets);
+            const transformedBet = transformAmplifyBet(bet);
+            if (transformedBet && participants) {
+              transformedBet.participants = participants.map(p => ({
+                id: p.id,
+                betId: p.betId,
+                userId: p.userId,
+                side: p.side,
+                amount: p.amount,
+                status: p.status as 'PENDING' | 'ACCEPTED' | 'DECLINED',
+                payout: p.payout || 0,
+                joinedAt: p.joinedAt || new Date().toISOString(),
+              }));
+            }
+            return transformedBet;
+          })
+        );
+
+        const validBets = betsWithParticipants.filter((bet): bet is Bet => bet !== null);
+        setBets(validBets);
       },
       error: (error) => {
         console.error('Real-time subscription error:', error);

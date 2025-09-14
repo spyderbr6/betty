@@ -151,10 +151,6 @@ export const Header: React.FC<HeaderProps> = ({
               </View>
               
               <View style={styles.liveBannerCenter}>
-                <Text style={styles.liveBannerScore}>
-                  {liveGame.homeTeam} {liveGame.homeScore} - {liveGame.awayScore} {liveGame.awayTeam}
-                </Text>
-                <Text style={styles.liveBannerTime}>{liveGame.quarter} {liveGame.timeLeft}</Text>
               </View>
               
               <View style={styles.liveBannerRight}>
