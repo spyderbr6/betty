@@ -142,6 +142,8 @@ export const commonStyles = {
     borderColor: colors.border,
     color: colors.textPrimary,
     fontSize: typography.fontSize.base,
+    textAlignVertical: 'center',
+    includeFontPadding: false,
   },
   
   // Navigation styles

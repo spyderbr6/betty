@@ -458,6 +458,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     color: colors.textPrimary,
     fontSize: typography.fontSize.base,
+    textAlignVertical: 'center',
   },
   textAreaInput: {
     height: 80,
@@ -539,6 +540,7 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     textAlign: 'center',
     marginBottom: spacing.xs,
+    textAlignVertical: 'center',
   },
   oddsInput: {
     backgroundColor: colors.background,
@@ -550,6 +552,7 @@ const styles = StyleSheet.create({
     color: colors.primary,
     textAlign: 'center',
     fontWeight: typography.fontWeight.bold,
+    textAlignVertical: 'center',
   },
   vsContainer: {
     width: 40,

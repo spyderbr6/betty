@@ -136,6 +136,7 @@ export const textStyles = {
     fontFamily: typography.fontFamily.regular,
     lineHeight: lh(typography.fontSize.xs, typography.lineHeight.snug),
     letterSpacing: typography.letterSpacing.wide,
+    includeFontPadding: false, // Android-only: tighten small text
   },
   label: {
     fontSize: typography.fontSize.sm,
@@ -143,6 +144,7 @@ export const textStyles = {
     fontFamily: typography.fontFamily.regular,
     lineHeight: lh(typography.fontSize.sm, typography.lineHeight.snug),
     letterSpacing: typography.letterSpacing.wide,
+    includeFontPadding: false,
   },
   
   // Betting-specific text styles
@@ -179,6 +181,7 @@ export const textStyles = {
     lineHeight: lh(typography.fontSize.xs, typography.lineHeight.tight),
     letterSpacing: typography.letterSpacing.widest,
     textTransform: 'uppercase' as const,
+    includeFontPadding: false,
   },
   
   // Buttons
@@ -193,6 +196,7 @@ export const textStyles = {
     fontWeight: typography.fontWeight.semibold,
     fontFamily: typography.fontFamily.regular,
     lineHeight: lh(typography.fontSize.sm, typography.lineHeight.tight),
+    includeFontPadding: false,
   },
   buttonLarge: {
     fontSize: typography.fontSize.lg,
@@ -207,6 +211,7 @@ export const textStyles = {
     fontWeight: typography.fontWeight.medium,
     fontFamily: typography.fontFamily.regular,
     lineHeight: lh(typography.fontSize.xs, typography.lineHeight.tight),
+    includeFontPadding: false,
   },
   
   // Special displays

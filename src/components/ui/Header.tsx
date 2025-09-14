@@ -316,7 +316,8 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontSize: 10,
     fontWeight: typography.fontWeight.bold,
-    lineHeight: typography.lineHeight.tight * 10,
+    lineHeight: 12,
+    includeFontPadding: false,
   },
   
   // Live banner
@@ -415,6 +416,7 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.sm,
     color: colors.textPrimary,
     fontFamily: typography.fontFamily.regular,
+    textAlignVertical: 'center',
   },
   filterButton: {
     flexDirection: 'row',
