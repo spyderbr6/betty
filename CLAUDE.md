@@ -141,11 +141,13 @@ marginBottom: spacing.sm,
 #### ❌ NEVER DO:
 ```typescript
 // Hardcoded values
-fontSize: 16,
-color: '#333333',
-marginBottom: 2,
-fontWeight: '600',
-fontFamily: 'System',
+fontSize: 16,                    // Use typography.fontSize.base
+color: '#333333',               // Use colors.textPrimary
+marginBottom: 2,                // Use spacing.xs
+fontWeight: '600',              // Use typography.fontWeight.semibold
+fontFamily: 'System',           // Use typography.fontFamily.regular
+gap: spacing.sm,                // NOT supported in React Native
+paddingVertical: 2,             // Use spacing.xs/2 or similar
 ```
 
 #### Component Development Pattern:
@@ -165,7 +167,10 @@ const styles = StyleSheet.create({
 
 ### Platform Consistency Guidelines
 - **Typography**: Use `textStyles.*` patterns for consistent font rendering across iOS/Android
+- **Android Typography**: Add `includeFontPadding: false` to small text styles for tighter rendering
 - **Spacing**: Use `spacing.*` scale to ensure proper touch targets and visual hierarchy
+- **Layout**: NEVER use `gap` property - use margins on child elements instead
+- **Text Inputs**: Always include `textAlignVertical: 'center'` for Android alignment
 - **Colors**: Use semantic color names (`colors.textPrimary`) not hex values for theme consistency
 - **Shadows**: Use `shadows.*` patterns for proper elevation on both platforms
 
