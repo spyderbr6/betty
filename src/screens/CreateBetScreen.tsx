@@ -44,7 +44,7 @@ export const CreateBetScreen: React.FC = () => {
   const [betAmount, setBetAmount] = useState('1');
   const [deadline, setDeadline] = useState('30');
   const [isPrivate, setIsPrivate] = useState(false);
-  const [selectedCategory, setSelectedCategory] = useState('SPORTS');
+  const [selectedCategory, setSelectedCategory] = useState('CUSTOM'); // Default to CUSTOM, set by templates
   const [sideAName, setSideAName] = useState('Yes');
   const [sideBName, setSideBName] = useState('No');
   const [isCreating, setIsCreating] = useState(false);
@@ -117,8 +117,6 @@ export const CreateBetScreen: React.FC = () => {
       sides: { sideAName: 'Side A', sideBName: 'Side B' },
     },
   ];
-
-  const categories = ['SPORTS', 'ENTERTAINMENT', 'WEATHER', 'CUSTOM'];
 
   const handleTemplateSelect = (template: BetTemplate) => {
     setSelectedTemplate(template.id);
@@ -218,6 +216,7 @@ export const CreateBetScreen: React.FC = () => {
     setBetAmount('');
     setDeadline('30');
     setIsPrivate(false);
+    setSelectedCategory('CUSTOM');
     setSideAName('Yes');
     setSideBName('No');
   };
@@ -330,29 +329,6 @@ export const CreateBetScreen: React.FC = () => {
           </View>
         </View>
 
-        {/* Category Selection */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>CATEGORY</Text>
-          <View style={styles.categoryGrid}>
-            {categories.map((category) => (
-              <TouchableOpacity
-                key={category}
-                style={[
-                  styles.categoryButton,
-                  selectedCategory === category && styles.categoryButtonSelected
-                ]}
-                onPress={() => setSelectedCategory(category)}
-              >
-                <Text style={[
-                  styles.categoryButtonText,
-                  selectedCategory === category && styles.categoryButtonTextSelected
-                ]}>
-                  {category}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
 
         {/* Betting Sides */}
         <View style={styles.section}>
@@ -544,38 +520,6 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
   },
 
-  // Categories
-  categoryGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    // gap is not supported on native; use margins on buttons
-  },
-  categoryButton: {
-    flex: 1,
-    minWidth: '45%',
-    backgroundColor: colors.surface,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    borderRadius: spacing.radius.sm,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: colors.border,
-    marginRight: spacing.sm,
-    marginBottom: spacing.sm,
-  },
-  categoryButtonSelected: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  categoryButtonText: {
-    ...textStyles.button,
-    color: colors.textSecondary,
-    fontSize: 12,
-    fontWeight: typography.fontWeight.medium,
-  },
-  categoryButtonTextSelected: {
-    color: colors.background,
-  },
 
   // Switch
   switchContainer: {

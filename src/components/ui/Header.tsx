@@ -23,6 +23,7 @@ interface HeaderProps {
   showBalance?: boolean;
   onBalancePress?: () => void;
   onNotificationsPress?: () => void;
+  onMenuPress?: () => void;
   rightComponent?: React.ReactNode;
   variant?: 'default' | 'transparent' | 'minimal';
   notificationCount?: number;
@@ -40,6 +41,7 @@ export const Header: React.FC<HeaderProps> = ({
   showBalance = true,
   onBalancePress,
   onNotificationsPress,
+  onMenuPress,
   rightComponent,
   variant = 'default',
   notificationCount = 0,
@@ -112,12 +114,13 @@ export const Header: React.FC<HeaderProps> = ({
 
             <TouchableOpacity
               style={styles.actionButton}
+              onPress={onMenuPress}
               activeOpacity={0.7}
             >
-              <Ionicons 
-                name="ellipsis-horizontal" 
-                size={18} 
-                color={colors.textSecondary} 
+              <Ionicons
+                name="ellipsis-horizontal"
+                size={18}
+                color={colors.textSecondary}
               />
             </TouchableOpacity>
 

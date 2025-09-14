@@ -128,8 +128,8 @@ src/
 
 ### 4. Small enhancements
 
-- when creating bets, what purpose does category serve?
-- given we wont have real odds, should we even be doing anything with that? that can likely be removed as well
+- remove the category selector from bet creation. the bet type is a better cleaner way and categories are duplicative in the ui
+- wire up the elipsis in the header to capture plaintext that pushes to to my github issue repo
 
 ### 5. Friend and Friend Management
   - work with each other on the scope
