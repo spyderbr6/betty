@@ -13,8 +13,12 @@ import {
   TouchableOpacity,
   Switch,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { generateClient } from 'aws-amplify/data';
+import { getCurrentUser } from 'aws-amplify/auth';
+import type { Schema } from '../../amplify/data/resource';
 import { colors, commonStyles, textStyles, spacing, typography } from '../styles';
 import { Header } from '../components/ui/Header';
 
@@ -26,6 +30,9 @@ interface BetTemplate {
   icon: string;
   odds: { sideA: number; sideB: number; sideAName: string; sideBName: string; };
 }
+
+// Initialize GraphQL client
+const client = generateClient<Schema>();
 
 export const CreateBetScreen: React.FC = () => {
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
@@ -40,6 +47,7 @@ export const CreateBetScreen: React.FC = () => {
   const [oddsB, setOddsB] = useState('+110');
   const [sideAName, setSideAName] = useState('Yes');
   const [sideBName, setSideBName] = useState('No');
+  const [isCreating, setIsCreating] = useState(false);
 
   const betTemplates: BetTemplate[] = [
     {
@@ -105,20 +113,75 @@ export const CreateBetScreen: React.FC = () => {
     setSideBName(template.odds.sideBName);
   };
 
-  const handleCreateBet = () => {
+  const handleCreateBet = async () => {
     if (!betTitle.trim() || !betDescription.trim() || !betAmount.trim()) {
       Alert.alert('Missing Information', 'Please fill in all required fields.');
       return;
     }
 
-    // Mock bet creation
-    Alert.alert(
-      'Bet Created!',
-      `Your bet "${betTitle}" has been created successfully.`,
-      [{ text: 'OK' }]
-    );
+    const amount = parseFloat(betAmount);
+    if (isNaN(amount) || amount <= 0) {
+      Alert.alert('Invalid Amount', 'Please enter a valid bet amount.');
+      return;
+    }
 
-    // Reset form
+    const deadlineMinutes = parseInt(deadline);
+    if (isNaN(deadlineMinutes) || deadlineMinutes <= 0) {
+      Alert.alert('Invalid Deadline', 'Please enter a valid deadline in minutes.');
+      return;
+    }
+
+    setIsCreating(true);
+
+    try {
+      // Get current user
+      const user = await getCurrentUser();
+
+      // Calculate deadline timestamp
+      const deadlineDate = new Date(Date.now() + deadlineMinutes * 60 * 1000);
+
+      // Prepare odds object
+      const oddsObject = {
+        sideA: customOdds ? parseInt(oddsA) : -110,
+        sideB: customOdds ? parseInt(oddsB) : 110,
+        sideAName: sideAName.trim(),
+        sideBName: sideBName.trim(),
+      };
+
+      // Create bet via GraphQL API
+      const result = await client.models.Bet.create({
+        title: betTitle.trim(),
+        description: betDescription.trim(),
+        category: selectedCategory as Schema['Bet']['type']['category'],
+        status: 'ACTIVE',
+        creatorId: user.userId,
+        totalPot: amount,
+        odds: oddsObject,
+        deadline: deadlineDate.toISOString(),
+      });
+
+      if (result.data) {
+        Alert.alert(
+          'Bet Created!',
+          `Your bet "${betTitle}" has been created successfully and is now live.`,
+          [{ text: 'OK', onPress: resetForm }]
+        );
+      } else {
+        throw new Error('Failed to create bet');
+      }
+    } catch (error) {
+      console.error('Error creating bet:', error);
+      Alert.alert(
+        'Error',
+        'Failed to create bet. Please try again.',
+        [{ text: 'OK' }]
+      );
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
+  const resetForm = () => {
     setSelectedTemplate(null);
     setBetTitle('');
     setBetDescription('');
@@ -126,6 +189,10 @@ export const CreateBetScreen: React.FC = () => {
     setDeadline('30');
     setIsPrivate(false);
     setCustomOdds(false);
+    setOddsA('-110');
+    setOddsB('+110');
+    setSideAName('Yes');
+    setSideBName('No');
   };
 
   const handleBalancePress = () => {
@@ -346,8 +413,25 @@ export const CreateBetScreen: React.FC = () => {
 
         {/* Create Button */}
         <View style={styles.createButtonContainer}>
-          <TouchableOpacity style={styles.createButton} onPress={handleCreateBet}>
-            <Text style={styles.createButtonText}>CREATE BET</Text>
+          <TouchableOpacity
+            style={[
+              styles.createButton,
+              isCreating && styles.createButtonDisabled
+            ]}
+            onPress={handleCreateBet}
+            disabled={isCreating}
+            activeOpacity={isCreating ? 1 : 0.7}
+          >
+            {isCreating ? (
+              <View style={styles.createButtonContent}>
+                <ActivityIndicator size="small" color={colors.background} />
+                <Text style={[styles.createButtonText, { marginLeft: spacing.sm }]}>
+                  CREATING...
+                </Text>
+              </View>
+            ) : (
+              <Text style={styles.createButtonText}>CREATE BET</Text>
+            )}
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -592,6 +676,14 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     borderRadius: spacing.radius.md,
     paddingVertical: spacing.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  createButtonDisabled: {
+    backgroundColor: colors.textMuted,
+  },
+  createButtonContent: {
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
   },
