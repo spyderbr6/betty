@@ -138,7 +138,6 @@ export const LiveEventsScreen: React.FC = () => {
   const { user } = useAuth();
   const [liveBets, setLiveBets] = useState<Bet[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [selectedQuickBet, setSelectedQuickBet] = useState<string>('props');
 
   useEffect(() => {
     if (!user) return;
@@ -307,23 +306,12 @@ export const LiveEventsScreen: React.FC = () => {
     liveBetsCount: liveBets.length,
   };
 
-  // Get real balance from auth context
-  const currentUser = {
-    balance: user?.balance || 0,
-  };
 
-  const quickBetCategories = [
-    { id: 'props', label: 'PROPS', count: 12 },
-    { id: 'period', label: 'PERIOD', count: 8 },
-    { id: 'player', label: 'PLAYER', count: 15 },
-    { id: 'team', label: 'TEAM', count: 6 },
-  ];
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <Header
         showBalance={true}
-        balance={currentUser.balance}
         onBalancePress={handleBalancePress}
         onNotificationsPress={handleNotificationsPress}
         notificationCount={3}
@@ -332,35 +320,6 @@ export const LiveEventsScreen: React.FC = () => {
       />
       
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Quick Bet Categories */}
-        <View style={styles.quickBetCategories}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {quickBetCategories.map((category) => (
-              <TouchableOpacity
-                key={category.id}
-                style={[
-                  styles.categoryButton,
-                  selectedQuickBet === category.id && styles.categoryButtonActive
-                ]}
-                onPress={() => setSelectedQuickBet(category.id)}
-              >
-                <Text style={[
-                  styles.categoryButtonText,
-                  selectedQuickBet === category.id && styles.categoryButtonTextActive
-                ]}>
-                  {category.label}
-                </Text>
-                <Text style={[
-                  styles.categoryButtonCount,
-                  selectedQuickBet === category.id && styles.categoryButtonCountActive
-                ]}>
-                  {category.count}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
-
         {/* Joinable Bets Section */}
         <View style={styles.liveBetsSection}>
           <View style={styles.sectionHeader}>
@@ -457,53 +416,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   
-  // Quick Bet Categories
-  quickBetCategories: {
-    paddingVertical: spacing.sm,
-    backgroundColor: colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  categoryButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.background,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderRadius: spacing.radius.sm,
-    marginLeft: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  categoryButtonActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  categoryButtonText: {
-    ...textStyles.caption,
-    color: colors.textSecondary,
-    fontSize: 12,
-    fontWeight: typography.fontWeight.medium,
-  },
-  categoryButtonTextActive: {
-    color: colors.background,
-  },
-  categoryButtonCount: {
-    ...textStyles.caption,
-    color: colors.textMuted,
-    fontSize: 10,
-    marginLeft: spacing.xs,
-    backgroundColor: colors.surface,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 8,
-    minWidth: 20,
-    textAlign: 'center',
-  },
-  categoryButtonCountActive: {
-    color: colors.primary,
-    backgroundColor: colors.background,
-  },
   
   // Sections
   liveBetsSection: {

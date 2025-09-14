@@ -131,7 +131,7 @@ src/
 - implement status filters on the my bets page
 - resolution management should be by vote for all the participants as we have no real way to verify the winner. we need a way to deal with using the user trust metric here as well as updating the trust metric based on the result of the finalized voting.
 - the user balance needs to be like a standalone component that each screen is calling or move it into the header directly so we can ensure its always up to date. 
-- 
+- the live event banner should also be a standalone component being added directly or added into the header 
 
 ### 5. Friend and Friend Management
   - work with each other on the scope

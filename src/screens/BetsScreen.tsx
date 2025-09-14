@@ -182,6 +182,7 @@ export const BetsScreen: React.FC = () => {
   const [bets, setBets] = useState<Bet[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedFilter, setSelectedFilter] = useState<'ALL' | 'ACTIVE' | 'LIVE' | 'PENDING_RESOLUTION' | 'RESOLVED'>('ALL');
 
   useEffect(() => {
     // Fetch initial bet data and set up real-time subscriptions
@@ -401,19 +402,54 @@ export const BetsScreen: React.FC = () => {
   };
 
   // Filter for user's specific bets (created by user OR user is participant)
-  const activeBets = bets.filter(bet => {
+  const filteredBets = bets.filter(bet => {
     const isCreator = bet.creatorId === user?.userId;
     const isParticipant = bet.participants?.some(p => p.userId === user?.userId);
-    const isActive = ['ACTIVE', 'LIVE', 'PENDING_RESOLUTION'].includes(bet.status);
 
-    return isActive && (isCreator || isParticipant);
+    // First filter by user involvement
+    if (!(isCreator || isParticipant)) return false;
+
+    // Then filter by status
+    if (selectedFilter === 'ALL') {
+      return ['ACTIVE', 'LIVE', 'PENDING_RESOLUTION', 'RESOLVED'].includes(bet.status);
+    }
+
+    return bet.status === selectedFilter;
   });
+
+  // Status filter options
+  const statusFilters = [
+    { id: 'ALL', label: 'All', count: bets.filter(bet => {
+      const isCreator = bet.creatorId === user?.userId;
+      const isParticipant = bet.participants?.some(p => p.userId === user?.userId);
+      return (isCreator || isParticipant) && ['ACTIVE', 'LIVE', 'PENDING_RESOLUTION', 'RESOLVED'].includes(bet.status);
+    }).length },
+    { id: 'ACTIVE', label: 'Active', count: bets.filter(bet => {
+      const isCreator = bet.creatorId === user?.userId;
+      const isParticipant = bet.participants?.some(p => p.userId === user?.userId);
+      return (isCreator || isParticipant) && bet.status === 'ACTIVE';
+    }).length },
+    { id: 'LIVE', label: 'Live', count: bets.filter(bet => {
+      const isCreator = bet.creatorId === user?.userId;
+      const isParticipant = bet.participants?.some(p => p.userId === user?.userId);
+      return (isCreator || isParticipant) && bet.status === 'LIVE';
+    }).length },
+    { id: 'PENDING_RESOLUTION', label: 'Pending', count: bets.filter(bet => {
+      const isCreator = bet.creatorId === user?.userId;
+      const isParticipant = bet.participants?.some(p => p.userId === user?.userId);
+      return (isCreator || isParticipant) && bet.status === 'PENDING_RESOLUTION';
+    }).length },
+    { id: 'RESOLVED', label: 'Resolved', count: bets.filter(bet => {
+      const isCreator = bet.creatorId === user?.userId;
+      const isParticipant = bet.participants?.some(p => p.userId === user?.userId);
+      return (isCreator || isParticipant) && bet.status === 'RESOLVED';
+    }).length },
+  ];
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <Header
         showBalance={true}
-        balance={userStats.balance}
         onBalancePress={handleBalancePress}
         onNotificationsPress={handleNotificationsPress}
         notificationCount={2}
@@ -425,7 +461,43 @@ export const BetsScreen: React.FC = () => {
       />
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Active Bets Section */}
+        {/* Status Filters */}
+        <View style={styles.filtersContainer}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filtersScrollView}>
+            {statusFilters.map((filter) => (
+              <TouchableOpacity
+                key={filter.id}
+                style={[
+                  styles.filterButton,
+                  selectedFilter === filter.id && styles.filterButtonActive
+                ]}
+                onPress={() => setSelectedFilter(filter.id as any)}
+              >
+                <Text style={[
+                  styles.filterButtonText,
+                  selectedFilter === filter.id && styles.filterButtonTextActive
+                ]}>
+                  {filter.label}
+                </Text>
+                {filter.count > 0 && (
+                  <View style={[
+                    styles.filterBadge,
+                    selectedFilter === filter.id && styles.filterBadgeActive
+                  ]}>
+                    <Text style={[
+                      styles.filterBadgeText,
+                      selectedFilter === filter.id && styles.filterBadgeTextActive
+                    ]}>
+                      {filter.count}
+                    </Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+
+        {/* My Bets Section */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>MY BETS</Text>
           <TouchableOpacity
@@ -443,21 +515,24 @@ export const BetsScreen: React.FC = () => {
             <ActivityIndicator size="large" color={colors.primary} />
             <Text style={styles.loadingText}>Loading bets...</Text>
           </View>
-        ) : activeBets.length > 0 ? (
-          activeBets.map((bet) => (
+        ) : filteredBets.length > 0 ? (
+          filteredBets.map((bet) => (
             <BetCard
               key={bet.id}
               bet={bet}
               onPress={handleBetPress}
               onJoinBet={handleJoinBet}
-              showJoinOptions={true}
+              showJoinOptions={bet.status === 'ACTIVE'}
             />
           ))
         ) : (
           <View style={styles.emptyContainer}>
-            <Text style={styles.emptyTitle}>No My Bets</Text>
+            <Text style={styles.emptyTitle}>No {selectedFilter === 'ALL' ? 'My' : selectedFilter.toLowerCase()} Bets</Text>
             <Text style={styles.emptyDescription}>
-              You haven't created or joined any active bets yet. Tap "Create" to get started!
+              {selectedFilter === 'ALL'
+                ? "You haven't created or joined any bets yet. Tap 'Create' to get started!"
+                : `You don't have any ${selectedFilter.toLowerCase()} bets at the moment.`
+              }
             </Text>
           </View>
         )}
@@ -466,8 +541,8 @@ export const BetsScreen: React.FC = () => {
         <View style={styles.bottomStatsContainer}>
           <View style={styles.statsRow}>
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>{activeBets.length}</Text>
-              <Text style={styles.statLabel}>bets</Text>
+              <Text style={styles.statValue}>{filteredBets.length}</Text>
+              <Text style={styles.statLabel}>BETS</Text>
             </View>
 
             <View style={styles.statItem}>
@@ -497,6 +572,64 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+  },
+
+  // Status Filters
+  filtersContainer: {
+    backgroundColor: colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    paddingVertical: spacing.sm,
+  },
+  filtersScrollView: {
+    paddingHorizontal: spacing.md,
+  },
+  filterButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.background,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: spacing.radius.sm,
+    marginRight: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    minHeight: 36,
+  },
+  filterButtonActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  filterButtonText: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    fontSize: typography.fontSize.sm,
+    fontWeight: typography.fontWeight.medium,
+  },
+  filterButtonTextActive: {
+    color: colors.background,
+  },
+  filterBadge: {
+    backgroundColor: colors.surface,
+    borderRadius: spacing.radius.xs,
+    paddingHorizontal: spacing.xs,
+    paddingVertical: 2,
+    marginLeft: spacing.xs,
+    minWidth: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filterBadgeActive: {
+    backgroundColor: colors.background,
+  },
+  filterBadgeText: {
+    ...textStyles.caption,
+    color: colors.textMuted,
+    fontSize: 10,
+    fontWeight: typography.fontWeight.bold,
+  },
+  filterBadgeTextActive: {
+    color: colors.primary,
   },
   
   // Section Header

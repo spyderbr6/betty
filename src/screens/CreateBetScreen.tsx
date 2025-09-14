@@ -245,7 +245,6 @@ export const CreateBetScreen: React.FC = () => {
       <Header
         title="Create Bet"
         showBalance={true}
-        balance={userBalance}
         onBalancePress={handleBalancePress}
         onNotificationsPress={handleNotificationsPress}
         variant="default"

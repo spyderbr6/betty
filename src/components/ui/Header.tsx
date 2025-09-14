@@ -15,28 +15,19 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, typography, spacing, textStyles, shadows } from '../../styles';
-import { formatCurrency } from '../../utils/formatting';
+import { UserBalance } from './UserBalance';
+import { LiveGameBanner, LiveGameData } from './LiveGameBanner';
 
 interface HeaderProps {
   title?: string;
   showBalance?: boolean;
-  balance?: number;
   onBalancePress?: () => void;
   onNotificationsPress?: () => void;
   rightComponent?: React.ReactNode;
   variant?: 'default' | 'transparent' | 'minimal';
   notificationCount?: number;
   // Live game data
-  liveGame?: {
-    homeTeam: string;
-    awayTeam: string;
-    homeScore: number;
-    awayScore: number;
-    quarter: string;
-    timeLeft: string;
-    venue: string;
-    liveBetsCount: number;
-  };
+  liveGame?: LiveGameData;
   // Search and filter
   onSearchChange?: (query: string) => void;
   searchQuery?: string;
@@ -47,7 +38,6 @@ interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({
   title,
   showBalance = true,
-  balance = 1245.75,
   onBalancePress,
   onNotificationsPress,
   rightComponent,
@@ -94,16 +84,11 @@ export const Header: React.FC<HeaderProps> = ({
           {/* Right Section - Balance & Actions */}
           <View style={styles.rightSection}>
             {showBalance && (
-              <TouchableOpacity
-                style={styles.balanceContainer}
+              <UserBalance
                 onPress={onBalancePress}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.balanceLabel}>BALANCE</Text>
-                <Text style={styles.balanceAmount}>
-                  {formatCurrency(balance, 'USD', true)}
-                </Text>
-              </TouchableOpacity>
+                variant="header"
+                showLabel={true}
+              />
             )}
 
             <TouchableOpacity
@@ -142,24 +127,12 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Live Game Banner */}
         {liveGame && (
-          <TouchableOpacity style={styles.liveBanner} activeOpacity={0.9}>
-            <View style={styles.liveBannerContent}>
-              <View style={styles.liveBannerLeft}>
-                <View style={styles.liveIndicator} />
-                <Text style={styles.liveBannerText}>LIVE</Text>
-                <Text style={styles.liveBannerVenue}>{liveGame.venue}</Text>
-              </View>
-              
-              <View style={styles.liveBannerCenter}>
-              </View>
-              
-              <View style={styles.liveBannerRight}>
-                <Text style={styles.liveBannerBetsText}>
-                  {liveGame.liveBetsCount} LIVE BETS
-                </Text>
-              </View>
-            </View>
-          </TouchableOpacity>
+          <LiveGameBanner
+            liveGame={liveGame}
+            variant="default"
+            showBetsCount={true}
+            showVenue={true}
+          />
         )}
         
         {/* Search and Filter Bar */}
@@ -316,74 +289,6 @@ const styles = StyleSheet.create({
     includeFontPadding: false,
   },
   
-  // Live banner
-  liveBanner: {
-    backgroundColor: colors.live,
-    marginHorizontal: spacing.md,
-    marginTop: spacing.sm,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: spacing.radius.sm,
-    borderWidth: 1,
-    borderColor: '#DC2626',
-  },
-  liveBannerContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  liveBannerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  liveIndicator: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: colors.textPrimary,
-    marginRight: spacing.xs,
-  },
-  liveBannerText: {
-    ...textStyles.status,
-    color: colors.textPrimary,
-    fontWeight: typography.fontWeight.bold,
-    marginRight: spacing.sm,
-  },
-  liveBannerVenue: {
-    ...textStyles.bodySmall,
-    color: colors.textPrimary,
-    fontSize: 14,
-  },
-  liveBannerCenter: {
-    alignItems: 'center',
-    flex: 1,
-    marginHorizontal: spacing.sm,
-  },
-  liveBannerScore: {
-    ...textStyles.button,
-    color: colors.textPrimary,
-    fontWeight: typography.fontWeight.bold,
-    fontSize: 20,
-    fontFamily: typography.fontFamily.mono,
-  },
-  liveBannerTime: {
-    ...textStyles.caption,
-    color: colors.textPrimary,
-    fontSize: 11,
-    fontFamily: typography.fontFamily.mono,
-  },
-  liveBannerRight: {
-    alignItems: 'flex-end',
-  },
-  liveBannerBetsText: {
-    ...textStyles.status,
-    color: colors.textPrimary,
-    fontSize: 10,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    paddingHorizontal: spacing.xs,
-    paddingVertical: 2,
-    borderRadius: spacing.radius.xs,
-  },
   
   // Search and filter
   searchContainer: {
