@@ -69,8 +69,8 @@ export const BetCard: React.FC<BetCardProps> = ({
   const handleJoinBet = async (side: 'A' | 'B') => {
     if (isJoining) return;
 
-    // For MVP, use a fixed amount of $10. In production, this would be user input
-    const betAmount = 10;
+    // Use the bet's own amount - dollar bets are a dollar, fallback to $10 for legacy bets
+    const betAmount = bet.betAmount || 10;
 
     Alert.alert(
       'Join Bet',
@@ -107,6 +107,13 @@ export const BetCard: React.FC<BetCardProps> = ({
 
         // Call optional callback
         onJoinBet?.(bet.id, side, amount);
+
+        // Update local participation state immediately
+        setUserParticipation({
+          hasJoined: true,
+          side: side,
+          amount: amount,
+        });
       } else {
         throw new Error('Failed to join bet');
       }
@@ -387,6 +394,26 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 10,
     fontWeight: typography.fontWeight.bold,
+  },
+
+  // Joined Status
+  joinedStatus: {
+    flex: 1,
+    backgroundColor: colors.success + '20',
+    borderRadius: spacing.radius.sm,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.success,
+  },
+  joinedText: {
+    ...textStyles.bodySmall,
+    color: colors.success,
+    fontSize: typography.fontSize.sm,
+    fontWeight: typography.fontWeight.medium,
+    textAlign: 'center',
   },
 
   // Bottom Section

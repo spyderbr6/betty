@@ -25,6 +25,7 @@ export interface Bet {
   creatorId: string;
   creator?: User;
   totalPot: number;
+  betAmount?: number;
   odds: BetOdds;
   deadline: string;
   winningSide?: string;

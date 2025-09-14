@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { generateClient } from 'aws-amplify/data';
@@ -18,6 +19,7 @@ import { commonStyles, colors, spacing, typography, textStyles } from '../styles
 import { Header } from '../components/ui/Header';
 import { BetCard } from '../components/betting/BetCard';
 import { Bet } from '../types/betting';
+import { useAuth } from '../contexts/AuthContext';
 
 // Initialize GraphQL client
 const client = generateClient<Schema>();
@@ -37,6 +39,7 @@ const transformAmplifyBet = (bet: any): Bet | null => {
     status: bet.status,
     creatorId: bet.creatorId || '',
     totalPot: bet.totalPot || 0,
+    betAmount: bet.betAmount || bet.totalPot || 0, // Fallback to totalPot for existing bets
     odds: typeof bet.odds === 'object' && bet.odds ? bet.odds : { sideA: -110, sideB: 110 },
     deadline: bet.deadline || new Date().toISOString(),
     winningSide: bet.winningSide || undefined,
@@ -57,6 +60,7 @@ const mockBets: Bet[] = [
     status: 'LIVE',
     creatorId: 'user1',
     totalPot: 50,
+    betAmount: 25,
     odds: {
       sideA: -110,
       sideB: +150,
@@ -97,6 +101,7 @@ const mockBets: Bet[] = [
     status: 'PENDING_RESOLUTION',
     creatorId: 'user2',
     totalPot: 50,
+    betAmount: 25,
     odds: {
       sideA: -105,
       sideB: +125,
@@ -137,6 +142,7 @@ const mockBets: Bet[] = [
     status: 'ACTIVE',
     creatorId: 'user3',
     totalPot: 200,
+    betAmount: 100,
     odds: {
       sideA: +125,
       sideB: -145,
@@ -172,6 +178,7 @@ const mockBets: Bet[] = [
 ];
 
 export const BetsScreen: React.FC = () => {
+  const { user } = useAuth();
   const [bets, setBets] = useState<Bet[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -198,21 +205,23 @@ export const BetsScreen: React.FC = () => {
           const betsWithParticipants = await Promise.all(
             betsData.map(async (bet) => {
               const { data: participants } = await client.models.Participant.list({
-                filter: { betId: { eq: bet.id } }
+                filter: { betId: { eq: bet.id! } }
               });
 
               const transformedBet = transformAmplifyBet(bet);
               if (transformedBet && participants) {
-                transformedBet.participants = participants.map(p => ({
-                  id: p.id,
-                  betId: p.betId,
-                  userId: p.userId,
-                  side: p.side,
-                  amount: p.amount,
-                  status: p.status as 'PENDING' | 'ACCEPTED' | 'DECLINED',
-                  payout: p.payout || 0,
-                  joinedAt: p.joinedAt || new Date().toISOString(),
-                }));
+                transformedBet.participants = participants
+                  .filter(p => p.id && p.betId && p.userId && p.side)
+                  .map(p => ({
+                    id: p.id!,
+                    betId: p.betId!,
+                    userId: p.userId!,
+                    side: p.side!,
+                    amount: p.amount || 0,
+                    status: p.status as 'PENDING' | 'ACCEPTED' | 'DECLINED',
+                    payout: p.payout || 0,
+                    joinedAt: p.joinedAt || new Date().toISOString(),
+                  }));
               }
               return transformedBet;
             })
@@ -231,7 +240,7 @@ export const BetsScreen: React.FC = () => {
     fetchBets();
 
     // Set up real-time subscription for bet changes
-    const subscription = client.models.Bet.observeQuery({
+    const betSubscription = client.models.Bet.observeQuery({
       filter: {
         or: [
           { status: { eq: 'ACTIVE' } },
@@ -242,42 +251,73 @@ export const BetsScreen: React.FC = () => {
     }).subscribe({
       next: async (data) => {
         console.log('Real-time bet update:', data);
+        await updateBetsWithParticipants(data.items);
+      },
+      error: (error) => {
+        console.error('Real-time bet subscription error:', error);
+      }
+    });
 
-        // Fetch participants for real-time updates
-        const betsWithParticipants = await Promise.all(
-          data.items.map(async (bet) => {
-            const { data: participants } = await client.models.Participant.list({
-              filter: { betId: { eq: bet.id } }
-            });
+    // Set up real-time subscription for participant changes
+    const participantSubscription = client.models.Participant.observeQuery().subscribe({
+      next: async (participantData) => {
+        console.log('Real-time participant update:', participantData);
 
-            const transformedBet = transformAmplifyBet(bet);
-            if (transformedBet && participants) {
-              transformedBet.participants = participants.map(p => ({
-                id: p.id,
-                betId: p.betId,
-                userId: p.userId,
-                side: p.side,
-                amount: p.amount,
+        // Refetch all bets when participants change
+        const { data: betsData } = await client.models.Bet.list({
+          filter: {
+            or: [
+              { status: { eq: 'ACTIVE' } },
+              { status: { eq: 'LIVE' } },
+              { status: { eq: 'PENDING_RESOLUTION' } }
+            ]
+          }
+        });
+
+        if (betsData) {
+          await updateBetsWithParticipants(betsData);
+        }
+      },
+      error: (error) => {
+        console.error('Real-time participant subscription error:', error);
+      }
+    });
+
+    // Helper function to update bets with participants
+    const updateBetsWithParticipants = async (betItems: any[]) => {
+      const betsWithParticipants = await Promise.all(
+        betItems.map(async (bet) => {
+          const { data: participants } = await client.models.Participant.list({
+            filter: { betId: { eq: bet.id! } }
+          });
+
+          const transformedBet = transformAmplifyBet(bet);
+          if (transformedBet && participants) {
+            transformedBet.participants = participants
+              .filter(p => p.id && p.betId && p.userId && p.side)
+              .map(p => ({
+                id: p.id!,
+                betId: p.betId!,
+                userId: p.userId!,
+                side: p.side!,
+                amount: p.amount || 0,
                 status: p.status as 'PENDING' | 'ACCEPTED' | 'DECLINED',
                 payout: p.payout || 0,
                 joinedAt: p.joinedAt || new Date().toISOString(),
               }));
-            }
-            return transformedBet;
-          })
-        );
+          }
+          return transformedBet;
+        })
+      );
 
-        const validBets = betsWithParticipants.filter((bet): bet is Bet => bet !== null);
-        setBets(validBets);
-      },
-      error: (error) => {
-        console.error('Real-time subscription error:', error);
-      }
-    });
+      const validBets = betsWithParticipants.filter((bet): bet is Bet => bet !== null);
+      setBets(validBets);
+    };
 
-    // Cleanup subscription on unmount
+    // Cleanup subscriptions on unmount
     return () => {
-      subscription.unsubscribe();
+      betSubscription.unsubscribe();
+      participantSubscription.unsubscribe();
     };
   }, []);
 
@@ -335,7 +375,14 @@ export const BetsScreen: React.FC = () => {
     liveBetsCount: 12,
   };
 
-  const activeBets = bets.filter(bet => ['ACTIVE', 'LIVE', 'PENDING_RESOLUTION'].includes(bet.status));
+  // Filter for user's specific bets (created by user OR user is participant)
+  const activeBets = bets.filter(bet => {
+    const isCreator = bet.creatorId === user?.userId;
+    const isParticipant = bet.participants?.some(p => p.userId === user?.userId);
+    const isActive = ['ACTIVE', 'LIVE', 'PENDING_RESOLUTION'].includes(bet.status);
+
+    return isActive && (isCreator || isParticipant);
+  });
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -352,10 +399,10 @@ export const BetsScreen: React.FC = () => {
         showSearch={true}
       />
 
-      <View style={styles.content}>
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {/* Active Bets Section */}
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>ACTIVE BETS</Text>
+          <Text style={styles.sectionTitle}>MY BETS</Text>
           <TouchableOpacity
             style={styles.createButton}
             onPress={handleCreateBetPress}
@@ -383,13 +430,13 @@ export const BetsScreen: React.FC = () => {
           ))
         ) : (
           <View style={styles.emptyContainer}>
-            <Text style={styles.emptyTitle}>No Active Bets</Text>
+            <Text style={styles.emptyTitle}>No My Bets</Text>
             <Text style={styles.emptyDescription}>
-              Be the first to create a bet or check back later!
+              You haven't created or joined any active bets yet. Tap "Create" to get started!
             </Text>
           </View>
         )}
-        
+
         {/* Bottom Stats */}
         <View style={styles.bottomStatsContainer}>
           <View style={styles.statsRow}>
@@ -397,24 +444,24 @@ export const BetsScreen: React.FC = () => {
               <Text style={styles.statValue}>{activeBets.length}</Text>
               <Text style={styles.statLabel}>bets</Text>
             </View>
-            
+
             <View style={styles.statItem}>
               <Text style={styles.statValue}>{currentUser.winRate}%</Text>
               <Text style={styles.statLabel}>WIN RATE</Text>
             </View>
-            
+
             <View style={styles.statItem}>
               <Text style={styles.statValue}>{currentUser.totalBets}</Text>
               <Text style={styles.statLabel}>TOTAL BETS</Text>
             </View>
-            
+
             <View style={styles.statItem}>
               <Text style={styles.statValue}>{currentUser.trustScore}</Text>
               <Text style={styles.statLabel}>TRUST SCORE</Text>
             </View>
           </View>
         </View>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 };

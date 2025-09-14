@@ -3,7 +3,7 @@
  * Professional bet creation interface with templates and bet types
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -21,6 +21,7 @@ import { getCurrentUser } from 'aws-amplify/auth';
 import type { Schema } from '../../amplify/data/resource';
 import { colors, commonStyles, textStyles, spacing, typography } from '../styles';
 import { Header } from '../components/ui/Header';
+import { useAuth } from '../contexts/AuthContext';
 
 interface BetTemplate {
   id: string;
@@ -35,10 +36,12 @@ interface BetTemplate {
 const client = generateClient<Schema>();
 
 export const CreateBetScreen: React.FC = () => {
+  const { user } = useAuth();
+  const [userBalance, setUserBalance] = useState(0);
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [betTitle, setBetTitle] = useState('');
   const [betDescription, setBetDescription] = useState('');
-  const [betAmount, setBetAmount] = useState('');
+  const [betAmount, setBetAmount] = useState('1');
   const [deadline, setDeadline] = useState('30');
   const [isPrivate, setIsPrivate] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState('SPORTS');
@@ -48,6 +51,24 @@ export const CreateBetScreen: React.FC = () => {
   const [sideAName, setSideAName] = useState('Yes');
   const [sideBName, setSideBName] = useState('No');
   const [isCreating, setIsCreating] = useState(false);
+
+  // Fetch user balance
+  useEffect(() => {
+    const fetchUserBalance = async () => {
+      if (!user) return;
+
+      try {
+        const { data: userData } = await client.models.User.get({ id: user.userId });
+        if (userData) {
+          setUserBalance(userData.balance || 0);
+        }
+      } catch (error) {
+        console.error('Error fetching user balance:', error);
+      }
+    };
+
+    fetchUserBalance();
+  }, [user]);
 
   const betTemplates: BetTemplate[] = [
     {
@@ -113,6 +134,17 @@ export const CreateBetScreen: React.FC = () => {
     setSideBName(template.odds.sideBName);
   };
 
+  const handleAmountChange = (text: string) => {
+    // Remove any non-numeric characters except decimal point
+    const numericValue = text.replace(/[^0-9.]/g, '');
+
+    // Prevent multiple decimal points
+    const parts = numericValue.split('.');
+    const formattedValue = parts.length > 2 ? parts[0] + '.' + parts.slice(1).join('') : numericValue;
+
+    setBetAmount(formattedValue);
+  };
+
   const handleCreateBet = async () => {
     if (!betTitle.trim() || !betDescription.trim() || !betAmount.trim()) {
       Alert.alert('Missing Information', 'Please fill in all required fields.');
@@ -156,6 +188,7 @@ export const CreateBetScreen: React.FC = () => {
         status: 'ACTIVE',
         creatorId: user.userId,
         totalPot: amount,
+        betAmount: amount, // Store the individual bet amount for joining
         odds: oddsObject,
         deadline: deadlineDate.toISOString(),
       });
@@ -212,7 +245,7 @@ export const CreateBetScreen: React.FC = () => {
       <Header
         title="Create Bet"
         showBalance={true}
-        balance={1245.75}
+        balance={userBalance}
         onBalancePress={handleBalancePress}
         onNotificationsPress={handleNotificationsPress}
         variant="default"
@@ -290,7 +323,7 @@ export const CreateBetScreen: React.FC = () => {
                 placeholder="$0.00"
                 placeholderTextColor={colors.textMuted}
                 value={betAmount}
-                onChangeText={setBetAmount}
+                onChangeText={handleAmountChange}
                 keyboardType="numeric"
               />
             </View>

@@ -35,6 +35,7 @@ const schema = a.schema({
       status: a.enum(['DRAFT', 'ACTIVE', 'LIVE', 'PENDING_RESOLUTION', 'DISPUTED', 'RESOLVED', 'CANCELLED']),
       creatorId: a.id().required(),
       totalPot: a.float().required(),
+      betAmount: a.float(), // Individual bet amount for joining
       odds: a.json(), // Store odds as JSON object
       deadline: a.datetime().required(),
       winningSide: a.string(), // Which side won

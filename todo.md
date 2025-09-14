@@ -108,15 +108,29 @@ src/
 
 ## 🔮 FUTURE ENHANCEMENTS (Lower Priority)
 
-### 4. QR Code Functionality
-- Add QR code generation for bet sharing
-- QR code scanning to join bets quickly
-- **Dependencies**: `expo-camera`, `expo-barcode-scanner`
+### 4. Small enhancements
+- rework "my bets" screen to just be bets the user has signed up for.
+- wire up the my bets stats to real stats
+- move joinable bets to the live tab instead unless the user was invited to the bet.should only be active or ones that the user is being invited to join. 
+- when joining, bets are defaulting to $10 and should reflect actual bet amounts from the bet itself
+- balance appears to be hard coded or not refreshing on the header
+- default bet creation is set at $1.00 and it should be formatted when the user inputs any changes
+- scrolling doesnt appear to work on the mybets page
+
+### 5. Friend and Friend Management
+  - work with each other on the scope
 
 ### 5. Location Services Integration
 - Location-based bet discovery
 - Verify bet locations for local events
 - **Dependencies**: `expo-location`
+
+## 🔮 Backlog ENHANCEMENTS (Lowest Priority)
+
+### 4. QR Code Functionality
+- Add QR code generation for bet sharing
+- QR code scanning to join bets quickly
+- **Dependencies**: `expo-camera`, `expo-barcode-scanner`
 
 ### 6. Camera Integration for Evidence
 - Photo evidence for bet resolution
