@@ -29,7 +29,7 @@ interface BetTemplate {
   description: string;
   category: string;
   icon: string;
-  odds: { sideA: number; sideB: number; sideAName: string; sideBName: string; };
+  sides: { sideAName: string; sideBName: string; };
 }
 
 // Initialize GraphQL client
@@ -45,9 +45,6 @@ export const CreateBetScreen: React.FC = () => {
   const [deadline, setDeadline] = useState('30');
   const [isPrivate, setIsPrivate] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState('SPORTS');
-  const [customOdds, setCustomOdds] = useState(false);
-  const [oddsA, setOddsA] = useState('-110');
-  const [oddsB, setOddsB] = useState('+110');
   const [sideAName, setSideAName] = useState('Yes');
   const [sideBName, setSideBName] = useState('No');
   const [isCreating, setIsCreating] = useState(false);
@@ -77,7 +74,7 @@ export const CreateBetScreen: React.FC = () => {
       description: 'Which team scores next?',
       category: 'SPORTS',
       icon: '🏀',
-      odds: { sideA: -105, sideB: -115, sideAName: 'Home', sideBName: 'Away' },
+      sides: { sideAName: 'Home', sideBName: 'Away' },
     },
     {
       id: 'player-prop',
@@ -85,7 +82,7 @@ export const CreateBetScreen: React.FC = () => {
       description: 'Player performance bet',
       category: 'SPORTS',
       icon: '⭐',
-      odds: { sideA: +120, sideB: -140, sideAName: 'Over', sideBName: 'Under' },
+      sides: { sideAName: 'Over', sideBName: 'Under' },
     },
     {
       id: 'yes-no',
@@ -93,7 +90,7 @@ export const CreateBetScreen: React.FC = () => {
       description: 'Simple yes or no question',
       category: 'CUSTOM',
       icon: '❓',
-      odds: { sideA: -110, sideB: -110, sideAName: 'Yes', sideBName: 'No' },
+      sides: { sideAName: 'Yes', sideBName: 'No' },
     },
     {
       id: 'weather',
@@ -101,7 +98,7 @@ export const CreateBetScreen: React.FC = () => {
       description: 'Weather prediction bet',
       category: 'WEATHER',
       icon: '🌤️',
-      odds: { sideA: +150, sideB: -180, sideAName: 'Rain', sideBName: 'No Rain' },
+      sides: { sideAName: 'Rain', sideBName: 'No Rain' },
     },
     {
       id: 'entertainment',
@@ -109,7 +106,7 @@ export const CreateBetScreen: React.FC = () => {
       description: 'Entertainment event outcome',
       category: 'ENTERTAINMENT',
       icon: '🎬',
-      odds: { sideA: +200, sideB: -250, sideAName: 'Winner A', sideBName: 'Winner B' },
+      sides: { sideAName: 'Winner A', sideBName: 'Winner B' },
     },
     {
       id: 'custom',
@@ -117,7 +114,7 @@ export const CreateBetScreen: React.FC = () => {
       description: 'Create your own unique bet',
       category: 'CUSTOM',
       icon: '✨',
-      odds: { sideA: -110, sideB: -110, sideAName: 'Side A', sideBName: 'Side B' },
+      sides: { sideAName: 'Side A', sideBName: 'Side B' },
     },
   ];
 
@@ -128,10 +125,8 @@ export const CreateBetScreen: React.FC = () => {
     setBetTitle(template.title);
     setBetDescription(template.description);
     setSelectedCategory(template.category);
-    setOddsA(template.odds.sideA.toString());
-    setOddsB(template.odds.sideB.toString());
-    setSideAName(template.odds.sideAName);
-    setSideBName(template.odds.sideBName);
+    setSideAName(template.sides.sideAName);
+    setSideBName(template.sides.sideBName);
   };
 
   const handleAmountChange = (text: string) => {
@@ -174,8 +169,6 @@ export const CreateBetScreen: React.FC = () => {
 
       // Prepare odds object - stringify for GraphQL JSON field
       const oddsObject = JSON.stringify({
-        sideA: customOdds ? parseInt(oddsA) : -110,
-        sideB: customOdds ? parseInt(oddsB) : 110,
         sideAName: sideAName.trim(),
         sideBName: sideBName.trim(),
       });
@@ -225,9 +218,6 @@ export const CreateBetScreen: React.FC = () => {
     setBetAmount('');
     setDeadline('30');
     setIsPrivate(false);
-    setCustomOdds(false);
-    setOddsA('-110');
-    setOddsB('+110');
     setSideAName('Yes');
     setSideBName('No');
   };
@@ -243,7 +233,6 @@ export const CreateBetScreen: React.FC = () => {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <Header
-        title="Create Bet"
         showBalance={true}
         onBalancePress={handleBalancePress}
         onNotificationsPress={handleNotificationsPress}
@@ -367,19 +356,9 @@ export const CreateBetScreen: React.FC = () => {
 
         {/* Betting Sides */}
         <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>BETTING SIDES</Text>
-            <View style={styles.switchContainer}>
-              <Text style={styles.switchLabel}>Custom Odds</Text>
-              <Switch
-                value={customOdds}
-                onValueChange={setCustomOdds}
-                trackColor={{ false: colors.border, true: colors.primary }}
-                thumbColor={colors.background}
-              />
-            </View>
-          </View>
-          
+          <Text style={styles.sectionTitle}>BETTING SIDES</Text>
+          <Text style={styles.sectionSubtitle}>Customize the two sides people can bet on</Text>
+
           <View style={styles.sidesContainer}>
             <View style={styles.sideCard}>
               <Text style={styles.sideLabel}>Side A</Text>
@@ -390,16 +369,6 @@ export const CreateBetScreen: React.FC = () => {
                 value={sideAName}
                 onChangeText={setSideAName}
               />
-              {customOdds && (
-                <TextInput
-                  style={styles.oddsInput}
-                  placeholder="-110"
-                  placeholderTextColor={colors.textMuted}
-                  value={oddsA}
-                  onChangeText={setOddsA}
-                  keyboardType="numeric"
-                />
-              )}
             </View>
 
             <View style={styles.vsContainer}>
@@ -415,16 +384,6 @@ export const CreateBetScreen: React.FC = () => {
                 value={sideBName}
                 onChangeText={setSideBName}
               />
-              {customOdds && (
-                <TextInput
-                  style={styles.oddsInput}
-                  placeholder="+110"
-                  placeholderTextColor={colors.textMuted}
-                  value={oddsB}
-                  onChangeText={setOddsB}
-                  keyboardType="numeric"
-                />
-              )}
             </View>
           </View>
         </View>

@@ -90,10 +90,8 @@ export type StatsPeriod = 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'ALL_TIME';
 
 // Betting-specific types
 export interface BetOdds {
-  sideA: number; // American odds format (-110, +150)
-  sideB: number;
-  sideAName?: string; // Custom side names
-  sideBName?: string;
+  sideAName: string; // Side A name (e.g., "Home", "Yes", "Lakers")
+  sideBName: string; // Side B name (e.g., "Away", "No", "Warriors")
 }
 
 export interface BetSide {

@@ -32,6 +32,21 @@ const transformAmplifyBet = (bet: any): Bet | null => {
     return null;
   }
 
+  // Parse odds from JSON string if needed
+  let parsedOdds = { sideAName: 'Side A', sideBName: 'Side B' }; // Default side names
+  if (bet.odds) {
+    try {
+      if (typeof bet.odds === 'string') {
+        parsedOdds = JSON.parse(bet.odds);
+      } else if (typeof bet.odds === 'object') {
+        parsedOdds = bet.odds;
+      }
+    } catch (error) {
+      console.error('Error parsing bet odds:', error);
+      // Use default side names on parse error
+    }
+  }
+
   return {
     id: bet.id,
     title: bet.title,
@@ -41,7 +56,7 @@ const transformAmplifyBet = (bet: any): Bet | null => {
     creatorId: bet.creatorId || '',
     totalPot: bet.totalPot || 0,
     betAmount: bet.betAmount || bet.totalPot || 0,
-    odds: typeof bet.odds === 'object' && bet.odds ? bet.odds : { sideA: -110, sideB: 110 },
+    odds: parsedOdds,
     deadline: bet.deadline || new Date().toISOString(),
     winningSide: bet.winningSide || undefined,
     resolutionReason: bet.resolutionReason || undefined,
@@ -324,9 +339,7 @@ export const ResolveScreen: React.FC = () => {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <Header
-        title="Resolve Bets"
         showBalance={true}
-        balance={userBalance}
         onBalancePress={handleBalancePress}
         onNotificationsPress={handleNotificationsPress}
         notificationCount={pendingBets.length}

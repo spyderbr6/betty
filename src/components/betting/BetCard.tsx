@@ -158,9 +158,6 @@ export const BetCard: React.FC<BetCardProps> = ({
     }
   };
 
-  const formatOdds = (odds: number): string => {
-    return odds > 0 ? `+${odds}` : odds.toString();
-  };
 
   const getStatusColor = (status: BetStatus): string => {
     switch (status) {
@@ -258,14 +255,9 @@ export const BetCard: React.FC<BetCardProps> = ({
                 {isJoining && selectedSide === 'A' ? (
                   <ActivityIndicator size="small" color={colors.background} />
                 ) : (
-                  <>
-                    <Text style={styles.sideName}>
-                      {bet.odds.sideAName || 'Side A'}
-                    </Text>
-                    <Text style={styles.sideOdds}>
-                      {formatOdds(bet.odds.sideA)}
-                    </Text>
-                  </>
+                  <Text style={styles.sideName}>
+                    {bet.odds.sideAName || 'Side A'}
+                  </Text>
                 )}
               </TouchableOpacity>
 
@@ -286,14 +278,9 @@ export const BetCard: React.FC<BetCardProps> = ({
                 {isJoining && selectedSide === 'B' ? (
                   <ActivityIndicator size="small" color={colors.background} />
                 ) : (
-                  <>
-                    <Text style={styles.sideName}>
-                      {bet.odds.sideBName || 'Side B'}
-                    </Text>
-                    <Text style={styles.sideOdds}>
-                      {formatOdds(bet.odds.sideB)}
-                    </Text>
-                  </>
+                  <Text style={styles.sideName}>
+                    {bet.odds.sideBName || 'Side B'}
+                  </Text>
                 )}
               </TouchableOpacity>
             </>

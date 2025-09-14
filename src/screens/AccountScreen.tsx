@@ -185,9 +185,7 @@ export const AccountScreen: React.FC = () => {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <Header
-        title="Account"
         showBalance={true}
-        balance={userStats.balance}
       />
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>

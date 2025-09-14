@@ -31,6 +31,21 @@ const transformAmplifyBet = (bet: any): Bet | null => {
     return null;
   }
 
+  // Parse odds from JSON string if needed
+  let parsedOdds = { sideAName: 'Side A', sideBName: 'Side B' }; // Default side names
+  if (bet.odds) {
+    try {
+      if (typeof bet.odds === 'string') {
+        parsedOdds = JSON.parse(bet.odds);
+      } else if (typeof bet.odds === 'object') {
+        parsedOdds = bet.odds;
+      }
+    } catch (error) {
+      console.error('Error parsing bet odds:', error);
+      // Use default side names on parse error
+    }
+  }
+
   return {
     id: bet.id,
     title: bet.title,
@@ -40,7 +55,7 @@ const transformAmplifyBet = (bet: any): Bet | null => {
     creatorId: bet.creatorId || '',
     totalPot: bet.totalPot || 0,
     betAmount: bet.betAmount || bet.totalPot || 0, // Fallback to totalPot for existing bets
-    odds: typeof bet.odds === 'object' && bet.odds ? bet.odds : { sideA: -110, sideB: 110 },
+    odds: parsedOdds,
     deadline: bet.deadline || new Date().toISOString(),
     winningSide: bet.winningSide || undefined,
     resolutionReason: bet.resolutionReason || undefined,
@@ -61,8 +76,6 @@ const mockLiveBets: Bet[] = [
     creatorId: 'user1',
     totalPot: 50,
     odds: {
-      sideA: -110,
-      sideB: +150,
       sideAName: 'Yes',
       sideBName: 'No',
     },
@@ -101,8 +114,6 @@ const mockLiveBets: Bet[] = [
     creatorId: 'user2',
     totalPot: 75,
     odds: {
-      sideA: +120,
-      sideB: -140,
       sideAName: 'Lakers',
       sideBName: 'Warriors',
     },

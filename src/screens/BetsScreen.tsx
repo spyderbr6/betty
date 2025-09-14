@@ -31,6 +31,21 @@ const transformAmplifyBet = (bet: any): Bet | null => {
     return null;
   }
 
+  // Parse odds from JSON string if needed
+  let parsedOdds = { sideAName: 'Side A', sideBName: 'Side B' }; // Default side names
+  if (bet.odds) {
+    try {
+      if (typeof bet.odds === 'string') {
+        parsedOdds = JSON.parse(bet.odds);
+      } else if (typeof bet.odds === 'object') {
+        parsedOdds = bet.odds;
+      }
+    } catch (error) {
+      console.error('Error parsing bet odds:', error);
+      // Use default side names on parse error
+    }
+  }
+
   return {
     id: bet.id,
     title: bet.title,
@@ -40,7 +55,7 @@ const transformAmplifyBet = (bet: any): Bet | null => {
     creatorId: bet.creatorId || '',
     totalPot: bet.totalPot || 0,
     betAmount: bet.betAmount || bet.totalPot || 0, // Fallback to totalPot for existing bets
-    odds: typeof bet.odds === 'object' && bet.odds ? bet.odds : { sideA: -110, sideB: 110 },
+    odds: parsedOdds,
     deadline: bet.deadline || new Date().toISOString(),
     winningSide: bet.winningSide || undefined,
     resolutionReason: bet.resolutionReason || undefined,
@@ -62,8 +77,6 @@ const mockBets: Bet[] = [
     totalPot: 50,
     betAmount: 25,
     odds: {
-      sideA: -110,
-      sideB: +150,
       sideAName: 'Yes',
       sideBName: 'No',
     },
@@ -103,8 +116,6 @@ const mockBets: Bet[] = [
     totalPot: 50,
     betAmount: 25,
     odds: {
-      sideA: -105,
-      sideB: +125,
       sideAName: 'LAL',
       sideBName: 'GSW',
     },
@@ -144,8 +155,6 @@ const mockBets: Bet[] = [
     totalPot: 200,
     betAmount: 100,
     odds: {
-      sideA: +125,
-      sideB: -145,
       sideAName: 'LAL',
       sideBName: 'GSW',
     },
@@ -182,7 +191,7 @@ export const BetsScreen: React.FC = () => {
   const [bets, setBets] = useState<Bet[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedFilter, setSelectedFilter] = useState<'ALL' | 'ACTIVE' | 'LIVE' | 'PENDING_RESOLUTION' | 'RESOLVED'>('ALL');
+  const [selectedFilter, setSelectedFilter] = useState<'ACTIVE' | 'LIVE' | 'PENDING_RESOLUTION' | 'RESOLVED'>('ACTIVE');
 
   useEffect(() => {
     // Fetch initial bet data and set up real-time subscriptions
@@ -190,13 +199,14 @@ export const BetsScreen: React.FC = () => {
       try {
         setIsLoading(true);
 
-        // Query for active bets with participants
+        // Query for all relevant bet statuses
         const { data: betsData } = await client.models.Bet.list({
           filter: {
             or: [
               { status: { eq: 'ACTIVE' } },
               { status: { eq: 'LIVE' } },
-              { status: { eq: 'PENDING_RESOLUTION' } }
+              { status: { eq: 'PENDING_RESOLUTION' } },
+              { status: { eq: 'RESOLVED' } }
             ]
           }
         });
@@ -246,7 +256,8 @@ export const BetsScreen: React.FC = () => {
         or: [
           { status: { eq: 'ACTIVE' } },
           { status: { eq: 'LIVE' } },
-          { status: { eq: 'PENDING_RESOLUTION' } }
+          { status: { eq: 'PENDING_RESOLUTION' } },
+          { status: { eq: 'RESOLVED' } }
         ]
       }
     }).subscribe({
@@ -270,7 +281,8 @@ export const BetsScreen: React.FC = () => {
             or: [
               { status: { eq: 'ACTIVE' } },
               { status: { eq: 'LIVE' } },
-              { status: { eq: 'PENDING_RESOLUTION' } }
+              { status: { eq: 'PENDING_RESOLUTION' } },
+              { status: { eq: 'RESOLVED' } }
             ]
           }
         });
@@ -410,20 +422,11 @@ export const BetsScreen: React.FC = () => {
     if (!(isCreator || isParticipant)) return false;
 
     // Then filter by status
-    if (selectedFilter === 'ALL') {
-      return ['ACTIVE', 'LIVE', 'PENDING_RESOLUTION', 'RESOLVED'].includes(bet.status);
-    }
-
     return bet.status === selectedFilter;
   });
 
-  // Status filter options
+  // Status filter options (removed 'ALL' filter)
   const statusFilters = [
-    { id: 'ALL', label: 'All', count: bets.filter(bet => {
-      const isCreator = bet.creatorId === user?.userId;
-      const isParticipant = bet.participants?.some(p => p.userId === user?.userId);
-      return (isCreator || isParticipant) && ['ACTIVE', 'LIVE', 'PENDING_RESOLUTION', 'RESOLVED'].includes(bet.status);
-    }).length },
     { id: 'ACTIVE', label: 'Active', count: bets.filter(bet => {
       const isCreator = bet.creatorId === user?.userId;
       const isParticipant = bet.participants?.some(p => p.userId === user?.userId);
@@ -527,12 +530,9 @@ export const BetsScreen: React.FC = () => {
           ))
         ) : (
           <View style={styles.emptyContainer}>
-            <Text style={styles.emptyTitle}>No {selectedFilter === 'ALL' ? 'My' : selectedFilter.toLowerCase()} Bets</Text>
+            <Text style={styles.emptyTitle}>No {selectedFilter.toLowerCase()} Bets</Text>
             <Text style={styles.emptyDescription}>
-              {selectedFilter === 'ALL'
-                ? "You haven't created or joined any bets yet. Tap 'Create' to get started!"
-                : `You don't have any ${selectedFilter.toLowerCase()} bets at the moment.`
-              }
+              You don't have any {selectedFilter.toLowerCase()} bets at the moment.
             </Text>
           </View>
         )}
