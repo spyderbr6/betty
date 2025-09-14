@@ -332,16 +332,6 @@ export const LiveEventsScreen: React.FC = () => {
       />
       
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Live Event Status Bar */}
-        <View style={styles.liveStatusBar}>
-          <View style={styles.liveIndicatorGroup}>
-            <View style={styles.livePulse} />
-            <Text style={styles.liveStatusText}>LIVE</Text>
-          </View>
-          <Text style={styles.liveEventText}>{liveGame.venue}</Text>
-          <Text style={styles.liveBetCount}>{liveBets.length} LIVE BETS</Text>
-        </View>
-
         {/* Quick Bet Categories */}
         <View style={styles.quickBetCategories}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
@@ -465,42 +455,6 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-  },
-  
-  // Live Status Bar
-  liveStatusBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: colors.live,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  liveIndicatorGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  livePulse: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: colors.background,
-    marginRight: spacing.xs,
-  },
-  liveStatusText: {
-    ...textStyles.status,
-    color: colors.background,
-    fontWeight: typography.fontWeight.bold,
-  },
-  liveEventText: {
-    ...textStyles.bodySmall,
-    color: colors.background,
-  },
-  liveBetCount: {
-    ...textStyles.caption,
-    color: colors.background,
-    fontSize: 10,
-    fontWeight: typography.fontWeight.medium,
   },
   
   // Quick Bet Categories

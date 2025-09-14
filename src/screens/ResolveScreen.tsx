@@ -110,11 +110,14 @@ export const ResolveScreen: React.FC = () => {
 
           const validBets = betsWithParticipants.filter((bet): bet is Bet => bet !== null);
 
-          // Filter to only show bets the user can resolve (creator or participant)
+          // Filter to only show bets the user can resolve (creator or participant) with participants
           const resolvableBets = validBets.filter(bet => {
             const isCreator = bet.creatorId === user.userId;
             const isParticipant = bet.participants?.some(p => p.userId === user.userId);
-            return isCreator || isParticipant;
+            const hasParticipants = bet.participants && bet.participants.length > 0;
+
+            // Only show bets that have participants and user is involved
+            return hasParticipants && (isCreator || isParticipant);
           });
 
           console.log('Found resolvable bets:', resolvableBets.length);

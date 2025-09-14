@@ -3,7 +3,7 @@
  * Professional sportsbook-style bottom navigation
  */
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -12,8 +12,14 @@ import {
 } from 'react-native';
 import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
+import { generateClient } from 'aws-amplify/data';
+import type { Schema } from '../../../amplify/data/resource';
 import { colors, typography, spacing, textStyles, shadows } from '../../styles';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useAuth } from '../../contexts/AuthContext';
+
+// Initialize GraphQL client
+const client = generateClient<Schema>();
 
 export const TabBar: React.FC<BottomTabBarProps> = ({
   state,
@@ -21,6 +27,102 @@ export const TabBar: React.FC<BottomTabBarProps> = ({
   navigation,
 }) => {
   const insets = useSafeAreaInsets();
+  const { user } = useAuth();
+  const [tabCounts, setTabCounts] = useState({
+    myBets: 0,
+    joinableBets: 0,
+    pendingResolutions: 0,
+    notifications: 0,
+  });
+
+  // Fetch real counts for badges
+  useEffect(() => {
+    const fetchTabCounts = async () => {
+      if (!user?.userId) return;
+
+      try {
+        // Fetch user's active bets (My Bets count)
+        const { data: allBets } = await client.models.Bet.list({
+          filter: {
+            or: [
+              { status: { eq: 'ACTIVE' } },
+              { status: { eq: 'LIVE' } },
+              { status: { eq: 'PENDING_RESOLUTION' } }
+            ]
+          }
+        });
+
+        if (allBets) {
+          // Get participants for filtering
+          const betsWithParticipants = await Promise.all(
+            allBets.map(async (bet) => {
+              const { data: participants } = await client.models.Participant.list({
+                filter: { betId: { eq: bet.id! } }
+              });
+              return { bet, participants: participants || [] };
+            })
+          );
+
+          // Count user's bets (creator or participant)
+          const myBetsCount = betsWithParticipants.filter(({ bet, participants }) => {
+            const isCreator = bet.creatorId === user.userId;
+            const isParticipant = participants.some(p => p.userId === user.userId);
+            return isCreator || isParticipant;
+          }).length;
+
+          // Count joinable bets (not creator, not participant)
+          const joinableBetsCount = betsWithParticipants.filter(({ bet, participants }) => {
+            const isCreator = bet.creatorId === user.userId;
+            const isParticipant = participants.some(p => p.userId === user.userId);
+            return !isCreator && !isParticipant && bet.status === 'ACTIVE';
+          }).length;
+
+          // Count pending resolutions (user is creator)
+          const pendingResolutionsCount = betsWithParticipants.filter(({ bet, participants }) => {
+            const isCreator = bet.creatorId === user.userId;
+            const hasParticipants = participants.length > 0;
+            return isCreator && hasParticipants && (bet.status === 'PENDING_RESOLUTION' ||
+              (bet.status === 'ACTIVE' && new Date(bet.deadline!) < new Date()));
+          }).length;
+
+          setTabCounts({
+            myBets: myBetsCount,
+            joinableBets: joinableBetsCount,
+            pendingResolutions: pendingResolutionsCount,
+            notifications: 0, // TODO: Implement notifications system
+          });
+        }
+      } catch (error) {
+        console.error('Error fetching tab counts:', error);
+      }
+    };
+
+    fetchTabCounts();
+
+    // Set up subscription for real-time updates
+    const betSubscription = client.models.Bet.observeQuery().subscribe({
+      next: () => {
+        fetchTabCounts();
+      },
+      error: (error) => {
+        console.error('Tab count subscription error:', error);
+      }
+    });
+
+    const participantSubscription = client.models.Participant.observeQuery().subscribe({
+      next: () => {
+        fetchTabCounts();
+      },
+      error: (error) => {
+        console.error('Tab participant subscription error:', error);
+      }
+    });
+
+    return () => {
+      betSubscription.unsubscribe();
+      participantSubscription.unsubscribe();
+    };
+  }, [user]);
 
   const getTabIcon = (routeName: string, focused: boolean) => {
     let iconName: keyof typeof Ionicons.glyphMap;
@@ -68,13 +170,13 @@ export const TabBar: React.FC<BottomTabBarProps> = ({
   const getTabCount = (routeName: string): number | null => {
     switch (routeName) {
       case 'Bets':
-        return 3; // Active bets count
+        return tabCounts.myBets > 0 ? tabCounts.myBets : null;
       case 'Live':
-        return 12; // Live events count
+        return tabCounts.joinableBets > 0 ? tabCounts.joinableBets : null;
       case 'Resolve':
-        return 2; // Pending resolutions count
+        return tabCounts.pendingResolutions > 0 ? tabCounts.pendingResolutions : null;
       case 'Account':
-        return 2; // Notifications count
+        return tabCounts.notifications > 0 ? tabCounts.notifications : null;
       default:
         return null;
     }

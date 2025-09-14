@@ -127,12 +127,11 @@ src/
 ## 🔮 FUTURE ENHANCEMENTS (Lower Priority)
 
 ### 4. Small enhancements
-- badges on the menu bar need to reflect actual events or counts.
-- get rid of the duplicative "live"banner on the live bet page. 
-  - wire up or remove the filters from the live bet page.
+- wire up or remove the filters from the live bet page.
 - implement status filters on the my bets page
-- results management should filter to bets with > 0 entrant
-- resolution management should be by vote for all the participants as we have no real way to verify the winner
+- resolution management should be by vote for all the participants as we have no real way to verify the winner. we need a way to deal with using the user trust metric here as well as updating the trust metric based on the result of the finalized voting.
+- the user balance needs to be like a standalone component that each screen is calling or move it into the header directly so we can ensure its always up to date. 
+- 
 
 ### 5. Friend and Friend Management
   - work with each other on the scope
