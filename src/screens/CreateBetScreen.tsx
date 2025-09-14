@@ -140,13 +140,13 @@ export const CreateBetScreen: React.FC = () => {
       // Calculate deadline timestamp
       const deadlineDate = new Date(Date.now() + deadlineMinutes * 60 * 1000);
 
-      // Prepare odds object
-      const oddsObject = {
+      // Prepare odds object - stringify for GraphQL JSON field
+      const oddsObject = JSON.stringify({
         sideA: customOdds ? parseInt(oddsA) : -110,
         sideB: customOdds ? parseInt(oddsB) : 110,
         sideAName: sideAName.trim(),
         sideBName: sideBName.trim(),
-      };
+      });
 
       // Create bet via GraphQL API
       const result = await client.models.Bet.create({
@@ -160,6 +160,8 @@ export const CreateBetScreen: React.FC = () => {
         deadline: deadlineDate.toISOString(),
       });
 
+      console.log('GraphQL result:', result);
+
       if (result.data) {
         Alert.alert(
           'Bet Created!',
@@ -167,10 +169,12 @@ export const CreateBetScreen: React.FC = () => {
           [{ text: 'OK', onPress: resetForm }]
         );
       } else {
+        console.error('GraphQL errors:', result.errors);
         throw new Error('Failed to create bet');
       }
     } catch (error) {
       console.error('Error creating bet:', error);
+      console.error('Full error object:', JSON.stringify(error, null, 2));
       Alert.alert(
         'Error',
         'Failed to create bet. Please try again.',

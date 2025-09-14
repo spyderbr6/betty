@@ -22,8 +22,8 @@ const schema = a.schema({
       participations: a.hasMany('Participant', 'userId'),
     })
     .authorization((allow) => [
-      allow.owner(),
-      allow.authenticated().to(['read'])
+      allow.owner().to(['create', 'read', 'update', 'delete']),
+      allow.authenticated().to(['read', 'create']) // Allow authenticated users to create User records and read others
     ]),
 
   Bet: a
@@ -47,8 +47,8 @@ const schema = a.schema({
       evidence: a.hasMany('Evidence', 'betId'),
     })
     .authorization((allow) => [
-      allow.owner(),
-      allow.authenticated().to(['read', 'update']) // Allow participants to read and update
+      allow.owner().to(['create', 'read', 'update', 'delete']),
+      allow.authenticated().to(['read', 'create']) // Allow any authenticated user to create bets and read all bets
     ]),
 
   Participant: a

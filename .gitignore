@@ -25,6 +25,7 @@ dist-ssr
 .claude
 .expo
 .vite
+.references
 
 # amplify
 .amplify
