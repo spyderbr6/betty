@@ -3,33 +3,426 @@
  * Screen for resolving pending bets
  */
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { colors, commonStyles, textStyles } from '../styles';
+import { generateClient } from 'aws-amplify/data';
+import type { Schema } from '../../amplify/data/resource';
+import { colors, commonStyles, textStyles, spacing, typography } from '../styles';
 import { Header } from '../components/ui/Header';
+import { BetCard } from '../components/betting/BetCard';
+import { Bet } from '../types/betting';
+import { useAuth } from '../contexts/AuthContext';
+import { formatCurrency } from '../utils/formatting';
+
+// Initialize GraphQL client
+const client = generateClient<Schema>();
+
+// Helper function to transform Amplify data to our Bet type
+const transformAmplifyBet = (bet: any): Bet | null => {
+  if (!bet.id || !bet.title || !bet.description || !bet.category || !bet.status) {
+    return null;
+  }
+
+  return {
+    id: bet.id,
+    title: bet.title,
+    description: bet.description,
+    category: bet.category,
+    status: bet.status,
+    creatorId: bet.creatorId || '',
+    totalPot: bet.totalPot || 0,
+    betAmount: bet.betAmount || bet.totalPot || 0,
+    odds: typeof bet.odds === 'object' && bet.odds ? bet.odds : { sideA: -110, sideB: 110 },
+    deadline: bet.deadline || new Date().toISOString(),
+    winningSide: bet.winningSide || undefined,
+    resolutionReason: bet.resolutionReason || undefined,
+    createdAt: bet.createdAt || new Date().toISOString(),
+    updatedAt: bet.updatedAt || new Date().toISOString(),
+    participants: [],
+  };
+};
 
 export const ResolveScreen: React.FC = () => {
+  const { user } = useAuth();
+  const [pendingBets, setPendingBets] = useState<Bet[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isResolving, setIsResolving] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const fetchPendingBets = async () => {
+      try {
+        setIsLoading(true);
+        console.log('Fetching bets pending resolution for user:', user.userId);
+
+        // Fetch bets that need resolution (PENDING_RESOLUTION status)
+        const { data: betsData } = await client.models.Bet.list({
+          filter: {
+            or: [
+              { status: { eq: 'PENDING_RESOLUTION' } },
+              // Also include ACTIVE bets past their deadline that user created
+              {
+                and: [
+                  { status: { eq: 'ACTIVE' } },
+                  { creatorId: { eq: user.userId } },
+                  { deadline: { lt: new Date().toISOString() } }
+                ]
+              }
+            ]
+          }
+        });
+
+        if (betsData) {
+          const betsWithParticipants = await Promise.all(
+            betsData.map(async (bet) => {
+              const { data: participants } = await client.models.Participant.list({
+                filter: { betId: { eq: bet.id! } }
+              });
+
+              const transformedBet = transformAmplifyBet(bet);
+              if (transformedBet && participants) {
+                transformedBet.participants = participants
+                  .filter(p => p.id && p.betId && p.userId && p.side)
+                  .map(p => ({
+                    id: p.id!,
+                    betId: p.betId!,
+                    userId: p.userId!,
+                    side: p.side!,
+                    amount: p.amount || 0,
+                    status: p.status as 'PENDING' | 'ACCEPTED' | 'DECLINED',
+                    payout: p.payout || 0,
+                    joinedAt: p.joinedAt || new Date().toISOString(),
+                  }));
+              }
+              return transformedBet;
+            })
+          );
+
+          const validBets = betsWithParticipants.filter((bet): bet is Bet => bet !== null);
+
+          // Filter to only show bets the user can resolve (creator or participant)
+          const resolvableBets = validBets.filter(bet => {
+            const isCreator = bet.creatorId === user.userId;
+            const isParticipant = bet.participants?.some(p => p.userId === user.userId);
+            return isCreator || isParticipant;
+          });
+
+          console.log('Found resolvable bets:', resolvableBets.length);
+          setPendingBets(resolvableBets);
+        }
+      } catch (error) {
+        console.error('Error fetching pending bets:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchPendingBets();
+
+    // Set up real-time subscription for bet resolution changes
+    const betSubscription = client.models.Bet.observeQuery({
+      filter: {
+        or: [
+          { status: { eq: 'PENDING_RESOLUTION' } },
+          { status: { eq: 'RESOLVED' } }
+        ]
+      }
+    }).subscribe({
+      next: async (data) => {
+        console.log('Real-time bet resolution update:', data);
+        await fetchPendingBets();
+      },
+      error: (error) => {
+        console.error('Real-time bet resolution subscription error:', error);
+      }
+    });
+
+    return () => {
+      betSubscription.unsubscribe();
+    };
+  }, [user]);
+
+  const handleResolveBet = async (bet: Bet, winningSide: 'A' | 'B') => {
+    if (isResolving) return;
+
+    // Only allow creator to resolve bets
+    if (bet.creatorId !== user?.userId) {
+      Alert.alert('Error', 'Only the bet creator can resolve this bet.');
+      return;
+    }
+
+    Alert.alert(
+      'Resolve Bet',
+      `Resolve "${bet.title}" with ${winningSide === 'A' ? bet.odds.sideAName || 'Side A' : bet.odds.sideBName || 'Side B'} as the winner?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Resolve', onPress: () => confirmResolveBet(bet, winningSide) },
+      ]
+    );
+  };
+
+  const confirmResolveBet = async (bet: Bet, winningSide: 'A' | 'B') => {
+    setIsResolving(bet.id);
+
+    try {
+      // Calculate payouts for each participant
+      const winners = bet.participants?.filter(p => p.side === winningSide) || [];
+      const totalWinnerAmount = winners.reduce((sum, p) => sum + p.amount, 0);
+      const totalPot = bet.totalPot;
+
+      // Update bet status to RESOLVED
+      await client.models.Bet.update({
+        id: bet.id,
+        status: 'RESOLVED',
+        winningSide: winningSide,
+        resolutionReason: `Resolved by creator. Winner: ${winningSide === 'A' ? bet.odds.sideAName || 'Side A' : bet.odds.sideBName || 'Side B'}`,
+        updatedAt: new Date().toISOString()
+      });
+
+      // Update participant payouts and user balances
+      if (bet.participants) {
+        await Promise.all(
+          bet.participants.map(async (participant) => {
+            const isWinner = participant.side === winningSide;
+            let payout = 0;
+
+            if (isWinner && totalWinnerAmount > 0) {
+              // Winner gets their original amount back plus their share of the total pot
+              const winnerShare = participant.amount / totalWinnerAmount;
+              payout = totalPot * winnerShare;
+            }
+
+            // Update participant record
+            await client.models.Participant.update({
+              id: participant.id,
+              payout: payout,
+              status: isWinner ? 'ACCEPTED' : 'DECLINED'
+            });
+
+            // Update user balance and stats
+            await updateUserStats(participant.userId, isWinner, participant.amount, payout);
+          })
+        );
+      }
+
+      Alert.alert(
+        'Bet Resolved!',
+        `"${bet.title}" has been resolved. Payouts have been distributed to winners.`,
+        [{ text: 'OK' }]
+      );
+
+    } catch (error) {
+      console.error('Error resolving bet:', error);
+      Alert.alert(
+        'Error',
+        'Failed to resolve bet. Please try again.',
+        [{ text: 'OK' }]
+      );
+    } finally {
+      setIsResolving(null);
+    }
+  };
+
+  const updateUserStats = async (userId: string, isWinner: boolean, betAmount: number, payout: number) => {
+    try {
+      // Get current user data
+      const { data: userData } = await client.models.User.get({ id: userId });
+
+      if (userData) {
+        const currentBalance = userData.balance || 0;
+        const currentTotalBets = userData.totalBets || 0;
+        const currentTotalWinnings = userData.totalWinnings || 0;
+        const currentWinRate = userData.winRate || 0;
+
+        // Calculate new stats
+        const newTotalBets = currentTotalBets + 1;
+        let newBalance = currentBalance;
+        let newTotalWinnings = currentTotalWinnings;
+        let newWinRate = currentWinRate;
+
+        if (isWinner) {
+          // Winner gets payout added to balance
+          newBalance = currentBalance + payout;
+          newTotalWinnings = currentTotalWinnings + (payout - betAmount); // Profit only
+
+          // Calculate new win rate (winners count / total bets)
+          const previousWins = Math.round((currentWinRate / 100) * currentTotalBets);
+          const newWins = previousWins + 1;
+          newWinRate = (newWins / newTotalBets) * 100;
+        } else {
+          // Loser loses their bet amount (already deducted when they joined)
+          // Balance doesn't change as they already paid when joining
+          newTotalWinnings = currentTotalWinnings - betAmount; // Record the loss
+
+          // Calculate new win rate (no new wins)
+          const previousWins = Math.round((currentWinRate / 100) * currentTotalBets);
+          newWinRate = (previousWins / newTotalBets) * 100;
+        }
+
+        // Update user record
+        await client.models.User.update({
+          id: userId,
+          balance: newBalance,
+          totalBets: newTotalBets,
+          totalWinnings: newTotalWinnings,
+          winRate: newWinRate,
+          updatedAt: new Date().toISOString()
+        });
+
+        console.log(`Updated user ${userId} stats: ${isWinner ? 'WIN' : 'LOSS'}, Balance: $${newBalance}, WinRate: ${newWinRate.toFixed(1)}%`);
+      }
+    } catch (error) {
+      console.error(`Error updating user ${userId} stats:`, error);
+      // Don't throw error here to avoid breaking bet resolution
+    }
+  };
+
+  const handleBetPress = (bet: Bet) => {
+    console.log('Pending bet pressed:', bet.title);
+  };
+
+  const handleBalancePress = () => {
+    console.log('Balance pressed');
+  };
+
+  const handleNotificationsPress = () => {
+    console.log('Notifications pressed');
+  };
+
+  // We'll fetch balance dynamically when needed rather than storing in AuthContext
+  const [userBalance, setUserBalance] = useState<number>(0);
+
+  // Fetch user balance
+  useEffect(() => {
+    const fetchUserBalance = async () => {
+      if (user?.userId) {
+        try {
+          const { data: userData } = await client.models.User.get({ id: user.userId });
+          setUserBalance(userData?.balance || 0);
+        } catch (error) {
+          console.error('Error fetching user balance:', error);
+        }
+      }
+    };
+
+    fetchUserBalance();
+  }, [user]);
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <Header
         title="Resolve Bets"
         showBalance={true}
-        balance={1245.75}
+        balance={userBalance}
+        onBalancePress={handleBalancePress}
+        onNotificationsPress={handleNotificationsPress}
+        notificationCount={pendingBets.length}
       />
-      
-      <View style={styles.content}>
-        <View style={styles.placeholder}>
-          <Text style={styles.placeholderTitle}>Bet Resolution</Text>
-          <Text style={styles.placeholderText}>
-            Bet resolution interface will be implemented here
+
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        {/* Section Header */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>PENDING RESOLUTION</Text>
+          <Text style={styles.sectionSubtitle}>
+            {pendingBets.length} bets awaiting resolution
           </Text>
         </View>
-      </View>
+
+        {/* Loading State */}
+        {isLoading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={styles.loadingText}>Loading pending bets...</Text>
+          </View>
+        ) : pendingBets.length > 0 ? (
+          pendingBets.map((bet) => (
+            <View key={bet.id} style={styles.betContainer}>
+              <BetCard
+                bet={bet}
+                onPress={handleBetPress}
+                showJoinOptions={false}
+              />
+
+              {/* Resolution Actions - Only show if user is creator */}
+              {bet.creatorId === user?.userId && (
+                <View style={styles.resolutionActions}>
+                  <Text style={styles.resolutionTitle}>Resolve this bet:</Text>
+                  <View style={styles.resolutionButtons}>
+                    <TouchableOpacity
+                      style={[
+                        styles.resolutionButton,
+                        styles.resolutionButtonA,
+                        isResolving === bet.id && styles.resolutionButtonDisabled
+                      ]}
+                      onPress={() => handleResolveBet(bet, 'A')}
+                      disabled={isResolving === bet.id}
+                    >
+                      {isResolving === bet.id ? (
+                        <ActivityIndicator size="small" color={colors.background} />
+                      ) : (
+                        <>
+                          <Text style={styles.resolutionButtonText}>
+                            {bet.odds.sideAName || 'Side A'} WINS
+                          </Text>
+                          <Text style={styles.resolutionButtonPayout}>
+                            {bet.participants?.filter(p => p.side === 'A').length || 0} winners
+                          </Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.resolutionButton,
+                        styles.resolutionButtonB,
+                        isResolving === bet.id && styles.resolutionButtonDisabled
+                      ]}
+                      onPress={() => handleResolveBet(bet, 'B')}
+                      disabled={isResolving === bet.id}
+                    >
+                      {isResolving === bet.id ? (
+                        <ActivityIndicator size="small" color={colors.background} />
+                      ) : (
+                        <>
+                          <Text style={styles.resolutionButtonText}>
+                            {bet.odds.sideBName || 'Side B'} WINS
+                          </Text>
+                          <Text style={styles.resolutionButtonPayout}>
+                            {bet.participants?.filter(p => p.side === 'B').length || 0} winners
+                          </Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Payout Preview */}
+                  <View style={styles.payoutPreview}>
+                    <Text style={styles.payoutTitle}>Total Pot: {formatCurrency(bet.totalPot)}</Text>
+                    <Text style={styles.payoutSubtitle}>Winners split the entire pot based on their contribution</Text>
+                  </View>
+                </View>
+              )}
+            </View>
+          ))
+        ) : (
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyTitle}>No Pending Resolutions</Text>
+            <Text style={styles.emptyDescription}>
+              All your bets are either still active or already resolved. Great job staying on top of things!
+            </Text>
+          </View>
+        )}
+      </ScrollView>
     </SafeAreaView>
   );
 };
@@ -40,21 +433,144 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+  },
+
+  // Section Header
+  sectionHeader: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    backgroundColor: colors.background,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  sectionTitle: {
+    ...textStyles.h3,
+    color: colors.textPrimary,
+    fontWeight: typography.fontWeight.bold,
+    fontSize: typography.fontSize.lg,
+    marginBottom: spacing.xs,
+  },
+  sectionSubtitle: {
+    ...textStyles.body,
+    color: colors.textMuted,
+    fontSize: typography.fontSize.sm,
+  },
+
+  // Loading and Empty States
+  loadingContainer: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
+    paddingVertical: spacing.xl,
   },
-  placeholder: {
-    alignItems: 'center',
-  },
-  placeholderTitle: {
-    ...textStyles.h2,
-    color: colors.textPrimary,
-    marginBottom: 16,
-  },
-  placeholderText: {
+  loadingText: {
     ...textStyles.body,
-    color: colors.textSecondary,
+    color: colors.textMuted,
+    marginTop: spacing.md,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: spacing.xl,
+    paddingHorizontal: spacing.lg,
+  },
+  emptyTitle: {
+    ...textStyles.h3,
+    color: colors.textPrimary,
+    marginBottom: spacing.sm,
+    textAlign: 'center',
+  },
+  emptyDescription: {
+    ...textStyles.body,
+    color: colors.textMuted,
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+
+  // Bet Container
+  betContainer: {
+    marginBottom: spacing.lg,
+  },
+
+  // Resolution Actions
+  resolutionActions: {
+    backgroundColor: colors.surface,
+    marginHorizontal: spacing.md,
+    borderRadius: spacing.radius.sm,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderTopWidth: 0,
+    borderTopLeftRadius: 0,
+    borderTopRightRadius: 0,
+  },
+  resolutionTitle: {
+    ...textStyles.h4,
+    color: colors.textPrimary,
+    marginBottom: spacing.sm,
+    fontWeight: typography.fontWeight.medium,
+  },
+  resolutionButtons: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  resolutionButton: {
+    flex: 1,
+    backgroundColor: colors.primary,
+    borderRadius: spacing.radius.sm,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 60,
+  },
+  resolutionButtonA: {
+    backgroundColor: colors.success,
+  },
+  resolutionButtonB: {
+    backgroundColor: colors.warning,
+  },
+  resolutionButtonDisabled: {
+    opacity: 0.6,
+  },
+  resolutionButtonText: {
+    ...textStyles.button,
+    color: colors.background,
+    fontSize: typography.fontSize.sm,
+    fontWeight: typography.fontWeight.bold,
+    textAlign: 'center',
+    marginBottom: spacing.xs,
+  },
+  resolutionButtonPayout: {
+    ...textStyles.caption,
+    color: colors.background,
+    fontSize: typography.fontSize.xs,
+    opacity: 0.9,
+    textAlign: 'center',
+  },
+
+  // Payout Preview
+  payoutPreview: {
+    backgroundColor: colors.background,
+    borderRadius: spacing.radius.sm,
+    padding: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  payoutTitle: {
+    ...textStyles.h4,
+    color: colors.textPrimary,
+    fontSize: typography.fontSize.sm,
+    fontWeight: typography.fontWeight.medium,
+    textAlign: 'center',
+    marginBottom: spacing.xs,
+  },
+  payoutSubtitle: {
+    ...textStyles.caption,
+    color: colors.textMuted,
+    fontSize: typography.fontSize.xs,
     textAlign: 'center',
   },
 });

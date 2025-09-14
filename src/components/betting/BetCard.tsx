@@ -89,19 +89,47 @@ export const BetCard: React.FC<BetCardProps> = ({
     try {
       const user = await getCurrentUser();
 
+      // Check user balance first
+      const { data: userData } = await client.models.User.get({ id: user.userId });
+      const currentBalance = userData?.balance || 0;
+
+      if (currentBalance < amount) {
+        Alert.alert(
+          'Insufficient Balance',
+          `You need $${amount} to join this bet, but your current balance is $${currentBalance.toFixed(2)}. Please add funds to your account.`,
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+
+      // Create participant record
       const result = await client.models.Participant.create({
         betId: bet.id,
         userId: user.userId,
         side: side,
         amount: amount,
         status: 'PENDING',
-        payout: 0, // Will be calculated by backend
+        payout: 0, // Will be calculated when bet is resolved
       });
 
       if (result.data) {
+        // Deduct amount from user balance
+        await client.models.User.update({
+          id: user.userId,
+          balance: currentBalance - amount,
+          updatedAt: new Date().toISOString()
+        });
+
+        // Update bet total pot
+        await client.models.Bet.update({
+          id: bet.id,
+          totalPot: (bet.totalPot || 0) + amount,
+          updatedAt: new Date().toISOString()
+        });
+
         Alert.alert(
           'Joined Successfully!',
-          `You've joined the bet with $${amount} on ${side === 'A' ? bet.odds.sideAName || 'Side A' : bet.odds.sideBName || 'Side B'}.`,
+          `You've joined the bet with $${amount} on ${side === 'A' ? bet.odds.sideAName || 'Side A' : bet.odds.sideBName || 'Side B'}. Your new balance is $${(currentBalance - amount).toFixed(2)}.`,
           [{ text: 'OK' }]
         );
 

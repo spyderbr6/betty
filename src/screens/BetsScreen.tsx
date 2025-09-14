@@ -355,13 +355,38 @@ export const BetsScreen: React.FC = () => {
     // Navigate to create bet screen
   };
 
-  // Mock user data
-  const currentUser = {
-    winRate: 67.3,
-    totalBets: 23,
-    totalWinnings: 1245.75,
-    trustScore: 8.4,
-  };
+  // Real user stats state
+  const [userStats, setUserStats] = useState({
+    winRate: 0,
+    totalBets: 0,
+    totalWinnings: 0,
+    trustScore: 0,
+    balance: 0,
+  });
+
+  // Fetch real user stats
+  useEffect(() => {
+    const fetchUserStats = async () => {
+      if (user?.userId) {
+        try {
+          const { data: userData } = await client.models.User.get({ id: user.userId });
+          if (userData) {
+            setUserStats({
+              winRate: userData.winRate || 0,
+              totalBets: userData.totalBets || 0,
+              totalWinnings: userData.totalWinnings || 0,
+              trustScore: userData.trustScore || 0,
+              balance: userData.balance || 0,
+            });
+          }
+        } catch (error) {
+          console.error('Error fetching user stats:', error);
+        }
+      }
+    };
+
+    fetchUserStats();
+  }, [user]);
 
   // Mock live game data
   const liveGame = {
@@ -388,7 +413,7 @@ export const BetsScreen: React.FC = () => {
     <SafeAreaView style={styles.container} edges={['top']}>
       <Header
         showBalance={true}
-        balance={currentUser.totalWinnings}
+        balance={userStats.balance}
         onBalancePress={handleBalancePress}
         onNotificationsPress={handleNotificationsPress}
         notificationCount={2}
@@ -446,17 +471,17 @@ export const BetsScreen: React.FC = () => {
             </View>
 
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>{currentUser.winRate}%</Text>
+              <Text style={styles.statValue}>{userStats.winRate.toFixed(1)}%</Text>
               <Text style={styles.statLabel}>WIN RATE</Text>
             </View>
 
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>{currentUser.totalBets}</Text>
+              <Text style={styles.statValue}>{userStats.totalBets}</Text>
               <Text style={styles.statLabel}>TOTAL BETS</Text>
             </View>
 
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>{currentUser.trustScore}</Text>
+              <Text style={styles.statValue}>{userStats.trustScore.toFixed(1)}</Text>
               <Text style={styles.statLabel}>TRUST SCORE</Text>
             </View>
           </View>
