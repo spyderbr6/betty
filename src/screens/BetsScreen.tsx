@@ -142,16 +142,7 @@ const mockBets: Bet[] = [
 
 export const BetsScreen: React.FC = () => {
   const [bets] = useState<Bet[]>(mockBets);
-  const [isRefreshing, setIsRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-
-  const handleRefresh = async () => {
-    setIsRefreshing(true);
-    // Simulate API call
-    setTimeout(() => {
-      setIsRefreshing(false);
-    }, 1000);
-  };
 
   const handleBetPress = (bet: Bet) => {
     console.log('Bet pressed:', bet.title);
