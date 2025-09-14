@@ -60,6 +60,123 @@ This is the SideBet app - a professional peer-to-peer betting platform built wit
 - APK/AAB generation ready through Expo Application Services (EAS)
 - Native app store optimization built-in
 
+## SideBet Design System Architecture
+
+### Design System Overview
+The app uses a comprehensive design system located in `src/styles/` that provides consistent styling across all platforms. **ALWAYS use design system tokens instead of hardcoded values.**
+
+### Core Design Tokens
+```typescript
+import { colors, typography, spacing, shadows, textStyles, commonStyles } from '../styles';
+```
+
+#### Colors (`colors.*`)
+- **Surface Colors**: `colors.background`, `colors.surface`, `colors.surfaceLight`
+- **Text Colors**: `colors.textPrimary`, `colors.textSecondary`, `colors.textMuted`, `colors.textInverse`
+- **Semantic Colors**: `colors.primary`, `colors.secondary`, `colors.success`, `colors.error`, `colors.warning`
+- **Betting Colors**: `colors.live`, `colors.active`, `colors.pending`
+- **UI Colors**: `colors.border`, `colors.divider`
+
+#### Typography (`typography.*` and `textStyles.*`)
+- **Font Scales**: `typography.fontSize.*` (xs, sm, base, lg, xl, 2xl, 3xl, 4xl)
+- **Font Weights**: `typography.fontWeight.*` (normal, medium, semibold, bold, black)
+- **Font Families**: `typography.fontFamily.*` (regular, bold, mono)
+- **Pre-built Text Styles**: `textStyles.*` (h1-h4, body, bodySmall, caption, label, button, odds, amount, balance, pot, status)
+
+#### Spacing (`spacing.*`)
+- **Base Spacing**: `spacing.xs`, `spacing.sm`, `spacing.md`, `spacing.lg`, `spacing.xl`
+- **Specialized Spacing**: `spacing.betting.*`, `spacing.card.*`, `spacing.button.*`, `spacing.padding.*`
+- **Border Radius**: `spacing.radius.*` (xs, sm, md, lg, xl)
+
+#### Shadows (`shadows.*`)
+- **Component Shadows**: `shadows.card`, `shadows.betCard`, `shadows.liveBetCard`
+- **Interactive Shadows**: `shadows.button`, `shadows.buttonPressed`
+- **Layout Shadows**: `shadows.header`, `shadows.tabBar`
+
+### Pre-built Component Styles (`commonStyles.*`)
+**CRITICAL: Use these predefined patterns instead of creating custom styles**
+
+#### Layout Patterns
+```typescript
+commonStyles.flexCenter       // Centered flex layout
+commonStyles.flexBetween     // Space-between flex layout
+commonStyles.backgroundCard  // Standard card background
+commonStyles.border         // Standard border styling
+```
+
+#### Betting Components
+```typescript
+commonStyles.betCard         // Standard bet card layout
+commonStyles.liveBetCard     // Live bet card with accent border
+commonStyles.statusBadge     // Status indicator styling
+```
+
+#### Interactive Elements
+```typescript
+commonStyles.primaryButton   // Primary button styling
+commonStyles.secondaryButton // Secondary button styling
+commonStyles.textInput       // Standard text input styling
+```
+
+#### Navigation & Layout
+```typescript
+commonStyles.header          // Header component styling
+commonStyles.tabBar          // Tab bar styling
+commonStyles.screenContainer // Full screen container
+commonStyles.safeArea        // Safe area container
+```
+
+### Design System Enforcement Rules
+
+#### ✅ ALWAYS DO:
+```typescript
+// Use design system tokens
+fontSize: typography.fontSize.base,
+color: colors.textPrimary,
+marginBottom: spacing.sm,
+...textStyles.h4,
+...commonStyles.betCard,
+```
+
+#### ❌ NEVER DO:
+```typescript
+// Hardcoded values
+fontSize: 16,
+color: '#333333',
+marginBottom: 2,
+fontWeight: '600',
+fontFamily: 'System',
+```
+
+#### Component Development Pattern:
+```typescript
+const styles = StyleSheet.create({
+  container: {
+    ...commonStyles.betCard,        // Start with predefined pattern
+    // Only add specific overrides if absolutely necessary
+  },
+  title: {
+    ...textStyles.h4,              // Use predefined text style
+    color: colors.textPrimary,     // Use semantic colors
+    marginBottom: spacing.xs,      // Use spacing scale
+  },
+});
+```
+
+### Platform Consistency Guidelines
+- **Typography**: Use `textStyles.*` patterns for consistent font rendering across iOS/Android
+- **Spacing**: Use `spacing.*` scale to ensure proper touch targets and visual hierarchy
+- **Colors**: Use semantic color names (`colors.textPrimary`) not hex values for theme consistency
+- **Shadows**: Use `shadows.*` patterns for proper elevation on both platforms
+
+### Design System Validation
+Before any component work:
+1. Check if `commonStyles.*` has a matching pattern
+2. Use `textStyles.*` for all typography needs
+3. Verify all colors exist in `colors.*`
+4. Confirm spacing values exist in `spacing.*`
+5. Never hardcode numeric values for fonts, colors, or spacing
+
 ## Claude Workflow Instructions
 
 ### Solution Proposal Process
