@@ -435,11 +435,12 @@ const styles = StyleSheet.create({
   },
   formRow: {
     flexDirection: 'row',
-    gap: spacing.sm,
+    // gap is not supported on native; use margins on children
   },
   formGroupHalf: {
     flex: 1,
     marginBottom: spacing.md,
+    marginRight: spacing.sm,
   },
   fieldLabel: {
     ...textStyles.label,
@@ -467,7 +468,7 @@ const styles = StyleSheet.create({
   categoryGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: spacing.sm,
+    // gap is not supported on native; use margins on buttons
   },
   categoryButton: {
     flex: 1,
@@ -479,6 +480,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
     borderColor: colors.border,
+    marginRight: spacing.sm,
+    marginBottom: spacing.sm,
   },
   categoryButtonSelected: {
     backgroundColor: colors.primary,
@@ -498,18 +501,19 @@ const styles = StyleSheet.create({
   switchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
+    // gap is not supported on native; use margin on label
   },
   switchLabel: {
     ...textStyles.bodySmall,
     color: colors.textSecondary,
+    marginRight: spacing.sm,
   },
 
   // Betting Sides
   sidesContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
+    // gap is not supported on native; use margins on divider
   },
   sideCard: {
     flex: 1,
@@ -550,6 +554,7 @@ const styles = StyleSheet.create({
   vsContainer: {
     width: 40,
     alignItems: 'center',
+    marginHorizontal: spacing.sm,
   },
   vsText: {
     ...textStyles.h4,

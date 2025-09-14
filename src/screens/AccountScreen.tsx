@@ -261,7 +261,7 @@ const styles = StyleSheet.create({
   statsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: spacing.sm,
+    // gap is not supported on native; use margins on cards
   },
   statCard: {
     flex: 1,
@@ -270,6 +270,8 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     borderRadius: spacing.radius.lg,
     alignItems: 'center',
+    marginRight: spacing.sm,
+    marginBottom: spacing.sm,
   },
   statValue: {
     ...textStyles.h3,

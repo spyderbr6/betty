@@ -271,7 +271,7 @@ const styles = StyleSheet.create({
   rightSection: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
+    // gap is not supported on native; apply margins on children instead
   },
   balanceContainer: {
     alignItems: 'flex-end',
@@ -298,6 +298,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderRadius: spacing.radius.sm,
     position: 'relative',
+    marginLeft: spacing.sm,
   },
   notificationBadge: {
     position: 'absolute',
@@ -392,7 +393,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     marginHorizontal: spacing.md,
     marginTop: spacing.sm,
-    gap: spacing.sm,
+    // gap is not supported on native; use margin on children
   },
   searchInputContainer: {
     flex: 1,
@@ -403,6 +404,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderRadius: spacing.radius.sm,
     paddingHorizontal: spacing.sm,
+    marginRight: spacing.sm,
   },
   searchIcon: {
     marginRight: spacing.xs,
@@ -423,10 +425,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.sm,
     borderRadius: spacing.radius.sm,
-    gap: 4,
+    // space between icon and text via text marginLeft
   },
   filterText: {
     ...textStyles.bodySmall,
     color: colors.textSecondary,
+    marginLeft: 4,
   },
 });

@@ -294,7 +294,7 @@ const styles = StyleSheet.create({
   
   // Filters
   filtersContainer: {
-    gap: spacing.sm,
+    // gap is not supported on native; use margins on children
   },
   filterButton: {
     alignSelf: 'flex-start',
@@ -321,7 +321,8 @@ const styles = StyleSheet.create({
   },
   quickFilters: {
     flexDirection: 'row',
-    gap: spacing.xs,
+    // gap is not supported on native; use margin on chips
+    marginTop: spacing.sm,
   },
   filterChip: {
     paddingHorizontal: spacing.sm,
@@ -330,6 +331,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceLight,
     borderWidth: 1,
     borderColor: colors.border,
+    marginRight: spacing.xs,
   },
   filterChipActive: {
     backgroundColor: colors.primary,

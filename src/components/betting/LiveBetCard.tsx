@@ -289,7 +289,7 @@ const styles = StyleSheet.create({
   quickBetContainer: {
     flexDirection: 'row',
     marginBottom: spacing.sm,
-    gap: spacing.sm,
+    // gap is not supported on native; use margins on children
   },
   quickBetButton: {
     flex: 1,
@@ -301,10 +301,12 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   quickBetButtonA: {
-    // Could add side-specific styling
+    // Left button spacing
+    marginRight: spacing.sm,
   },
   quickBetButtonB: {
-    // Could add side-specific styling
+    // Right button spacing
+    marginLeft: spacing.sm,
   },
   quickBetSide: {
     ...textStyles.bodySmall,
@@ -321,6 +323,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: spacing.xs,
+    marginHorizontal: spacing.xs,
   },
   vsText: {
     ...textStyles.caption,

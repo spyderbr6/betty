@@ -78,32 +78,35 @@ export const typography = {
 } as const;
 
 // Typography presets for common UI patterns
+// Helper to convert a font size and multiplier into a concrete RN lineHeight (dp)
+const lh = (fontSize: number, multiplier: number) => Math.round(fontSize * multiplier);
+
 export const textStyles = {
   // Headers
   h1: {
     fontSize: typography.fontSize['3xl'],
     fontWeight: typography.fontWeight.bold,
     fontFamily: typography.fontFamily.bold,
-    lineHeight: typography.lineHeight.tight,
+    lineHeight: lh(typography.fontSize['3xl'], typography.lineHeight.tight),
     letterSpacing: typography.letterSpacing.tight,
   },
   h2: {
     fontSize: typography.fontSize['2xl'],
     fontWeight: typography.fontWeight.bold,
     fontFamily: typography.fontFamily.bold,
-    lineHeight: typography.lineHeight.tight,
+    lineHeight: lh(typography.fontSize['2xl'], typography.lineHeight.tight),
   },
   h3: {
     fontSize: typography.fontSize.xl,
     fontWeight: typography.fontWeight.semibold,
     fontFamily: typography.fontFamily.regular,
-    lineHeight: typography.lineHeight.snug,
+    lineHeight: lh(typography.fontSize.xl, typography.lineHeight.snug),
   },
   h4: {
     fontSize: typography.fontSize.lg,
     fontWeight: typography.fontWeight.semibold,
     fontFamily: typography.fontFamily.regular,
-    lineHeight: typography.lineHeight.snug,
+    lineHeight: lh(typography.fontSize.lg, typography.lineHeight.snug),
   },
   
   // Body text
@@ -111,19 +114,19 @@ export const textStyles = {
     fontSize: typography.fontSize.base,
     fontWeight: typography.fontWeight.normal,
     fontFamily: typography.fontFamily.regular,
-    lineHeight: typography.lineHeight.normal,
+    lineHeight: lh(typography.fontSize.base, typography.lineHeight.normal),
   },
   bodyLarge: {
     fontSize: typography.fontSize.lg,
     fontWeight: typography.fontWeight.normal,
     fontFamily: typography.fontFamily.regular,
-    lineHeight: typography.lineHeight.normal,
+    lineHeight: lh(typography.fontSize.lg, typography.lineHeight.normal),
   },
   bodySmall: {
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.normal,
     fontFamily: typography.fontFamily.regular,
-    lineHeight: typography.lineHeight.normal,
+    lineHeight: lh(typography.fontSize.sm, typography.lineHeight.normal),
   },
   
   // Captions and labels
@@ -131,14 +134,14 @@ export const textStyles = {
     fontSize: typography.fontSize.xs,
     fontWeight: typography.fontWeight.normal,
     fontFamily: typography.fontFamily.regular,
-    lineHeight: typography.lineHeight.snug,
+    lineHeight: lh(typography.fontSize.xs, typography.lineHeight.snug),
     letterSpacing: typography.letterSpacing.wide,
   },
   label: {
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.medium,
     fontFamily: typography.fontFamily.regular,
-    lineHeight: typography.lineHeight.snug,
+    lineHeight: lh(typography.fontSize.sm, typography.lineHeight.snug),
     letterSpacing: typography.letterSpacing.wide,
   },
   
@@ -147,25 +150,25 @@ export const textStyles = {
     fontSize: typography.fontSize.odds,
     fontWeight: typography.fontWeight.bold,
     fontFamily: typography.fontFamily.mono,
-    lineHeight: typography.lineHeight.tight,
+    lineHeight: lh(typography.fontSize.odds, typography.lineHeight.tight),
   },
   amount: {
     fontSize: typography.fontSize.amount,
     fontWeight: typography.fontWeight.bold,
     fontFamily: typography.fontFamily.regular,
-    lineHeight: typography.lineHeight.tight,
+    lineHeight: lh(typography.fontSize.amount, typography.lineHeight.tight),
   },
   balance: {
     fontSize: typography.fontSize.balance,
     fontWeight: typography.fontWeight.bold,
     fontFamily: typography.fontFamily.regular,
-    lineHeight: typography.lineHeight.tight,
+    lineHeight: lh(typography.fontSize.balance, typography.lineHeight.tight),
   },
   pot: {
     fontSize: typography.fontSize.pot,
     fontWeight: typography.fontWeight.semibold,
     fontFamily: typography.fontFamily.regular,
-    lineHeight: typography.lineHeight.tight,
+    lineHeight: lh(typography.fontSize.pot, typography.lineHeight.tight),
   },
   
   // Status text
@@ -173,7 +176,7 @@ export const textStyles = {
     fontSize: typography.fontSize.xs,
     fontWeight: typography.fontWeight.semibold,
     fontFamily: typography.fontFamily.regular,
-    lineHeight: typography.lineHeight.tight,
+    lineHeight: lh(typography.fontSize.xs, typography.lineHeight.tight),
     letterSpacing: typography.letterSpacing.widest,
     textTransform: 'uppercase' as const,
   },
@@ -183,19 +186,19 @@ export const textStyles = {
     fontSize: typography.fontSize.base,
     fontWeight: typography.fontWeight.semibold,
     fontFamily: typography.fontFamily.regular,
-    lineHeight: typography.lineHeight.tight,
+    lineHeight: lh(typography.fontSize.base, typography.lineHeight.tight),
   },
   buttonSmall: {
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.semibold,
     fontFamily: typography.fontFamily.regular,
-    lineHeight: typography.lineHeight.tight,
+    lineHeight: lh(typography.fontSize.sm, typography.lineHeight.tight),
   },
   buttonLarge: {
     fontSize: typography.fontSize.lg,
     fontWeight: typography.fontWeight.semibold,
     fontFamily: typography.fontFamily.regular,
-    lineHeight: typography.lineHeight.tight,
+    lineHeight: lh(typography.fontSize.lg, typography.lineHeight.tight),
   },
   
   // Navigation
@@ -203,7 +206,7 @@ export const textStyles = {
     fontSize: typography.fontSize.xs,
     fontWeight: typography.fontWeight.medium,
     fontFamily: typography.fontFamily.regular,
-    lineHeight: typography.lineHeight.tight,
+    lineHeight: lh(typography.fontSize.xs, typography.lineHeight.tight),
   },
   
   // Special displays
@@ -211,7 +214,7 @@ export const textStyles = {
     fontSize: typography.fontSize['4xl'],
     fontWeight: typography.fontWeight.black,
     fontFamily: typography.fontFamily.bold,
-    lineHeight: typography.lineHeight.tight,
+    lineHeight: lh(typography.fontSize['4xl'], typography.lineHeight.tight),
     letterSpacing: typography.letterSpacing.tight,
   },
 } as const;
