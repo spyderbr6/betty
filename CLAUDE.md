@@ -202,7 +202,7 @@ When given a task or request, Claude should:
 - **Show Context**: When making changes, show the relevant code sections being modified
 - **Ask Before Major Changes**: Never make significant architectural decisions without discussion
 - **Provide Options**: When multiple approaches are possible, present options with pros/cons
-- **Use Todo Lists**: For complex multi-step tasks, use the TodoWrite tool to track progress
+- **Use Todo Lists**: For complex multi-step tasks, use the Todo.md file to track changes and progress towards future changes
 
 ### Progress Reporting Guidelines
 - **Long-running processes**: For builds, installs, or compilation that take >30 seconds, start the process and only report key milestones (start, major progress points, completion)
@@ -301,7 +301,4 @@ When encountering ANY errors, compilation failures, or build issues, **ALWAYS** 
 - `Read` - Verify design system files contain referenced properties
 - `npm run android` - Test builds end-to-end  
 - `Bash` with build commands - Verify configuration changes
-
-### Track your last few tasks in a file in case our sessions gets interrupted. 
-claudelog.md
 

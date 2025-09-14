@@ -304,7 +304,7 @@ export const CreateBetScreen: React.FC = () => {
 
           <View style={styles.formRow}>
             <View style={styles.formGroupHalf}>
-              <Text style={styles.fieldLabel}>Initial Amount *</Text>
+              <Text style={styles.fieldLabel}>Bet Amount*</Text>
               <TextInput
                 style={styles.textInput}
                 placeholder="$0.00"

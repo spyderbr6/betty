@@ -71,6 +71,14 @@ src/
 - ✅ **NEW:** Filtered BetsScreen to show only user's created/joined bets
 - ✅ **NEW:** Added betAmount field to schema for proper bet amount tracking
 - ✅ **NEW:** Real-time participant count updates when users join bets
+- [x] User registration and login - **COMPLETED**
+- [x] Create new bet - **COMPLETED** (Real GraphQL API integration)
+- [x] Join existing bet - **COMPLETED** (Participant creation with confirmations)
+- [x] View bet details - **COMPLETED** (BetCard with real-time data)
+- [x] User profile and stats - **COMPLETED** (Real stats from database)
+- [x] Sign out functionality - **COMPLETED** (AuthContext integration)
+- [x] Navigation between screens - **COMPLETED**
+- [x] Real-time bet feed - **COMPLETED** (GraphQL subscriptions)
 
 **Files Enhanced**:
 - ✅ `src/screens/CreateBetScreen.tsx` - Real balance + improved formatting
@@ -128,8 +136,12 @@ src/
 
 ### 4. Small enhancements
 
-- remove the category selector from bet creation. the bet type is a better cleaner way and categories are duplicative in the ui
 - wire up the elipsis in the header to capture plaintext that pushes to to my github issue repo
+- bet creation. you have to pick one of the options side A or B
+- bet creation.  default the first bet type
+- bet creation. apply dollar formatting to the bet amount. 
+- remove "search bets" and filter from the header. apply to my bets and live bets only
+- implement a drag-down refresh capability to refresh the page
 
 ### 5. Friend and Friend Management
   - work with each other on the scope
@@ -140,6 +152,14 @@ src/
 - Verify bet locations for local events
 - **Dependencies**: `expo-location`
 
+
+### 7.0 Advanced Bet Card Updates
+- when joined to a bet it should maintain the highlight on who you selected as well as show #players for each bet. so X players for "home" and Y players for "away" team. 
+
+### 8. Advanced Trust Scoring System
+- Reputation tracking
+- Bet resolution verification with voting and trust system and trust calculation.
+- Social trust metrics
 
 ## 🔮 Backlog ENHANCEMENTS (Lowest Priority)
 
@@ -157,6 +177,8 @@ src/
 - Reputation tracking
 - Bet resolution verification
 - Social trust metrics
+
+### 8. Advanced 
 
 ## 🛠️ Technical Debt & Improvements
 
@@ -191,21 +213,10 @@ src/
 
 ## 📱 Testing Checklist
 
-### Core MVP Functionality ✅
-- [x] User registration and login - **COMPLETED**
-- [x] Create new bet - **COMPLETED** (Real GraphQL API integration)
-- [x] Join existing bet - **COMPLETED** (Participant creation with confirmations)
-- [x] View bet details - **COMPLETED** (BetCard with real-time data)
-- [x] User profile and stats - **COMPLETED** (Real stats from database)
-- [x] Sign out functionality - **COMPLETED** (AuthContext integration)
-- [x] Navigation between screens - **COMPLETED**
-- [x] Real-time bet feed - **COMPLETED** (GraphQL subscriptions)
-
 ### Ready for User Testing ✅
 **All core MVP features are now functional and ready for live testing!**
 
 ### Next Testing Phase - Enhanced Features
-- [ ] MyBetsScreen filtering (user's active/completed bets)
 - [ ] Bet resolution and payout distribution
 - [ ] Real-time notifications and balance updates
 
