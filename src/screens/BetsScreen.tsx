@@ -3,20 +3,51 @@
  * Main betting screen showing active bets list
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { generateClient } from 'aws-amplify/data';
+import type { Schema } from '../../amplify/data/resource';
 import { commonStyles, colors, spacing, typography, textStyles } from '../styles';
 import { Header } from '../components/ui/Header';
 import { BetCard } from '../components/betting/BetCard';
 import { Bet } from '../types/betting';
 
-// Mock data for development
+// Initialize GraphQL client
+const client = generateClient<Schema>();
+
+// Helper function to transform Amplify data to our Bet type
+const transformAmplifyBet = (bet: any): Bet | null => {
+  // Skip bets with missing required fields
+  if (!bet.id || !bet.title || !bet.description || !bet.category || !bet.status) {
+    return null;
+  }
+
+  return {
+    id: bet.id,
+    title: bet.title,
+    description: bet.description,
+    category: bet.category,
+    status: bet.status,
+    creatorId: bet.creatorId || '',
+    totalPot: bet.totalPot || 0,
+    odds: typeof bet.odds === 'object' && bet.odds ? bet.odds : { sideA: -110, sideB: 110 },
+    deadline: bet.deadline || new Date().toISOString(),
+    winningSide: bet.winningSide || undefined,
+    resolutionReason: bet.resolutionReason || undefined,
+    createdAt: bet.createdAt || new Date().toISOString(),
+    updatedAt: bet.updatedAt || new Date().toISOString(),
+    participants: [], // Will be populated by separate query if needed
+  };
+};
+
+// Keeping mock data as fallback for development
 const mockBets: Bet[] = [
   {
     id: '1',
@@ -141,8 +172,79 @@ const mockBets: Bet[] = [
 ];
 
 export const BetsScreen: React.FC = () => {
-  const [bets] = useState<Bet[]>(mockBets);
+  const [bets, setBets] = useState<Bet[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+
+  useEffect(() => {
+    // Fetch initial bet data and set up real-time subscriptions
+    const fetchBets = async () => {
+      try {
+        setIsLoading(true);
+
+        // Query for active bets with participants
+        const { data: betsData } = await client.models.Bet.list({
+          filter: {
+            or: [
+              { status: { eq: 'ACTIVE' } },
+              { status: { eq: 'LIVE' } },
+              { status: { eq: 'PENDING_RESOLUTION' } }
+            ]
+          }
+        });
+
+        if (betsData) {
+          // Transform Amplify data to our Bet type
+          const transformedBets: Bet[] = betsData
+            .map(transformAmplifyBet)
+            .filter((bet): bet is Bet => bet !== null);
+
+          setBets(transformedBets);
+        }
+      } catch (error) {
+        console.error('Error fetching bets:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchBets();
+
+    // Set up real-time subscription for bet changes
+    const subscription = client.models.Bet.observeQuery({
+      filter: {
+        or: [
+          { status: { eq: 'ACTIVE' } },
+          { status: { eq: 'LIVE' } },
+          { status: { eq: 'PENDING_RESOLUTION' } }
+        ]
+      }
+    }).subscribe({
+      next: (data) => {
+        console.log('Real-time bet update:', data);
+
+        // Transform real-time data
+        const transformedBets: Bet[] = data.items
+          .map(transformAmplifyBet)
+          .filter((bet): bet is Bet => bet !== null);
+
+        setBets(transformedBets);
+      },
+      error: (error) => {
+        console.error('Real-time subscription error:', error);
+      }
+    });
+
+    // Cleanup subscription on unmount
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  const handleJoinBet = (betId: string, side: string, amount: number) => {
+    console.log(`User joined bet ${betId} on side ${side} with $${amount}`);
+    // Bet will be automatically updated via subscription
+  };
 
   const handleBetPress = (bet: Bet) => {
     console.log('Bet pressed:', bet.title);
@@ -209,7 +311,7 @@ export const BetsScreen: React.FC = () => {
         onFilterPress={handleFilterPress}
         showSearch={true}
       />
-      
+
       <View style={styles.content}>
         {/* Active Bets Section */}
         <View style={styles.sectionHeader}>
@@ -222,14 +324,31 @@ export const BetsScreen: React.FC = () => {
             <Text style={styles.createButtonText}>+ NEW BET</Text>
           </TouchableOpacity>
         </View>
-        
-        {activeBets.map((bet) => (
-          <BetCard
-            key={bet.id}
-            bet={bet}
-            onPress={handleBetPress}
-          />
-        ))}
+
+        {/* Loading State */}
+        {isLoading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={styles.loadingText}>Loading bets...</Text>
+          </View>
+        ) : activeBets.length > 0 ? (
+          activeBets.map((bet) => (
+            <BetCard
+              key={bet.id}
+              bet={bet}
+              onPress={handleBetPress}
+              onJoinBet={handleJoinBet}
+              showJoinOptions={true}
+            />
+          ))
+        ) : (
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyTitle}>No Active Bets</Text>
+            <Text style={styles.emptyDescription}>
+              Be the first to create a bet or check back later!
+            </Text>
+          </View>
+        )}
         
         {/* Bottom Stats */}
         <View style={styles.bottomStatsContainer}>
@@ -295,7 +414,39 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.semibold,
   },
-  
+
+  // Loading and Empty States
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: spacing.xl,
+  },
+  loadingText: {
+    ...textStyles.body,
+    color: colors.textMuted,
+    marginTop: spacing.md,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: spacing.xl,
+    paddingHorizontal: spacing.lg,
+  },
+  emptyTitle: {
+    ...textStyles.h3,
+    color: colors.textPrimary,
+    marginBottom: spacing.sm,
+    textAlign: 'center',
+  },
+  emptyDescription: {
+    ...textStyles.body,
+    color: colors.textMuted,
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+
   // Bottom Stats
   bottomStatsContainer: {
     marginTop: spacing.lg,

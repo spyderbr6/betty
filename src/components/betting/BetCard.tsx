@@ -3,29 +3,105 @@
  * Clean bet card matching the exact sportsbook mockup design
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
+import { generateClient } from 'aws-amplify/data';
+import { getCurrentUser } from 'aws-amplify/auth';
+import type { Schema } from '../../../amplify/data/resource';
 import { colors, typography, spacing, textStyles } from '../../styles';
 import { Bet, BetStatus } from '../../types/betting';
 import { formatCurrency } from '../../utils/formatting';
+
+// Initialize GraphQL client
+const client = generateClient<Schema>();
 
 export interface BetCardProps {
   bet: Bet;
   onPress?: (bet: Bet) => void;
   variant?: 'default' | 'compact';
+  onJoinBet?: (betId: string, side: string, amount: number) => void;
+  showJoinOptions?: boolean;
 }
 
 export const BetCard: React.FC<BetCardProps> = ({
   bet,
   onPress,
+  onJoinBet,
+  showJoinOptions = true,
 }) => {
+  const [isJoining, setIsJoining] = useState(false);
+  const [selectedSide, setSelectedSide] = useState<'A' | 'B' | null>(null);
+
   const handlePress = () => {
     onPress?.(bet);
+  };
+
+  const handleJoinBet = async (side: 'A' | 'B') => {
+    if (isJoining) return;
+
+    // For MVP, use a fixed amount of $10. In production, this would be user input
+    const betAmount = 10;
+
+    Alert.alert(
+      'Join Bet',
+      `Join "${bet.title}" with $${betAmount} on ${side === 'A' ? bet.odds.sideAName || 'Side A' : bet.odds.sideBName || 'Side B'}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Join', onPress: () => confirmJoinBet(side, betAmount) },
+      ]
+    );
+  };
+
+  const confirmJoinBet = async (side: 'A' | 'B', amount: number) => {
+    setIsJoining(true);
+    setSelectedSide(side);
+
+    try {
+      const user = await getCurrentUser();
+
+      const result = await client.models.Participant.create({
+        betId: bet.id,
+        userId: user.userId,
+        side: side,
+        amount: amount,
+        status: 'PENDING',
+        payout: 0, // Will be calculated by backend
+      });
+
+      if (result.data) {
+        Alert.alert(
+          'Joined Successfully!',
+          `You've joined the bet with $${amount} on ${side === 'A' ? bet.odds.sideAName || 'Side A' : bet.odds.sideBName || 'Side B'}.`,
+          [{ text: 'OK' }]
+        );
+
+        // Call optional callback
+        onJoinBet?.(bet.id, side, amount);
+      } else {
+        throw new Error('Failed to join bet');
+      }
+    } catch (error) {
+      console.error('Error joining bet:', error);
+      Alert.alert(
+        'Error',
+        'Failed to join bet. Please try again.',
+        [{ text: 'OK' }]
+      );
+    } finally {
+      setIsJoining(false);
+      setSelectedSide(null);
+    }
+  };
+
+  const formatOdds = (odds: number): string => {
+    return odds > 0 ? `+${odds}` : odds.toString();
   };
 
   const getStatusColor = (status: BetStatus): string => {
@@ -97,6 +173,63 @@ export const BetCard: React.FC<BetCardProps> = ({
         </Text>
       </View>
 
+      {/* Betting Options */}
+      {showJoinOptions && bet.status === 'ACTIVE' && (
+        <View style={styles.bettingOptions}>
+          <TouchableOpacity
+            style={[
+              styles.sideButton,
+              styles.sideButtonA,
+              isJoining && selectedSide === 'A' && styles.sideButtonLoading
+            ]}
+            onPress={() => handleJoinBet('A')}
+            disabled={isJoining}
+            activeOpacity={0.8}
+          >
+            {isJoining && selectedSide === 'A' ? (
+              <ActivityIndicator size="small" color={colors.background} />
+            ) : (
+              <>
+                <Text style={styles.sideName}>
+                  {bet.odds.sideAName || 'Side A'}
+                </Text>
+                <Text style={styles.sideOdds}>
+                  {formatOdds(bet.odds.sideA)}
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
+
+          <View style={styles.vsContainer}>
+            <Text style={styles.vsText}>VS</Text>
+          </View>
+
+          <TouchableOpacity
+            style={[
+              styles.sideButton,
+              styles.sideButtonB,
+              isJoining && selectedSide === 'B' && styles.sideButtonLoading
+            ]}
+            onPress={() => handleJoinBet('B')}
+            disabled={isJoining}
+            activeOpacity={0.8}
+          >
+            {isJoining && selectedSide === 'B' ? (
+              <ActivityIndicator size="small" color={colors.background} />
+            ) : (
+              <>
+                <Text style={styles.sideName}>
+                  {bet.odds.sideBName || 'Side B'}
+                </Text>
+                <Text style={styles.sideOdds}>
+                  {formatOdds(bet.odds.sideB)}
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* Bottom Section - Participants */}
       <View style={styles.bottomSection}>
         <View style={styles.participantInfo}>
@@ -165,6 +298,61 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.sm,
   },
   
+  // Betting Options
+  bettingOptions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+    marginHorizontal: -spacing.xs,
+  },
+  sideButton: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderRadius: spacing.radius.sm,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.xs,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  sideButtonA: {
+    marginRight: spacing.xs,
+  },
+  sideButtonB: {
+    marginLeft: spacing.xs,
+  },
+  sideButtonLoading: {
+    backgroundColor: colors.primary,
+  },
+  sideName: {
+    ...textStyles.bodySmall,
+    color: colors.textPrimary,
+    fontSize: 12,
+    fontWeight: typography.fontWeight.medium,
+    marginBottom: 2,
+    textAlign: 'center',
+  },
+  sideOdds: {
+    ...textStyles.odds,
+    color: colors.primary,
+    fontSize: typography.fontSize.sm,
+    fontWeight: typography.fontWeight.bold,
+    textAlign: 'center',
+  },
+  vsContainer: {
+    paddingHorizontal: spacing.xs,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  vsText: {
+    ...textStyles.caption,
+    color: colors.textMuted,
+    fontSize: 10,
+    fontWeight: typography.fontWeight.bold,
+  },
+
   // Bottom Section
   bottomSection: {
     flexDirection: 'row',
