@@ -51,11 +51,11 @@ src/
 - Real-time subscriptions for live updates
 ```
 
-## ✅ MVP COMPLETION - JANUARY 2025
+## ✅ MVP COMPLETION + POLISH - SEPTEMBER 2025
 
-### 🎉 ALL CORE MVP FEATURES COMPLETED!
+### 🎉 ALL CORE MVP FEATURES + POLISH COMPLETED!
 
-**Status**: ✅ COMPLETED - Full betting MVP with real-time functionality
+**Status**: ✅ COMPLETED - Full betting MVP with real-time functionality + all small fixes
 
 **Completed Work**:
 - ✅ Connected CreateBetScreen to Amplify GraphQL API with real bet creation
@@ -64,19 +64,28 @@ src/
 - ✅ Connected AccountScreen to real user stats with auto-creation for new users
 - ✅ Added sign out functionality with confirmation dialog
 - ✅ All TypeScript errors resolved with proper type safety
+- ✅ **NEW:** Fixed bet amounts to use actual bet amounts instead of $10 default
+- ✅ **NEW:** Fixed hardcoded balance in headers to show real user balance
+- ✅ **NEW:** Improved bet creation with $10 default and input formatting
+- ✅ **NEW:** Fixed scrolling issues on BetsScreen (My Bets)
+- ✅ **NEW:** Filtered BetsScreen to show only user's created/joined bets
+- ✅ **NEW:** Added betAmount field to schema for proper bet amount tracking
+- ✅ **NEW:** Real-time participant count updates when users join bets
 
-**Files Modified**:
-- ✅ `src/screens/CreateBetScreen.tsx` - Full GraphQL integration with loading states
-- ✅ `src/components/betting/BetCard.tsx` - Interactive betting with participant creation
-- ✅ `src/screens/BetsScreen.tsx` - Real-time subscription feed with data transformation
-- ✅ `src/screens/AccountScreen.tsx` - Real user data, stats, and sign out functionality
+**Files Enhanced**:
+- ✅ `src/screens/CreateBetScreen.tsx` - Real balance + improved formatting
+- ✅ `src/components/betting/BetCard.tsx` - Real bet amounts + join feedback
+- ✅ `src/screens/BetsScreen.tsx` - Scrolling + user filtering + real-time participants
+- ✅ `src/screens/AccountScreen.tsx` - Real user data integration
+- ✅ `amplify/data/resource.ts` - Added betAmount field to schema
+- ✅ `src/types/betting.ts` - Updated interfaces for new fields
 
-**MVP User Flow Now Complete**:
+**Complete MVP User Flow**:
 1. **Register/Login** → User authentication with Cognito
-2. **Create Bet** → Real bet stored in DynamoDB via GraphQL
-3. **Browse Feed** → Real-time updates of active bets
-4. **Join Bet** → Create participant records, join betting action
-5. **View Stats** → Real user statistics and balance tracking
+2. **Create Bet** → Real bet stored with proper amounts and formatting
+3. **Browse My Bets** → Real-time updates of user's specific bets with scrolling
+4. **Join Bet** → Uses actual bet amounts with visual feedback
+5. **View Stats** → Real user statistics and live balance tracking
 6. **Sign Out** → Secure session termination
 
 ## 🚧 NEXT PHASE - ENHANCED FEATURES (Medium Priority)

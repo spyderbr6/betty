@@ -3,21 +3,54 @@
  * Professional live betting interface with real-time prop bets
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   ScrollView,
   Text,
   StyleSheet,
   TouchableOpacity,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { generateClient } from 'aws-amplify/data';
+import type { Schema } from '../../amplify/data/resource';
 import { colors, commonStyles, textStyles, spacing, typography } from '../styles';
 import { Header } from '../components/ui/Header';
-import { LiveBetCard } from '../components/betting/LiveBetCard';
+import { BetCard } from '../components/betting/BetCard';
 import { Bet } from '../types/betting';
+import { useAuth } from '../contexts/AuthContext';
 
-// Mock live bets data
+// Initialize GraphQL client
+const client = generateClient<Schema>();
+
+// Helper function to transform Amplify data to our Bet type
+const transformAmplifyBet = (bet: any): Bet | null => {
+  // Skip bets with missing required fields
+  if (!bet.id || !bet.title || !bet.description || !bet.category || !bet.status) {
+    return null;
+  }
+
+  return {
+    id: bet.id,
+    title: bet.title,
+    description: bet.description,
+    category: bet.category,
+    status: bet.status,
+    creatorId: bet.creatorId || '',
+    totalPot: bet.totalPot || 0,
+    betAmount: bet.betAmount || bet.totalPot || 0, // Fallback to totalPot for existing bets
+    odds: typeof bet.odds === 'object' && bet.odds ? bet.odds : { sideA: -110, sideB: 110 },
+    deadline: bet.deadline || new Date().toISOString(),
+    winningSide: bet.winningSide || undefined,
+    resolutionReason: bet.resolutionReason || undefined,
+    createdAt: bet.createdAt || new Date().toISOString(),
+    updatedAt: bet.updatedAt || new Date().toISOString(),
+    participants: [], // Will be populated by separate query if needed
+  };
+};
+
+// Mock live bets data as fallback
 const mockLiveBets: Bet[] = [
   {
     id: 'live1',
@@ -102,17 +135,156 @@ const mockLiveBets: Bet[] = [
 ];
 
 export const LiveEventsScreen: React.FC = () => {
-  const [liveBets] = useState<Bet[]>(mockLiveBets);
+  const { user } = useAuth();
+  const [liveBets, setLiveBets] = useState<Bet[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [selectedQuickBet, setSelectedQuickBet] = useState<string>('props');
 
+  useEffect(() => {
+    if (!user) return;
+
+    const fetchJoinableBets = async () => {
+      try {
+        setIsLoading(true);
+        console.log('Fetching joinable bets for user:', user.userId);
+
+        // Fetch all active bets
+        const { data: betsData } = await client.models.Bet.list({
+          filter: {
+            status: { eq: 'ACTIVE' }
+          }
+        });
+
+        if (betsData) {
+          // Fetch participants for each bet
+          const betsWithParticipants = await Promise.all(
+            betsData.map(async (bet) => {
+              const { data: participants } = await client.models.Participant.list({
+                filter: { betId: { eq: bet.id! } }
+              });
+
+              const transformedBet = transformAmplifyBet(bet);
+              if (transformedBet && participants) {
+                transformedBet.participants = participants
+                  .filter(p => p.id && p.betId && p.userId && p.side)
+                  .map(p => ({
+                    id: p.id!,
+                    betId: p.betId!,
+                    userId: p.userId!,
+                    side: p.side!,
+                    amount: p.amount || 0,
+                    status: p.status as 'PENDING' | 'ACCEPTED' | 'DECLINED',
+                    payout: p.payout || 0,
+                    joinedAt: p.joinedAt || new Date().toISOString(),
+                  }));
+              }
+              return transformedBet;
+            })
+          );
+
+          const validBets = betsWithParticipants.filter((bet): bet is Bet => bet !== null);
+
+          // Filter to show only joinable bets (user not creator and not participant)
+          const joinableBets = validBets.filter(bet => {
+            const isCreator = bet.creatorId === user.userId;
+            const isParticipant = bet.participants?.some(p => p.userId === user.userId);
+            return !isCreator && !isParticipant;
+          });
+
+          console.log('Found joinable bets:', joinableBets.length);
+          setLiveBets(joinableBets);
+        }
+      } catch (error) {
+        console.error('Error fetching joinable bets:', error);
+        // Use mock data as fallback
+        setLiveBets(mockLiveBets);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchJoinableBets();
+
+    // Set up real-time subscription for bet changes
+    const betSubscription = client.models.Bet.observeQuery({
+      filter: {
+        status: { eq: 'ACTIVE' }
+      }
+    }).subscribe({
+      next: async (data) => {
+        console.log('Real-time joinable bet update:', data);
+        await updateJoinableBets(data.items);
+      },
+      error: (error) => {
+        console.error('Real-time joinable bet subscription error:', error);
+      }
+    });
+
+    // Set up real-time subscription for participant changes
+    const participantSubscription = client.models.Participant.observeQuery().subscribe({
+      next: async (participantData) => {
+        console.log('Real-time participant update (joinable bets):', participantData);
+        // Refetch joinable bets when participants change
+        await fetchJoinableBets();
+      },
+      error: (error) => {
+        console.error('Real-time participant subscription error (joinable):', error);
+      }
+    });
+
+    // Helper function to update joinable bets with participants
+    const updateJoinableBets = async (betItems: any[]) => {
+      const betsWithParticipants = await Promise.all(
+        betItems.map(async (bet) => {
+          const { data: participants } = await client.models.Participant.list({
+            filter: { betId: { eq: bet.id! } }
+          });
+
+          const transformedBet = transformAmplifyBet(bet);
+          if (transformedBet && participants) {
+            transformedBet.participants = participants
+              .filter(p => p.id && p.betId && p.userId && p.side)
+              .map(p => ({
+                id: p.id!,
+                betId: p.betId!,
+                userId: p.userId!,
+                side: p.side!,
+                amount: p.amount || 0,
+                status: p.status as 'PENDING' | 'ACCEPTED' | 'DECLINED',
+                payout: p.payout || 0,
+                joinedAt: p.joinedAt || new Date().toISOString(),
+              }));
+          }
+          return transformedBet;
+        })
+      );
+
+      const validBets = betsWithParticipants.filter((bet): bet is Bet => bet !== null);
+      // Filter to show only joinable bets
+      const joinableBets = validBets.filter(bet => {
+        const isCreator = bet.creatorId === user?.userId;
+        const isParticipant = bet.participants?.some(p => p.userId === user?.userId);
+        return !isCreator && !isParticipant;
+      });
+
+      setLiveBets(joinableBets);
+    };
+
+    // Cleanup subscriptions on unmount
+    return () => {
+      betSubscription.unsubscribe();
+      participantSubscription.unsubscribe();
+    };
+  }, [user]);
+
   const handleBetPress = (bet: Bet) => {
-    console.log('Live bet pressed:', bet.title);
-    // Navigate to live bet details
+    console.log('Joinable bet pressed:', bet.title);
+    // Navigate to bet details
   };
 
-  const handleQuickBet = (bet: Bet, side: string) => {
-    console.log('Quick bet:', bet.title, 'side:', side);
-    // Handle quick bet placement
+  const handleJoinBet = (betId: string, side: string, amount: number) => {
+    console.log(`User joined bet ${betId} on side ${side} with $${amount}`);
+    // Bet will be automatically updated via subscription and moved from joinable list
   };
 
   const handleBalancePress = () => {
@@ -126,13 +298,18 @@ export const LiveEventsScreen: React.FC = () => {
   // Mock live game data
   const liveGame = {
     homeTeam: 'LAL',
-    awayTeam: 'GSW', 
+    awayTeam: 'GSW',
     homeScore: 89,
     awayScore: 92,
     quarter: 'Q3',
     timeLeft: '8:42',
     venue: 'Crypto.com Arena',
     liveBetsCount: liveBets.length,
+  };
+
+  // Get real balance from auth context
+  const currentUser = {
+    balance: user?.balance || 0,
   };
 
   const quickBetCategories = [
@@ -146,7 +323,7 @@ export const LiveEventsScreen: React.FC = () => {
     <SafeAreaView style={styles.container} edges={['top']}>
       <Header
         showBalance={true}
-        balance={1245.75}
+        balance={currentUser.balance}
         onBalancePress={handleBalancePress}
         onNotificationsPress={handleNotificationsPress}
         notificationCount={3}
@@ -194,50 +371,64 @@ export const LiveEventsScreen: React.FC = () => {
           </ScrollView>
         </View>
 
-        {/* Live Prop Bets Section */}
+        {/* Joinable Bets Section */}
         <View style={styles.liveBetsSection}>
           <View style={styles.sectionHeader}>
             <View>
-              <Text style={styles.sectionTitle}>LIVE PROP BETS</Text>
+              <Text style={styles.sectionTitle}>JOINABLE BETS</Text>
               <Text style={styles.sectionSubtitle}>
-                {liveBets.length} active • Real-time odds
+                {liveBets.length} available to join • Real-time updates
               </Text>
             </View>
             <TouchableOpacity style={styles.refreshButton}>
               <Text style={styles.refreshButtonText}>↻ REFRESH</Text>
             </TouchableOpacity>
           </View>
-          
-          {liveBets.map((bet) => (
-            <LiveBetCard
-              key={bet.id}
-              bet={bet}
-              onPress={handleBetPress}
-              onQuickBet={handleQuickBet}
-              showQuickBet={true}
-            />
-          ))}
+
+          {isLoading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color={colors.primary} />
+              <Text style={styles.loadingText}>Loading joinable bets...</Text>
+            </View>
+          ) : liveBets.length > 0 ? (
+            liveBets.map((bet) => (
+              <BetCard
+                key={bet.id}
+                bet={bet}
+                onPress={handleBetPress}
+                onJoinBet={handleJoinBet}
+                showJoinOptions={true}
+              />
+            ))
+          ) : (
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyTitle}>No Joinable Bets</Text>
+              <Text style={styles.emptyDescription}>
+                All current bets are either yours or you've already joined them. Check back later for new opportunities!
+              </Text>
+            </View>
+          )}
         </View>
 
-        {/* Live Stats Summary */}
+        {/* Joinable Bets Stats Summary */}
         <View style={styles.liveStatsSection}>
-          <Text style={styles.sectionTitle}>LIVE BETTING STATS</Text>
+          <Text style={styles.sectionTitle}>BETTING STATS</Text>
           <View style={styles.statsGrid}>
             <View style={styles.statCard}>
-              <Text style={styles.statValue}>$2,847</Text>
-              <Text style={styles.statLabel}>TOTAL LIVE POT</Text>
+              <Text style={styles.statValue}>${liveBets.reduce((sum, bet) => sum + (bet.totalPot || 0), 0)}</Text>
+              <Text style={styles.statLabel}>TOTAL AVAILABLE POT</Text>
             </View>
             <View style={styles.statCard}>
-              <Text style={styles.statValue}>124</Text>
+              <Text style={styles.statValue}>{liveBets.reduce((sum, bet) => sum + (bet.participants?.length || 0), 0)}</Text>
               <Text style={styles.statLabel}>ACTIVE BETTORS</Text>
             </View>
             <View style={styles.statCard}>
-              <Text style={styles.statValue}>18</Text>
-              <Text style={styles.statLabel}>PROPS AVAILABLE</Text>
+              <Text style={styles.statValue}>{liveBets.length}</Text>
+              <Text style={styles.statLabel}>BETS AVAILABLE</Text>
             </View>
             <View style={styles.statCard}>
-              <Text style={styles.statValue}>3:42</Text>
-              <Text style={styles.statLabel}>AVG BET TIME</Text>
+              <Text style={styles.statValue}>{liveBets.length > 0 ? Math.round(liveBets.reduce((sum, bet) => sum + (bet.betAmount || 0), 0) / liveBets.length) : 0}</Text>
+              <Text style={styles.statLabel}>AVG BET AMOUNT</Text>
             </View>
           </View>
         </View>
@@ -430,6 +621,38 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 10,
     textAlign: 'center',
+  },
+
+  // Loading and Empty States
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: spacing.xl,
+  },
+  loadingText: {
+    ...textStyles.body,
+    color: colors.textMuted,
+    marginTop: spacing.md,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: spacing.xl,
+    paddingHorizontal: spacing.lg,
+  },
+  emptyTitle: {
+    ...textStyles.h3,
+    color: colors.textPrimary,
+    marginBottom: spacing.sm,
+    textAlign: 'center',
+  },
+  emptyDescription: {
+    ...textStyles.body,
+    color: colors.textMuted,
+    textAlign: 'center',
+    lineHeight: 22,
   },
   
   // Upcoming events
