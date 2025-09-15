@@ -22,7 +22,7 @@ import type { Schema } from '../../amplify/data/resource';
 import { commonStyles, colors, spacing, typography, textStyles } from '../styles';
 import { Header } from '../components/ui/Header';
 import { BetCard } from '../components/betting/BetCard';
-import { Bet, BetInvitation } from '../types/betting';
+import { Bet, BetInvitation, BetInvitationStatus, User } from '../types/betting';
 import { useAuth } from '../contexts/AuthContext';
 import { NotificationService } from '../services/notificationService';
 
@@ -106,8 +106,23 @@ export const BetsScreen: React.FC = () => {
       });
 
       if (invitations && invitations.length > 0) {
+        type InvitationWithDetails = {
+          id: string;
+          betId: string;
+          fromUserId: string;
+          toUserId: string;
+          status: BetInvitationStatus;
+          message?: string;
+          invitedSide: string;
+          createdAt: string;
+          updatedAt: string;
+          expiresAt: string;
+          bet: Bet | null;
+          fromUser: User;
+        };
+
         // Fetch bet details and from user details for each invitation
-        const invitationsWithDetails = await Promise.all(
+        const invitationsWithDetails: (InvitationWithDetails | null)[] = await Promise.all(
           invitations.map(async (invitation) => {
             try {
               const [betResult, fromUserResult] = await Promise.all([
@@ -121,7 +136,7 @@ export const BetsScreen: React.FC = () => {
                   betId: invitation.betId!,
                   fromUserId: invitation.fromUserId!,
                   toUserId: invitation.toUserId!,
-                  status: invitation.status as 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'EXPIRED',
+                  status: invitation.status as BetInvitationStatus,
                   message: invitation.message || undefined,
                   invitedSide: invitation.invitedSide!,
                   createdAt: invitation.createdAt || new Date().toISOString(),
@@ -142,7 +157,7 @@ export const BetsScreen: React.FC = () => {
                     createdAt: fromUserResult.data.createdAt || new Date().toISOString(),
                     updatedAt: fromUserResult.data.updatedAt || new Date().toISOString(),
                   }
-                };
+                } as InvitationWithDetails;
               }
               return null;
             } catch (error) {
@@ -152,9 +167,23 @@ export const BetsScreen: React.FC = () => {
           })
         );
 
-        const validInvitations = invitationsWithDetails.filter(
-          (inv) => inv !== null && inv.bet !== null
-        ) as BetInvitation[];
+        const validInvitations: BetInvitation[] = invitationsWithDetails
+          .filter((inv): inv is InvitationWithDetails => !!inv && inv.bet !== null)
+          .map((inv) => ({
+            id: inv.id,
+            betId: inv.betId,
+            fromUserId: inv.fromUserId,
+            toUserId: inv.toUserId,
+            status: inv.status,
+            message: inv.message,
+            invitedSide: inv.invitedSide,
+            createdAt: inv.createdAt,
+            updatedAt: inv.updatedAt,
+            expiresAt: inv.expiresAt,
+            // Optional relations preserved and non-null here
+            bet: inv.bet as Bet,
+            fromUser: inv.fromUser,
+          }));
         setBetInvitations(validInvitations);
       } else {
         setBetInvitations([]);

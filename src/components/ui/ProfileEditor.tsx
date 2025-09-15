@@ -17,7 +17,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, typography, textStyles } from '../../styles';
 import { ProfileEditForm, User } from '../../types/betting';
-import { updateProfilePicture } from '../../services/imageUploadService';
+// import { updateProfilePicture } from '../../services/imageUploadService';
 
 interface ProfileEditorProps {
   user: User;
@@ -69,25 +69,31 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({
   };
 
   const handleProfilePicturePress = async () => {
-    if (isUploadingImage) return;
+    // Temporarily disabled for debugging
+    Alert.alert(
+      'Profile Picture',
+      'Profile picture upload temporarily disabled for debugging',
+      [{ text: 'OK' }]
+    );
+    // if (isUploadingImage) return;
 
-    try {
-      setIsUploadingImage(true);
+    // try {
+    //   setIsUploadingImage(true);
 
-      const result = await updateProfilePicture(user.id, profilePicture);
+    //   const result = await updateProfilePicture(user.id, profilePicture);
 
-      if (result.success && result.url) {
-        setProfilePicture(result.url);
-        Alert.alert('Success', 'Profile picture updated successfully!');
-      } else {
-        Alert.alert('Error', result.error || 'Failed to update profile picture');
-      }
-    } catch (error) {
-      console.error('Error updating profile picture:', error);
-      Alert.alert('Error', 'Failed to update profile picture. Please try again.');
-    } finally {
-      setIsUploadingImage(false);
-    }
+    //   if (result.success && result.url) {
+    //     setProfilePicture(result.url);
+    //     Alert.alert('Success', 'Profile picture updated successfully!');
+    //   } else {
+    //     Alert.alert('Error', result.error || 'Failed to update profile picture');
+    //   }
+    // } catch (error) {
+    //   console.error('Error updating profile picture:', error);
+    //   Alert.alert('Error', 'Failed to update profile picture. Please try again.');
+    // } finally {
+    //   setIsUploadingImage(false);
+    // }
   };
 
   const hasChanges =
