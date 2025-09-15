@@ -17,7 +17,7 @@ import { getCurrentUser } from 'aws-amplify/auth';
 import type { Schema } from '../../../amplify/data/resource';
 import { colors, typography, spacing, textStyles } from '../../styles';
 import { Bet, BetStatus } from '../../types/betting';
-import { formatCurrency } from '../../utils/formatting';
+import { formatCurrency, dateFormatting } from '../../utils/formatting';
 import { useAuth } from '../../contexts/AuthContext';
 
 // Initialize GraphQL client
@@ -45,6 +45,7 @@ export const BetCard: React.FC<BetCardProps> = ({
     side: 'A' | 'B' | null;
     amount: number;
   }>({ hasJoined: false, side: null, amount: 0 });
+  const [now, setNow] = useState(Date.now());
 
   // Check if current user has joined this bet
   useEffect(() => {
@@ -61,6 +62,13 @@ export const BetCard: React.FC<BetCardProps> = ({
       }
     }
   }, [user, bet.participants]);
+
+  // Tick for countdown (active bets only)
+  useEffect(() => {
+    if (bet.status !== 'ACTIVE' || !bet.deadline) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [bet.status, bet.deadline]);
 
   const handlePress = () => {
     onPress?.(bet);
@@ -195,7 +203,26 @@ export const BetCard: React.FC<BetCardProps> = ({
 
   const participantCount = bet.participants?.length || 0;
   const totalPot = bet.participants?.reduce((sum, p) => sum + p.amount, 0) || bet.totalPot || 0;
+  const sideACount = bet.participants?.filter(p => p.side === 'A').length || 0;
+  const sideBCount = bet.participants?.filter(p => p.side === 'B').length || 0;
   const statusColor = getStatusColor(bet.status);
+
+  let timeLeftLabel: string | null = null;
+  if (bet.deadline && bet.status === 'ACTIVE') {
+    const remainingMs = new Date(bet.deadline).getTime() - now;
+    if (remainingMs <= 0) {
+      timeLeftLabel = 'Closed';
+    } else {
+      const totalSecs = Math.floor(remainingMs / 1000);
+      if (totalSecs < 3600) {
+        const mins = Math.floor(totalSecs / 60);
+        const secs = totalSecs % 60;
+        timeLeftLabel = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+      } else {
+        timeLeftLabel = dateFormatting.formatDeadline(new Date(Date.now() + remainingMs));
+      }
+    }
+  }
 
   return (
     <TouchableOpacity
@@ -210,11 +237,14 @@ export const BetCard: React.FC<BetCardProps> = ({
           <Text style={styles.statusText}>{getStatusText(bet.status)}</Text>
         </View>
         
-        {/* Pot Amount - Top Right */}
+        {/* Pot + Time - Top Right */}
         <View style={styles.potContainer}>
           <Text style={styles.potAmount}>
             {formatCurrency(totalPot, 'USD', false)}
           </Text>
+          {timeLeftLabel && (
+            <Text style={styles.timeLeft}>{timeLeftLabel}</Text>
+          )}
         </View>
       </View>
 
@@ -228,63 +258,54 @@ export const BetCard: React.FC<BetCardProps> = ({
         </Text>
       </View>
 
-      {/* Betting Options */}
+      {/* Betting Options with per-side counts and selection highlight */}
       {showJoinOptions && bet.status === 'ACTIVE' && (
         <View style={styles.bettingOptions}>
-          {userParticipation.hasJoined ? (
-            // Show joined status
-            <View style={styles.joinedStatus}>
-              <Text style={styles.joinedText}>
-                ✓ You joined {userParticipation.side === 'A' ? bet.odds.sideAName || 'Side A' : bet.odds.sideBName || 'Side B'}
-                with {formatCurrency(userParticipation.amount)}
-              </Text>
-            </View>
-          ) : (
-            // Show join options
-            <>
-              <TouchableOpacity
-                style={[
-                  styles.sideButton,
-                  styles.sideButtonA,
-                  isJoining && selectedSide === 'A' && styles.sideButtonLoading
-                ]}
-                onPress={() => handleJoinBet('A')}
-                disabled={isJoining}
-                activeOpacity={0.8}
-              >
-                {isJoining && selectedSide === 'A' ? (
-                  <ActivityIndicator size="small" color={colors.background} />
-                ) : (
-                  <Text style={styles.sideName}>
-                    {bet.odds.sideAName || 'Side A'}
-                  </Text>
-                )}
-              </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.sideButton,
+              styles.sideButtonA,
+              (userParticipation.hasJoined && userParticipation.side === 'A') && styles.sideButtonSelected,
+              isJoining && selectedSide === 'A' && styles.sideButtonLoading
+            ]}
+            onPress={() => handleJoinBet('A')}
+            disabled={isJoining || userParticipation.hasJoined}
+            activeOpacity={0.8}
+          >
+            {isJoining && selectedSide === 'A' ? (
+              <ActivityIndicator size="small" color={colors.background} />
+            ) : (
+              <>
+                <Text style={styles.sideName}>{bet.odds.sideAName || 'Side A'}</Text>
+                <Text style={styles.sideCount}>{sideACount} players</Text>
+              </>
+            )}
+          </TouchableOpacity>
 
-              <View style={styles.vsContainer}>
-                <Text style={styles.vsText}>VS</Text>
-              </View>
+          <View style={styles.vsContainer}>
+            <Text style={styles.vsText}>VS</Text>
+          </View>
 
-              <TouchableOpacity
-                style={[
-                  styles.sideButton,
-                  styles.sideButtonB,
-                  isJoining && selectedSide === 'B' && styles.sideButtonLoading
-                ]}
-                onPress={() => handleJoinBet('B')}
-                disabled={isJoining}
-                activeOpacity={0.8}
-              >
-                {isJoining && selectedSide === 'B' ? (
-                  <ActivityIndicator size="small" color={colors.background} />
-                ) : (
-                  <Text style={styles.sideName}>
-                    {bet.odds.sideBName || 'Side B'}
-                  </Text>
-                )}
-              </TouchableOpacity>
-            </>
-          )}
+          <TouchableOpacity
+            style={[
+              styles.sideButton,
+              styles.sideButtonB,
+              (userParticipation.hasJoined && userParticipation.side === 'B') && styles.sideButtonSelected,
+              isJoining && selectedSide === 'B' && styles.sideButtonLoading
+            ]}
+            onPress={() => handleJoinBet('B')}
+            disabled={isJoining || userParticipation.hasJoined}
+            activeOpacity={0.8}
+          >
+            {isJoining && selectedSide === 'B' ? (
+              <ActivityIndicator size="small" color={colors.background} />
+            ) : (
+              <>
+                <Text style={styles.sideName}>{bet.odds.sideBName || 'Side B'}</Text>
+                <Text style={styles.sideCount}>{sideBCount} players</Text>
+              </>
+            )}
+          </TouchableOpacity>
         </View>
       )}
 
@@ -340,6 +361,13 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.lg,
     fontWeight: typography.fontWeight.bold,
   },
+  timeLeft: {
+    ...textStyles.caption,
+    color: colors.textMuted,
+    fontSize: 10,
+    marginTop: 2,
+    textAlign: 'right',
+  },
   
   // Main Content
   content: {
@@ -384,12 +412,22 @@ const styles = StyleSheet.create({
   sideButtonLoading: {
     backgroundColor: colors.primary,
   },
+  sideButtonSelected: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
   sideName: {
     ...textStyles.bodySmall,
     color: colors.textPrimary,
     fontSize: 12,
     fontWeight: typography.fontWeight.medium,
     marginBottom: 2,
+    textAlign: 'center',
+  },
+  sideCount: {
+    ...textStyles.caption,
+    color: colors.textMuted,
+    fontSize: 10,
     textAlign: 'center',
   },
   sideOdds: {

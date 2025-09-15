@@ -140,13 +140,20 @@ src/
 - ✅ **Environment Configuration**: Added secure GitHub token management
 
 #### 🔄 REMAINING SMALL FIXES:
-
+- fix coloring on bet resolution. option a and b should have a different scheme than the status coloring on the cards. 
+- we need to take a look at the prompt messages, maybe look at a toast banner or something less disruptive. maybe even remove them when they are information only.
 
 ### 5. Friend and Friend Management
  - User Profile friendly name added and editable.
 - User profile picture upload
   - work with each other on the scope. lay out a todo plan. 
   - update my bets screen to get pending invite events. only friends can add people to a bet and it must be accepted.
+  - friend search should search email and display names. currently i think its searching the actual username which is cryptic
+  - the modal close icon forces the header down. i feel like the modal should sit on top of the header.
+
+### 6. Landing Page Improvements
+ - update the login page to reflect the styling we're using 
+ - lets get a fresh and exciting landing page designed where login is just part of the experience. 
 
 
 ### 6. Location Services Integration
@@ -156,8 +163,8 @@ src/
 
 
 ### 7.0 Advanced Bet Card Updates
-- when joined to a bet it should maintain the highlight on who you selected as well as show #players for each bet. so X players for "home" and Y players for "away" team. 
-- timer countdown remaining on bet
+- we need to refresh the layout now that we've added more capabilities. 
+- we also need to look at state management. everything is active until its not. we need to have more clear transitions and definitions for active, live, pending resolution, and pending user acceptance. 
 
 ### 8. Advanced Trust Scoring System
 - Reputation tracking
