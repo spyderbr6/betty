@@ -10,6 +10,8 @@ const schema = a.schema({
       id: a.id(),
       username: a.string().required(),
       email: a.string().required(),
+      displayName: a.string(), // Friendly/display name for friends
+      profilePictureUrl: a.string(), // S3 URL for profile picture
       balance: a.float().default(0),
       trustScore: a.float().default(5.0),
       totalBets: a.integer().default(0),
@@ -20,6 +22,12 @@ const schema = a.schema({
       // Relations
       betsCreated: a.hasMany('Bet', 'creatorId'),
       participations: a.hasMany('Participant', 'userId'),
+      sentFriendRequests: a.hasMany('FriendRequest', 'fromUserId'),
+      receivedFriendRequests: a.hasMany('FriendRequest', 'toUserId'),
+      friendshipsAsUser1: a.hasMany('Friendship', 'user1Id'),
+      friendshipsAsUser2: a.hasMany('Friendship', 'user2Id'),
+      sentBetInvitations: a.hasMany('BetInvitation', 'fromUserId'),
+      receivedBetInvitations: a.hasMany('BetInvitation', 'toUserId'),
     })
     .authorization((allow) => [
       allow.owner().to(['create', 'read', 'update', 'delete']),
@@ -46,6 +54,7 @@ const schema = a.schema({
       creator: a.belongsTo('User', 'creatorId'),
       participants: a.hasMany('Participant', 'betId'),
       evidence: a.hasMany('Evidence', 'betId'),
+      invitations: a.hasMany('BetInvitation', 'betId'),
     })
     .authorization((allow) => [
       allow.owner().to(['create', 'read', 'update', 'delete']),
@@ -105,6 +114,62 @@ const schema = a.schema({
       allow.owner(),
       allow.authenticated().to(['read'])
     ]),
+
+  // Friend Management Models
+  FriendRequest: a
+    .model({
+      id: a.id(),
+      fromUserId: a.id().required(),
+      toUserId: a.id().required(),
+      status: a.enum(['PENDING', 'ACCEPTED', 'DECLINED']),
+      message: a.string(), // Optional message when sending friend request
+      createdAt: a.datetime(),
+      updatedAt: a.datetime(),
+      // Relations
+      fromUser: a.belongsTo('User', 'fromUserId'),
+      toUser: a.belongsTo('User', 'toUserId'),
+    })
+    .authorization((allow) => [
+      allow.owner(),
+      allow.authenticated().to(['read', 'create', 'update'])
+    ]),
+
+  Friendship: a
+    .model({
+      id: a.id(),
+      user1Id: a.id().required(), // Always the user with the lexicographically smaller ID
+      user2Id: a.id().required(), // Always the user with the lexicographically larger ID
+      createdAt: a.datetime(),
+      // Relations
+      user1: a.belongsTo('User', 'user1Id'),
+      user2: a.belongsTo('User', 'user2Id'),
+    })
+    .authorization((allow) => [
+      allow.owner(),
+      allow.authenticated().to(['read', 'create', 'delete'])
+    ]),
+
+  BetInvitation: a
+    .model({
+      id: a.id(),
+      betId: a.id().required(),
+      fromUserId: a.id().required(),
+      toUserId: a.id().required(),
+      status: a.enum(['PENDING', 'ACCEPTED', 'DECLINED', 'EXPIRED']),
+      message: a.string(), // Optional message with the invitation
+      invitedSide: a.string(), // Which side the friend is invited to join ('A' or 'B')
+      createdAt: a.datetime(),
+      updatedAt: a.datetime(),
+      expiresAt: a.datetime(), // Invitation expiry
+      // Relations
+      bet: a.belongsTo('Bet', 'betId'),
+      fromUser: a.belongsTo('User', 'fromUserId'),
+      toUser: a.belongsTo('User', 'toUserId'),
+    })
+    .authorization((allow) => [
+      allow.owner(),
+      allow.authenticated().to(['read', 'create', 'update'])
+    ]),
 });
 
 export type Schema = ClientSchema<typeof schema>;
@@ -121,8 +186,9 @@ export const data = defineData({
 });
 
 /*== USAGE EXAMPLES ======================================================
-Frontend code examples for working with the betting data:
+Frontend code examples for working with the betting and friend data:
 
+// BETTING EXAMPLES
 // Create a new bet
 const newBet = await client.models.Bet.create({
   title: "Lakers vs Warriors - Next 3PT Made",
@@ -130,7 +196,7 @@ const newBet = await client.models.Bet.create({
   category: "SPORTS",
   status: "ACTIVE",
   totalPot: 100,
-  odds: { sideA: -110, sideB: +150 },
+  odds: { sideAName: "Yes", sideBName: "No" },
   deadline: new Date(Date.now() + 3600000).toISOString(),
 });
 
@@ -142,11 +208,55 @@ const participation = await client.models.Participant.create({
   status: "PENDING"
 });
 
-// List active bets
-const { data: activeBets } = await client.models.Bet.list({
-  filter: { status: { eq: "ACTIVE" } }
+// FRIEND MANAGEMENT EXAMPLES
+// Send a friend request
+const friendRequest = await client.models.FriendRequest.create({
+  fromUserId: "current-user-id",
+  toUserId: "target-user-id",
+  message: "Let's bet together!"
 });
 
-// Get user stats
-const { data: userStats } = await client.models.User.get({ id: "user-id" });
+// Accept a friend request and create friendship
+const friendship = await client.models.Friendship.create({
+  user1Id: "smaller-user-id", // Lexicographically smaller
+  user2Id: "larger-user-id"   // Lexicographically larger
+});
+
+// Send bet invitation to friend
+const betInvitation = await client.models.BetInvitation.create({
+  betId: "bet-id-here",
+  fromUserId: "current-user-id",
+  toUserId: "friend-user-id",
+  invitedSide: "A",
+  message: "Join me on this bet!",
+  expiresAt: new Date(Date.now() + 86400000).toISOString() // 24 hours
+});
+
+// Get user's friends (need to query both directions)
+const { data: friendships1 } = await client.models.Friendship.list({
+  filter: { user1Id: { eq: "current-user-id" } }
+});
+const { data: friendships2 } = await client.models.Friendship.list({
+  filter: { user2Id: { eq: "current-user-id" } }
+});
+
+// Get pending friend requests
+const { data: pendingRequests } = await client.models.FriendRequest.list({
+  filter: {
+    and: [
+      { toUserId: { eq: "current-user-id" } },
+      { status: { eq: "PENDING" } }
+    ]
+  }
+});
+
+// Get pending bet invitations
+const { data: pendingInvites } = await client.models.BetInvitation.list({
+  filter: {
+    and: [
+      { toUserId: { eq: "current-user-id" } },
+      { status: { eq: "PENDING" } }
+    ]
+  }
+});
 ========================================================================*/

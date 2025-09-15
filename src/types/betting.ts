@@ -7,6 +7,8 @@ export interface User {
   id: string;
   username: string;
   email: string;
+  displayName?: string; // Friendly name for friends
+  profilePictureUrl?: string; // S3 URL for profile picture
   balance: number;
   trustScore: number;
   totalBets: number;
@@ -165,4 +167,88 @@ export interface BetAnalytics {
     category: BetCategory;
     count: number;
   }>;
+}
+
+// Friend Management Types
+export interface FriendRequest {
+  id: string;
+  fromUserId: string;
+  toUserId: string;
+  fromUser?: User;
+  toUser?: User;
+  status: FriendRequestStatus;
+  message?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Friendship {
+  id: string;
+  user1Id: string; // Lexicographically smaller ID
+  user2Id: string; // Lexicographically larger ID
+  user1?: User;
+  user2?: User;
+  createdAt: string;
+}
+
+export interface BetInvitation {
+  id: string;
+  betId: string;
+  fromUserId: string;
+  toUserId: string;
+  bet?: Bet;
+  fromUser?: User;
+  toUser?: User;
+  status: BetInvitationStatus;
+  message?: string;
+  invitedSide: string; // 'A' or 'B'
+  createdAt: string;
+  updatedAt: string;
+  expiresAt: string;
+}
+
+// Friend Management Enums
+export type FriendRequestStatus = 'PENDING' | 'ACCEPTED' | 'DECLINED';
+export type BetInvitationStatus = 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'EXPIRED';
+
+// Friend Management UI Types
+export interface FriendListItem {
+  user: User;
+  friendship: Friendship;
+  mutualFriends?: number;
+  lastBetTogether?: string;
+}
+
+export interface FriendRequestItem {
+  request: FriendRequest;
+  fromUser: User;
+}
+
+export interface BetInvitationItem {
+  invitation: BetInvitation;
+  bet: Bet;
+  fromUser: User;
+}
+
+export interface AddFriendForm {
+  searchQuery: string;
+  selectedUser?: User;
+  message?: string;
+}
+
+export interface ProfileEditForm {
+  displayName: string;
+  profilePicture?: string; // Base64 or file URI
+}
+
+// Search and Filter Types for Friends
+export interface UserSearchParams {
+  query: string; // Search by username, displayName, or email
+  excludeIds?: string[]; // Exclude specific user IDs (current user, existing friends)
+  limit?: number;
+}
+
+export interface FriendFilters {
+  status?: 'all' | 'recent' | 'active'; // All friends, recently added, recently active
+  searchQuery?: string;
 }

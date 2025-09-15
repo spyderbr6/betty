@@ -140,10 +140,7 @@ src/
 - ✅ **Environment Configuration**: Added secure GitHub token management
 
 #### 🔄 REMAINING SMALL FIXES:
-- wire up the betscreen "new bet" button to open the create bet page.
-- betscreen. move the filter selection under the "my bets" header
-- main menu "create" icon experience needs changed. right now its a big yellow circle with bad contrast ratios. offer recommendations.
-- bet resolution. how does it know to show a bet here or not, is it time delimited? 
+
 
 ### 5. Friend and Friend Management
  - User Profile friendly name added and editable.
