@@ -12,6 +12,7 @@ import {
   TouchableOpacity,
   Alert,
   ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { generateClient } from 'aws-amplify/data';
@@ -71,6 +72,7 @@ export const ResolveScreen: React.FC = () => {
   const [pendingBets, setPendingBets] = useState<Bet[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isResolving, setIsResolving] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -169,6 +171,69 @@ export const ResolveScreen: React.FC = () => {
       betSubscription.unsubscribe();
     };
   }, [user]);
+
+  const onRefresh = async () => {
+    try {
+      setRefreshing(true);
+      if (!user) return;
+
+      // Re-run the pending bets query
+      const { data: betsData } = await client.models.Bet.list({
+        filter: {
+          or: [
+            { status: { eq: 'PENDING_RESOLUTION' } },
+            {
+              and: [
+                { status: { eq: 'ACTIVE' } },
+                { creatorId: { eq: user.userId } },
+                { deadline: { lt: new Date().toISOString() } }
+              ]
+            }
+          ]
+        }
+      });
+
+      if (betsData) {
+        const betsWithParticipants = await Promise.all(
+          betsData.map(async (bet) => {
+            const { data: participants } = await client.models.Participant.list({
+              filter: { betId: { eq: bet.id! } }
+            });
+
+            const transformedBet = transformAmplifyBet(bet);
+            if (transformedBet && participants) {
+              transformedBet.participants = participants
+                .filter(p => p.id && p.betId && p.userId && p.side)
+                .map(p => ({
+                  id: p.id!,
+                  betId: p.betId!,
+                  userId: p.userId!,
+                  side: p.side!,
+                  amount: p.amount || 0,
+                  status: p.status as 'PENDING' | 'ACCEPTED' | 'DECLINED',
+                  payout: p.payout || 0,
+                  joinedAt: p.joinedAt || new Date().toISOString(),
+                }));
+            }
+            return transformedBet;
+          })
+        );
+
+        const validBets = betsWithParticipants.filter((bet): bet is Bet => bet !== null);
+        const resolvableBets = validBets.filter(bet => {
+          const isCreator = bet.creatorId === user.userId;
+          const isParticipant = bet.participants?.some(p => p.userId === user.userId);
+          const hasParticipants = bet.participants && bet.participants.length > 0;
+          return hasParticipants && (isCreator || isParticipant);
+        });
+        setPendingBets(resolvableBets);
+      }
+    } catch (error) {
+      console.error('Error refreshing pending bets:', error);
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const handleResolveBet = async (bet: Bet, winningSide: 'A' | 'B') => {
     if (isResolving) return;
@@ -345,7 +410,18 @@ export const ResolveScreen: React.FC = () => {
         notificationCount={pendingBets.length}
       />
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.content}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.primary}
+            colors={[colors.primary]}
+          />
+        }
+      >
         {/* Section Header */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>PENDING RESOLUTION</Text>

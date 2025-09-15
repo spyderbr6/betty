@@ -8,6 +8,7 @@ import {
   View,
   Text,
   ScrollView,
+  RefreshControl,
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
@@ -40,6 +41,7 @@ export const AccountScreen: React.FC = () => {
   const { user, signOut } = useAuth();
   const [userStats, setUserStats] = useState<UserStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -100,6 +102,15 @@ export const AccountScreen: React.FC = () => {
       );
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const onRefresh = async () => {
+    try {
+      setRefreshing(true);
+      await fetchUserStats();
+    } finally {
+      setRefreshing(false);
     }
   };
 
@@ -188,7 +199,18 @@ export const AccountScreen: React.FC = () => {
         showBalance={true}
       />
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.content}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.primary}
+            colors={[colors.primary]}
+          />
+        }
+      >
         {/* User Profile */}
         <View style={styles.profileSection}>
           <View style={styles.profileHeader}>

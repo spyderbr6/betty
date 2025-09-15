@@ -137,11 +137,10 @@ src/
 ### 4. Small enhancements
 
 - wire up the elipsis in the header to capture plaintext that pushes to to my github issue repo
-- bet creation. you have to pick one of the options side A or B
+- bet creation. you have to pick one of the options side A or B. this will force a join to the bet as its created.
 - bet creation.  default the first bet type
 - bet creation. apply dollar formatting to the bet amount. 
 - remove "search bets" and filter from the header. apply to my bets and live bets only
-- implement a drag-down refresh capability to refresh the page
 
 ### 5. Friend and Friend Management
   - work with each other on the scope
@@ -178,7 +177,11 @@ src/
 - Bet resolution verification
 - Social trust metrics
 
-### 8. Advanced 
+### 8. Advanced Notifications
+ - Create extensible notification system to any number of new notifications
+ - Notify for bet invite
+ - notify for friend invite
+ - notify for wins
 
 ## 🛠️ Technical Debt & Improvements
 

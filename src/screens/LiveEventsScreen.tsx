@@ -11,6 +11,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { generateClient } from 'aws-amplify/data';
@@ -149,6 +150,7 @@ export const LiveEventsScreen: React.FC = () => {
   const { user } = useAuth();
   const [liveBets, setLiveBets] = useState<Bet[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -287,6 +289,57 @@ export const LiveEventsScreen: React.FC = () => {
     };
   }, [user]);
 
+  const onRefresh = async () => {
+    try {
+      setRefreshing(true);
+      if (!user) return;
+
+      // Re-run the joinable bets fetch
+      const { data: betsData } = await client.models.Bet.list({
+        filter: { status: { eq: 'ACTIVE' } }
+      });
+
+      if (betsData) {
+        const betsWithParticipants = await Promise.all(
+          betsData.map(async (bet) => {
+            const { data: participants } = await client.models.Participant.list({
+              filter: { betId: { eq: bet.id! } }
+            });
+
+            const transformedBet = transformAmplifyBet(bet);
+            if (transformedBet && participants) {
+              transformedBet.participants = participants
+                .filter(p => p.id && p.betId && p.userId && p.side)
+                .map(p => ({
+                  id: p.id!,
+                  betId: p.betId!,
+                  userId: p.userId!,
+                  side: p.side!,
+                  amount: p.amount || 0,
+                  status: p.status as 'PENDING' | 'ACCEPTED' | 'DECLINED',
+                  payout: p.payout || 0,
+                  joinedAt: p.joinedAt || new Date().toISOString(),
+                }));
+            }
+            return transformedBet;
+          })
+        );
+
+        const validBets = betsWithParticipants.filter((bet): bet is Bet => bet !== null);
+        const joinableBets = validBets.filter(bet => {
+          const isCreator = bet.creatorId === user.userId;
+          const isParticipant = bet.participants?.some(p => p.userId === user.userId);
+          return !isCreator && !isParticipant;
+        });
+        setLiveBets(joinableBets);
+      }
+    } catch (error) {
+      console.error('Error refreshing joinable bets:', error);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   const handleBetPress = (bet: Bet) => {
     console.log('Joinable bet pressed:', bet.title);
     // Navigate to bet details
@@ -330,7 +383,18 @@ export const LiveEventsScreen: React.FC = () => {
         variant="default"
       />
       
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.content}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.primary}
+            colors={[colors.primary]}
+          />
+        }
+      >
         {/* Joinable Bets Section */}
         <View style={styles.liveBetsSection}>
           <View style={styles.sectionHeader}>

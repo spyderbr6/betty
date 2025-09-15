@@ -11,6 +11,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   ScrollView,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { generateClient } from 'aws-amplify/data';
@@ -192,6 +193,7 @@ export const BetsScreen: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFilter, setSelectedFilter] = useState<'ACTIVE' | 'LIVE' | 'PENDING_RESOLUTION' | 'RESOLVED'>('ACTIVE');
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     // Fetch initial bet data and set up real-time subscriptions
@@ -425,6 +427,57 @@ export const BetsScreen: React.FC = () => {
     return bet.status === selectedFilter;
   });
 
+  const onRefresh = async () => {
+    try {
+      setRefreshing(true);
+      // Re-run the same query used in initial fetch to get latest data
+      const { data: betsData } = await client.models.Bet.list({
+        filter: {
+          or: [
+            { status: { eq: 'ACTIVE' } },
+            { status: { eq: 'LIVE' } },
+            { status: { eq: 'PENDING_RESOLUTION' } },
+            { status: { eq: 'RESOLVED' } }
+          ]
+        }
+      });
+
+      if (betsData) {
+        const betsWithParticipants = await Promise.all(
+          betsData.map(async (bet) => {
+            const { data: participants } = await client.models.Participant.list({
+              filter: { betId: { eq: bet.id! } }
+            });
+
+            const transformedBet = transformAmplifyBet(bet);
+            if (transformedBet && participants) {
+              transformedBet.participants = participants
+                .filter(p => p.id && p.betId && p.userId && p.side)
+                .map(p => ({
+                  id: p.id!,
+                  betId: p.betId!,
+                  userId: p.userId!,
+                  side: p.side!,
+                  amount: p.amount || 0,
+                  status: p.status as 'PENDING' | 'ACCEPTED' | 'DECLINED',
+                  payout: p.payout || 0,
+                  joinedAt: p.joinedAt || new Date().toISOString(),
+                }));
+            }
+            return transformedBet;
+          })
+        );
+
+        const validBets = betsWithParticipants.filter((bet): bet is Bet => bet !== null);
+        setBets(validBets);
+      }
+    } catch (error) {
+      console.error('Error refreshing bets:', error);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   // Status filter options (removed 'ALL' filter)
   const statusFilters = [
     { id: 'ACTIVE', label: 'Active', count: bets.filter(bet => {
@@ -463,7 +516,18 @@ export const BetsScreen: React.FC = () => {
         showSearch={true}
       />
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.content}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.primary}
+            colors={[colors.primary]}
+          />
+        }
+      >
         {/* Status Filters */}
         <View style={styles.filtersContainer}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filtersScrollView}>
