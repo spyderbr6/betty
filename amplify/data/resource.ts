@@ -28,10 +28,51 @@ const schema = a.schema({
       friendshipsAsUser2: a.hasMany('Friendship', 'user2Id'),
       sentBetInvitations: a.hasMany('BetInvitation', 'fromUserId'),
       receivedBetInvitations: a.hasMany('BetInvitation', 'toUserId'),
+      notifications: a.hasMany('Notification', 'userId'),
     })
     .authorization((allow) => [
       allow.owner().to(['create', 'read', 'update', 'delete']),
       allow.authenticated().to(['read', 'create']) // Allow authenticated users to create User records and read others
+    ]),
+
+  // Notification/Event Log for efficient querying
+  Notification: a
+    .model({
+      id: a.id(),
+      userId: a.id().required(), // Who receives this notification
+      type: a.enum([
+        'FRIEND_REQUEST_RECEIVED',
+        'FRIEND_REQUEST_ACCEPTED',
+        'FRIEND_REQUEST_DECLINED',
+        'BET_INVITATION_RECEIVED',
+        'BET_INVITATION_ACCEPTED',
+        'BET_INVITATION_DECLINED',
+        'BET_JOINED',
+        'BET_RESOLVED',
+        'BET_CANCELLED',
+        'BET_DISPUTED',
+        'BET_DEADLINE_APPROACHING',
+        'SYSTEM_ANNOUNCEMENT'
+      ]),
+      title: a.string().required(), // Short notification title
+      message: a.string().required(), // Notification content
+      isRead: a.boolean().default(false),
+      priority: a.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']),
+      // Metadata for deep linking and actions
+      actionType: a.string(), // 'open_bet', 'view_friend_request', etc.
+      actionData: a.json(), // Additional data (bet ID, user ID, etc.)
+      // References to source entities
+      relatedBetId: a.id(),
+      relatedUserId: a.id(), // The other user involved (friend requester, bet creator, etc.)
+      relatedRequestId: a.string(), // Friend request ID, bet invitation ID, etc.
+      createdAt: a.datetime(),
+      // Relations
+      user: a.belongsTo('User', 'userId'),
+      relatedBet: a.belongsTo('Bet', 'relatedBetId'),
+    })
+    .authorization((allow) => [
+      allow.owner().to(['read', 'update']), // Users can only read/update their own notifications
+      allow.authenticated().to(['create']) // Any authenticated user can create notifications for others
     ]),
 
   Bet: a

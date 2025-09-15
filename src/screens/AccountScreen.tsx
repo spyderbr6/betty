@@ -24,6 +24,7 @@ import type { Schema } from '../../amplify/data/resource';
 import { colors, spacing, commonStyles, textStyles } from '../styles';
 import { Header } from '../components/ui/Header';
 import { ProfileEditor } from '../components/ui/ProfileEditor';
+import { FriendsScreen } from './FriendsScreen';
 import { formatCurrency, formatPercentage } from '../utils/formatting';
 import { useAuth } from '../contexts/AuthContext';
 import { ProfileEditForm, User } from '../types/betting';
@@ -42,6 +43,7 @@ export const AccountScreen: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [showProfileEditor, setShowProfileEditor] = useState(false);
+  const [showFriendsScreen, setShowFriendsScreen] = useState(false);
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
 
   useEffect(() => {
@@ -203,6 +205,10 @@ export const AccountScreen: React.FC = () => {
 
   const handleSupportPress = () => {
     console.log('Support pressed');
+  };
+
+  const handleFriendsPress = () => {
+    setShowFriendsScreen(true);
   };
 
   const handleEditProfile = () => {
@@ -369,6 +375,12 @@ export const AccountScreen: React.FC = () => {
         {/* Menu Options */}
         <View style={styles.menuSection}>
           <MenuOption
+            icon="people-outline"
+            title="Friends"
+            subtitle="Manage your friends and send invites"
+            onPress={handleFriendsPress}
+          />
+          <MenuOption
             icon="bar-chart-outline"
             title="Detailed Stats"
             subtitle="View comprehensive betting analytics"
@@ -434,6 +446,26 @@ export const AccountScreen: React.FC = () => {
           onCancel={handleCancelProfileEdit}
           loading={isUpdatingProfile}
         />
+      </Modal>
+
+      {/* Friends Screen Modal */}
+      <Modal
+        visible={showFriendsScreen}
+        animationType="slide"
+        presentationStyle="pageSheet"
+      >
+        <View style={{ flex: 1 }}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity
+              style={styles.modalCloseButton}
+              onPress={() => setShowFriendsScreen(false)}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="close" size={24} color={colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
+          <FriendsScreen />
+        </View>
       </Modal>
     </SafeAreaView>
   );
@@ -687,5 +719,18 @@ const styles = StyleSheet.create({
     ...textStyles.button,
     color: colors.error,
     marginLeft: spacing.xs,
+  },
+
+  // Modal styles
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+    backgroundColor: colors.background,
+  },
+  modalCloseButton: {
+    padding: spacing.xs,
   },
 });

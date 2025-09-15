@@ -252,3 +252,36 @@ export interface FriendFilters {
   status?: 'all' | 'recent' | 'active'; // All friends, recently added, recently active
   searchQuery?: string;
 }
+
+// Notification system types
+export type NotificationType =
+  | 'FRIEND_REQUEST_RECEIVED'
+  | 'FRIEND_REQUEST_ACCEPTED'
+  | 'FRIEND_REQUEST_DECLINED'
+  | 'BET_INVITATION_RECEIVED'
+  | 'BET_INVITATION_ACCEPTED'
+  | 'BET_INVITATION_DECLINED'
+  | 'BET_JOINED'
+  | 'BET_RESOLVED'
+  | 'BET_CANCELLED'
+  | 'BET_DISPUTED'
+  | 'BET_DEADLINE_APPROACHING'
+  | 'SYSTEM_ANNOUNCEMENT';
+
+export type NotificationPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
+
+export interface Notification {
+  id: string;
+  userId: string;
+  type: NotificationType;
+  title: string;
+  message: string;
+  isRead: boolean;
+  priority: NotificationPriority;
+  actionType?: string;
+  actionData?: any;
+  relatedBetId?: string;
+  relatedUserId?: string;
+  relatedRequestId?: string;
+  createdAt: string;
+}
