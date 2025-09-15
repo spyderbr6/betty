@@ -31,11 +31,6 @@ interface HeaderProps {
   notificationCount?: number;
   // Live game data
   liveGame?: LiveGameData;
-  // Search and filter
-  onSearchChange?: (query: string) => void;
-  searchQuery?: string;
-  onFilterPress?: () => void;
-  showSearch?: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -48,10 +43,6 @@ export const Header: React.FC<HeaderProps> = ({
   variant = 'default',
   notificationCount = 0,
   liveGame,
-  onSearchChange,
-  searchQuery = '',
-  onFilterPress,
-  showSearch = true,
 }) => {
   const insets = useSafeAreaInsets();
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
@@ -152,39 +143,6 @@ export const Header: React.FC<HeaderProps> = ({
             showBetsCount={true}
             showVenue={true}
           />
-        )}
-        
-        {/* Search and Filter Bar */}
-        {showSearch && (
-          <View style={styles.searchContainer}>
-            <View style={styles.searchInputContainer}>
-              <Ionicons 
-                name="search" 
-                size={16} 
-                color={colors.textMuted} 
-                style={styles.searchIcon}
-              />
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Search bets..."
-                placeholderTextColor={colors.textMuted}
-                value={searchQuery}
-                onChangeText={onSearchChange}
-              />
-            </View>
-            <TouchableOpacity 
-              style={styles.filterButton}
-              onPress={onFilterPress}
-              activeOpacity={0.7}
-            >
-              <Ionicons 
-                name="options-outline" 
-                size={16} 
-                color={colors.textSecondary} 
-              />
-              <Text style={styles.filterText}>Filter</Text>
-            </TouchableOpacity>
-          </View>
         )}
       </View>
 
@@ -313,52 +271,5 @@ const styles = StyleSheet.create({
     fontWeight: typography.fontWeight.bold,
     lineHeight: 12,
     includeFontPadding: false,
-  },
-  
-  
-  // Search and filter
-  searchContainer: {
-    flexDirection: 'row',
-    marginHorizontal: spacing.md,
-    marginTop: spacing.sm,
-    // gap is not supported on native; use margin on children
-  },
-  searchInputContainer: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: spacing.radius.sm,
-    paddingHorizontal: spacing.sm,
-    marginRight: spacing.sm,
-  },
-  searchIcon: {
-    marginRight: spacing.xs,
-  },
-  searchInput: {
-    flex: 1,
-    paddingVertical: spacing.sm,
-    fontSize: typography.fontSize.sm,
-    color: colors.textPrimary,
-    fontFamily: typography.fontFamily.regular,
-    textAlignVertical: 'center',
-  },
-  filterButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.sm,
-    borderRadius: spacing.radius.sm,
-    // space between icon and text via text marginLeft
-  },
-  filterText: {
-    ...textStyles.bodySmall,
-    color: colors.textSecondary,
-    marginLeft: 4,
   },
 });

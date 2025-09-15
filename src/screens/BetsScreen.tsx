@@ -7,12 +7,14 @@ import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
+  TextInput,
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
   ScrollView,
   RefreshControl,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
@@ -192,6 +194,7 @@ export const BetsScreen: React.FC = () => {
   const [bets, setBets] = useState<Bet[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [showSearch, setShowSearch] = useState(false);
   const [selectedFilter, setSelectedFilter] = useState<'ACTIVE' | 'LIVE' | 'PENDING_RESOLUTION' | 'RESOLVED'>('ACTIVE');
   const [refreshing, setRefreshing] = useState(false);
 
@@ -360,15 +363,18 @@ export const BetsScreen: React.FC = () => {
     setSearchQuery(query);
   };
 
+  const handleSearchToggle = () => {
+    setShowSearch(!showSearch);
+    if (showSearch) {
+      setSearchQuery(''); // Clear search when hiding
+    }
+  };
+
   const handleFilterPress = () => {
     console.log('Filter pressed');
     // Show filter modal
   };
 
-  const handleCreateBetPress = () => {
-    console.log('Create bet pressed');
-    // Navigate to create bet screen
-  };
 
   // Real user stats state
   const [userStats, setUserStats] = useState({
@@ -424,7 +430,19 @@ export const BetsScreen: React.FC = () => {
     if (!(isCreator || isParticipant)) return false;
 
     // Then filter by status
-    return bet.status === selectedFilter;
+    if (bet.status !== selectedFilter) return false;
+
+    // Finally filter by search query if one exists
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim();
+      const titleMatch = bet.title.toLowerCase().includes(query);
+      const descriptionMatch = bet.description.toLowerCase().includes(query);
+      const sideAMatch = bet.odds.sideAName.toLowerCase().includes(query);
+      const sideBMatch = bet.odds.sideBName.toLowerCase().includes(query);
+      return titleMatch || descriptionMatch || sideAMatch || sideBMatch;
+    }
+
+    return true;
   });
 
   const onRefresh = async () => {
@@ -510,10 +528,6 @@ export const BetsScreen: React.FC = () => {
         onNotificationsPress={handleNotificationsPress}
         notificationCount={2}
         liveGame={liveGame}
-        onSearchChange={handleSearchChange}
-        searchQuery={searchQuery}
-        onFilterPress={handleFilterPress}
-        showSearch={true}
       />
 
       <ScrollView
@@ -528,6 +542,56 @@ export const BetsScreen: React.FC = () => {
           />
         }
       >
+        {/* My Bets Section */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>MY BETS</Text>
+          <TouchableOpacity
+            style={styles.searchIconButton}
+            onPress={handleSearchToggle}
+            activeOpacity={0.7}
+          >
+            <Ionicons
+              name={showSearch ? "close" : "search"}
+              size={18}
+              color={colors.textSecondary}
+            />
+          </TouchableOpacity>
+        </View>
+
+        {/* Search Input (conditionally shown) */}
+        {showSearch && (
+          <View style={styles.searchContainer}>
+            <View style={styles.searchInputContainer}>
+              <Ionicons
+                name="search"
+                size={16}
+                color={colors.textMuted}
+                style={styles.searchIcon}
+              />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search your bets..."
+                placeholderTextColor={colors.textMuted}
+                value={searchQuery}
+                onChangeText={handleSearchChange}
+                autoFocus={true}
+              />
+              {searchQuery.length > 0 && (
+                <TouchableOpacity
+                  onPress={() => setSearchQuery('')}
+                  style={styles.clearButton}
+                >
+                  <Ionicons
+                    name="close-circle"
+                    size={16}
+                    color={colors.textMuted}
+                  />
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        )}
+
         {/* Status Filters */}
         <View style={styles.filtersContainer}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filtersScrollView}>
@@ -562,18 +626,6 @@ export const BetsScreen: React.FC = () => {
               </TouchableOpacity>
             ))}
           </ScrollView>
-        </View>
-
-        {/* My Bets Section */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>MY BETS</Text>
-          <TouchableOpacity
-            style={styles.createButton}
-            onPress={handleCreateBetPress}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.createButtonText}>+ NEW BET</Text>
-          </TouchableOpacity>
         </View>
 
         {/* Loading State */}
@@ -640,10 +692,9 @@ const styles = StyleSheet.create({
 
   // Status Filters
   filtersContainer: {
-    backgroundColor: colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+    backgroundColor: colors.background,
     paddingVertical: spacing.sm,
+    paddingTop: 0,
   },
   filtersScrollView: {
     paddingHorizontal: spacing.md,
@@ -711,17 +762,42 @@ const styles = StyleSheet.create({
     fontWeight: typography.fontWeight.bold,
     fontSize: typography.fontSize.lg,
   },
-  createButton: {
-    backgroundColor: colors.primary,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
+  searchIconButton: {
+    padding: spacing.xs,
+    backgroundColor: colors.surface,
     borderRadius: spacing.radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
-  createButtonText: {
-    ...textStyles.button,
-    color: colors.textInverse,
+
+  // Search Input
+  searchContainer: {
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.sm,
+    backgroundColor: colors.background,
+  },
+  searchInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: spacing.radius.sm,
+    paddingHorizontal: spacing.sm,
+  },
+  searchIcon: {
+    marginRight: spacing.xs,
+  },
+  searchInput: {
+    flex: 1,
+    paddingVertical: spacing.sm,
     fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
+    color: colors.textPrimary,
+    fontFamily: typography.fontFamily.regular,
+    textAlignVertical: 'center',
+  },
+  clearButton: {
+    padding: spacing.xs / 2,
   },
 
   // Loading and Empty States

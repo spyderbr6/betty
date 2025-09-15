@@ -98,13 +98,8 @@ src/
 
 ## 🚧 NEXT PHASE - ENHANCED FEATURES (Medium Priority)
 
-### 1. MyBetsScreen Enhancements
-**Status**: PENDING - Screen exists but needs filtering for user's bets
-
-**Remaining Work**:
-- Filter bets where user is creator or participant
-- Add bet status filtering (active, completed, etc.)
-- Show user's position and potential payouts
+### 1. MyBetsScreen Enhancements ✅ COMPLETED
+**Status**: ✅ COMPLETED 
 
 ### 2. Bet Resolution System ✅ COMPLETED
 **Status**: ✅ COMPLETED - Core betting lifecycle now complete
@@ -149,7 +144,6 @@ src/
 - wire up the betscreen "new bet" button to open the create bet page.
 - betscreen. move the filter selection under the "my bets" header
 - main menu "create" icon experience needs changed. right now its a big yellow circle with bad contrast ratios. offer recommendations.
-- create bet. revalidate defaults being set after bet creation.
 - bet resolution. how does it know to show a bet here or not, is it time delimited? 
 
 ### 5. Friend and Friend Management

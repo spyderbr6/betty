@@ -8,11 +8,13 @@ import {
   View,
   ScrollView,
   Text,
+  TextInput,
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
@@ -151,6 +153,8 @@ export const LiveEventsScreen: React.FC = () => {
   const [liveBets, setLiveBets] = useState<Bet[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showSearch, setShowSearch] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -358,6 +362,17 @@ export const LiveEventsScreen: React.FC = () => {
     console.log('Notifications pressed');
   };
 
+  const handleSearchChange = (query: string) => {
+    setSearchQuery(query);
+  };
+
+  const handleSearchToggle = () => {
+    setShowSearch(!showSearch);
+    if (showSearch) {
+      setSearchQuery(''); // Clear search when hiding
+    }
+  };
+
   // Mock live game data
   const liveGame = {
     homeTeam: 'LAL',
@@ -370,7 +385,18 @@ export const LiveEventsScreen: React.FC = () => {
     liveBetsCount: liveBets.length,
   };
 
-
+  // Filter liveBets by search query
+  const filteredLiveBets = liveBets.filter(bet => {
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim();
+      const titleMatch = bet.title.toLowerCase().includes(query);
+      const descriptionMatch = bet.description.toLowerCase().includes(query);
+      const sideAMatch = bet.odds.sideAName.toLowerCase().includes(query);
+      const sideBMatch = bet.odds.sideBName.toLowerCase().includes(query);
+      return titleMatch || descriptionMatch || sideAMatch || sideBMatch;
+    }
+    return true;
+  });
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -398,24 +424,66 @@ export const LiveEventsScreen: React.FC = () => {
         {/* Joinable Bets Section */}
         <View style={styles.liveBetsSection}>
           <View style={styles.sectionHeader}>
-            <View>
+            <View style={styles.sectionTitleContainer}>
               <Text style={styles.sectionTitle}>JOINABLE BETS</Text>
-              <Text style={styles.sectionSubtitle}>
-                {liveBets.length} available to join • Real-time updates
-              </Text>
+              <TouchableOpacity
+                style={styles.searchIconButton}
+                onPress={handleSearchToggle}
+                activeOpacity={0.7}
+              >
+                <Ionicons
+                  name={showSearch ? "close" : "search"}
+                  size={18}
+                  color={colors.textSecondary}
+                />
+              </TouchableOpacity>
             </View>
-            <TouchableOpacity style={styles.refreshButton}>
-              <Text style={styles.refreshButtonText}>↻ REFRESH</Text>
-            </TouchableOpacity>
+            <Text style={styles.sectionSubtitle}>
+              {liveBets.length} available to join • Real-time updates
+            </Text>
           </View>
+
+          {/* Search Input (conditionally shown) */}
+          {showSearch && (
+            <View style={styles.searchContainer}>
+              <View style={styles.searchInputContainer}>
+                <Ionicons
+                  name="search"
+                  size={16}
+                  color={colors.textMuted}
+                  style={styles.searchIcon}
+                />
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Search joinable bets..."
+                  placeholderTextColor={colors.textMuted}
+                  value={searchQuery}
+                  onChangeText={handleSearchChange}
+                  autoFocus={true}
+                />
+                {searchQuery.length > 0 && (
+                  <TouchableOpacity
+                    onPress={() => setSearchQuery('')}
+                    style={styles.clearButton}
+                  >
+                    <Ionicons
+                      name="close-circle"
+                      size={16}
+                      color={colors.textMuted}
+                    />
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+          )}
 
           {isLoading ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color={colors.primary} />
               <Text style={styles.loadingText}>Loading joinable bets...</Text>
             </View>
-          ) : liveBets.length > 0 ? (
-            liveBets.map((bet) => (
+          ) : filteredLiveBets.length > 0 ? (
+            filteredLiveBets.map((bet) => (
               <BetCard
                 key={bet.id}
                 bet={bet}
@@ -426,9 +494,14 @@ export const LiveEventsScreen: React.FC = () => {
             ))
           ) : (
             <View style={styles.emptyContainer}>
-              <Text style={styles.emptyTitle}>No Joinable Bets</Text>
+              <Text style={styles.emptyTitle}>
+                {searchQuery.trim() ? 'No Matching Bets' : 'No Joinable Bets'}
+              </Text>
               <Text style={styles.emptyDescription}>
-                All current bets are either yours or you've already joined them. Check back later for new opportunities!
+                {searchQuery.trim()
+                  ? `No bets match "${searchQuery}". Try a different search term.`
+                  : 'All current bets are either yours or you\'ve already joined them. Check back later for new opportunities!'
+                }
               </Text>
             </View>
           )}
@@ -497,15 +570,17 @@ const styles = StyleSheet.create({
     padding: spacing.md,
   },
   sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
     marginBottom: spacing.md,
+  },
+  sectionTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
   },
   sectionTitle: {
     ...textStyles.h3,
     color: colors.textPrimary,
-    marginBottom: 4,
     fontWeight: typography.fontWeight.bold,
   },
   sectionSubtitle: {
@@ -513,19 +588,42 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 12,
   },
-  refreshButton: {
+  searchIconButton: {
+    padding: spacing.xs,
     backgroundColor: colors.surface,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
     borderRadius: spacing.radius.sm,
     borderWidth: 1,
     borderColor: colors.border,
   },
-  refreshButtonText: {
-    ...textStyles.caption,
-    color: colors.primary,
-    fontSize: 10,
-    fontWeight: typography.fontWeight.medium,
+
+  // Search Input
+  searchContainer: {
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.sm,
+    backgroundColor: colors.background,
+  },
+  searchInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: spacing.radius.sm,
+    paddingHorizontal: spacing.sm,
+  },
+  searchIcon: {
+    marginRight: spacing.xs,
+  },
+  searchInput: {
+    flex: 1,
+    paddingVertical: spacing.sm,
+    fontSize: typography.fontSize.sm,
+    color: colors.textPrimary,
+    fontFamily: typography.fontFamily.regular,
+    textAlignVertical: 'center',
+  },
+  clearButton: {
+    padding: spacing.xs / 2,
   },
   
   // Live Stats

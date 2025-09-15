@@ -251,9 +251,9 @@ export const TabBar: React.FC<BottomTabBarProps> = ({
                 name={iconName}
                 size={isCreateTab ? 28 : 22}
                 color={
-                  isFocused 
+                  isFocused
                     ? (isCreateTab ? colors.background : colors.primary)
-                    : colors.textMuted
+                    : (isCreateTab ? colors.primary : colors.textMuted)
                 }
               />
               
@@ -336,18 +336,18 @@ const styles = StyleSheet.create({
     transform: [{ scale: 1.05 }],
   },
   createIconContainer: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.surfaceLight,
     borderRadius: 22,
     width: 44,
     height: 44,
     alignItems: 'center',
     justifyContent: 'center',
     ...shadows.button,
-    borderWidth: 3,
-    borderColor: colors.surface,
+    borderWidth: 2,
+    borderColor: colors.primary,
   },
   createIconContainerFocused: {
-    backgroundColor: colors.primaryDark,
+    backgroundColor: colors.primary,
     transform: [{ scale: 1.08 }],
     ...shadows.buttonPressed,
   },
