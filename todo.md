@@ -140,7 +140,6 @@ src/
 - ✅ **Environment Configuration**: Added secure GitHub token management
 
 #### 🔄 REMAINING SMALL FIXES:
-- remove "search bets" and filter from the header. apply to my bets and live bets only. make it show via a clickable search icon as part of the page heading.
 - wire up the betscreen "new bet" button to open the create bet page.
 - betscreen. move the filter selection under the "my bets" header
 - main menu "create" icon experience needs changed. right now its a big yellow circle with bad contrast ratios. offer recommendations.
