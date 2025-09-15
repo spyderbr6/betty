@@ -145,13 +145,68 @@ src/
 - all the soft warnings need to be cleaned up across all the project files.
 - i need to open the repo for security scanning
 
-### 5. Friend and Friend Management
- - User Profile friendly name added and editable.
-- User profile picture upload
-  - work with each other on the scope. lay out a todo plan. 
-  - update my bets screen to get pending invite events. only friends can add people to a bet and it must be accepted.
-  - friend search should search email and display names. currently i think its searching the actual username which is cryptic
-  - the modal close icon forces the header down. i feel like the modal should sit on top of the header.
+### 5. Friend and Friend Management ✅ COMPLETED
+**Status**: ✅ COMPLETED - Comprehensive social features implemented
+
+**Completed Work**:
+- ✅ **User Profile Enhancement**: Display names added and fully editable through profile editor
+- ✅ **Friend Management System**: Complete friend request/accept/decline workflow
+- ✅ **Friend Discovery**: Search by username, email, and display names (no more cryptic usernames)
+- ✅ **Bet Invitation Integration**: Friend selection during bet creation with visual avatars
+- ✅ **Flexible Invitation Flow**: Recipients choose their own side when accepting invitations
+- ✅ **Notification System**: Real-time notifications for all friend and betting activities
+- ✅ **Enhanced UI**: Friend cards, request modals, and profile picture placeholders
+- ✅ **Database Schema**: Comprehensive friend management models with efficient queries
+
+**Key Features Implemented**:
+- **Friends Screen**: Complete friend list management with action menus
+- **Add Friend Modal**: User search and friend request sending with status detection
+- **Friend Requests Modal**: Accept/decline incoming requests with notifications
+- **CreateBet Integration**: Visual friend selection with top 4 friends + "See More" button
+- **Bet Invitations**: Prominent display in main BetsScreen with side choice on acceptance
+- **Profile Editor**: Editable display names with avatar initial generation
+
+**Files Created/Enhanced**:
+- ✅ `src/screens/FriendsScreen.tsx` - Complete friend management interface
+- ✅ `src/components/ui/AddFriendModal.tsx` - Friend discovery and request sending
+- ✅ `src/components/ui/FriendRequestsModal.tsx` - Request acceptance interface
+- ✅ `src/components/ui/ProfileEditor.tsx` - Profile editing modal
+- ✅ `src/services/notificationService.ts` - Centralized notification system
+- ✅ `src/screens/CreateBetScreen.tsx` - Added friend selection section
+- ✅ `src/screens/BetsScreen.tsx` - Bet invitation cards with flexible acceptance
+- ✅ `amplify/data/resource.ts` - Extended schema with friend management models
+
+**User Flow Enhancement**:
+1. **Making Friends**: Search users → Send requests → Accept/decline → Bilateral friendship
+2. **Creating Bets with Friends**: Select bet template → Choose friends from avatars → Auto-invite on creation
+3. **Accepting Invitations**: View invitations in main screen → Choose side (A/B) → Join bet
+
+### 6. Profile Picture Upload System ✅ COMPLETED
+**Status**: ✅ COMPLETED - Full image upload functionality implemented
+
+**Completed Work**:
+- ✅ **AWS S3 Storage**: Implemented secure cloud storage with proper access controls
+- ✅ **Image Upload Service**: Complete workflow from permission request to S3 upload
+- ✅ **ProfileEditor Enhancement**: Real-time image upload with loading states and error handling
+- ✅ **Native Image Picker**: Expo image picker with square crop and quality optimization
+- ✅ **Database Integration**: Profile picture URLs saved to user records with real-time updates
+- ✅ **Storage Cleanup**: Automatic deletion of old profile pictures to prevent bloat
+- ✅ **Permission Management**: Graceful camera and photo library permission handling
+- ✅ **Error Recovery**: Comprehensive error handling with user-friendly messages
+
+**Technical Implementation**:
+- ✅ `amplify/storage/resource.ts` - S3 storage configuration
+- ✅ `amplify/backend.ts` - Storage integration
+- ✅ `src/services/imageUploadService.ts` - Complete upload workflow
+- ✅ `src/components/ui/ProfileEditor.tsx` - Enhanced with image upload
+- ✅ `package.json` - Added expo-image-picker dependency
+
+**User Experience Flow**:
+1. **Access Profile Editor** → Tap profile picture or edit profile button
+2. **Upload Image** → Tap camera icon → Grant permissions → Select/crop → Upload to S3
+3. **Real-time Preview** → See uploaded image immediately in editor
+4. **Save Profile** → Profile picture URL saved to database
+5. **App-wide Updates** → New picture appears throughout the app
 
 ### 6. Landing Page Improvements
  - update the login page to reflect the styling we're using 

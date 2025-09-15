@@ -15,8 +15,9 @@ import {
   Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, spacing, typography, textStyles, commonStyles } from '../../styles';
+import { colors, spacing, typography, textStyles } from '../../styles';
 import { ProfileEditForm, User } from '../../types/betting';
+import { updateProfilePicture } from '../../services/imageUploadService';
 
 interface ProfileEditorProps {
   user: User;
@@ -34,6 +35,7 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({
   const [displayName, setDisplayName] = useState(user.displayName || '');
   const [profilePicture, setProfilePicture] = useState(user.profilePictureUrl || '');
   const [isValid, setIsValid] = useState(true);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
 
   const validateForm = () => {
     const trimmedName = displayName.trim();
@@ -66,13 +68,26 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({
     }
   };
 
-  const handleProfilePicturePress = () => {
-    Alert.alert(
-      'Profile Picture',
-      'Profile picture upload coming soon!',
-      [{ text: 'OK' }]
-    );
-    // TODO: Implement image picker
+  const handleProfilePicturePress = async () => {
+    if (isUploadingImage) return;
+
+    try {
+      setIsUploadingImage(true);
+
+      const result = await updateProfilePicture(user.id, profilePicture);
+
+      if (result.success && result.url) {
+        setProfilePicture(result.url);
+        Alert.alert('Success', 'Profile picture updated successfully!');
+      } else {
+        Alert.alert('Error', result.error || 'Failed to update profile picture');
+      }
+    } catch (error) {
+      console.error('Error updating profile picture:', error);
+      Alert.alert('Error', 'Failed to update profile picture. Please try again.');
+    } finally {
+      setIsUploadingImage(false);
+    }
   };
 
   const hasChanges =
@@ -99,6 +114,7 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({
             style={styles.pictureContainer}
             onPress={handleProfilePicturePress}
             activeOpacity={0.7}
+            disabled={isUploadingImage}
           >
             {profilePicture ? (
               <Image source={{ uri: profilePicture }} style={styles.profileImage} />
@@ -108,10 +124,16 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({
               </View>
             )}
             <View style={styles.editBadge}>
-              <Ionicons name="camera" size={16} color={colors.background} />
+              {isUploadingImage ? (
+                <ActivityIndicator size="small" color={colors.background} />
+              ) : (
+                <Ionicons name="camera" size={16} color={colors.background} />
+              )}
             </View>
           </TouchableOpacity>
-          <Text style={styles.pictureLabel}>Tap to change profile picture</Text>
+          <Text style={styles.pictureLabel}>
+            {isUploadingImage ? 'Uploading...' : 'Tap to change profile picture'}
+          </Text>
         </View>
 
         {/* Display Name Section */}
@@ -167,10 +189,10 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({
         <TouchableOpacity
           style={[
             styles.saveButton,
-            (!hasChanges || !isValid || loading) && styles.saveButtonDisabled
+            (!hasChanges || !isValid || loading || isUploadingImage) && styles.saveButtonDisabled
           ]}
           onPress={handleSave}
-          disabled={!hasChanges || !isValid || loading}
+          disabled={!hasChanges || !isValid || loading || isUploadingImage}
           activeOpacity={0.7}
         >
           {loading ? (

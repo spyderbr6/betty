@@ -107,6 +107,250 @@ This is the SideBet app - a professional peer-to-peer betting platform built wit
 - Revalidate create bet defaults after bet creation
 - Define bet resolution time criteria and display logic
 
+## Friend Management & Bet Invitation System ✅
+
+### System Overview
+The SideBet app features a comprehensive social betting platform with friend management and invitation capabilities, enabling users to connect with friends and invite them to bets seamlessly.
+
+### Core Features Implemented
+
+#### 🔄 **Friend Management System**
+- **Friend Requests**: Send, accept, and decline friend requests with real-time notifications
+- **Bilateral Friendships**: Efficient friendship modeling using lexicographic ordering for optimal queries
+- **Friend Discovery**: Search users by username, email, or display name
+- **Profile Integration**: Display names and profile picture support for enhanced user experience
+
+#### 📱 **Enhanced User Interface**
+- **Friends Screen**: Comprehensive friend list management with action menus and profile cards
+- **Add Friend Modal**: User search and friend request sending with relationship status detection
+- **Friend Requests Modal**: Incoming friend requests with accept/decline functionality
+- **Profile Editor**: Editable display names and profile picture placeholders with avatar initials
+
+#### 🎯 **Streamlined Bet Invitation Flow**
+- **Create Bet Integration**: Friend selection during bet creation for immediate invitations
+- **Top Friends Display**: Visual avatar selection showing top 4 friends with "See More" expansion
+- **Flexible Side Choice**: Recipients choose their preferred side (A or B) when accepting invitations
+- **Invitation Cards**: Prominent display of pending invitations in main BetsScreen with enhanced UI
+
+#### 🔔 **Notification & Event System**
+- **Real-time Notifications**: Comprehensive event tracking for all friend and betting activities
+- **Centralized Service**: `NotificationService` handles all notification types with push notification readiness
+- **Event Types**: Friend requests, bet invitations, bet resolutions, deadline alerts, and system announcements
+- **Smart Filtering**: Efficient querying with unread counts and notification cleanup
+
+### Database Schema Architecture
+
+#### **Core Models**
+```typescript
+// User Profile Enhancement
+User {
+  displayName?: string        // Friendly display name
+  profilePictureUrl?: string  // S3 profile picture URL
+  // ... existing fields
+}
+
+// Friend Management
+FriendRequest {
+  fromUserId: string
+  toUserId: string
+  status: 'PENDING' | 'ACCEPTED' | 'DECLINED'
+  message?: string
+  createdAt: datetime
+}
+
+Friendship {
+  user1Id: string  // Lexicographically smaller ID
+  user2Id: string  // Lexicographically larger ID
+  createdAt: datetime
+}
+
+// Bet Invitations
+BetInvitation {
+  betId: string
+  fromUserId: string
+  toUserId: string
+  status: 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'EXPIRED'
+  message?: string
+  invitedSide: string      // Empty string for flexible choice
+  expiresAt: datetime      // 24-hour expiration
+}
+
+// Notification System
+Notification {
+  userId: string
+  type: NotificationType
+  title: string
+  message: string
+  isRead: boolean
+  priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT'
+  actionType?: string      // Deep linking support
+  actionData?: json        // Action metadata
+  relatedBetId?: string
+  relatedUserId?: string
+}
+```
+
+### Key Implementation Details
+
+#### **Friend Selection in CreateBetScreen**
+- **Visual Interface**: Horizontal scrollable friend avatars with selection checkmarks
+- **Quick Selection**: Top 4 friends displayed prominently with remaining count indicator
+- **Batch Invitations**: All selected friends receive invitations automatically upon bet creation
+- **Form Integration**: Selected friends reset when bet creation form is cleared
+
+#### **Flexible Invitation Acceptance**
+- **Dynamic Side Choice**: Users prompted to choose A or B when accepting open invitations
+- **Native Alerts**: Clean iOS/Android native alert dialogs for side selection
+- **Smart UI**: Invitation cards hide "Your side" when no specific side is assigned
+- **Enhanced Feedback**: Success messages show exactly which side user joined
+
+#### **Notification Architecture**
+- **Dual Approach**: Both relationship queries and dedicated notification log for efficiency
+- **Push Ready**: Infrastructure prepared for expo-notifications integration
+- **Event Coverage**: All friend and betting activities generate appropriate notifications
+- **Cleanup System**: Automatic deletion of old notifications to prevent database bloat
+
+### File Structure
+
+#### **New Components**
+- `src/screens/FriendsScreen.tsx` - Friend list management interface
+- `src/components/ui/AddFriendModal.tsx` - User search and friend request sending
+- `src/components/ui/FriendRequestsModal.tsx` - Incoming friend requests management
+- `src/components/ui/ProfileEditor.tsx` - User profile editing modal
+- `src/services/notificationService.ts` - Centralized notification management
+
+#### **Enhanced Components**
+- `src/screens/CreateBetScreen.tsx` - Added friend selection section with visual avatars
+- `src/screens/BetsScreen.tsx` - Integrated bet invitation cards with side choice
+- `src/screens/AccountScreen.tsx` - Enhanced with Friends navigation and profile display
+- `src/components/SignUp.tsx` - Captures display name during registration
+
+#### **Schema & Types**
+- `amplify/data/resource.ts` - Extended with friend management and notification models
+- `src/types/betting.ts` - Added friend management types and notification interfaces
+
+### User Experience Flow
+
+#### **Making Friends**
+1. Navigate to Friends screen from Account
+2. Tap "Add Friend" → Search by username/email
+3. Send friend request with optional message
+4. Recipient gets notification and can accept/decline
+5. Bilateral friendship created upon acceptance
+
+#### **Creating Bets with Friends**
+1. Open Create Bet screen → Select template and fill details
+2. Scroll to "INVITE FRIENDS" section → Tap friend avatars to select
+3. Create bet → Selected friends automatically receive invitations
+4. Form resets and clears friend selections
+
+#### **Accepting Bet Invitations**
+1. Invitations appear prominently at top of main BetsScreen
+2. Tap "Accept & Join" → Choose side (A or B) from native alert
+3. Join bet on chosen side → Notification sent to inviter
+4. Invitation removed from list and bet updated
+
+### Technical Features
+- **Type Safety**: Full TypeScript coverage for all friend management features
+- **Real-time Updates**: GraphQL subscriptions ready for live friend status updates
+- **Efficient Queries**: Optimized friendship queries using bilateral modeling
+- **Error Handling**: Graceful failure handling for all friend and invitation operations
+- **Migration Ready**: Backward compatibility for existing users without display names
+
+## Profile Picture Upload System ✅
+
+### System Overview
+The SideBet app now features a complete profile picture upload system, enabling users to upload, store, and manage their profile images through AWS S3 storage with seamless integration into the user profile system.
+
+### Core Features Implemented
+
+#### 📷 **Image Upload Workflow**
+- **Permission Management**: Automatic camera and photo library permission requests
+- **Image Selection**: Native image picker with square crop and quality optimization
+- **S3 Upload**: Secure file uploads to AWS S3 with proper access controls
+- **URL Generation**: Long-lived public URLs for profile picture access
+- **Old Image Cleanup**: Automatic deletion of previous profile pictures to prevent storage bloat
+
+#### 🔐 **AWS Storage Integration**
+- **S3 Bucket Configuration**: Dedicated storage bucket with proper access policies
+- **File Organization**: Profile pictures stored in user-specific folders (`profile-pictures/{userId}/`)
+- **Access Control**: Entity-based access allowing users to manage their own pictures
+- **Content Type Handling**: Proper MIME type detection and storage optimization
+
+#### 🎨 **Enhanced User Interface**
+- **ProfileEditor Component**: Integrated image upload with loading states and visual feedback
+- **Avatar Placeholders**: Fallback to user initials when no profile picture is set
+- **Real-time Updates**: Immediate UI updates after successful uploads
+- **Error Handling**: Comprehensive error messages and retry mechanisms
+
+### Implementation Details
+
+#### **Storage Architecture**
+```typescript
+// AWS S3 Storage Configuration
+defineStorage({
+  name: 'sidebet-user-uploads',
+  access: (allow) => ({
+    'profile-pictures/{entity_id}/*': [
+      allow.entity('identity').to(['read', 'write', 'delete'])
+    ]
+  })
+})
+```
+
+#### **Image Upload Service**
+```typescript
+// Core upload functionality
+updateProfilePicture(userId, currentProfilePictureUrl?) -> {
+  1. Request permissions (camera + photo library)
+  2. Launch image picker with square aspect ratio
+  3. Upload to S3 with unique filename
+  4. Generate public URL with 1-year expiry
+  5. Delete old profile picture (if exists)
+  6. Return new profile picture URL
+}
+```
+
+#### **Database Integration**
+- **User Model Enhancement**: `profilePictureUrl` field stores S3 URLs
+- **Profile Updates**: Seamless integration with existing profile edit workflow
+- **Real-time Sync**: Profile picture changes immediately reflected across the app
+- **Avatar Generation**: Automatic fallback to initials when no picture is uploaded
+
+### Files Enhanced
+
+#### **Backend Infrastructure**
+- ✅ `amplify/storage/resource.ts` - S3 storage configuration with proper access controls
+- ✅ `amplify/backend.ts` - Storage integration into Amplify backend
+- ✅ Package dependencies updated with `expo-image-picker`
+
+#### **Frontend Components**
+- ✅ `src/services/imageUploadService.ts` - Complete image upload workflow service
+- ✅ `src/components/ui/ProfileEditor.tsx` - Enhanced with real image upload functionality
+- ✅ `src/screens/AccountScreen.tsx` - Integrated profile picture saving to database
+
+#### **User Experience Flow**
+1. **Access Profile Editor**: Tap profile picture or edit profile button
+2. **Upload Image**: Tap camera icon → Grant permissions → Select/crop image → Upload to S3
+3. **Real-time Preview**: See uploaded image immediately in profile editor
+4. **Save Profile**: Profile picture URL saved to user database record
+5. **App-wide Updates**: New profile picture appears throughout the app (friend lists, bet cards, etc.)
+
+### Technical Features
+- **Expo Integration**: Native image picker with platform-specific optimizations
+- **AWS S3 Storage**: Scalable cloud storage with CDN-ready URLs
+- **Permission Handling**: Graceful camera and photo library permission management
+- **Image Optimization**: Automatic compression and format optimization for mobile
+- **Error Recovery**: Robust error handling with user-friendly messages
+- **Loading States**: Visual feedback during upload process with activity indicators
+
+### Security & Performance
+- **Access Control**: Users can only access their own profile pictures
+- **File Validation**: Content type validation and file size limits
+- **Storage Cleanup**: Automatic deletion of old images to prevent storage bloat
+- **CDN Integration**: S3 URLs ready for CloudFront CDN acceleration
+- **Mobile Optimization**: Compressed images optimized for mobile bandwidth
+
 ## SideBet Design System Architecture
 
 ### Design System Overview

@@ -14,6 +14,7 @@ import {
   Switch,
   Alert,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { generateClient } from 'aws-amplify/data';
@@ -22,6 +23,8 @@ import type { Schema } from '../../amplify/data/resource';
 import { colors, commonStyles, textStyles, spacing, typography } from '../styles';
 import { Header } from '../components/ui/Header';
 import { useAuth } from '../contexts/AuthContext';
+import { User, Friendship } from '../types/betting';
+import { Ionicons } from '@expo/vector-icons';
 
 interface BetTemplate {
   id: string;
@@ -52,6 +55,11 @@ export const CreateBetScreen: React.FC = () => {
   const [selectedSide, setSelectedSide] = useState<'A' | 'B' | null>(null);
   const [isCreating, setIsCreating] = useState(false);
 
+  // Friend selection state
+  const [friends, setFriends] = useState<User[]>([]);
+  const [selectedFriends, setSelectedFriends] = useState<Set<string>>(new Set());
+  const [showAllFriends, setShowAllFriends] = useState(false);
+
   // Fetch user balance
   useEffect(() => {
     const fetchUserBalance = async () => {
@@ -69,6 +77,68 @@ export const CreateBetScreen: React.FC = () => {
 
     fetchUserBalance();
   }, [user]);
+
+  // Fetch user friends
+  useEffect(() => {
+    const fetchFriends = async () => {
+      if (!user?.userId) return;
+
+      try {
+        // Fetch friendships where current user is user1 or user2
+        const [friendships1, friendships2] = await Promise.all([
+          client.models.Friendship.list({
+            filter: { user1Id: { eq: user.userId } }
+          }),
+          client.models.Friendship.list({
+            filter: { user2Id: { eq: user.userId } }
+          })
+        ]);
+
+        const allFriendships = [...(friendships1.data || []), ...(friendships2.data || [])];
+
+        // Get friend user IDs
+        const friendIds = allFriendships.map(friendship =>
+          friendship.user1Id === user.userId ? friendship.user2Id : friendship.user1Id
+        );
+
+        // Fetch friend user details
+        const friendUsers = await Promise.all(
+          friendIds.map(async (friendId) => {
+            try {
+              const { data: userData } = await client.models.User.get({ id: friendId });
+              if (userData) {
+                return {
+                  id: userData.id!,
+                  username: userData.username!,
+                  email: userData.email!,
+                  displayName: userData.displayName || undefined,
+                  profilePictureUrl: userData.profilePictureUrl || undefined,
+                  balance: userData.balance || 0,
+                  trustScore: userData.trustScore || 5.0,
+                  totalBets: userData.totalBets || 0,
+                  totalWinnings: userData.totalWinnings || 0,
+                  winRate: userData.winRate || 0,
+                  createdAt: userData.createdAt || new Date().toISOString(),
+                  updatedAt: userData.updatedAt || new Date().toISOString(),
+                } as User;
+              }
+              return null;
+            } catch (error) {
+              console.error(`Error fetching friend ${friendId}:`, error);
+              return null;
+            }
+          })
+        );
+
+        const validFriends = friendUsers.filter((friend): friend is User => friend !== null);
+        setFriends(validFriends);
+      } catch (error) {
+        console.error('Error fetching friends:', error);
+      }
+    };
+
+    fetchFriends();
+  }, [user?.userId]);
 
   const betTemplates: BetTemplate[] = [
     {
@@ -226,6 +296,47 @@ export const CreateBetScreen: React.FC = () => {
           // Continue; the bet is created even if auto-join failed
         }
 
+        // Send invitations to selected friends
+        if (selectedFriends.size > 0) {
+          try {
+            const currentUserDisplayName = user.username; // Using username from auth context
+            const invitationPromises = Array.from(selectedFriends).map(async (friendId) => {
+              try {
+                // Create bet invitation (without specific side requirement)
+                await client.models.BetInvitation.create({
+                  betId: result.data.id!,
+                  fromUserId: user.userId,
+                  toUserId: friendId,
+                  status: 'PENDING',
+                  message: `Join my bet: ${betTitle}`,
+                  invitedSide: '', // Empty string since they can choose their own side
+                  expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // 24 hours
+                });
+
+                // Send notification to friend
+                const { NotificationService } = await import('../services/notificationService');
+                await NotificationService.notifyBetInvitationReceived(
+                  friendId,
+                  currentUserDisplayName,
+                  betTitle.trim(),
+                  user.userId,
+                  result.data.id!,
+                  `${result.data.id!}-${friendId}` // Simple invitation ID
+                );
+              } catch (inviteError) {
+                console.error(`Error sending invitation to friend ${friendId}:`, inviteError);
+                // Continue with other invitations even if one fails
+              }
+            });
+
+            await Promise.all(invitationPromises);
+            console.log(`Sent ${selectedFriends.size} bet invitations`);
+          } catch (error) {
+            console.error('Error sending friend invitations:', error);
+            // Don't block the success flow if invitations fail
+          }
+        }
+
         Alert.alert(
           'Bet Created!',
           `Your bet "${betTitle}" has been created and you joined on "${selectedSide === 'A' ? sideAName : sideBName}".`,
@@ -267,6 +378,7 @@ export const CreateBetScreen: React.FC = () => {
     setDeadline('30');
     setIsPrivate(false);
     setSelectedSide(null);
+    setSelectedFriends(new Set()); // Clear selected friends
 
     // Re-apply the first template defaults (title, description, category, sides)
     // on the next tick to avoid state batching preserving stale values
@@ -281,6 +393,38 @@ export const CreateBetScreen: React.FC = () => {
 
   const handleNotificationsPress = () => {
     console.log('Notifications pressed');
+  };
+
+  // Friend selection helpers
+  const toggleFriendSelection = (friendId: string) => {
+    setSelectedFriends(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(friendId)) {
+        newSet.delete(friendId);
+      } else {
+        newSet.add(friendId);
+      }
+      return newSet;
+    });
+  };
+
+  const generateAvatarInitials = (friend: User) => {
+    const nameForAvatar = friend.displayName || friend.username || friend.email.split('@')[0];
+    return nameForAvatar
+      .split(/[\s_.]/)
+      .map(part => part[0]?.toUpperCase())
+      .filter(Boolean)
+      .join('')
+      .slice(0, 2) || '??';
+  };
+
+  const getTopFriends = () => {
+    // Return top 4 friends for quick selection
+    return friends.slice(0, 4);
+  };
+
+  const getRemainingFriendsCount = () => {
+    return Math.max(0, friends.length - 4);
   };
 
   return (
@@ -470,6 +614,81 @@ export const CreateBetScreen: React.FC = () => {
               thumbColor={colors.background}
             />
           </View>
+        </View>
+
+        {/* Friend Invitations Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>INVITE FRIENDS</Text>
+          <Text style={styles.sectionSubtitle}>Select friends to invite to this bet</Text>
+
+          {friends.length > 0 ? (
+            <>
+              {/* Top Friends Quick Selection */}
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.friendsScroll}>
+                {getTopFriends().map((friend) => (
+                  <TouchableOpacity
+                    key={friend.id}
+                    style={[
+                      styles.friendAvatar,
+                      selectedFriends.has(friend.id) && styles.friendAvatarSelected
+                    ]}
+                    onPress={() => toggleFriendSelection(friend.id)}
+                    activeOpacity={0.7}
+                  >
+                    {friend.profilePictureUrl ? (
+                      <Image source={{ uri: friend.profilePictureUrl }} style={styles.friendImage} />
+                    ) : (
+                      <View style={[styles.friendPlaceholder, selectedFriends.has(friend.id) && styles.friendPlaceholderSelected]}>
+                        <Text style={[styles.friendInitials, selectedFriends.has(friend.id) && styles.friendInitialsSelected]}>
+                          {generateAvatarInitials(friend)}
+                        </Text>
+                      </View>
+                    )}
+                    {selectedFriends.has(friend.id) && (
+                      <View style={styles.friendSelectedBadge}>
+                        <Ionicons name="checkmark" size={12} color={colors.background} />
+                      </View>
+                    )}
+                    <Text style={styles.friendName} numberOfLines={1}>
+                      {friend.displayName || friend.username || friend.email.split('@')[0]}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+
+                {/* See More Friends Button */}
+                {getRemainingFriendsCount() > 0 && (
+                  <TouchableOpacity
+                    style={styles.seeMoreButton}
+                    onPress={() => setShowAllFriends(true)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.seeMoreIcon}>
+                      <Ionicons name="add" size={20} color={colors.textSecondary} />
+                    </View>
+                    <Text style={styles.seeMoreText}>
+                      +{getRemainingFriendsCount()} more
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </ScrollView>
+
+              {/* Selected Friends Count */}
+              {selectedFriends.size > 0 && (
+                <View style={styles.selectedFriendsInfo}>
+                  <Ionicons name="people" size={16} color={colors.primary} />
+                  <Text style={styles.selectedFriendsText}>
+                    {selectedFriends.size} friend{selectedFriends.size !== 1 ? 's' : ''} selected
+                  </Text>
+                </View>
+              )}
+            </>
+          ) : (
+            <View style={styles.noFriendsContainer}>
+              <Ionicons name="people-outline" size={32} color={colors.textMuted} />
+              <Text style={styles.noFriendsText}>No friends to invite</Text>
+              <Text style={styles.noFriendsSubtext}>Add friends to invite them to your bets</Text>
+            </View>
+          )}
         </View>
 
         {/* Create Button */}
@@ -757,5 +976,123 @@ const styles = StyleSheet.create({
     ...textStyles.caption,
     color: colors.warning,
     marginTop: spacing.xs,
+  },
+
+  // Friend Selection Styles
+  friendsScroll: {
+    marginTop: spacing.md,
+  },
+  friendAvatar: {
+    alignItems: 'center',
+    marginRight: spacing.md,
+    width: 60,
+  },
+  friendAvatarSelected: {
+    // No additional styling needed, handled by badge
+  },
+  friendImage: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    borderWidth: 2,
+    borderColor: colors.border,
+  },
+  friendPlaceholder: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: colors.border,
+  },
+  friendPlaceholderSelected: {
+    borderColor: colors.primary,
+    borderWidth: 3,
+  },
+  friendInitials: {
+    ...textStyles.button,
+    color: colors.background,
+    fontWeight: typography.fontWeight.bold,
+    fontSize: 14,
+  },
+  friendInitialsSelected: {
+    color: colors.background,
+  },
+  friendSelectedBadge: {
+    position: 'absolute',
+    top: -2,
+    right: 5,
+    backgroundColor: colors.success,
+    borderRadius: 10,
+    width: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: colors.background,
+  },
+  friendName: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    marginTop: spacing.xs,
+    textAlign: 'center',
+    maxWidth: 60,
+  },
+  seeMoreButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.md,
+    width: 60,
+  },
+  seeMoreIcon: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderStyle: 'dashed',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  seeMoreText: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    marginTop: spacing.xs,
+    textAlign: 'center',
+    maxWidth: 60,
+  },
+  selectedFriendsInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: spacing.md,
+    padding: spacing.sm,
+    backgroundColor: colors.surface,
+    borderRadius: spacing.radius.sm,
+  },
+  selectedFriendsText: {
+    ...textStyles.caption,
+    color: colors.primary,
+    marginLeft: spacing.xs,
+    fontWeight: typography.fontWeight.medium,
+  },
+  noFriendsContainer: {
+    alignItems: 'center',
+    padding: spacing.lg,
+    marginTop: spacing.md,
+  },
+  noFriendsText: {
+    ...textStyles.button,
+    color: colors.textMuted,
+    marginTop: spacing.sm,
+    fontWeight: typography.fontWeight.medium,
+  },
+  noFriendsSubtext: {
+    ...textStyles.caption,
+    color: colors.textMuted,
+    marginTop: spacing.xs,
+    textAlign: 'center',
   },
 });

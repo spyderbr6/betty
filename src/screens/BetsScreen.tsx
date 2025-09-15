@@ -218,8 +218,51 @@ export const BetsScreen: React.FC = () => {
   };
 
   // Handle bet invitation acceptance
-  const acceptBetInvitation = async (invitation: BetInvitation) => {
+  const acceptBetInvitation = async (invitation: BetInvitation, selectedSide?: string) => {
     if (!user?.userId || !invitation.bet) return;
+
+    // Check if we need to prompt for side selection
+    const hasSpecificSide = invitation.invitedSide && invitation.invitedSide.trim() !== '';
+    const sideToJoin = hasSpecificSide ? invitation.invitedSide : selectedSide;
+
+    // If no specific side and no selected side, prompt user to choose
+    if (!hasSpecificSide && !selectedSide) {
+      const parseBetOdds = (odds: any) => {
+        try {
+          const parsedOdds = typeof odds === 'string' ? JSON.parse(odds) : odds;
+          return {
+            sideAName: parsedOdds?.sideAName || 'Side A',
+            sideBName: parsedOdds?.sideBName || 'Side B',
+          };
+        } catch {
+          return { sideAName: 'Side A', sideBName: 'Side B' };
+        }
+      };
+
+      const betOdds = parseBetOdds(invitation.bet.odds);
+
+      Alert.alert(
+        'Choose Your Side',
+        `Which side do you want to join for "${invitation.bet.title}"?`,
+        [
+          {
+            text: betOdds.sideAName,
+            onPress: () => acceptBetInvitation(invitation, 'A'),
+          },
+          {
+            text: betOdds.sideBName,
+            onPress: () => acceptBetInvitation(invitation, 'B'),
+          },
+          {
+            text: 'Cancel',
+            style: 'cancel',
+          },
+        ]
+      );
+      return;
+    }
+
+    if (!sideToJoin) return;
 
     try {
       setProcessingInvitations(prev => new Set(prev).add(invitation.id));
@@ -234,7 +277,7 @@ export const BetsScreen: React.FC = () => {
       await client.models.Participant.create({
         betId: invitation.betId,
         userId: user.userId,
-        side: invitation.invitedSide,
+        side: sideToJoin,
         amount: invitation.bet.betAmount || 0,
         status: 'ACCEPTED',
         payout: 0,
@@ -261,7 +304,23 @@ export const BetsScreen: React.FC = () => {
       // Refresh bets to show updated participant list
       await fetchBets();
 
-      Alert.alert('Success', `You've joined the bet "${invitation.bet.title}"!`);
+      // Get side name for success message
+      const parseBetOdds = (odds: any) => {
+        try {
+          const parsedOdds = typeof odds === 'string' ? JSON.parse(odds) : odds;
+          return {
+            sideAName: parsedOdds?.sideAName || 'Side A',
+            sideBName: parsedOdds?.sideBName || 'Side B',
+          };
+        } catch {
+          return { sideAName: 'Side A', sideBName: 'Side B' };
+        }
+      };
+
+      const betOdds = parseBetOdds(invitation.bet.odds);
+      const joinedSideName = sideToJoin === 'A' ? betOdds.sideAName : betOdds.sideBName;
+
+      Alert.alert('Success', `You've joined "${invitation.bet.title}" on ${joinedSideName}!`);
     } catch (error) {
       console.error('Error accepting bet invitation:', error);
       Alert.alert('Error', 'Failed to accept invitation. Please try again.');
@@ -746,7 +805,10 @@ const BetInvitationCard: React.FC<BetInvitationCardProps> = ({
   };
 
   const betOdds = parseBetOdds(invitation.bet.odds);
-  const invitedSideName = invitation.invitedSide === 'A' ? betOdds.sideAName : betOdds.sideBName;
+  const hasSpecificSide = invitation.invitedSide && invitation.invitedSide.trim() !== '';
+  const invitedSideName = hasSpecificSide
+    ? (invitation.invitedSide === 'A' ? betOdds.sideAName : betOdds.sideBName)
+    : null;
   const timeUntilExpiry = new Date(invitation.expiresAt).getTime() - new Date().getTime();
   const hoursLeft = Math.max(0, Math.floor(timeUntilExpiry / (1000 * 60 * 60)));
 
@@ -778,10 +840,12 @@ const BetInvitationCard: React.FC<BetInvitationCardProps> = ({
         </Text>
 
         <View style={styles.invitationBetInfo}>
-          <View style={styles.invitationSideInfo}>
-            <Text style={styles.invitationSideLabel}>Your side:</Text>
-            <Text style={styles.invitationSideName}>{invitedSideName}</Text>
-          </View>
+          {hasSpecificSide && (
+            <View style={styles.invitationSideInfo}>
+              <Text style={styles.invitationSideLabel}>Your side:</Text>
+              <Text style={styles.invitationSideName}>{invitedSideName}</Text>
+            </View>
+          )}
           <View style={styles.invitationAmountInfo}>
             <Text style={styles.invitationAmountLabel}>Amount:</Text>
             <Text style={styles.invitationAmount}>${invitation.bet.betAmount || 0}</Text>
