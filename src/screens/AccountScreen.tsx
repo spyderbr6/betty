@@ -13,6 +13,8 @@ import {
   StyleSheet,
   ActivityIndicator,
   Alert,
+  Modal,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -20,28 +22,26 @@ import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
 import { colors, spacing, commonStyles, textStyles } from '../styles';
 import { Header } from '../components/ui/Header';
+import { ProfileEditor } from '../components/ui/ProfileEditor';
 import { formatCurrency, formatPercentage } from '../utils/formatting';
 import { useAuth } from '../contexts/AuthContext';
+import { ProfileEditForm, User } from '../types/betting';
 
 // Initialize GraphQL client
 const client = generateClient<Schema>();
 
-// User stats interface matching our Amplify User model
-interface UserStats {
-  balance: number;
-  trustScore: number;
-  totalBets: number;
-  totalWinnings: number;
-  winRate: number;
-  username: string;
-  email: string;
+// Enhanced user interface with profile data
+interface UserProfile extends User {
+  // All User fields are already included from the imported type
 }
 
 export const AccountScreen: React.FC = () => {
   const { user, signOut } = useAuth();
-  const [userStats, setUserStats] = useState<UserStats | null>(null);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [showProfileEditor, setShowProfileEditor] = useState(false);
+  const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -59,14 +59,19 @@ export const AccountScreen: React.FC = () => {
       const { data: userData } = await client.models.User.get({ id: user.userId });
 
       if (userData) {
-        setUserStats({
+        setUserProfile({
+          id: userData.id!,
+          username: userData.username!,
+          email: userData.email!,
+          displayName: userData.displayName || undefined,
+          profilePictureUrl: userData.profilePictureUrl || undefined,
           balance: userData.balance || 0,
           trustScore: userData.trustScore || 5.0,
           totalBets: userData.totalBets || 0,
           totalWinnings: userData.totalWinnings || 0,
           winRate: userData.winRate || 0,
-          username: userData.username || user.username,
-          email: userData.email || '',
+          createdAt: userData.createdAt || new Date().toISOString(),
+          updatedAt: userData.updatedAt || new Date().toISOString(),
         });
       } else {
         // Create user record if it doesn't exist
@@ -82,14 +87,19 @@ export const AccountScreen: React.FC = () => {
         });
 
         if (newUser.data) {
-          setUserStats({
+          setUserProfile({
+            id: newUser.data.id!,
+            username: newUser.data.username!,
+            email: newUser.data.email!,
+            displayName: newUser.data.displayName || undefined,
+            profilePictureUrl: newUser.data.profilePictureUrl || undefined,
             balance: newUser.data.balance || 1000,
             trustScore: newUser.data.trustScore || 5.0,
             totalBets: newUser.data.totalBets || 0,
             totalWinnings: newUser.data.totalWinnings || 0,
             winRate: newUser.data.winRate || 0,
-            username: newUser.data.username || user.username,
-            email: newUser.data.email || '',
+            createdAt: newUser.data.createdAt || new Date().toISOString(),
+            updatedAt: newUser.data.updatedAt || new Date().toISOString(),
           });
         }
       }
@@ -156,6 +166,47 @@ export const AccountScreen: React.FC = () => {
     console.log('Support pressed');
   };
 
+  const handleEditProfile = () => {
+    setShowProfileEditor(true);
+  };
+
+  const handleSaveProfile = async (profileData: ProfileEditForm) => {
+    if (!userProfile) return;
+
+    try {
+      setIsUpdatingProfile(true);
+
+      // Update user profile in database
+      const updatedUser = await client.models.User.update({
+        id: userProfile.id,
+        displayName: profileData.displayName,
+        profilePictureUrl: profileData.profilePicture,
+      });
+
+      if (updatedUser.data) {
+        // Update local state
+        setUserProfile({
+          ...userProfile,
+          displayName: updatedUser.data.displayName || undefined,
+          profilePictureUrl: updatedUser.data.profilePictureUrl || undefined,
+          updatedAt: updatedUser.data.updatedAt || new Date().toISOString(),
+        });
+
+        setShowProfileEditor(false);
+        Alert.alert('Success', 'Profile updated successfully!');
+      }
+    } catch (error) {
+      console.error('Error updating profile:', error);
+      Alert.alert('Error', 'Failed to update profile. Please try again.');
+    } finally {
+      setIsUpdatingProfile(false);
+    }
+  };
+
+  const handleCancelProfileEdit = () => {
+    setShowProfileEditor(false);
+  };
+
   if (isLoading) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
@@ -168,7 +219,7 @@ export const AccountScreen: React.FC = () => {
     );
   }
 
-  if (!userStats) {
+  if (!userProfile) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
         <Header title="Account" />
@@ -186,9 +237,10 @@ export const AccountScreen: React.FC = () => {
     );
   }
 
-  // Generate avatar initials from username
-  const avatarInitials = userStats.username
-    .split('_')
+  // Generate avatar initials from username or display name
+  const displayName = userProfile.displayName || userProfile.username;
+  const avatarInitials = displayName
+    .split(/[\s_]/)
     .map(part => part[0]?.toUpperCase())
     .join('')
     .slice(0, 2);
@@ -214,15 +266,37 @@ export const AccountScreen: React.FC = () => {
         {/* User Profile */}
         <View style={styles.profileSection}>
           <View style={styles.profileHeader}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{avatarInitials}</Text>
-            </View>
+            <TouchableOpacity
+              style={styles.avatarContainer}
+              onPress={handleEditProfile}
+              activeOpacity={0.7}
+            >
+              {userProfile.profilePictureUrl ? (
+                <Image
+                  source={{ uri: userProfile.profilePictureUrl }}
+                  style={styles.profileImage}
+                />
+              ) : (
+                <View style={styles.avatar}>
+                  <Text style={styles.avatarText}>{avatarInitials}</Text>
+                </View>
+              )}
+              <View style={styles.editProfileBadge}>
+                <Ionicons name="pencil" size={14} color={colors.background} />
+              </View>
+            </TouchableOpacity>
+
             <View style={styles.profileInfo}>
-              <Text style={styles.username}>{userStats.username}</Text>
-              <Text style={styles.email}>{userStats.email}</Text>
+              <TouchableOpacity onPress={handleEditProfile} activeOpacity={0.7}>
+                <Text style={styles.displayName}>
+                  {userProfile.displayName || userProfile.username}
+                </Text>
+                <Text style={styles.username}>@{userProfile.username}</Text>
+              </TouchableOpacity>
+              <Text style={styles.email}>{userProfile.email}</Text>
               <View style={styles.trustContainer}>
                 <Text style={styles.trustLabel}>Trust Score</Text>
-                <Text style={styles.trustScore}>{userStats.trustScore.toFixed(1)}/10</Text>
+                <Text style={styles.trustScore}>{userProfile.trustScore.toFixed(1)}/10</Text>
               </View>
             </View>
           </View>
@@ -233,19 +307,19 @@ export const AccountScreen: React.FC = () => {
           <Text style={styles.sectionTitle}>BETTING STATS</Text>
           <View style={styles.statsGrid}>
             <View style={styles.statCard}>
-              <Text style={styles.statValue}>{formatPercentage(userStats.winRate)}</Text>
+              <Text style={styles.statValue}>{formatPercentage(userProfile.winRate)}</Text>
               <Text style={styles.statLabel}>Win Rate</Text>
             </View>
             <View style={styles.statCard}>
-              <Text style={styles.statValue}>{userStats.totalBets}</Text>
+              <Text style={styles.statValue}>{userProfile.totalBets}</Text>
               <Text style={styles.statLabel}>Total Bets</Text>
             </View>
             <View style={styles.statCard}>
-              <Text style={styles.statValue}>{formatCurrency(userStats.totalWinnings)}</Text>
+              <Text style={styles.statValue}>{formatCurrency(userProfile.totalWinnings)}</Text>
               <Text style={styles.statLabel}>Total Winnings</Text>
             </View>
             <View style={styles.statCard}>
-              <Text style={styles.statValue}>{userStats.balance > 1000 ? '📈' : '💰'}</Text>
+              <Text style={styles.statValue}>{userProfile.balance > 1000 ? '📈' : '💰'}</Text>
               <Text style={styles.statLabel}>Status</Text>
             </View>
           </View>
@@ -306,6 +380,20 @@ export const AccountScreen: React.FC = () => {
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      {/* Profile Editor Modal */}
+      <Modal
+        visible={showProfileEditor}
+        animationType="slide"
+        presentationStyle="pageSheet"
+      >
+        <ProfileEditor
+          user={userProfile}
+          onSave={handleSaveProfile}
+          onCancel={handleCancelProfileEdit}
+          loading={isUpdatingProfile}
+        />
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -398,6 +486,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
+  avatarContainer: {
+    position: 'relative',
+    marginRight: spacing.md,
+  },
   avatar: {
     width: 60,
     height: 60,
@@ -405,20 +497,44 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: spacing.md,
+  },
+  profileImage: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
   },
   avatarText: {
     ...textStyles.h3,
     color: colors.background,
     fontWeight: '700',
   },
+  editProfileBadge: {
+    position: 'absolute',
+    bottom: -2,
+    right: -2,
+    backgroundColor: colors.primary,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: colors.surface,
+  },
   profileInfo: {
     flex: 1,
   },
-  username: {
+  displayName: {
     ...textStyles.h3,
     color: colors.textPrimary,
     marginBottom: 2,
+    fontWeight: '700',
+  },
+  username: {
+    ...textStyles.body,
+    color: colors.textSecondary,
+    marginBottom: 4,
+    fontFamily: 'monospace',
   },
   email: {
     ...textStyles.body,
