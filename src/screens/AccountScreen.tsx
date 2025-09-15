@@ -19,6 +19,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { generateClient } from 'aws-amplify/data';
+import { fetchUserAttributes } from 'aws-amplify/auth';
 import type { Schema } from '../../amplify/data/resource';
 import { colors, spacing, commonStyles, textStyles } from '../styles';
 import { Header } from '../components/ui/Header';
@@ -55,15 +56,52 @@ export const AccountScreen: React.FC = () => {
     try {
       setIsLoading(true);
 
+      // Always fetch real user info from Cognito first
+      let displayNameFromCognito = '';
+      let realEmail = user.username; // fallback
+      try {
+        const userAttributes = await fetchUserAttributes();
+        displayNameFromCognito = userAttributes.name || '';
+        realEmail = userAttributes.email || user.username;
+      } catch (error) {
+        console.log('Could not fetch Cognito user attributes:', error);
+      }
+
       // Try to get existing user data
       const { data: userData } = await client.models.User.get({ id: user.userId });
 
       if (userData) {
+        // Update existing user with real email if it's a placeholder
+        let shouldUpdate = false;
+        let updateData: any = {};
+
+        if (userData.email?.includes('@example.com') || !userData.email?.includes('@')) {
+          updateData.email = realEmail;
+          shouldUpdate = true;
+        }
+
+        if (!userData.displayName && displayNameFromCognito) {
+          updateData.displayName = displayNameFromCognito;
+          shouldUpdate = true;
+        }
+
+        // Update user record if needed
+        if (shouldUpdate) {
+          try {
+            await client.models.User.update({
+              id: userData.id!,
+              ...updateData
+            });
+          } catch (updateError) {
+            console.log('Could not update user record:', updateError);
+          }
+        }
+
         setUserProfile({
           id: userData.id!,
           username: userData.username!,
-          email: userData.email!,
-          displayName: userData.displayName || undefined,
+          email: updateData.email || userData.email!,
+          displayName: updateData.displayName || userData.displayName || undefined,
           profilePictureUrl: userData.profilePictureUrl || undefined,
           balance: userData.balance || 0,
           trustScore: userData.trustScore || 5.0,
@@ -74,11 +112,12 @@ export const AccountScreen: React.FC = () => {
           updatedAt: userData.updatedAt || new Date().toISOString(),
         });
       } else {
-        // Create user record if it doesn't exist
+        // Create user record if it doesn't exist (use already fetched Cognito data)
         const newUser = await client.models.User.create({
           id: user.userId,
           username: user.username,
-          email: `${user.username}@example.com`, // Placeholder email
+          email: realEmail,
+          displayName: displayNameFromCognito || undefined,
           balance: 1000, // Starting balance
           trustScore: 5.0,
           totalBets: 0,
@@ -237,13 +276,16 @@ export const AccountScreen: React.FC = () => {
     );
   }
 
-  // Generate avatar initials from username or display name
-  const displayName = userProfile.displayName || userProfile.username;
-  const avatarInitials = displayName
-    .split(/[\s_]/)
+  // Generate avatar initials from display name, fallback to username, then email
+  const nameForAvatar = userProfile.displayName ||
+                       userProfile.username ||
+                       userProfile.email.split('@')[0];
+  const avatarInitials = nameForAvatar
+    .split(/[\s_.]/)
     .map(part => part[0]?.toUpperCase())
+    .filter(Boolean)
     .join('')
-    .slice(0, 2);
+    .slice(0, 2) || '??';
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -289,9 +331,8 @@ export const AccountScreen: React.FC = () => {
             <View style={styles.profileInfo}>
               <TouchableOpacity onPress={handleEditProfile} activeOpacity={0.7}>
                 <Text style={styles.displayName}>
-                  {userProfile.displayName || userProfile.username}
+                  {userProfile.displayName || 'Set Display Name'}
                 </Text>
-                <Text style={styles.username}>@{userProfile.username}</Text>
               </TouchableOpacity>
               <Text style={styles.email}>{userProfile.email}</Text>
               <View style={styles.trustContainer}>
@@ -527,14 +568,8 @@ const styles = StyleSheet.create({
   displayName: {
     ...textStyles.h3,
     color: colors.textPrimary,
-    marginBottom: 2,
+    marginBottom: spacing.xs,
     fontWeight: '700',
-  },
-  username: {
-    ...textStyles.body,
-    color: colors.textSecondary,
-    marginBottom: 4,
-    fontFamily: 'monospace',
   },
   email: {
     ...textStyles.body,

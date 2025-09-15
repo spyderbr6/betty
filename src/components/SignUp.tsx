@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { signUp, confirmSignUp } from 'aws-amplify/auth';
+import { colors, spacing, textStyles, typography } from '../styles';
 
 interface SignUpProps {
   onLoginPress: () => void;
@@ -18,13 +19,24 @@ interface SignUpProps {
 export const SignUp: React.FC<SignUpProps> = ({ onLoginPress, onSignUpSuccess }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [displayName, setDisplayName] = useState('');
   const [confirmationCode, setConfirmationCode] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [step, setStep] = useState<'signUp' | 'confirm'>('signUp');
 
   const handleSignUp = async () => {
-    if (!email.trim() || !password.trim()) {
+    if (!email.trim() || !password.trim() || !displayName.trim()) {
       Alert.alert('Error', 'Please fill in all fields');
+      return;
+    }
+
+    if (displayName.trim().length < 2) {
+      Alert.alert('Error', 'Display name must be at least 2 characters long');
+      return;
+    }
+
+    if (displayName.trim().length > 30) {
+      Alert.alert('Error', 'Display name must be less than 30 characters');
       return;
     }
 
@@ -37,6 +49,7 @@ export const SignUp: React.FC<SignUpProps> = ({ onLoginPress, onSignUpSuccess })
           userAttributes: {
             email: email.trim(),
             preferred_username: email.trim(),
+            name: displayName.trim(), // Store display name in Cognito
           },
         },
       });
@@ -111,7 +124,20 @@ export const SignUp: React.FC<SignUpProps> = ({ onLoginPress, onSignUpSuccess })
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Create Account</Text>
-      
+      <Text style={styles.subtitle}>
+        Join SideBet and start betting with friends
+      </Text>
+
+      <TextInput
+        style={styles.input}
+        placeholder="Display Name"
+        value={displayName}
+        onChangeText={setDisplayName}
+        autoCapitalize="words"
+        autoCorrect={false}
+        maxLength={30}
+      />
+
       <TextInput
         style={styles.input}
         placeholder="Email"
@@ -121,7 +147,7 @@ export const SignUp: React.FC<SignUpProps> = ({ onLoginPress, onSignUpSuccess })
         autoCapitalize="none"
         autoCorrect={false}
       />
-      
+
       <TextInput
         style={styles.input}
         placeholder="Password"
@@ -130,6 +156,10 @@ export const SignUp: React.FC<SignUpProps> = ({ onLoginPress, onSignUpSuccess })
         secureTextEntry
         autoCapitalize="none"
       />
+
+      <Text style={styles.helperText}>
+        Your display name is how you'll appear to friends
+      </Text>
       
       <TouchableOpacity
         style={[styles.button, isLoading && styles.buttonDisabled]}
@@ -154,52 +184,63 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     justifyContent: 'center',
-    padding: 20,
-    backgroundColor: '#f5f5f5',
+    padding: spacing.lg,
+    backgroundColor: colors.background,
   },
   title: {
-    fontSize: 28,
-    fontWeight: 'bold',
+    ...textStyles.h1,
+    color: colors.textPrimary,
     textAlign: 'center',
-    marginBottom: 10,
-    color: '#333',
+    marginBottom: spacing.xs,
+    fontWeight: typography.fontWeight.bold,
   },
   subtitle: {
-    fontSize: 16,
+    ...textStyles.body,
+    color: colors.textSecondary,
     textAlign: 'center',
-    marginBottom: 30,
-    color: '#666',
+    marginBottom: spacing.xl,
   },
   input: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 15,
-    marginBottom: 15,
-    fontSize: 16,
+    borderColor: colors.border,
+    borderRadius: spacing.radius.sm,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    fontSize: typography.fontSize.base,
+    color: colors.textPrimary,
+    fontFamily: typography.fontFamily.regular,
+  },
+  helperText: {
+    ...textStyles.caption,
+    color: colors.textMuted,
+    textAlign: 'center',
+    marginBottom: spacing.lg,
+    fontSize: 12,
   },
   button: {
-    backgroundColor: '#007AFF',
-    borderRadius: 8,
-    padding: 15,
+    backgroundColor: colors.primary,
+    borderRadius: spacing.radius.sm,
+    padding: spacing.md,
     alignItems: 'center',
-    marginBottom: 15,
+    marginBottom: spacing.md,
   },
   buttonDisabled: {
-    backgroundColor: '#cccccc',
+    backgroundColor: colors.disabled,
   },
   buttonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+    ...textStyles.button,
+    color: colors.background,
+    fontSize: typography.fontSize.base,
+    fontWeight: typography.fontWeight.semibold,
   },
   linkButton: {
     alignItems: 'center',
-    marginTop: 10,
+    marginTop: spacing.sm,
   },
   linkText: {
-    color: '#007AFF',
-    fontSize: 16,
+    ...textStyles.body,
+    color: colors.primary,
+    fontSize: typography.fontSize.base,
   },
 });
