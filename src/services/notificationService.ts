@@ -10,6 +10,28 @@ import { NotificationType, NotificationPriority, Notification } from '../types/b
 const client = generateClient<Schema>();
 
 export class NotificationService {
+  // TODO: Re-enable push notifications when expo-notifications types are available
+  /*
+  static async registerPushToken(userId: string): Promise<string | null> {
+    // Push notification registration logic
+    return null;
+  }
+
+  static async sendPushNotification(
+    userId: string,
+    title: string,
+    message: string,
+    data?: any
+  ): Promise<void> {
+    // Push notification sending logic
+    console.log(`Would send push notification to ${userId}: ${title} - ${message}`);
+  }
+
+  static async cleanupInactiveTokens(userId: string, daysInactive: number = 30): Promise<void> {
+    // Token cleanup logic
+  }
+  */
+
   /**
    * Create a new notification for a user
    */
@@ -24,6 +46,7 @@ export class NotificationService {
     relatedBetId,
     relatedUserId,
     relatedRequestId,
+    sendPush = true,
   }: {
     userId: string;
     type: NotificationType;
@@ -35,6 +58,7 @@ export class NotificationService {
     relatedBetId?: string;
     relatedUserId?: string;
     relatedRequestId?: string;
+    sendPush?: boolean;
   }): Promise<Notification | null> {
     try {
       const { data } = await client.models.Notification.create({
@@ -52,7 +76,7 @@ export class NotificationService {
       });
 
       if (data) {
-        return {
+        const notification: Notification = {
           id: data.id!,
           userId: data.userId!,
           type: data.type as NotificationType,
@@ -67,6 +91,13 @@ export class NotificationService {
           relatedRequestId: data.relatedRequestId || undefined,
           createdAt: data.createdAt || new Date().toISOString(),
         };
+
+        // TODO: Re-enable push notifications when expo-notifications is working
+        if (sendPush && (priority === 'HIGH' || priority === 'URGENT')) {
+          console.log(`Would send push notification: ${title} - ${message}`);
+        }
+
+        return notification;
       }
       return null;
     } catch (error) {

@@ -29,6 +29,7 @@ const schema = a.schema({
       sentBetInvitations: a.hasMany('BetInvitation', 'fromUserId'),
       receivedBetInvitations: a.hasMany('BetInvitation', 'toUserId'),
       notifications: a.hasMany('Notification', 'userId'),
+      pushTokens: a.hasMany('PushToken', 'userId'),
     })
     .authorization((allow) => [
       allow.owner().to(['create', 'read', 'update', 'delete']),
@@ -73,6 +74,26 @@ const schema = a.schema({
     .authorization((allow) => [
       allow.owner().to(['read', 'update']), // Users can only read/update their own notifications
       allow.authenticated().to(['create']) // Any authenticated user can create notifications for others
+    ]),
+
+  // Push notification tokens for mobile devices
+  PushToken: a
+    .model({
+      id: a.id(),
+      userId: a.id().required(),
+      token: a.string().required(), // Expo push token or FCM token
+      platform: a.enum(['IOS', 'ANDROID', 'WEB']),
+      deviceId: a.string(), // Unique device identifier
+      appVersion: a.string(), // App version when token was registered
+      isActive: a.boolean().default(true), // Whether token is still valid
+      lastUsed: a.datetime(), // When this token was last used successfully
+      createdAt: a.datetime(),
+      // Relations
+      user: a.belongsTo('User', 'userId'),
+    })
+    .authorization((allow) => [
+      allow.owner().to(['create', 'read', 'update', 'delete']),
+      allow.authenticated().to(['create']) // Allow users to register tokens for others (admin use)
     ]),
 
   Bet: a

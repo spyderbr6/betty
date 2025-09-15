@@ -22,6 +22,7 @@ import type { Schema } from '../../../amplify/data/resource';
 import { colors, spacing, typography, textStyles, commonStyles } from '../../styles';
 import { useAuth } from '../../contexts/AuthContext';
 import { User } from '../../types/betting';
+import { NotificationService } from '../../services/notificationService';
 
 // Initialize GraphQL client
 const client = generateClient<Schema>();
@@ -144,6 +145,14 @@ export const FriendRequestsModal: React.FC<FriendRequestsModalProps> = ({
         user1Id,
         user2Id,
       });
+
+      // Send notification to the original requester
+      const currentUserDisplayName = user.displayName || user.username || user.email.split('@')[0];
+      await NotificationService.notifyFriendRequestAccepted(
+        request.fromUserId,
+        currentUserDisplayName,
+        user.userId
+      );
 
       // Remove from local state
       setFriendRequests(prev => prev.filter(req => req.id !== request.id));

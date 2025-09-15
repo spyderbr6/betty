@@ -162,11 +162,22 @@ export const AddFriendModal: React.FC<AddFriendModalProps> = ({
       setSendingRequests(prev => new Set(prev).add(targetUser.id));
 
       // Create friend request
-      await client.models.FriendRequest.create({
+      const { data: newRequest } = await client.models.FriendRequest.create({
         fromUserId: user.userId,
         toUserId: targetUser.id,
         status: 'PENDING',
       });
+
+      // Create notification for the target user
+      if (newRequest) {
+        const currentUserDisplayName = user.displayName || user.username || user.email.split('@')[0];
+        await NotificationService.notifyFriendRequestReceived(
+          targetUser.id,
+          currentUserDisplayName,
+          user.userId,
+          newRequest.id!
+        );
+      }
 
       // Update the user's status in search results
       setSearchResults(prev =>
