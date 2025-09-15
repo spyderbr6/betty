@@ -137,10 +137,10 @@ src/
 ### 4. Small enhancements
 
 - wire up the elipsis in the header to capture plaintext that pushes to to my github issue repo
-- bet creation. you have to pick one of the options side A or B. this will force a join to the bet as its created.
-- bet creation.  default the first bet type
-- bet creation. apply dollar formatting to the bet amount. 
-- remove "search bets" and filter from the header. apply to my bets and live bets only
+- remove "search bets" and filter from the header. apply to my bets and live bets only. 
+- main menu "create" icon experience needs changed. right now its a big yellow circle with bad contrast ratios. offer recommendations.
+- create bet. move to top of page on bet creation. 
+- create bet. revalidate defaults being set after bet creation.
 
 ### 5. Friend and Friend Management
   - work with each other on the scope
@@ -158,7 +158,14 @@ src/
 ### 8. Advanced Trust Scoring System
 - Reputation tracking
 - Bet resolution verification with voting and trust system and trust calculation.
+- 
 - Social trust metrics
+
+### 9. Profile Page Enhancements
+- User Profile friendly name added and editable.
+- User profile picture upload
+- wire up support menu option to github feedback component
+- review and offer recommendations for remaining options
 
 ## 🔮 Backlog ENHANCEMENTS (Lowest Priority)
 
@@ -172,10 +179,6 @@ src/
 - Image upload to AWS S3
 - **Dependencies**: `expo-camera`, `expo-image-picker`
 
-### 7. Advanced Trust Scoring System
-- Reputation tracking
-- Bet resolution verification
-- Social trust metrics
 
 ### 8. Advanced Notifications
  - Create extensible notification system to any number of new notifications

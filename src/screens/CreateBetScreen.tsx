@@ -42,11 +42,13 @@ export const CreateBetScreen: React.FC = () => {
   const [betTitle, setBetTitle] = useState('');
   const [betDescription, setBetDescription] = useState('');
   const [betAmount, setBetAmount] = useState('1');
+  const [isAmountFocused, setIsAmountFocused] = useState(false);
   const [deadline, setDeadline] = useState('30');
   const [isPrivate, setIsPrivate] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState('CUSTOM'); // Default to CUSTOM, set by templates
   const [sideAName, setSideAName] = useState('Yes');
   const [sideBName, setSideBName] = useState('No');
+  const [selectedSide, setSelectedSide] = useState<'A' | 'B' | null>(null);
   const [isCreating, setIsCreating] = useState(false);
 
   // Fetch user balance
@@ -118,6 +120,14 @@ export const CreateBetScreen: React.FC = () => {
     },
   ];
 
+  // Default the first bet type/template on initial load or after reset
+  useEffect(() => {
+    if (!selectedTemplate) {
+      handleTemplateSelect(betTemplates[0]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedTemplate]);
+
   const handleTemplateSelect = (template: BetTemplate) => {
     setSelectedTemplate(template.id);
     setBetTitle(template.title);
@@ -138,6 +148,15 @@ export const CreateBetScreen: React.FC = () => {
     setBetAmount(formattedValue);
   };
 
+  // Display value with currency formatting when not focused
+  const displayAmount = (() => {
+    if (isAmountFocused) return betAmount;
+    if (!betAmount) return '';
+    const n = parseFloat(betAmount);
+    if (isNaN(n)) return '';
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
+  })();
+
   const handleCreateBet = async () => {
     if (!betTitle.trim() || !betDescription.trim() || !betAmount.trim()) {
       Alert.alert('Missing Information', 'Please fill in all required fields.');
@@ -147,6 +166,11 @@ export const CreateBetScreen: React.FC = () => {
     const amount = parseFloat(betAmount);
     if (isNaN(amount) || amount <= 0) {
       Alert.alert('Invalid Amount', 'Please enter a valid bet amount.');
+      return;
+    }
+
+    if (!selectedSide) {
+      Alert.alert('Pick a Side', 'Please choose Side A or Side B to join your bet.');
       return;
     }
 
@@ -187,9 +211,25 @@ export const CreateBetScreen: React.FC = () => {
       console.log('GraphQL result:', result);
 
       if (result.data) {
+        // Immediately join the bet as the creator on the selected side
+        try {
+          await client.models.Participant.create({
+            betId: result.data.id!,
+            userId: user.userId,
+            side: selectedSide,
+            amount: amount,
+            status: 'ACCEPTED',
+            payout: 0,
+            joinedAt: new Date().toISOString(),
+          });
+        } catch (joinErr) {
+          console.error('Error creating participant for new bet:', joinErr);
+          // Continue; the bet is created even if auto-join failed
+        }
+
         Alert.alert(
           'Bet Created!',
-          `Your bet "${betTitle}" has been created successfully and is now live.`,
+          `Your bet "${betTitle}" has been created and you joined on "${selectedSide === 'A' ? sideAName : sideBName}".`,
           [{ text: 'OK', onPress: resetForm }]
         );
       } else {
@@ -219,6 +259,7 @@ export const CreateBetScreen: React.FC = () => {
     setSelectedCategory('CUSTOM');
     setSideAName('Yes');
     setSideBName('No');
+    setSelectedSide(null);
   };
 
   const handleBalancePress = () => {
@@ -309,9 +350,17 @@ export const CreateBetScreen: React.FC = () => {
                 style={styles.textInput}
                 placeholder="$0.00"
                 placeholderTextColor={colors.textMuted}
-                value={betAmount}
+                value={displayAmount}
                 onChangeText={handleAmountChange}
                 keyboardType="numeric"
+                onFocus={() => setIsAmountFocused(true)}
+                onBlur={() => {
+                  setIsAmountFocused(false);
+                  if (betAmount) {
+                    const n = parseFloat(betAmount);
+                    if (!isNaN(n)) setBetAmount(n.toFixed(2));
+                  }
+                }}
               />
             </View>
 
@@ -362,6 +411,34 @@ export const CreateBetScreen: React.FC = () => {
               />
             </View>
           </View>
+
+          {/* Choose your side */}
+          <View style={{ marginTop: spacing.sm }}>
+            <Text style={styles.sideLabel}>Choose your side to join *</Text>
+            <View style={styles.sideSelectContainer}>
+              <TouchableOpacity
+                style={[styles.sideOption, selectedSide === 'A' && styles.sideOptionSelected]}
+                onPress={() => setSelectedSide('A')}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.sideOptionText, selectedSide === 'A' && styles.sideOptionTextSelected]}>
+                  {sideAName || 'Side A'}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.sideOption, selectedSide === 'B' && styles.sideOptionSelected]}
+                onPress={() => setSelectedSide('B')}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.sideOptionText, selectedSide === 'B' && styles.sideOptionTextSelected]}>
+                  {sideBName || 'Side B'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+            {!selectedSide && (
+              <Text style={styles.sideHint}>You must pick a side before creating the bet.</Text>
+            )}
+          </View>
         </View>
 
         {/* Bet Settings */}
@@ -384,14 +461,16 @@ export const CreateBetScreen: React.FC = () => {
 
         {/* Create Button */}
         <View style={styles.createButtonContainer}>
+          {/** Disable if creating or no side selected */}
+          {(() => { const disabled = isCreating || !selectedSide; return (
           <TouchableOpacity
             style={[
               styles.createButton,
-              isCreating && styles.createButtonDisabled
+              (disabled) && styles.createButtonDisabled
             ]}
             onPress={handleCreateBet}
-            disabled={isCreating}
-            activeOpacity={isCreating ? 1 : 0.7}
+            disabled={disabled}
+            activeOpacity={disabled ? 1 : 0.7}
           >
             {isCreating ? (
               <View style={styles.createButtonContent}>
@@ -404,6 +483,7 @@ export const CreateBetScreen: React.FC = () => {
               <Text style={styles.createButtonText}>CREATE BET</Text>
             )}
           </TouchableOpacity>
+          ); })()}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -631,5 +711,38 @@ const styles = StyleSheet.create({
     color: colors.background,
     fontWeight: typography.fontWeight.bold,
     fontSize: typography.fontSize.lg,
+  },
+  // Side choose UI
+  sideSelectContainer: {
+    flexDirection: 'row',
+    marginTop: spacing.xs,
+  },
+  sideOption: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: spacing.radius.sm,
+    backgroundColor: colors.surface,
+    marginRight: spacing.sm,
+  },
+  sideOptionSelected: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  sideOptionText: {
+    ...textStyles.button,
+    color: colors.textSecondary,
+  },
+  sideOptionTextSelected: {
+    color: colors.background,
+    fontWeight: typography.fontWeight.bold,
+  },
+  sideHint: {
+    ...textStyles.caption,
+    color: colors.warning,
+    marginTop: spacing.xs,
   },
 });
