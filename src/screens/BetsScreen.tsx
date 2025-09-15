@@ -13,6 +13,7 @@ import {
   ActivityIndicator,
   ScrollView,
   RefreshControl,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -21,8 +22,9 @@ import type { Schema } from '../../amplify/data/resource';
 import { commonStyles, colors, spacing, typography, textStyles } from '../styles';
 import { Header } from '../components/ui/Header';
 import { BetCard } from '../components/betting/BetCard';
-import { Bet } from '../types/betting';
+import { Bet, BetInvitation } from '../types/betting';
 import { useAuth } from '../contexts/AuthContext';
+import { NotificationService } from '../services/notificationService';
 
 // Initialize GraphQL client
 const client = generateClient<Schema>();
@@ -68,139 +70,101 @@ const transformAmplifyBet = (bet: any): Bet | null => {
   };
 };
 
-// Keeping mock data as fallback for development
-const mockBets: Bet[] = [
-  {
-    id: '1',
-    title: 'Next 3PT Made',
-    description: 'LeBron James makes next 3-point attempt',
-    category: 'SPORTS',
-    status: 'LIVE',
-    creatorId: 'user1',
-    totalPot: 50,
-    betAmount: 25,
-    odds: {
-      sideAName: 'Yes',
-      sideBName: 'No',
-    },
-    deadline: new Date(Date.now() + 1800000).toISOString(), // 30 minutes from now
-    createdAt: new Date(Date.now() - 600000).toISOString(), // 10 minutes ago
-    updatedAt: new Date().toISOString(),
-    participants: [
-      { 
-        id: '1', 
-        betId: '1', 
-        userId: 'user1', 
-        side: 'A', 
-        amount: 25, 
-        status: 'ACCEPTED', 
-        payout: 0, 
-        joinedAt: new Date().toISOString() 
-      },
-      { 
-        id: '2', 
-        betId: '1', 
-        userId: 'user2', 
-        side: 'B', 
-        amount: 25, 
-        status: 'ACCEPTED', 
-        payout: 0, 
-        joinedAt: new Date().toISOString() 
-      },
-    ],
-  },
-  {
-    id: '2',
-    title: 'Next Foul',
-    description: 'Which team commits next foul?',
-    category: 'SPORTS',
-    status: 'PENDING_RESOLUTION',
-    creatorId: 'user2',
-    totalPot: 50,
-    betAmount: 25,
-    odds: {
-      sideAName: 'LAL',
-      sideBName: 'GSW',
-    },
-    deadline: new Date(Date.now() - 300000).toISOString(), // 5 minutes ago
-    createdAt: new Date(Date.now() - 1200000).toISOString(), // 20 minutes ago
-    updatedAt: new Date().toISOString(),
-    participants: [
-      { 
-        id: '3', 
-        betId: '2', 
-        userId: 'user1', 
-        side: 'A', 
-        amount: 25, 
-        status: 'ACCEPTED', 
-        payout: 0, 
-        joinedAt: new Date().toISOString() 
-      },
-      { 
-        id: '4', 
-        betId: '2', 
-        userId: 'user3', 
-        side: 'B', 
-        amount: 25, 
-        status: 'ACCEPTED', 
-        payout: 0, 
-        joinedAt: new Date().toISOString() 
-      },
-    ],
-  },
-  {
-    id: '3',
-    title: 'Final Result',
-    description: 'Lakers vs Warriors moneyline',
-    category: 'SPORTS',
-    status: 'ACTIVE',
-    creatorId: 'user3',
-    totalPot: 200,
-    betAmount: 100,
-    odds: {
-      sideAName: 'LAL',
-      sideBName: 'GSW',
-    },
-    deadline: new Date(Date.now() + 7200000).toISOString(), // 2 hours from now
-    createdAt: new Date(Date.now() - 3600000).toISOString(), // 1 hour ago
-    updatedAt: new Date().toISOString(),
-    participants: [
-      { 
-        id: '5', 
-        betId: '3', 
-        userId: 'user1', 
-        side: 'A', 
-        amount: 100, 
-        status: 'ACCEPTED', 
-        payout: 0, 
-        joinedAt: new Date().toISOString() 
-      },
-      { 
-        id: '6', 
-        betId: '3', 
-        userId: 'user2', 
-        side: 'B', 
-        amount: 100, 
-        status: 'ACCEPTED', 
-        payout: 0, 
-        joinedAt: new Date().toISOString() 
-      },
-    ],
-  },
-];
 
 export const BetsScreen: React.FC = () => {
   const { user } = useAuth();
   const [bets, setBets] = useState<Bet[]>([]);
+  const [betInvitations, setBetInvitations] = useState<BetInvitation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearch, setShowSearch] = useState(false);
   const [selectedFilter, setSelectedFilter] = useState<'ACTIVE' | 'LIVE' | 'PENDING_RESOLUTION' | 'RESOLVED'>('ACTIVE');
   const [refreshing, setRefreshing] = useState(false);
+  const [processingInvitations, setProcessingInvitations] = useState<Set<string>>(new Set());
 
   useEffect(() => {
-    // Fetch initial bet data and set up real-time subscriptions
-    const fetchBets = async () => {
+    // Fetch initial bet data, bet invitations, and set up real-time subscriptions
+    const fetchData = async () => {
+      await Promise.all([fetchBets(), fetchBetInvitations()]);
+    };
+
+    if (user?.userId) {
+      fetchData();
+    }
+  }, [user?.userId]);
+
+  const fetchBetInvitations = async () => {
+    if (!user?.userId) return;
+
+    try {
+      // Get pending bet invitations for current user
+      const { data: invitations } = await client.models.BetInvitation.list({
+        filter: {
+          toUserId: { eq: user.userId },
+          status: { eq: 'PENDING' }
+        }
+      });
+
+      if (invitations && invitations.length > 0) {
+        // Fetch bet details and from user details for each invitation
+        const invitationsWithDetails = await Promise.all(
+          invitations.map(async (invitation) => {
+            try {
+              const [betResult, fromUserResult] = await Promise.all([
+                client.models.Bet.get({ id: invitation.betId }),
+                client.models.User.get({ id: invitation.fromUserId })
+              ]);
+
+              if (betResult.data && fromUserResult.data) {
+                return {
+                  id: invitation.id!,
+                  betId: invitation.betId!,
+                  fromUserId: invitation.fromUserId!,
+                  toUserId: invitation.toUserId!,
+                  status: invitation.status as 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'EXPIRED',
+                  message: invitation.message || undefined,
+                  invitedSide: invitation.invitedSide!,
+                  createdAt: invitation.createdAt || new Date().toISOString(),
+                  updatedAt: invitation.updatedAt || new Date().toISOString(),
+                  expiresAt: invitation.expiresAt || new Date().toISOString(),
+                  bet: transformAmplifyBet(betResult.data),
+                  fromUser: {
+                    id: fromUserResult.data.id!,
+                    username: fromUserResult.data.username!,
+                    email: fromUserResult.data.email!,
+                    displayName: fromUserResult.data.displayName || undefined,
+                    profilePictureUrl: fromUserResult.data.profilePictureUrl || undefined,
+                    balance: fromUserResult.data.balance || 0,
+                    trustScore: fromUserResult.data.trustScore || 5.0,
+                    totalBets: fromUserResult.data.totalBets || 0,
+                    totalWinnings: fromUserResult.data.totalWinnings || 0,
+                    winRate: fromUserResult.data.winRate || 0,
+                    createdAt: fromUserResult.data.createdAt || new Date().toISOString(),
+                    updatedAt: fromUserResult.data.updatedAt || new Date().toISOString(),
+                  }
+                };
+              }
+              return null;
+            } catch (error) {
+              console.error(`Error fetching invitation details:`, error);
+              return null;
+            }
+          })
+        );
+
+        const validInvitations = invitationsWithDetails.filter(
+          (inv) => inv !== null && inv.bet !== null
+        ) as BetInvitation[];
+        setBetInvitations(validInvitations);
+      } else {
+        setBetInvitations([]);
+      }
+    } catch (error) {
+      console.error('Error fetching bet invitations:', error);
+    }
+  };
+
+  const fetchBets = async () => {
       try {
         setIsLoading(true);
 
@@ -251,9 +215,105 @@ export const BetsScreen: React.FC = () => {
       } finally {
         setIsLoading(false);
       }
-    };
+  };
 
-    fetchBets();
+  // Handle bet invitation acceptance
+  const acceptBetInvitation = async (invitation: BetInvitation) => {
+    if (!user?.userId || !invitation.bet) return;
+
+    try {
+      setProcessingInvitations(prev => new Set(prev).add(invitation.id));
+
+      // Update invitation status
+      await client.models.BetInvitation.update({
+        id: invitation.id,
+        status: 'ACCEPTED'
+      });
+
+      // Create participant entry for the bet
+      await client.models.Participant.create({
+        betId: invitation.betId,
+        userId: user.userId,
+        side: invitation.invitedSide,
+        amount: invitation.bet.betAmount || 0,
+        status: 'ACCEPTED',
+        payout: 0,
+        joinedAt: new Date().toISOString(),
+      });
+
+      // Send notification to the inviter
+      const currentUserDisplayName = user.username;
+      await NotificationService.createNotification({
+        userId: invitation.fromUserId,
+        type: 'BET_INVITATION_ACCEPTED',
+        title: 'Invitation Accepted!',
+        message: `${currentUserDisplayName} accepted your bet invitation for "${invitation.bet.title}"`,
+        priority: 'MEDIUM',
+        actionType: 'view_bet',
+        actionData: { betId: invitation.betId },
+        relatedBetId: invitation.betId,
+        relatedUserId: user.userId,
+      });
+
+      // Remove from local invitations
+      setBetInvitations(prev => prev.filter(inv => inv.id !== invitation.id));
+
+      // Refresh bets to show updated participant list
+      await fetchBets();
+
+      Alert.alert('Success', `You've joined the bet "${invitation.bet.title}"!`);
+    } catch (error) {
+      console.error('Error accepting bet invitation:', error);
+      Alert.alert('Error', 'Failed to accept invitation. Please try again.');
+    } finally {
+      setProcessingInvitations(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(invitation.id);
+        return newSet;
+      });
+    }
+  };
+
+  // Handle bet invitation decline
+  const declineBetInvitation = async (invitation: BetInvitation) => {
+    try {
+      setProcessingInvitations(prev => new Set(prev).add(invitation.id));
+
+      // Update invitation status
+      await client.models.BetInvitation.update({
+        id: invitation.id,
+        status: 'DECLINED'
+      });
+
+      // Remove from local invitations
+      setBetInvitations(prev => prev.filter(inv => inv.id !== invitation.id));
+
+      Alert.alert('Declined', 'Bet invitation declined.');
+    } catch (error) {
+      console.error('Error declining bet invitation:', error);
+      Alert.alert('Error', 'Failed to decline invitation. Please try again.');
+    } finally {
+      setProcessingInvitations(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(invitation.id);
+        return newSet;
+      });
+    }
+  };
+
+  // Handle refresh
+  const onRefresh = async () => {
+    try {
+      setRefreshing(true);
+      await Promise.all([fetchBets(), fetchBetInvitations()]);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  // Set up real-time subscriptions (moved inside useEffect)
+  useEffect(() => {
+    if (!user?.userId) return;
 
     // Set up real-time subscription for bet changes
     const betSubscription = client.models.Bet.observeQuery({
@@ -370,10 +430,10 @@ export const BetsScreen: React.FC = () => {
     }
   };
 
-  const handleFilterPress = () => {
-    console.log('Filter pressed');
-    // Show filter modal
-  };
+  // const handleFilterPress = () => {
+  //   console.log('Filter pressed');
+  //   // Show filter modal
+  // };
 
 
   // Real user stats state
@@ -445,56 +505,6 @@ export const BetsScreen: React.FC = () => {
     return true;
   });
 
-  const onRefresh = async () => {
-    try {
-      setRefreshing(true);
-      // Re-run the same query used in initial fetch to get latest data
-      const { data: betsData } = await client.models.Bet.list({
-        filter: {
-          or: [
-            { status: { eq: 'ACTIVE' } },
-            { status: { eq: 'LIVE' } },
-            { status: { eq: 'PENDING_RESOLUTION' } },
-            { status: { eq: 'RESOLVED' } }
-          ]
-        }
-      });
-
-      if (betsData) {
-        const betsWithParticipants = await Promise.all(
-          betsData.map(async (bet) => {
-            const { data: participants } = await client.models.Participant.list({
-              filter: { betId: { eq: bet.id! } }
-            });
-
-            const transformedBet = transformAmplifyBet(bet);
-            if (transformedBet && participants) {
-              transformedBet.participants = participants
-                .filter(p => p.id && p.betId && p.userId && p.side)
-                .map(p => ({
-                  id: p.id!,
-                  betId: p.betId!,
-                  userId: p.userId!,
-                  side: p.side!,
-                  amount: p.amount || 0,
-                  status: p.status as 'PENDING' | 'ACCEPTED' | 'DECLINED',
-                  payout: p.payout || 0,
-                  joinedAt: p.joinedAt || new Date().toISOString(),
-                }));
-            }
-            return transformedBet;
-          })
-        );
-
-        const validBets = betsWithParticipants.filter((bet): bet is Bet => bet !== null);
-        setBets(validBets);
-      }
-    } catch (error) {
-      console.error('Error refreshing bets:', error);
-    } finally {
-      setRefreshing(false);
-    }
-  };
 
   // Status filter options (removed 'ALL' filter)
   const statusFilters = [
@@ -542,6 +552,28 @@ export const BetsScreen: React.FC = () => {
           />
         }
       >
+        {/* Bet Invitations Section */}
+        {betInvitations.length > 0 && (
+          <>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>PENDING INVITATIONS</Text>
+              <View style={styles.invitationBadge}>
+                <Text style={styles.invitationBadgeText}>{betInvitations.length}</Text>
+              </View>
+            </View>
+
+            {betInvitations.map((invitation) => (
+              <BetInvitationCard
+                key={invitation.id}
+                invitation={invitation}
+                onAccept={() => acceptBetInvitation(invitation)}
+                onDecline={() => declineBetInvitation(invitation)}
+                isProcessing={processingInvitations.has(invitation.id)}
+              />
+            ))}
+          </>
+        )}
+
         {/* My Bets Section */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>MY BETS</Text>
@@ -679,6 +711,129 @@ export const BetsScreen: React.FC = () => {
         </View>
       </ScrollView>
     </SafeAreaView>
+  );
+};
+
+// Bet Invitation Card Component
+interface BetInvitationCardProps {
+  invitation: BetInvitation;
+  onAccept: () => void;
+  onDecline: () => void;
+  isProcessing: boolean;
+}
+
+const BetInvitationCard: React.FC<BetInvitationCardProps> = ({
+  invitation,
+  onAccept,
+  onDecline,
+  isProcessing,
+}) => {
+  if (!invitation.bet) return null;
+
+  const parseBetOdds = (odds: any) => {
+    try {
+      const parsedOdds = typeof odds === 'string' ? JSON.parse(odds) : odds;
+      return {
+        sideAName: parsedOdds?.sideAName || 'Side A',
+        sideBName: parsedOdds?.sideBName || 'Side B',
+      };
+    } catch {
+      return {
+        sideAName: 'Side A',
+        sideBName: 'Side B',
+      };
+    }
+  };
+
+  const betOdds = parseBetOdds(invitation.bet.odds);
+  const invitedSideName = invitation.invitedSide === 'A' ? betOdds.sideAName : betOdds.sideBName;
+  const timeUntilExpiry = new Date(invitation.expiresAt).getTime() - new Date().getTime();
+  const hoursLeft = Math.max(0, Math.floor(timeUntilExpiry / (1000 * 60 * 60)));
+
+  return (
+    <View style={[styles.betCard, styles.invitationCard]}>
+      {/* Invitation Header */}
+      <View style={styles.invitationHeader}>
+        <View style={styles.invitationFromUser}>
+          <View style={styles.userAvatarSmall}>
+            <Text style={styles.userAvatarTextSmall}>
+              {(invitation.fromUser?.displayName || invitation.fromUser?.email.split('@')[0] || '?')[0].toUpperCase()}
+            </Text>
+          </View>
+          <Text style={styles.invitationFromText}>
+            {invitation.fromUser?.displayName || invitation.fromUser?.email.split('@')[0]} invited you
+          </Text>
+        </View>
+        <View style={styles.expiryContainer}>
+          <Ionicons name="time-outline" size={12} color={colors.warning} />
+          <Text style={styles.expiryText}>{hoursLeft}h left</Text>
+        </View>
+      </View>
+
+      {/* Bet Details */}
+      <View style={styles.invitationBetDetails}>
+        <Text style={styles.invitationBetTitle}>{invitation.bet.title}</Text>
+        <Text style={styles.invitationBetDescription} numberOfLines={2}>
+          {invitation.bet.description}
+        </Text>
+
+        <View style={styles.invitationBetInfo}>
+          <View style={styles.invitationSideInfo}>
+            <Text style={styles.invitationSideLabel}>Your side:</Text>
+            <Text style={styles.invitationSideName}>{invitedSideName}</Text>
+          </View>
+          <View style={styles.invitationAmountInfo}>
+            <Text style={styles.invitationAmountLabel}>Amount:</Text>
+            <Text style={styles.invitationAmount}>${invitation.bet.betAmount || 0}</Text>
+          </View>
+        </View>
+
+        {invitation.message && (
+          <View style={styles.invitationMessage}>
+            <Text style={styles.invitationMessageText}>"{invitation.message}"</Text>
+          </View>
+        )}
+      </View>
+
+      {/* Action Buttons */}
+      <View style={styles.invitationActions}>
+        <TouchableOpacity
+          style={[styles.invitationButton, styles.declineButton]}
+          onPress={onDecline}
+          disabled={isProcessing}
+          activeOpacity={0.7}
+        >
+          {isProcessing ? (
+            <ActivityIndicator size="small" color={colors.error} />
+          ) : (
+            <>
+              <Ionicons name="close" size={16} color={colors.error} />
+              <Text style={[styles.invitationButtonText, styles.declineButtonText]}>
+                Decline
+              </Text>
+            </>
+          )}
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.invitationButton, styles.acceptButton]}
+          onPress={onAccept}
+          disabled={isProcessing}
+          activeOpacity={0.7}
+        >
+          {isProcessing ? (
+            <ActivityIndicator size="small" color={colors.background} />
+          ) : (
+            <>
+              <Ionicons name="checkmark" size={16} color={colors.background} />
+              <Text style={[styles.invitationButtonText, styles.acceptButtonText]}>
+                Accept & Join
+              </Text>
+            </>
+          )}
+        </TouchableOpacity>
+      </View>
+    </View>
   );
 };
 
@@ -860,5 +1015,182 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
     textAlign: 'center',
     textTransform: 'uppercase',
+  },
+
+  // Invitation Badge
+  invitationBadge: {
+    backgroundColor: colors.primary,
+    borderRadius: spacing.radius.sm,
+    paddingHorizontal: spacing.xs,
+    paddingVertical: 2,
+    minWidth: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  invitationBadgeText: {
+    ...textStyles.caption,
+    color: colors.background,
+    fontSize: 11,
+    fontWeight: typography.fontWeight.bold,
+  },
+
+  // Bet Card Base
+  betCard: {
+    backgroundColor: colors.surface,
+    borderRadius: spacing.radius.md,
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+
+  // Invitation Card Styles
+  invitationCard: {
+    borderColor: colors.primary,
+    borderWidth: 2,
+    backgroundColor: colors.primary + '08',
+  },
+  invitationHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: spacing.sm,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xs,
+  },
+  invitationFromUser: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  userAvatarSmall: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.xs,
+  },
+  userAvatarTextSmall: {
+    ...textStyles.caption,
+    color: colors.background,
+    fontSize: 10,
+    fontWeight: typography.fontWeight.bold,
+  },
+  invitationFromText: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    fontWeight: typography.fontWeight.medium,
+  },
+  expiryContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  expiryText: {
+    ...textStyles.caption,
+    color: colors.warning,
+    fontSize: 11,
+    marginLeft: spacing.xs / 2,
+    fontWeight: typography.fontWeight.medium,
+  },
+
+  // Invitation Bet Details
+  invitationBetDetails: {
+    paddingHorizontal: spacing.sm,
+    paddingBottom: spacing.sm,
+  },
+  invitationBetTitle: {
+    ...textStyles.h4,
+    color: colors.textPrimary,
+    fontWeight: typography.fontWeight.semibold,
+    marginBottom: spacing.xs / 2,
+  },
+  invitationBetDescription: {
+    ...textStyles.body,
+    color: colors.textSecondary,
+    fontSize: typography.fontSize.sm,
+    marginBottom: spacing.sm,
+    lineHeight: 18,
+  },
+  invitationBetInfo: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.xs,
+  },
+  invitationSideInfo: {
+    flex: 1,
+  },
+  invitationSideLabel: {
+    ...textStyles.caption,
+    color: colors.textMuted,
+    fontSize: 11,
+  },
+  invitationSideName: {
+    ...textStyles.button,
+    color: colors.primary,
+    fontWeight: typography.fontWeight.semibold,
+  },
+  invitationAmountInfo: {
+    alignItems: 'flex-end',
+  },
+  invitationAmountLabel: {
+    ...textStyles.caption,
+    color: colors.textMuted,
+    fontSize: 11,
+  },
+  invitationAmount: {
+    ...textStyles.h4,
+    color: colors.textPrimary,
+    fontWeight: typography.fontWeight.bold,
+  },
+  invitationMessage: {
+    backgroundColor: colors.surface,
+    borderRadius: spacing.radius.xs,
+    padding: spacing.xs,
+    marginTop: spacing.xs,
+  },
+  invitationMessageText: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    fontStyle: 'italic',
+    fontSize: 12,
+    lineHeight: 16,
+  },
+
+  // Invitation Actions
+  invitationActions: {
+    flexDirection: 'row',
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  invitationButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.sm,
+  },
+  declineButton: {
+    backgroundColor: colors.surface,
+    borderBottomLeftRadius: spacing.radius.md,
+    borderRightWidth: 1,
+    borderRightColor: colors.border,
+  },
+  acceptButton: {
+    backgroundColor: colors.primary,
+    borderBottomRightRadius: spacing.radius.md,
+  },
+  invitationButtonText: {
+    ...textStyles.button,
+    marginLeft: spacing.xs / 2,
+    fontWeight: typography.fontWeight.semibold,
+  },
+  declineButtonText: {
+    color: colors.error,
+  },
+  acceptButtonText: {
+    color: colors.background,
   },
 });

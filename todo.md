@@ -142,6 +142,7 @@ src/
 #### 🔄 REMAINING SMALL FIXES:
 - fix coloring on bet resolution. option a and b should have a different scheme than the status coloring on the cards. 
 - we need to take a look at the prompt messages, maybe look at a toast banner or something less disruptive. maybe even remove them when they are information only.
+- all the soft warnings need to be cleaned up across all the project files.
 
 ### 5. Friend and Friend Management
  - User Profile friendly name added and editable.
@@ -155,6 +156,12 @@ src/
  - update the login page to reflect the styling we're using 
  - lets get a fresh and exciting landing page designed where login is just part of the experience. 
 
+### 8. Advanced Notifications
+ - Create extensible notification system to any number of new notifications
+   - there are partially complete notification system components that need implemented fully. 
+ - Notify for bet invite
+ - notify for friend invite
+ - notify for wins
 
 ### 6. Location Services Integration
 - Location-based bet discovery
@@ -164,6 +171,7 @@ src/
 
 ### 7.0 Advanced Bet Card Updates
 - we need to refresh the layout now that we've added more capabilities. 
+- the users pick should be highlighted with a "your pick" type of text along side an updated coloring scheme. 
 - we also need to look at state management. everything is active until its not. we need to have more clear transitions and definitions for active, live, pending resolution, and pending user acceptance. 
 
 ### 8. Advanced Trust Scoring System
@@ -189,11 +197,7 @@ src/
 - **Dependencies**: `expo-camera`, `expo-image-picker`
 
 
-### 8. Advanced Notifications
- - Create extensible notification system to any number of new notifications
- - Notify for bet invite
- - notify for friend invite
- - notify for wins
+
 
 ## 🛠️ Technical Debt & Improvements
 

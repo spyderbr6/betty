@@ -117,6 +117,7 @@ const schema = a.schema({
       participants: a.hasMany('Participant', 'betId'),
       evidence: a.hasMany('Evidence', 'betId'),
       invitations: a.hasMany('BetInvitation', 'betId'),
+      notifications: a.hasMany('Notification', 'relatedBetId'),
     })
     .authorization((allow) => [
       allow.owner().to(['create', 'read', 'update', 'delete']),
