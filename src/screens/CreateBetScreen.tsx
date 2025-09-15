@@ -37,6 +37,7 @@ const client = generateClient<Schema>();
 
 export const CreateBetScreen: React.FC = () => {
   const { user } = useAuth();
+  const scrollRef = React.useRef<ScrollView | null>(null);
   const [userBalance, setUserBalance] = useState(0);
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [betTitle, setBetTitle] = useState('');
@@ -230,7 +231,14 @@ export const CreateBetScreen: React.FC = () => {
         Alert.alert(
           'Bet Created!',
           `Your bet "${betTitle}" has been created and you joined on "${selectedSide === 'A' ? sideAName : sideBName}".`,
-          [{ text: 'OK', onPress: resetForm }]
+          [{
+            text: 'OK',
+            onPress: () => {
+              // Scroll to top after completion, then reset form
+              scrollRef.current?.scrollTo({ y: 0, animated: true });
+              resetForm();
+            },
+          }]
         );
       } else {
         console.error('GraphQL errors:', result.errors);
@@ -279,7 +287,7 @@ export const CreateBetScreen: React.FC = () => {
         variant="default"
       />
       
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView ref={scrollRef} style={styles.content} showsVerticalScrollIndicator={false}>
         {/* Bet Templates Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>CHOOSE BET TYPE</Text>

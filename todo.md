@@ -141,7 +141,6 @@ src/
 - wire up the betscreen "new bet" button to open the create bet page. 
 - betscreen. move the filter selection under the "my bets" header
 - main menu "create" icon experience needs changed. right now its a big yellow circle with bad contrast ratios. offer recommendations.
-- create bet. move user to top of page on bet creation. 
 - create bet. revalidate defaults being set after bet creation.
 - bet resolution. how does it know to show a bet here or not, is it time delimited? 
 
