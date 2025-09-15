@@ -3,7 +3,7 @@
  * Professional sportsbook header with balance, notifications, and branding
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -17,6 +17,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, typography, spacing, textStyles, shadows } from '../../styles';
 import { UserBalance } from './UserBalance';
 import { LiveGameBanner, LiveGameData } from './LiveGameBanner';
+import { FeedbackModal, FeedbackData } from './FeedbackModal';
+import { submitFeedbackToGitHub } from '../../utils/github';
 
 interface HeaderProps {
   title?: string;
@@ -52,6 +54,20 @@ export const Header: React.FC<HeaderProps> = ({
   showSearch = true,
 }) => {
   const insets = useSafeAreaInsets();
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+
+  const handleMenuPress = () => {
+    if (onMenuPress) {
+      onMenuPress();
+    } else {
+      // Default behavior: show feedback modal
+      setShowFeedbackModal(true);
+    }
+  };
+
+  const handleFeedbackSubmit = async (feedback: FeedbackData) => {
+    await submitFeedbackToGitHub(feedback);
+  };
 
   const containerStyle = [
     styles.container,
@@ -114,7 +130,7 @@ export const Header: React.FC<HeaderProps> = ({
 
             <TouchableOpacity
               style={styles.actionButton}
-              onPress={onMenuPress}
+              onPress={handleMenuPress}
               activeOpacity={0.7}
             >
               <Ionicons
@@ -171,6 +187,13 @@ export const Header: React.FC<HeaderProps> = ({
           </View>
         )}
       </View>
+
+      {/* Feedback Modal */}
+      <FeedbackModal
+        visible={showFeedbackModal}
+        onClose={() => setShowFeedbackModal(false)}
+        onSubmit={handleFeedbackSubmit}
+      />
     </>
   );
 };

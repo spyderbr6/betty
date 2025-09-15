@@ -7,8 +7,8 @@ import { FeedbackData } from '../components/ui/FeedbackModal';
 
 // GitHub repository configuration
 const GITHUB_CONFIG = {
-  owner: 'anthropics', // Replace with your GitHub username
-  repo: 'claude-code', // Replace with your repository name
+  owner: 'spyderbr6', // Replace with your GitHub username
+  repo: 'betty', // Replace with your repository name
   // Note: In a real app, the token should come from environment variables or secure storage
   // For this demo, we'll simulate the API call
   token: process.env.GITHUB_TOKEN || 'demo_mode',

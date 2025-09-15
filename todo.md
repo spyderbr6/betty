@@ -137,13 +137,19 @@ src/
 ### 4. Small enhancements
 
 - wire up the elipsis in the header to capture plaintext that pushes to to my github issue repo
-- remove "search bets" and filter from the header. apply to my bets and live bets only. 
+- remove "search bets" and filter from the header. apply to my bets and live bets only. make it show via a clickable search icon as part of the page heading. 
+- wire up the betscreen "new bet" button to open the create bet page. 
+- betscreen. move the filter selection under the "my bets" header
 - main menu "create" icon experience needs changed. right now its a big yellow circle with bad contrast ratios. offer recommendations.
-- create bet. move to top of page on bet creation. 
+- create bet. move user to top of page on bet creation. 
 - create bet. revalidate defaults being set after bet creation.
+- bet resolution. how does it know to show a bet here or not, is it time delimited? 
 
 ### 5. Friend and Friend Management
-  - work with each other on the scope
+ - User Profile friendly name added and editable.
+- User profile picture upload
+  - work with each other on the scope. lay out a todo plan. 
+  - update my bets screen to get pending invite events. only friends can add people to a bet and it must be accepted.
 
 
 ### 6. Location Services Integration
@@ -154,6 +160,7 @@ src/
 
 ### 7.0 Advanced Bet Card Updates
 - when joined to a bet it should maintain the highlight on who you selected as well as show #players for each bet. so X players for "home" and Y players for "away" team. 
+- timer countdown remaining on bet
 
 ### 8. Advanced Trust Scoring System
 - Reputation tracking
@@ -162,8 +169,6 @@ src/
 - Social trust metrics
 
 ### 9. Profile Page Enhancements
-- User Profile friendly name added and editable.
-- User profile picture upload
 - wire up support menu option to github feedback component
 - review and offer recommendations for remaining options
 

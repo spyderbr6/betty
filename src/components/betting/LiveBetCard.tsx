@@ -13,7 +13,6 @@ import {
 } from 'react-native';
 import { colors, typography, spacing, shadows, textStyles } from '../../styles';
 import { Bet } from '../../types/betting';
-import { oddsUtils } from '../../utils/odds';
 import { formatCurrency, dateFormatting } from '../../utils/formatting';
 
 export interface LiveBetCardProps {
@@ -136,12 +135,6 @@ export const LiveBetCard: React.FC<LiveBetCardProps> = ({
               <Text style={styles.quickBetSide} numberOfLines={1}>
                 {bet.odds.sideAName || 'Side A'}
               </Text>
-              <Text style={[
-                styles.quickBetOdds,
-                { color: oddsUtils.getOddsColor(bet.odds.sideA) === 'positive' ? colors.success : colors.error }
-              ]}>
-                {oddsUtils.formatAmerican(bet.odds.sideA)}
-              </Text>
             </TouchableOpacity>
             
             <View style={styles.quickBetDivider}>
@@ -154,12 +147,6 @@ export const LiveBetCard: React.FC<LiveBetCardProps> = ({
             >
               <Text style={styles.quickBetSide} numberOfLines={1}>
                 {bet.odds.sideBName || 'Side B'}
-              </Text>
-              <Text style={[
-                styles.quickBetOdds,
-                { color: oddsUtils.getOddsColor(bet.odds.sideB) === 'positive' ? colors.success : colors.error }
-              ]}>
-                {oddsUtils.formatAmerican(bet.odds.sideB)}
               </Text>
             </TouchableOpacity>
           </View>
