@@ -143,6 +143,7 @@ src/
 - fix coloring on bet resolution. option a and b should have a different scheme than the status coloring on the cards. 
 - we need to take a look at the prompt messages, maybe look at a toast banner or something less disruptive. maybe even remove them when they are information only.
 - all the soft warnings need to be cleaned up across all the project files.
+- i need to open the repo for security scanning
 
 ### 5. Friend and Friend Management
  - User Profile friendly name added and editable.
