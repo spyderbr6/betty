@@ -134,11 +134,19 @@ src/
 
 ## 🔮 FUTURE ENHANCEMENTS (Lower Priority)
 
-### 4. Small enhancements
+### 4. Small Enhancements - September 2025 Polish Session
 
-- wire up the elipsis in the header to capture plaintext that pushes to to my github issue repo
-- remove "search bets" and filter from the header. apply to my bets and live bets only. make it show via a clickable search icon as part of the page heading. 
-- wire up the betscreen "new bet" button to open the create bet page. 
+#### ✅ COMPLETED POLISH FIXES:
+- ✅ **User Feedback System**: Wired up ellipsis in header with GitHub issue creation
+- ✅ **Simplified Betting System**: Removed complex odds, kept side names only
+- ✅ **Category Selector Removal**: Removed redundant category UI from bet creation
+- ✅ **Team Bet Side Names**: Fixed JSON parsing so bet cards show custom side names
+- ✅ **Status Filtering**: Fixed My Bets filters to properly show RESOLVED bets
+- ✅ **Environment Configuration**: Added secure GitHub token management
+
+#### 🔄 REMAINING SMALL FIXES:
+- remove "search bets" and filter from the header. apply to my bets and live bets only. make it show via a clickable search icon as part of the page heading.
+- wire up the betscreen "new bet" button to open the create bet page.
 - betscreen. move the filter selection under the "my bets" header
 - main menu "create" icon experience needs changed. right now its a big yellow circle with bad contrast ratios. offer recommendations.
 - create bet. revalidate defaults being set after bet creation.

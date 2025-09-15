@@ -121,13 +121,11 @@ export const CreateBetScreen: React.FC = () => {
     },
   ];
 
-  // Default the first bet type/template on initial load or after reset
+  // Default the first bet type/template on initial load
   useEffect(() => {
-    if (!selectedTemplate) {
-      handleTemplateSelect(betTemplates[0]);
-    }
+    handleTemplateSelect(betTemplates[0]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedTemplate]);
+  }, []);
 
   const handleTemplateSelect = (template: BetTemplate) => {
     setSelectedTemplate(template.id);
@@ -258,16 +256,23 @@ export const CreateBetScreen: React.FC = () => {
   };
 
   const resetForm = () => {
+    // Clear selection first so subsequent apply visibly re-selects the template
     setSelectedTemplate(null);
+
+    // Restore primitive defaults
     setBetTitle('');
     setBetDescription('');
-    setBetAmount('');
+    setBetAmount('1');
+    setIsAmountFocused(false);
     setDeadline('30');
     setIsPrivate(false);
-    setSelectedCategory('CUSTOM');
-    setSideAName('Yes');
-    setSideBName('No');
     setSelectedSide(null);
+
+    // Re-apply the first template defaults (title, description, category, sides)
+    // on the next tick to avoid state batching preserving stale values
+    setTimeout(() => {
+      handleTemplateSelect(betTemplates[0]);
+    }, 0);
   };
 
   const handleBalancePress = () => {

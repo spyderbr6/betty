@@ -60,6 +60,53 @@ This is the SideBet app - a professional peer-to-peer betting platform built wit
 - APK/AAB generation ready through Expo Application Services (EAS)
 - Native app store optimization built-in
 
+## Recent Enhancements (2025 Session)
+
+### User Feedback System ✅
+- **FeedbackModal Component**: Professional feedback collection UI with type selection (Bug, Feature, Improvement, Question)
+- **GitHub Integration**: Automatic issue creation in GitHub repository (spyderbr6/betty)
+- **Environment Variables**: Secure token management via `.env` file with react-native-dotenv
+- **Header Integration**: Ellipsis button in Header component opens feedback modal
+- **Configuration**: `src/utils/github.ts` handles API integration, `types/env.d.ts` for TypeScript support
+
+### Simplified Betting System ✅
+- **Removed Complex Odds**: Eliminated American odds format (+/-110) for peer-to-peer betting
+- **Side Names Only**: Kept customizable side names (Home/Away, Yes/No, etc.) for clarity
+- **Updated Components**: BetCard, CreateBetScreen, LiveEventsScreen, ResolveScreen all simplified
+- **Type Safety**: Updated BetOdds interface to only include sideAName and sideBName
+
+### UI/UX Improvements ✅
+- **Category Removal**: Removed redundant category selector from bet creation (templates provide organization)
+- **Bet Creation Flow**: Auto-scroll to top after bet creation, improved form reset behavior
+- **Status Filtering**: Fixed My Bets status filters to properly show RESOLVED bets
+- **Real-time Updates**: Enhanced participant count tracking and balance synchronization
+
+### Architecture Updates ✅
+- **Environment Setup**: Babel config updated for react-native-dotenv support
+- **Security**: .env file properly gitignored to protect GitHub tokens
+- **TypeScript**: All compilation errors resolved, proper type definitions added
+- **JSON Parsing**: Fixed bet data JSON parsing in all screens for proper odds display
+
+### Configuration Files Updated
+- **babel.config.js**: Added react-native-dotenv plugin for environment variable support
+- **.env**: Contains GITHUB_TOKEN for API integration (gitignored for security)
+- **types/env.d.ts**: TypeScript declarations for @env module
+- **.gitignore**: Updated to exclude .env and other sensitive files
+
+### Current Status (Session End)
+- **Development Server**: Running with environment variable support
+- **User Feedback System**: Fully functional with GitHub integration
+- **Betting System**: Simplified and working correctly
+- **All TypeScript Errors**: Resolved and verified clean compilation
+
+### Remaining Small Enhancements (from todo.md)
+- Remove "search bets" from header, add to My Bets and Live Bets with search icon
+- Wire up bet screen "new bet" button to create bet page
+- Move filter selection under "my bets" header
+- Update main menu "create" icon styling (yellow circle contrast issue)
+- Revalidate create bet defaults after bet creation
+- Define bet resolution time criteria and display logic
+
 ## SideBet Design System Architecture
 
 ### Design System Overview
