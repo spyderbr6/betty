@@ -22,7 +22,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../../amplify/data/resource';
-import { colors, spacing, typography, textStyles, commonStyles } from '../../styles';
+import { colors, spacing, typography, textStyles } from '../../styles';
 import { useAuth } from '../../contexts/AuthContext';
 import { User } from '../../types/betting';
 import { NotificationService } from '../../services/notificationService';
@@ -170,7 +170,7 @@ export const AddFriendModal: React.FC<AddFriendModalProps> = ({
 
       // Create notification for the target user
       if (newRequest) {
-        const currentUserDisplayName = user.displayName || user.username || user.email.split('@')[0];
+        const currentUserDisplayName = user.username;
         await NotificationService.notifyFriendRequestReceived(
           targetUser.id,
           currentUserDisplayName,

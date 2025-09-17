@@ -848,11 +848,11 @@ const BetInvitationCard: React.FC<BetInvitationCardProps> = ({
         <View style={styles.invitationFromUser}>
           <View style={styles.userAvatarSmall}>
             <Text style={styles.userAvatarTextSmall}>
-              {(invitation.fromUser?.displayName || invitation.fromUser?.email.split('@')[0] || '?')[0].toUpperCase()}
+              {(invitation.fromUser?.displayName || invitation.fromUser?.email?.split('@')[0] || '?')[0].toUpperCase()}
             </Text>
           </View>
           <Text style={styles.invitationFromText}>
-            {invitation.fromUser?.displayName || invitation.fromUser?.email.split('@')[0]} invited you
+            {invitation.fromUser?.displayName || invitation.fromUser?.email?.split('@')[0]} invited you
           </Text>
         </View>
         <View style={styles.expiryContainer}>

@@ -20,7 +20,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../../amplify/data/resource';
-import { colors, spacing, typography, textStyles, commonStyles } from '../../styles';
+import { colors, spacing, typography, textStyles } from '../../styles';
 import { useAuth } from '../../contexts/AuthContext';
 import { Bet, User, FriendListItem } from '../../types/betting';
 import { NotificationService } from '../../services/notificationService';
@@ -201,7 +201,7 @@ export const BetInviteModal: React.FC<BetInviteModalProps> = ({
       setSendingInvites(new Set(selectedFriends));
 
       const selectedFriendsList = friends.filter(f => selectedFriends.has(f.user.id));
-      const currentUserDisplayName = user.displayName || user.username || user.email.split('@')[0];
+      const currentUserDisplayName = user.username;
 
       // Create invitations for all selected friends
       const invitationPromises = selectedFriendsList.map(async (friend) => {
@@ -262,7 +262,7 @@ export const BetInviteModal: React.FC<BetInviteModalProps> = ({
   };
 
   const generateAvatarInitials = (user: User) => {
-    const nameForAvatar = user.displayName || user.username || user.email.split('@')[0];
+    const nameForAvatar = user.displayName || user.username || user.email?.split('@')[0] || 'U';
     return nameForAvatar
       .split(/[\s_.]/)
       .map(part => part[0]?.toUpperCase())
@@ -323,9 +323,9 @@ export const BetInviteModal: React.FC<BetInviteModalProps> = ({
           {/* Friend Details */}
           <View style={styles.friendDetails}>
             <Text style={styles.friendName}>
-              {item.user.displayName || item.user.email.split('@')[0]}
+              {item.user.displayName || item.user.username || item.user.email?.split('@')[0] || 'Unknown'}
             </Text>
-            <Text style={styles.friendEmail}>{item.user.email}</Text>
+            <Text style={styles.friendEmail}>{item.user.email || ''}</Text>
             {item.isParticipating && (
               <Text style={styles.statusText}>Already participating</Text>
             )}

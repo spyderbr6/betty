@@ -25,6 +25,7 @@ import { Header } from '../components/ui/Header';
 import { useAuth } from '../contexts/AuthContext';
 import { User, Friendship } from '../types/betting';
 import { Ionicons } from '@expo/vector-icons';
+import { NotificationService } from '../services/notificationService';
 
 interface BetTemplate {
   id: string;
@@ -41,7 +42,6 @@ const client = generateClient<Schema>();
 export const CreateBetScreen: React.FC = () => {
   const { user } = useAuth();
   const scrollRef = React.useRef<ScrollView | null>(null);
-  const [userBalance, setUserBalance] = useState(0);
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [betTitle, setBetTitle] = useState('');
   const [betDescription, setBetDescription] = useState('');
@@ -59,24 +59,6 @@ export const CreateBetScreen: React.FC = () => {
   const [friends, setFriends] = useState<User[]>([]);
   const [selectedFriends, setSelectedFriends] = useState<Set<string>>(new Set());
   const [showAllFriends, setShowAllFriends] = useState(false);
-
-  // Fetch user balance
-  useEffect(() => {
-    const fetchUserBalance = async () => {
-      if (!user) return;
-
-      try {
-        const { data: userData } = await client.models.User.get({ id: user.userId });
-        if (userData) {
-          setUserBalance(userData.balance || 0);
-        }
-      } catch (error) {
-        console.error('Error fetching user balance:', error);
-      }
-    };
-
-    fetchUserBalance();
-  }, [user]);
 
   // Fetch user friends
   useEffect(() => {
@@ -255,6 +237,19 @@ export const CreateBetScreen: React.FC = () => {
       // Get current user
       const user = await getCurrentUser();
 
+      // Check user balance before creating bet
+      const { data: userData } = await client.models.User.get({ id: user.userId });
+      const currentBalance = userData?.balance || 0;
+
+      if (currentBalance < amount) {
+        Alert.alert(
+          'Insufficient Funds',
+          `You need $${amount.toFixed(2)} to create this bet, but you only have $${currentBalance.toFixed(2)}. Please add funds to your account.`
+        );
+        setIsCreating(false);
+        return;
+      }
+
       // Calculate deadline timestamp
       const deadlineDate = new Date(Date.now() + deadlineMinutes * 60 * 1000);
 
@@ -297,14 +292,15 @@ export const CreateBetScreen: React.FC = () => {
         }
 
         // Send invitations to selected friends
-        if (selectedFriends.size > 0) {
+        if (selectedFriends.size > 0 && result.data) {
           try {
             const currentUserDisplayName = user.username; // Using username from auth context
+            const betId = result.data.id!;
             const invitationPromises = Array.from(selectedFriends).map(async (friendId) => {
               try {
                 // Create bet invitation (without specific side requirement)
                 await client.models.BetInvitation.create({
-                  betId: result.data.id!,
+                  betId: betId,
                   fromUserId: user.userId,
                   toUserId: friendId,
                   status: 'PENDING',
@@ -314,14 +310,13 @@ export const CreateBetScreen: React.FC = () => {
                 });
 
                 // Send notification to friend
-                const { NotificationService } = await import('../services/notificationService');
                 await NotificationService.notifyBetInvitationReceived(
                   friendId,
                   currentUserDisplayName,
                   betTitle.trim(),
                   user.userId,
-                  result.data.id!,
-                  `${result.data.id!}-${friendId}` // Simple invitation ID
+                  betId,
+                  `${betId}-${friendId}` // Simple invitation ID
                 );
               } catch (inviteError) {
                 console.error(`Error sending invitation to friend ${friendId}:`, inviteError);

@@ -19,7 +19,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../../amplify/data/resource';
-import { colors, spacing, typography, textStyles, commonStyles } from '../../styles';
+import { colors, spacing, typography, textStyles } from '../../styles';
 import { useAuth } from '../../contexts/AuthContext';
 import { User } from '../../types/betting';
 import { NotificationService } from '../../services/notificationService';
@@ -37,7 +37,7 @@ interface FriendRequestWithUser {
   id: string;
   fromUserId: string;
   toUserId: string;
-  status: string;
+  status: 'PENDING' | 'ACCEPTED' | 'DECLINED';
   createdAt: string;
   fromUser: User;
 }
@@ -115,7 +115,7 @@ export const FriendRequestsModal: React.FC<FriendRequestsModalProps> = ({
         })
       );
 
-      const validRequests = requestsWithUsers.filter((req): req is FriendRequestWithUser => req !== null);
+      const validRequests = requestsWithUsers.filter((req) => req !== null) as FriendRequestWithUser[];
       setFriendRequests(validRequests);
     } catch (error) {
       console.error('Error fetching friend requests:', error);
@@ -147,7 +147,7 @@ export const FriendRequestsModal: React.FC<FriendRequestsModalProps> = ({
       });
 
       // Send notification to the original requester
-      const currentUserDisplayName = user.displayName || user.username || user.email.split('@')[0];
+      const currentUserDisplayName = user.username;
       await NotificationService.notifyFriendRequestAccepted(
         request.fromUserId,
         currentUserDisplayName,
