@@ -1,155 +1,124 @@
-# CLAUDE.md
+# CLAUDE.md - Technical Reference
 
-This file provides guidance to Claude Code (claude.ai/code) when working with the SideBet React Native app.
+This file provides technical guidance to Claude Code when working with the SideBet React Native app.
 
-## Common Commands
+## Quick Commands
 
 - **Development**: `npm start` - Start Expo development server
 - **Android**: `npm run android` - Run on Android device/emulator
 - **iOS**: `npm run ios` - Run on iOS device/simulator
-- **Web**: `npm run web` - Run in web browser (for testing)
+- **TypeScript**: `npm run typecheck` - Check types
+- **Linting**: `npm run lint` - Run ESLint
 
 ## Architecture Overview
 
-This is the SideBet app - a professional peer-to-peer betting platform built with React Native + Expo for Android and iOS deployment, using AWS Amplify Gen2 for backend services.
+SideBet is a peer-to-peer betting platform built with React Native + Expo for mobile deployment, using AWS Amplify Gen2 for backend services.
+
+### Core Technology Stack
+- **Frontend**: React Native + Expo SDK 52
+- **Backend**: AWS Amplify Gen2 with GraphQL API
+- **Database**: DynamoDB with real-time subscriptions
+- **Authentication**: AWS Cognito
+- **Storage**: AWS S3 for profile pictures
+- **State Management**: React Context + useState/useEffect
+- **Navigation**: Bottom tabs with native navigation
 
 ### Project Structure
-- **App.tsx** - Main entry point with Amplify configuration and AuthProvider
-- **src/MainApp.tsx** - Main app component with authentication routing and betting functionality
-- **src/contexts/AuthContext.tsx** - Authentication context provider managing user state
-- **src/hooks/useAuth.ts** - Custom hook for accessing authentication context  
-- **src/components/Login.tsx** - Native login form using React Native components
-- **src/components/SignUp.tsx** - Native signup form with email confirmation flow
+```
+src/
+├── components/
+│   ├── betting/          # BetCard, CreateBet components
+│   ├── ui/              # Reusable UI components (Header, modals)
+│   ├── Login.tsx        # Authentication forms
+│   └── SignUp.tsx
+├── contexts/
+│   └── AuthContext.tsx  # User authentication state
+├── navigation/
+│   └── AppNavigator.tsx # Bottom tab navigation
+├── screens/             # Main app screens
+├── services/            # API integrations (notifications, image upload)
+├── styles/              # Design system tokens
+├── types/               # TypeScript definitions
+└── utils/               # Helper functions
+```
 
-### Authentication System
-- **Custom Native UI**: Uses React Native components (TextInput, TouchableOpacity, etc.)
-- **AWS Cognito**: Uses AWS Cognito for secure authentication
-- **Native UX**: Uses Alert.alert() for error messages and native modals for bet creation
-- **Loading States**: Native ActivityIndicator components
-- **Form Validation**: Native keyboard types and input validation
+### Backend Integration
+- **GraphQL API**: Real-time queries with `observeQuery()` for live updates
+- **Authentication**: AWS Cognito with secure token management
+- **Database**: DynamoDB with optimized query patterns
+- **File Storage**: S3 with entity-based access controls
+- **Real-time**: GraphQL subscriptions for live betting data
 
-### Backend Integration  
-- **AWS Amplify Gen2**: Modern serverless backend with GraphQL API
-- **Real-time Data**: GraphQL subscriptions with `observeQuery()` for live betting updates
-- **DynamoDB**: NoSQL database for betting data, user profiles, and transactions
-- **Mobile Optimizations**: Uses `@aws-amplify/react-native` for native performance
+## Current App Features
 
-### Native Features
-- **Platform-specific Styling**: Uses StyleSheet for native performance
-- **Touch Interactions**: TouchableOpacity for button interactions  
-- **Native Navigation**: Ready for React Navigation if needed
-- **Keyboard Handling**: Proper keyboard types for email/password inputs
-- **Native Alerts**: Platform-appropriate alert dialogs
+### Core Betting System
+- **Bet Creation**: Template-based betting with custom side names
+- **Bet Joining**: Real balance validation and deduction
+- **Bet Resolution**: Creator-initiated resolution with automatic payouts
+- **Real-time Updates**: Live participant counts and balance synchronization
 
-### Development Notes
-- **Hot Reload**: Expo provides fast refresh during development
-- **Platform Testing**: Test on both iOS and Android simulators/devices
-- **Backend Sync**: Any changes to Amplify backend automatically sync to mobile app
-- **Deployment**: Ready for Android Play Store and iOS App Store submission
+### Social Features
+- **Friend Management**: Send/accept/decline friend requests
+- **Friend Discovery**: Search by username, email, or display name
+- **Bet Invitations**: Invite friends during bet creation with flexible side choice
+- **Profile System**: Editable display names and profile pictures
 
-### Key Differences from Web Version
-- **Components**: React Native components instead of HTML elements
-- **Styling**: StyleSheet instead of CSS
-- **User Interaction**: TouchableOpacity instead of button clicks
-- **Text Input**: TextInput with native keyboard support
-- **Lists**: FlatList for performant bet list rendering
-- **Alerts**: Native Alert API instead of web alerts
+### User Experience
+- **Authentication**: AWS Cognito with native UI components
+- **Navigation**: Bottom tab navigation (Home, Create, My Bets, Friends, Account)
+- **Notifications**: Real-time event tracking and user feedback
+- **Profile Pictures**: S3 upload with automatic cleanup
 
-### Android Deployment Preparation
-- Expo handles most Android configuration automatically
-- APK/AAB generation ready through Expo Application Services (EAS)
-- Native app store optimization built-in
+### Technical Integrations
+- **GitHub Feedback**: Automatic issue creation from in-app feedback
+- **Environment Management**: Secure token storage with react-native-dotenv
+- **Type Safety**: Full TypeScript coverage with proper type definitions
 
-## Recent Enhancements (2025 Session)
+## Database Schema
 
-### User Feedback System ✅
-- **FeedbackModal Component**: Professional feedback collection UI with type selection (Bug, Feature, Improvement, Question)
-- **GitHub Integration**: Automatic issue creation in GitHub repository (spyderbr6/betty)
-- **Environment Variables**: Secure token management via `.env` file with react-native-dotenv
-- **Header Integration**: Ellipsis button in Header component opens feedback modal
-- **Configuration**: `src/utils/github.ts` handles API integration, `types/env.d.ts` for TypeScript support
-
-### Simplified Betting System ✅
-- **Removed Complex Odds**: Eliminated American odds format (+/-110) for peer-to-peer betting
-- **Side Names Only**: Kept customizable side names (Home/Away, Yes/No, etc.) for clarity
-- **Updated Components**: BetCard, CreateBetScreen, LiveEventsScreen, ResolveScreen all simplified
-- **Type Safety**: Updated BetOdds interface to only include sideAName and sideBName
-
-### UI/UX Improvements ✅
-- **Category Removal**: Removed redundant category selector from bet creation (templates provide organization)
-- **Bet Creation Flow**: Auto-scroll to top after bet creation, improved form reset behavior
-- **Status Filtering**: Fixed My Bets status filters to properly show RESOLVED bets
-- **Real-time Updates**: Enhanced participant count tracking and balance synchronization
-
-### Architecture Updates ✅
-- **Environment Setup**: Babel config updated for react-native-dotenv support
-- **Security**: .env file properly gitignored to protect GitHub tokens
-- **TypeScript**: All compilation errors resolved, proper type definitions added
-- **JSON Parsing**: Fixed bet data JSON parsing in all screens for proper odds display
-
-### Configuration Files Updated
-- **babel.config.js**: Added react-native-dotenv plugin for environment variable support
-- **.env**: Contains GITHUB_TOKEN for API integration (gitignored for security)
-- **types/env.d.ts**: TypeScript declarations for @env module
-- **.gitignore**: Updated to exclude .env and other sensitive files
-
-### Current Status (Session End)
-- **Development Server**: Running with environment variable support
-- **User Feedback System**: Fully functional with GitHub integration
-- **Betting System**: Simplified and working correctly
-- **All TypeScript Errors**: Resolved and verified clean compilation
-
-### Remaining Small Enhancements (from todo.md)
-- Remove "search bets" from header, add to My Bets and Live Bets with search icon
-- Wire up bet screen "new bet" button to create bet page
-- Move filter selection under "my bets" header
-- Update main menu "create" icon styling (yellow circle contrast issue)
-- Revalidate create bet defaults after bet creation
-- Define bet resolution time criteria and display logic
-
-## Friend Management & Bet Invitation System ✅
-
-### System Overview
-The SideBet app features a comprehensive social betting platform with friend management and invitation capabilities, enabling users to connect with friends and invite them to bets seamlessly.
-
-### Core Features Implemented
-
-#### 🔄 **Friend Management System**
-- **Friend Requests**: Send, accept, and decline friend requests with real-time notifications
-- **Bilateral Friendships**: Efficient friendship modeling using lexicographic ordering for optimal queries
-- **Friend Discovery**: Search users by username, email, or display name
-- **Profile Integration**: Display names and profile picture support for enhanced user experience
-
-#### 📱 **Enhanced User Interface**
-- **Friends Screen**: Comprehensive friend list management with action menus and profile cards
-- **Add Friend Modal**: User search and friend request sending with relationship status detection
-- **Friend Requests Modal**: Incoming friend requests with accept/decline functionality
-- **Profile Editor**: Editable display names and profile picture placeholders with avatar initials
-
-#### 🎯 **Streamlined Bet Invitation Flow**
-- **Create Bet Integration**: Friend selection during bet creation for immediate invitations
-- **Top Friends Display**: Visual avatar selection showing top 4 friends with "See More" expansion
-- **Flexible Side Choice**: Recipients choose their preferred side (A or B) when accepting invitations
-- **Invitation Cards**: Prominent display of pending invitations in main BetsScreen with enhanced UI
-
-#### 🔔 **Notification & Event System**
-- **Real-time Notifications**: Comprehensive event tracking for all friend and betting activities
-- **Centralized Service**: `NotificationService` handles all notification types with push notification readiness
-- **Event Types**: Friend requests, bet invitations, bet resolutions, deadline alerts, and system announcements
-- **Smart Filtering**: Efficient querying with unread counts and notification cleanup
-
-### Database Schema Architecture
-
-#### **Core Models**
+### Core Models
 ```typescript
-// User Profile Enhancement
+// User Profile
 User {
-  displayName?: string        // Friendly display name
-  profilePictureUrl?: string  // S3 profile picture URL
-  // ... existing fields
+  id: string
+  email: string
+  displayName?: string
+  profilePictureUrl?: string
+  balance: number
+  trustScore: number
+  totalBets: number
+  totalWinnings: number
+  winRate: number
+  createdAt: datetime
+  updatedAt: datetime
 }
 
-// Friend Management
+// Betting System
+Bet {
+  id: string
+  title: string
+  description: string
+  betAmount: number
+  sideAName: string
+  sideBName: string
+  status: 'ACTIVE' | 'RESOLVED' | 'CANCELLED'
+  creatorId: string
+  winningSide?: string
+  participantCount: number
+  createdAt: datetime
+  expiresAt: datetime
+}
+
+BetParticipant {
+  id: string
+  betId: string
+  userId: string
+  side: string
+  amount: number
+  joinedAt: datetime
+}
+
+// Social Features
 FriendRequest {
   fromUserId: string
   toUserId: string
@@ -164,18 +133,16 @@ Friendship {
   createdAt: datetime
 }
 
-// Bet Invitations
 BetInvitation {
   betId: string
   fromUserId: string
   toUserId: string
   status: 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'EXPIRED'
-  message?: string
-  invitedSide: string      // Empty string for flexible choice
-  expiresAt: datetime      // 24-hour expiration
+  invitedSide: string
+  expiresAt: datetime
 }
 
-// Notification System
+// Notifications
 Notification {
   userId: string
   type: NotificationType
@@ -183,111 +150,16 @@ Notification {
   message: string
   isRead: boolean
   priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT'
-  actionType?: string      // Deep linking support
-  actionData?: json        // Action metadata
   relatedBetId?: string
   relatedUserId?: string
 }
 ```
 
-### Key Implementation Details
+## AWS Storage Configuration
 
-#### **Friend Selection in CreateBetScreen**
-- **Visual Interface**: Horizontal scrollable friend avatars with selection checkmarks
-- **Quick Selection**: Top 4 friends displayed prominently with remaining count indicator
-- **Batch Invitations**: All selected friends receive invitations automatically upon bet creation
-- **Form Integration**: Selected friends reset when bet creation form is cleared
-
-#### **Flexible Invitation Acceptance**
-- **Dynamic Side Choice**: Users prompted to choose A or B when accepting open invitations
-- **Native Alerts**: Clean iOS/Android native alert dialogs for side selection
-- **Smart UI**: Invitation cards hide "Your side" when no specific side is assigned
-- **Enhanced Feedback**: Success messages show exactly which side user joined
-
-#### **Notification Architecture**
-- **Dual Approach**: Both relationship queries and dedicated notification log for efficiency
-- **Push Ready**: Infrastructure prepared for expo-notifications integration
-- **Event Coverage**: All friend and betting activities generate appropriate notifications
-- **Cleanup System**: Automatic deletion of old notifications to prevent database bloat
-
-### File Structure
-
-#### **New Components**
-- `src/screens/FriendsScreen.tsx` - Friend list management interface
-- `src/components/ui/AddFriendModal.tsx` - User search and friend request sending
-- `src/components/ui/FriendRequestsModal.tsx` - Incoming friend requests management
-- `src/components/ui/ProfileEditor.tsx` - User profile editing modal
-- `src/services/notificationService.ts` - Centralized notification management
-
-#### **Enhanced Components**
-- `src/screens/CreateBetScreen.tsx` - Added friend selection section with visual avatars
-- `src/screens/BetsScreen.tsx` - Integrated bet invitation cards with side choice
-- `src/screens/AccountScreen.tsx` - Enhanced with Friends navigation and profile display
-- `src/components/SignUp.tsx` - Captures display name during registration
-
-#### **Schema & Types**
-- `amplify/data/resource.ts` - Extended with friend management and notification models
-- `src/types/betting.ts` - Added friend management types and notification interfaces
-
-### User Experience Flow
-
-#### **Making Friends**
-1. Navigate to Friends screen from Account
-2. Tap "Add Friend" → Search by username/email
-3. Send friend request with optional message
-4. Recipient gets notification and can accept/decline
-5. Bilateral friendship created upon acceptance
-
-#### **Creating Bets with Friends**
-1. Open Create Bet screen → Select template and fill details
-2. Scroll to "INVITE FRIENDS" section → Tap friend avatars to select
-3. Create bet → Selected friends automatically receive invitations
-4. Form resets and clears friend selections
-
-#### **Accepting Bet Invitations**
-1. Invitations appear prominently at top of main BetsScreen
-2. Tap "Accept & Join" → Choose side (A or B) from native alert
-3. Join bet on chosen side → Notification sent to inviter
-4. Invitation removed from list and bet updated
-
-### Technical Features
-- **Type Safety**: Full TypeScript coverage for all friend management features
-- **Real-time Updates**: GraphQL subscriptions ready for live friend status updates
-- **Efficient Queries**: Optimized friendship queries using bilateral modeling
-- **Error Handling**: Graceful failure handling for all friend and invitation operations
-- **Migration Ready**: Backward compatibility for existing users without display names
-
-## Profile Picture Upload System ✅
-
-### System Overview
-The SideBet app now features a complete profile picture upload system, enabling users to upload, store, and manage their profile images through AWS S3 storage with seamless integration into the user profile system.
-
-### Core Features Implemented
-
-#### 📷 **Image Upload Workflow**
-- **Permission Management**: Automatic camera and photo library permission requests
-- **Image Selection**: Native image picker with square crop and quality optimization
-- **S3 Upload**: Secure file uploads to AWS S3 with proper access controls
-- **URL Generation**: Long-lived public URLs for profile picture access
-- **Old Image Cleanup**: Automatic deletion of previous profile pictures to prevent storage bloat
-
-#### 🔐 **AWS Storage Integration**
-- **S3 Bucket Configuration**: Dedicated storage bucket with proper access policies
-- **File Organization**: Profile pictures stored in user-specific folders (`profile-pictures/{userId}/`)
-- **Access Control**: Entity-based access allowing users to manage their own pictures
-- **Content Type Handling**: Proper MIME type detection and storage optimization
-
-#### 🎨 **Enhanced User Interface**
-- **ProfileEditor Component**: Integrated image upload with loading states and visual feedback
-- **Avatar Placeholders**: Fallback to user initials when no profile picture is set
-- **Real-time Updates**: Immediate UI updates after successful uploads
-- **Error Handling**: Comprehensive error messages and retry mechanisms
-
-### Implementation Details
-
-#### **Storage Architecture**
+### S3 Storage Setup
 ```typescript
-// AWS S3 Storage Configuration
+// amplify/storage/resource.ts
 defineStorage({
   name: 'sidebet-user-uploads',
   access: (allow) => ({
@@ -298,58 +170,18 @@ defineStorage({
 })
 ```
 
-#### **Image Upload Service**
+### Image Upload Service
 ```typescript
-// Core upload functionality
-updateProfilePicture(userId, currentProfilePictureUrl?) -> {
-  1. Request permissions (camera + photo library)
-  2. Launch image picker with square aspect ratio
+// src/services/imageUploadService.ts
+updateProfilePicture(userId, currentUrl?) -> {
+  1. Request camera/photo permissions
+  2. Launch image picker with square crop
   3. Upload to S3 with unique filename
-  4. Generate public URL with 1-year expiry
-  5. Delete old profile picture (if exists)
+  4. Generate public URL (1-year expiry)
+  5. Delete old image (cleanup)
   6. Return new profile picture URL
 }
 ```
-
-#### **Database Integration**
-- **User Model Enhancement**: `profilePictureUrl` field stores S3 URLs
-- **Profile Updates**: Seamless integration with existing profile edit workflow
-- **Real-time Sync**: Profile picture changes immediately reflected across the app
-- **Avatar Generation**: Automatic fallback to initials when no picture is uploaded
-
-### Files Enhanced
-
-#### **Backend Infrastructure**
-- ✅ `amplify/storage/resource.ts` - S3 storage configuration with proper access controls
-- ✅ `amplify/backend.ts` - Storage integration into Amplify backend
-- ✅ Package dependencies updated with `expo-image-picker`
-
-#### **Frontend Components**
-- ✅ `src/services/imageUploadService.ts` - Complete image upload workflow service
-- ✅ `src/components/ui/ProfileEditor.tsx` - Enhanced with real image upload functionality
-- ✅ `src/screens/AccountScreen.tsx` - Integrated profile picture saving to database
-
-#### **User Experience Flow**
-1. **Access Profile Editor**: Tap profile picture or edit profile button
-2. **Upload Image**: Tap camera icon → Grant permissions → Select/crop image → Upload to S3
-3. **Real-time Preview**: See uploaded image immediately in profile editor
-4. **Save Profile**: Profile picture URL saved to user database record
-5. **App-wide Updates**: New profile picture appears throughout the app (friend lists, bet cards, etc.)
-
-### Technical Features
-- **Expo Integration**: Native image picker with platform-specific optimizations
-- **AWS S3 Storage**: Scalable cloud storage with CDN-ready URLs
-- **Permission Handling**: Graceful camera and photo library permission management
-- **Image Optimization**: Automatic compression and format optimization for mobile
-- **Error Recovery**: Robust error handling with user-friendly messages
-- **Loading States**: Visual feedback during upload process with activity indicators
-
-### Security & Performance
-- **Access Control**: Users can only access their own profile pictures
-- **File Validation**: Content type validation and file size limits
-- **Storage Cleanup**: Automatic deletion of old images to prevent storage bloat
-- **CDN Integration**: S3 URLs ready for CloudFront CDN acceleration
-- **Mobile Optimization**: Compressed images optimized for mobile bandwidth
 
 ## SideBet Design System Architecture
 
