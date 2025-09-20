@@ -30,6 +30,46 @@ import { bulkLoadUserBetsWithParticipants, clearBulkLoadingCache } from '../serv
 // Initialize GraphQL client
 const client = generateClient<Schema>();
 
+// Helper function to transform Amplify data to our Bet type
+const transformAmplifyBet = (bet: any): Bet | null => {
+  // Skip bets with missing required fields
+  if (!bet.id || !bet.title || !bet.description || !bet.category || !bet.status) {
+    return null;
+  }
+
+  // Parse odds from JSON string if needed
+  let parsedOdds = { sideAName: 'Side A', sideBName: 'Side B' }; // Default side names
+  if (bet.odds) {
+    try {
+      if (typeof bet.odds === 'string') {
+        parsedOdds = JSON.parse(bet.odds);
+      } else if (typeof bet.odds === 'object') {
+        parsedOdds = bet.odds;
+      }
+    } catch (error) {
+      console.error('Error parsing bet odds:', error);
+      // Use default side names on parse error
+    }
+  }
+
+  return {
+    id: bet.id,
+    title: bet.title,
+    description: bet.description,
+    category: bet.category,
+    status: bet.status,
+    creatorId: bet.creatorId || '',
+    totalPot: bet.totalPot || 0,
+    betAmount: bet.betAmount || bet.totalPot || 0, // Fallback to totalPot for existing bets
+    odds: parsedOdds,
+    deadline: bet.deadline || new Date().toISOString(),
+    winningSide: bet.winningSide || undefined,
+    resolutionReason: bet.resolutionReason || undefined,
+    createdAt: bet.createdAt || new Date().toISOString(),
+    updatedAt: bet.updatedAt || new Date().toISOString(),
+    participants: [], // Will be populated by separate query if needed
+  };
+};
 
 export const BetsScreen: React.FC = () => {
   const { user } = useAuth();
@@ -349,7 +389,7 @@ export const BetsScreen: React.FC = () => {
       }
     }).subscribe({
       next: async (data) => {
-        console.log('🔄 Real-time bet update detected, refreshing user bets');
+        console.log('🔄 Real-time bet update detected:', data.items.length, 'bets updated');
         // Clear cache and refetch to get latest data
         clearBulkLoadingCache();
         await fetchBets();
@@ -362,7 +402,7 @@ export const BetsScreen: React.FC = () => {
     // Set up real-time subscription for participant changes
     const participantSubscription = client.models.Participant.observeQuery().subscribe({
       next: async (participantData) => {
-        console.log('🔄 Real-time participant update detected, refreshing user bets');
+        console.log('🔄 Real-time participant update detected:', participantData.items.length, 'participants updated');
         // Clear cache and refetch to get latest data
         clearBulkLoadingCache();
         await fetchBets();

@@ -24,7 +24,7 @@
   "include": [
     "src/**/*.ts",
     "src/**/*.tsx",
-    "App.tsx",
+    "App.tsx"
   ],
   "exclude": [
     "node_modules",
@@ -35,6 +35,7 @@
     ".expo",
     "android",
     "ios",
-    "amplify/**/*.ts",
-  ]
+    ".amplify"
+  ],
+  "extends": "expo/tsconfig.base"
 }
