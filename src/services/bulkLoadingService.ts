@@ -171,7 +171,7 @@ const loadBetsWithPagination = async (
         or: statusFilters.map(status => ({ status: { eq: status } }))
       },
       limit,
-      nextToken
+      nextToken,
     });
 
     const result = await queryWithTimeout(query, `Bet query page ${pageCount}`);
@@ -314,7 +314,8 @@ export const bulkLoadBetsWithParticipants = async (
     // Transform and validate bets
     const validBets = betsData
       .map(transformAmplifyBet)
-      .filter((bet): bet is Bet => bet !== null);
+      .filter((bet): bet is Bet => bet !== null)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()); // Sort by createdAt descending (newest first)
 
     if (validBets.length === 0) {
       console.log('❌ No valid bets after transformation');

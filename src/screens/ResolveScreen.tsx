@@ -96,7 +96,7 @@ export const ResolveScreen: React.FC = () => {
                 ]
               }
             ]
-          }
+          },
         });
 
         if (betsData) {
@@ -137,8 +137,13 @@ export const ResolveScreen: React.FC = () => {
             return hasParticipants && (isCreator || isParticipant);
           });
 
-          console.log('Found resolvable bets:', resolvableBets.length);
-          setPendingBets(resolvableBets);
+          // Sort by creation date (newest first)
+          const sortedBets = resolvableBets.sort((a, b) =>
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          );
+
+          console.log('Found resolvable bets:', sortedBets.length);
+          setPendingBets(sortedBets);
         }
       } catch (error) {
         console.error('Error fetching pending bets:', error);
@@ -190,7 +195,7 @@ export const ResolveScreen: React.FC = () => {
               ]
             }
           ]
-        }
+        },
       });
 
       if (betsData) {
@@ -226,7 +231,13 @@ export const ResolveScreen: React.FC = () => {
           const hasParticipants = bet.participants && bet.participants.length > 0;
           return hasParticipants && (isCreator || isParticipant);
         });
-        setPendingBets(resolvableBets);
+
+        // Sort by creation date (newest first)
+        const sortedBets = resolvableBets.sort((a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        );
+
+        setPendingBets(sortedBets);
       }
     } catch (error) {
       console.error('Error refreshing pending bets:', error);
