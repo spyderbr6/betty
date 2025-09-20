@@ -23,7 +23,7 @@ import { Header } from '../components/ui/Header';
 import { BetCard } from '../components/betting/BetCard';
 import { Bet } from '../types/betting';
 import { useAuth } from '../contexts/AuthContext';
-import { bulkLoadJoinableBetsWithParticipants, clearBulkLoadingCache } from '../services/bulkLoadingService';
+import { bulkLoadJoinableBetsWithParticipants, bulkLoadFriendsBetsWithParticipants, clearBulkLoadingCache } from '../services/bulkLoadingService';
 
 // Initialize GraphQL client
 const client = generateClient<Schema>();
@@ -115,6 +115,7 @@ export const LiveEventsScreen: React.FC = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearch, setShowSearch] = useState(false);
+  const [viewMode, setViewMode] = useState<'friends' | 'all'>('friends');
 
   useEffect(() => {
     if (!user) return;
@@ -122,18 +123,23 @@ export const LiveEventsScreen: React.FC = () => {
     const fetchJoinableBets = async () => {
       try {
         setIsLoading(true);
-        console.log('🎯 Fetching joinable bets with bulk loading for user:', user.userId);
+        console.log(`🎯 Fetching ${viewMode} bets with bulk loading for user:`, user.userId);
 
-        // Use bulk loading service for efficient data fetching
-        const joinableBets = await bulkLoadJoinableBetsWithParticipants(user.userId, {
-          limit: 50, // Reasonable limit for live events
-          useCache: true
-        });
+        // Use appropriate bulk loading service based on view mode
+        const joinableBets = viewMode === 'friends'
+          ? await bulkLoadFriendsBetsWithParticipants(user.userId, {
+              limit: 50, // Reasonable limit for live events
+              useCache: true
+            })
+          : await bulkLoadJoinableBetsWithParticipants(user.userId, {
+              limit: 50, // Reasonable limit for live events
+              useCache: true
+            });
 
-        console.log(`✅ Bulk loaded ${joinableBets.length} joinable bets`);
+        console.log(`✅ Bulk loaded ${joinableBets.length} ${viewMode} bets`);
         setLiveBets(joinableBets);
       } catch (error) {
-        console.error('❌ Error bulk loading joinable bets:', error);
+        console.error(`❌ Error bulk loading ${viewMode} bets:`, error);
         // Use mock data as fallback
         setLiveBets(mockLiveBets);
       } finally {
@@ -178,25 +184,30 @@ export const LiveEventsScreen: React.FC = () => {
       betSubscription.unsubscribe();
       participantSubscription.unsubscribe();
     };
-  }, [user]);
+  }, [user, viewMode]); // Re-fetch when viewMode changes
 
   const onRefresh = async () => {
     try {
       setRefreshing(true);
       if (!user) return;
 
-      console.log('🔄 Refreshing joinable bets with force refresh');
+      console.log(`🔄 Refreshing ${viewMode} bets with force refresh`);
 
-      // Use bulk loading with force refresh to bypass cache
-      const joinableBets = await bulkLoadJoinableBetsWithParticipants(user.userId, {
-        limit: 50,
-        forceRefresh: true // Bypass cache on manual refresh
-      });
+      // Use appropriate bulk loading service with force refresh to bypass cache
+      const joinableBets = viewMode === 'friends'
+        ? await bulkLoadFriendsBetsWithParticipants(user.userId, {
+            limit: 50,
+            forceRefresh: true // Bypass cache on manual refresh
+          })
+        : await bulkLoadJoinableBetsWithParticipants(user.userId, {
+            limit: 50,
+            forceRefresh: true // Bypass cache on manual refresh
+          });
 
-      console.log(`✅ Refreshed ${joinableBets.length} joinable bets`);
+      console.log(`✅ Refreshed ${joinableBets.length} ${viewMode} bets`);
       setLiveBets(joinableBets);
     } catch (error) {
-      console.error('❌ Error refreshing joinable bets:', error);
+      console.error(`❌ Error refreshing ${viewMode} bets:`, error);
     } finally {
       setRefreshing(false);
     }
@@ -279,11 +290,13 @@ export const LiveEventsScreen: React.FC = () => {
           />
         }
       >
-        {/* Joinable Bets Section */}
+        {/* Friends' Bets Section */}
         <View style={styles.liveBetsSection}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionTitleContainer}>
-              <Text style={styles.sectionTitle}>JOINABLE BETS</Text>
+              <Text style={styles.sectionTitle}>
+                {viewMode === 'friends' ? 'FRIENDS\' BETS' : 'ALL JOINABLE BETS'}
+              </Text>
               <TouchableOpacity
                 style={styles.searchIconButton}
                 onPress={handleSearchToggle}
@@ -296,6 +309,52 @@ export const LiveEventsScreen: React.FC = () => {
                 />
               </TouchableOpacity>
             </View>
+
+            {/* View Mode Toggle */}
+            <View style={styles.toggleContainer}>
+              <TouchableOpacity
+                style={[
+                  styles.toggleButton,
+                  viewMode === 'friends' && styles.toggleButtonActive
+                ]}
+                onPress={() => setViewMode('friends')}
+                activeOpacity={0.7}
+              >
+                <Ionicons
+                  name="people"
+                  size={16}
+                  color={viewMode === 'friends' ? colors.background : colors.textSecondary}
+                />
+                <Text style={[
+                  styles.toggleButtonText,
+                  viewMode === 'friends' && styles.toggleButtonTextActive
+                ]}>
+                  Friends
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.toggleButton,
+                  styles.toggleButtonLast,
+                  viewMode === 'all' && styles.toggleButtonActive
+                ]}
+                onPress={() => setViewMode('all')}
+                activeOpacity={0.7}
+              >
+                <Ionicons
+                  name="globe"
+                  size={16}
+                  color={viewMode === 'all' ? colors.background : colors.textSecondary}
+                />
+                <Text style={[
+                  styles.toggleButtonText,
+                  viewMode === 'all' && styles.toggleButtonTextActive
+                ]}>
+                  All
+                </Text>
+              </TouchableOpacity>
+            </View>
+
             <Text style={styles.sectionSubtitle}>
               {liveBets.length} available to join • Real-time updates
             </Text>
@@ -313,7 +372,7 @@ export const LiveEventsScreen: React.FC = () => {
                 />
                 <TextInput
                   style={styles.searchInput}
-                  placeholder="Search joinable bets..."
+                  placeholder={viewMode === 'friends' ? "Search friends' bets..." : "Search all bets..."}
                   placeholderTextColor={colors.textMuted}
                   value={searchQuery}
                   onChangeText={handleSearchChange}
@@ -353,12 +412,14 @@ export const LiveEventsScreen: React.FC = () => {
           ) : (
             <View style={styles.emptyContainer}>
               <Text style={styles.emptyTitle}>
-                {searchQuery.trim() ? 'No Matching Bets' : 'No Joinable Bets'}
+                {searchQuery.trim() ? 'No Matching Bets' : viewMode === 'friends' ? 'No Friends\' Bets' : 'No Joinable Bets'}
               </Text>
               <Text style={styles.emptyDescription}>
                 {searchQuery.trim()
                   ? `No bets match "${searchQuery}". Try a different search term.`
-                  : 'All current bets are either yours or you\'ve already joined them. Check back later for new opportunities!'
+                  : viewMode === 'friends'
+                    ? 'Your friends haven\'t created any bets you can join yet. Try switching to "All" to see bets from everyone!'
+                    : 'All current bets are either yours or you\'ve already joined them. Check back later for new opportunities!'
                 }
               </Text>
             </View>
@@ -452,6 +513,45 @@ const styles = StyleSheet.create({
     borderRadius: spacing.radius.sm,
     borderWidth: 1,
     borderColor: colors.border,
+  },
+
+  // View Mode Toggle
+  toggleContainer: {
+    flexDirection: 'row',
+    backgroundColor: colors.surface,
+    borderRadius: spacing.radius.sm,
+    padding: spacing.xs / 2,
+    marginTop: spacing.sm,
+    marginBottom: spacing.xs,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  toggleButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    borderRadius: spacing.radius.xs,
+    marginRight: spacing.xs / 2,
+  },
+  toggleButtonLast: {
+    marginRight: 0,
+  },
+  toggleButtonActive: {
+    backgroundColor: colors.primary,
+  },
+  toggleButtonText: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    marginLeft: spacing.xs / 2,
+    fontSize: 13,
+    fontWeight: typography.fontWeight.medium,
+  },
+  toggleButtonTextActive: {
+    color: colors.background,
+    fontWeight: typography.fontWeight.semibold,
   },
 
   // Search Input

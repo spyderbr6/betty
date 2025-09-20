@@ -460,6 +460,88 @@ export const bulkLoadJoinableBetsWithParticipants = async (
 };
 
 /**
+ * Bulk load friends' joinable bets (created by friends, user is NOT creator and NOT participant)
+ * @param userId - Current user's ID
+ * @param options - Loading options
+ * @returns Promise<Bet[]> - Friends' joinable bets
+ */
+export const bulkLoadFriendsBetsWithParticipants = async (
+  userId: string,
+  options: { limit?: number; useCache?: boolean; forceRefresh?: boolean } = {}
+): Promise<Bet[]> => {
+  try {
+    const cacheKey = `friends_bets_${userId}_${options.limit || 50}`;
+
+    // Check cache first (unless force refresh)
+    if (options.useCache !== false && !options.forceRefresh) {
+      const cached = cache.get<Bet[]>(cacheKey);
+      if (cached) {
+        return cached;
+      }
+    }
+
+    // First, get user's friends list
+    const [friendships1, friendships2] = await Promise.all([
+      queryWithTimeout(
+        client.models.Friendship.list({
+          filter: { user1Id: { eq: userId } }
+        }),
+        'Friends list query 1'
+      ),
+      queryWithTimeout(
+        client.models.Friendship.list({
+          filter: { user2Id: { eq: userId } }
+        }),
+        'Friends list query 2'
+      )
+    ]);
+
+    // Combine both friendship arrays to get all friend user IDs
+    const allFriendships = [
+      ...(friendships1.data || []),
+      ...(friendships2.data || [])
+    ];
+
+    const friendUserIds = allFriendships.map(friendship =>
+      friendship.user1Id === userId
+        ? friendship.user2Id
+        : friendship.user1Id
+    ).filter(Boolean) as string[];
+
+    if (friendUserIds.length === 0) {
+      // No friends, return empty array
+      return [];
+    }
+
+    // Get only active bets with smaller limit
+    const activeBets = await bulkLoadActiveBetsWithParticipants({
+      limit: options.limit || 50,
+      useCache: options.useCache,
+      forceRefresh: options.forceRefresh
+    });
+
+    // Filter to only bets created by friends where user is NOT creator and NOT participant
+    const friendsBets = activeBets.filter(bet => {
+      const isCreatedByFriend = friendUserIds.includes(bet.creatorId);
+      const isCreator = bet.creatorId === userId;
+      const isParticipant = bet.participants?.some(p => p.userId === userId);
+
+      return isCreatedByFriend && !isCreator && !isParticipant;
+    });
+
+    // Cache the filtered result
+    if (options.useCache !== false) {
+      cache.set(cacheKey, friendsBets);
+    }
+
+    return friendsBets;
+  } catch (error) {
+    console.error('❌ Error bulk loading friends\' bets:', error);
+    throw error;
+  }
+};
+
+/**
  * Clear all cached data
  * Useful for force refresh scenarios
  */
@@ -484,4 +566,5 @@ export type BulkLoadingService = {
   bulkLoadActiveBetsWithParticipants: typeof bulkLoadActiveBetsWithParticipants;
   bulkLoadUserBetsWithParticipants: typeof bulkLoadUserBetsWithParticipants;
   bulkLoadJoinableBetsWithParticipants: typeof bulkLoadJoinableBetsWithParticipants;
+  bulkLoadFriendsBetsWithParticipants: typeof bulkLoadFriendsBetsWithParticipants;
 };
