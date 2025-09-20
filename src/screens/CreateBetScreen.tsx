@@ -60,6 +60,10 @@ export const CreateBetScreen: React.FC = () => {
   const [selectedFriends, setSelectedFriends] = useState<Set<string>>(new Set());
   const [showAllFriends, setShowAllFriends] = useState(false);
 
+  // Toast state
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+
   // Fetch user friends
   useEffect(() => {
     const fetchFriends = async () => {
@@ -332,18 +336,20 @@ export const CreateBetScreen: React.FC = () => {
           }
         }
 
-        Alert.alert(
-          'Bet Created!',
-          `Your bet "${betTitle}" has been created and you joined on "${selectedSide === 'A' ? sideAName : sideBName}".`,
-          [{
-            text: 'OK',
-            onPress: () => {
-              // Scroll to top after completion, then reset form
-              scrollRef.current?.scrollTo({ y: 0, animated: true });
-              resetForm();
-            },
-          }]
-        );
+        // Scroll to top and reset form immediately after successful creation
+        scrollRef.current?.scrollTo({ y: 0, animated: true });
+
+        // Show toast notification
+        const sideChosen = selectedSide === 'A' ? sideAName : sideBName;
+        setToastMessage(`Bet "${betTitle}" created! You joined on "${sideChosen}"`);
+        setShowToast(true);
+
+        // Hide toast after 3 seconds
+        setTimeout(() => {
+          setShowToast(false);
+        }, 3000);
+
+        resetForm();
       } else {
         console.error('GraphQL errors:', result.errors);
         throw new Error('Failed to create bet');
@@ -430,7 +436,15 @@ export const CreateBetScreen: React.FC = () => {
         onNotificationsPress={handleNotificationsPress}
         variant="default"
       />
-      
+
+      {/* Toast Banner */}
+      {showToast && (
+        <View style={styles.toastBanner}>
+          <Ionicons name="checkmark-circle" size={20} color={colors.background} />
+          <Text style={styles.toastText}>{toastMessage}</Text>
+        </View>
+      )}
+
       <ScrollView ref={scrollRef} style={styles.content} showsVerticalScrollIndicator={false}>
         {/* Bet Templates Section */}
         <View style={styles.section}>
@@ -1089,5 +1103,27 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     marginTop: spacing.xs,
     textAlign: 'center',
+  },
+
+  // Toast Banner
+  toastBanner: {
+    backgroundColor: colors.success,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    marginHorizontal: spacing.md,
+    marginTop: spacing.xs,
+    borderRadius: spacing.radius.sm,
+    ...commonStyles.flexCenter,
+  },
+  toastText: {
+    ...textStyles.button,
+    color: colors.background,
+    marginLeft: spacing.xs,
+    fontWeight: typography.fontWeight.medium,
+    textAlign: 'center',
+    flex: 1,
   },
 });

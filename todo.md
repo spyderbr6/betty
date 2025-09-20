@@ -43,10 +43,7 @@
 ## 🔄 IMMEDIATE NEXT STEPS (Current Development Cycle)
 
 ### **Priority 1: UI/UX Polish & Bug Fixes**
-- [ ] **Bet Resolution Coloring**: Fix option A/B colors to use different scheme than status badges
 - [ ] **Create Bet Success Flow**: Add scroll-to-top and success indication after bet creation. 
-- [ ] **Bulk Bet Loading**: Implement efficient bulk loading for main bet list (reference .references/app.tsx)
-- [ ] **Toast Notifications**: Replace disruptive alert dialogs with toast banners for info messages
 - [ ] **Warning Cleanup**: Resolve all soft warnings across project files
 - [ ] **Security Scanning**: Open repository for automated security scanning
 - [ ] research: why does the app fail after being open for a day or if my pc sleeps. i'm wondering if we have a state management issue or session issue causing the app to crash.
