@@ -666,10 +666,10 @@ const styles = StyleSheet.create({
     minHeight: 60,
   },
   resolutionButtonA: {
-    backgroundColor: colors.success,
+    backgroundColor: colors.info,
   },
   resolutionButtonB: {
-    backgroundColor: colors.warning,
+    backgroundColor: colors.primary,
   },
   resolutionButtonDisabled: {
     opacity: 0.6,
@@ -691,11 +691,11 @@ const styles = StyleSheet.create({
   },
   resolutionButtonSelected: {
     borderWidth: 3,
-    borderColor: colors.primary,
+    borderColor: colors.success,
     backgroundColor: colors.background,
   },
   resolutionButtonTextSelected: {
-    color: colors.primary,
+    color: colors.success,
   },
   resolutionButtonPayoutSelected: {
     color: colors.textSecondary,
@@ -703,7 +703,7 @@ const styles = StyleSheet.create({
 
   // Confirm Button
   confirmButton: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.success,
     borderRadius: spacing.radius.sm,
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.md,

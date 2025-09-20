@@ -413,8 +413,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
   },
   sideButtonSelected: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
+    backgroundColor: colors.surface,
+    borderColor: colors.success,
+    borderWidth: 2,
   },
   sideName: {
     ...textStyles.bodySmall,
