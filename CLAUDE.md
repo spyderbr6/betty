@@ -36,7 +36,7 @@ src/
 ├── navigation/
 │   └── AppNavigator.tsx # Bottom tab navigation
 ├── screens/             # Main app screens
-├── services/            # API integrations (notifications, image upload)
+├── services/            # API integrations (bulk loading, notifications, image upload)
 ├── styles/              # Design system tokens
 ├── types/               # TypeScript definitions
 └── utils/               # Helper functions
@@ -44,10 +44,12 @@ src/
 
 ### Backend Integration
 - **GraphQL API**: Real-time queries with `observeQuery()` for live updates
+- **Bulk Loading**: Optimized data fetching with `bulkLoadingService` to reduce N+1 queries
 - **Authentication**: AWS Cognito with secure token management
-- **Database**: DynamoDB with optimized query patterns
+- **Database**: DynamoDB with optimized query patterns and client-side sorting
 - **File Storage**: S3 with entity-based access controls
 - **Real-time**: GraphQL subscriptions for live betting data
+- **Caching**: In-memory caching with TTL for improved performance
 
 ## Current App Features
 
@@ -56,6 +58,8 @@ src/
 - **Bet Joining**: Real balance validation and deduction
 - **Bet Resolution**: Creator-initiated resolution with automatic payouts
 - **Real-time Updates**: Live participant counts and balance synchronization
+- **Bet Sorting**: Automatic sorting by creation time (newest first) with status priority (LIVE > ACTIVE > PENDING_RESOLUTION)
+- **Performance Optimization**: Bulk loading with caching reduces API calls and improves load times
 
 ### Social Features
 - **Friend Management**: Send/accept/decline friend requests
@@ -181,6 +185,44 @@ updateProfilePicture(userId, currentUrl?) -> {
   5. Delete old image (cleanup)
   6. Return new profile picture URL
 }
+```
+
+### Bulk Loading Service
+```typescript
+// src/services/bulkLoadingService.ts
+// Optimized data fetching service that reduces N+1 queries and improves performance
+// with pagination, caching, and automatic client-side sorting
+
+// Core Functions:
+bulkLoadBetsWithParticipants(statusFilters[], options?) -> Promise<Bet[]>
+  - Loads bets and their participants in 2 optimized queries instead of N+1
+  - Supports pagination with configurable limits (default: 100 bets, 500 participants)
+  - Includes 30-second in-memory caching with TTL
+  - Client-side sorting by createdAt descending (newest first)
+  - Concurrent query batching with throttling controls
+
+bulkLoadUserBetsWithParticipants(userId, options?) -> Promise<Bet[]>
+  - Filters to only bets where user is creator OR participant
+  - Uses cached results when available for better performance
+  - Automatically sorts by creation date (newest first)
+
+bulkLoadJoinableBetsWithParticipants(userId, options?) -> Promise<Bet[]>
+  - Filters to only ACTIVE bets where user is NOT creator and NOT participant
+  - Optimized for discovering new bets to join
+  - Smaller default limit (50) for better performance
+
+// Caching & Performance:
+clearBulkLoadingCache() -> void          // Force refresh by clearing cache
+getBulkLoadingCacheStats() -> object     // Debug cache usage and keys
+
+// Usage Examples:
+const userBets = await bulkLoadUserBetsWithParticipants(userId, {
+  limit: 50,
+  useCache: true,
+  forceRefresh: false
+});
+
+const joinableBets = await bulkLoadJoinableBetsWithParticipants(userId);
 ```
 
 ## SideBet Design System Architecture
