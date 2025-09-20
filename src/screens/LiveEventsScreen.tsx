@@ -23,50 +23,10 @@ import { Header } from '../components/ui/Header';
 import { BetCard } from '../components/betting/BetCard';
 import { Bet } from '../types/betting';
 import { useAuth } from '../contexts/AuthContext';
+import { bulkLoadJoinableBetsWithParticipants, clearBulkLoadingCache } from '../services/bulkLoadingService';
 
 // Initialize GraphQL client
 const client = generateClient<Schema>();
-
-// Helper function to transform Amplify data to our Bet type
-const transformAmplifyBet = (bet: any): Bet | null => {
-  // Skip bets with missing required fields
-  if (!bet.id || !bet.title || !bet.description || !bet.category || !bet.status) {
-    return null;
-  }
-
-  // Parse odds from JSON string if needed
-  let parsedOdds = { sideAName: 'Side A', sideBName: 'Side B' }; // Default side names
-  if (bet.odds) {
-    try {
-      if (typeof bet.odds === 'string') {
-        parsedOdds = JSON.parse(bet.odds);
-      } else if (typeof bet.odds === 'object') {
-        parsedOdds = bet.odds;
-      }
-    } catch (error) {
-      console.error('Error parsing bet odds:', error);
-      // Use default side names on parse error
-    }
-  }
-
-  return {
-    id: bet.id,
-    title: bet.title,
-    description: bet.description,
-    category: bet.category,
-    status: bet.status,
-    creatorId: bet.creatorId || '',
-    totalPot: bet.totalPot || 0,
-    betAmount: bet.betAmount || bet.totalPot || 0, // Fallback to totalPot for existing bets
-    odds: parsedOdds,
-    deadline: bet.deadline || new Date().toISOString(),
-    winningSide: bet.winningSide || undefined,
-    resolutionReason: bet.resolutionReason || undefined,
-    createdAt: bet.createdAt || new Date().toISOString(),
-    updatedAt: bet.updatedAt || new Date().toISOString(),
-    participants: [], // Will be populated by separate query if needed
-  };
-};
 
 // Mock live bets data as fallback
 const mockLiveBets: Bet[] = [
@@ -162,56 +122,18 @@ export const LiveEventsScreen: React.FC = () => {
     const fetchJoinableBets = async () => {
       try {
         setIsLoading(true);
-        console.log('Fetching joinable bets for user:', user.userId);
+        console.log('🎯 Fetching joinable bets with bulk loading for user:', user.userId);
 
-        // Fetch all active bets
-        const { data: betsData } = await client.models.Bet.list({
-          filter: {
-            status: { eq: 'ACTIVE' }
-          }
+        // Use bulk loading service for efficient data fetching
+        const joinableBets = await bulkLoadJoinableBetsWithParticipants(user.userId, {
+          limit: 50, // Reasonable limit for live events
+          useCache: true
         });
 
-        if (betsData) {
-          // Fetch participants for each bet
-          const betsWithParticipants = await Promise.all(
-            betsData.map(async (bet) => {
-              const { data: participants } = await client.models.Participant.list({
-                filter: { betId: { eq: bet.id! } }
-              });
-
-              const transformedBet = transformAmplifyBet(bet);
-              if (transformedBet && participants) {
-                transformedBet.participants = participants
-                  .filter(p => p.id && p.betId && p.userId && p.side)
-                  .map(p => ({
-                    id: p.id!,
-                    betId: p.betId!,
-                    userId: p.userId!,
-                    side: p.side!,
-                    amount: p.amount || 0,
-                    status: p.status as 'PENDING' | 'ACCEPTED' | 'DECLINED',
-                    payout: p.payout || 0,
-                    joinedAt: p.joinedAt || new Date().toISOString(),
-                  }));
-              }
-              return transformedBet;
-            })
-          );
-
-          const validBets = betsWithParticipants.filter((bet): bet is Bet => bet !== null);
-
-          // Filter to show only joinable bets (user not creator and not participant)
-          const joinableBets = validBets.filter(bet => {
-            const isCreator = bet.creatorId === user.userId;
-            const isParticipant = bet.participants?.some(p => p.userId === user.userId);
-            return !isCreator && !isParticipant;
-          });
-
-          console.log('Found joinable bets:', joinableBets.length);
-          setLiveBets(joinableBets);
-        }
+        console.log(`✅ Bulk loaded ${joinableBets.length} joinable bets`);
+        setLiveBets(joinableBets);
       } catch (error) {
-        console.error('Error fetching joinable bets:', error);
+        console.error('❌ Error bulk loading joinable bets:', error);
         // Use mock data as fallback
         setLiveBets(mockLiveBets);
       } finally {
@@ -228,63 +150,28 @@ export const LiveEventsScreen: React.FC = () => {
       }
     }).subscribe({
       next: async (data) => {
-        console.log('Real-time joinable bet update:', data);
-        await updateJoinableBets(data.items);
+        console.log('🔄 Real-time bet update detected, refreshing joinable bets');
+        // Clear cache and refetch to get latest data
+        clearBulkLoadingCache();
+        await fetchJoinableBets();
       },
       error: (error) => {
-        console.error('Real-time joinable bet subscription error:', error);
+        console.error('❌ Real-time bet subscription error:', error);
       }
     });
 
     // Set up real-time subscription for participant changes
     const participantSubscription = client.models.Participant.observeQuery().subscribe({
       next: async (participantData) => {
-        console.log('Real-time participant update (joinable bets):', participantData);
-        // Refetch joinable bets when participants change
+        console.log('🔄 Real-time participant update detected, refreshing joinable bets');
+        // Clear cache and refetch to get latest data
+        clearBulkLoadingCache();
         await fetchJoinableBets();
       },
       error: (error) => {
-        console.error('Real-time participant subscription error (joinable):', error);
+        console.error('❌ Real-time participant subscription error:', error);
       }
     });
-
-    // Helper function to update joinable bets with participants
-    const updateJoinableBets = async (betItems: any[]) => {
-      const betsWithParticipants = await Promise.all(
-        betItems.map(async (bet) => {
-          const { data: participants } = await client.models.Participant.list({
-            filter: { betId: { eq: bet.id! } }
-          });
-
-          const transformedBet = transformAmplifyBet(bet);
-          if (transformedBet && participants) {
-            transformedBet.participants = participants
-              .filter(p => p.id && p.betId && p.userId && p.side)
-              .map(p => ({
-                id: p.id!,
-                betId: p.betId!,
-                userId: p.userId!,
-                side: p.side!,
-                amount: p.amount || 0,
-                status: p.status as 'PENDING' | 'ACCEPTED' | 'DECLINED',
-                payout: p.payout || 0,
-                joinedAt: p.joinedAt || new Date().toISOString(),
-              }));
-          }
-          return transformedBet;
-        })
-      );
-
-      const validBets = betsWithParticipants.filter((bet): bet is Bet => bet !== null);
-      // Filter to show only joinable bets
-      const joinableBets = validBets.filter(bet => {
-        const isCreator = bet.creatorId === user?.userId;
-        const isParticipant = bet.participants?.some(p => p.userId === user?.userId);
-        return !isCreator && !isParticipant;
-      });
-
-      setLiveBets(joinableBets);
-    };
 
     // Cleanup subscriptions on unmount
     return () => {
@@ -298,47 +185,18 @@ export const LiveEventsScreen: React.FC = () => {
       setRefreshing(true);
       if (!user) return;
 
-      // Re-run the joinable bets fetch
-      const { data: betsData } = await client.models.Bet.list({
-        filter: { status: { eq: 'ACTIVE' } }
+      console.log('🔄 Refreshing joinable bets with force refresh');
+
+      // Use bulk loading with force refresh to bypass cache
+      const joinableBets = await bulkLoadJoinableBetsWithParticipants(user.userId, {
+        limit: 50,
+        forceRefresh: true // Bypass cache on manual refresh
       });
 
-      if (betsData) {
-        const betsWithParticipants = await Promise.all(
-          betsData.map(async (bet) => {
-            const { data: participants } = await client.models.Participant.list({
-              filter: { betId: { eq: bet.id! } }
-            });
-
-            const transformedBet = transformAmplifyBet(bet);
-            if (transformedBet && participants) {
-              transformedBet.participants = participants
-                .filter(p => p.id && p.betId && p.userId && p.side)
-                .map(p => ({
-                  id: p.id!,
-                  betId: p.betId!,
-                  userId: p.userId!,
-                  side: p.side!,
-                  amount: p.amount || 0,
-                  status: p.status as 'PENDING' | 'ACCEPTED' | 'DECLINED',
-                  payout: p.payout || 0,
-                  joinedAt: p.joinedAt || new Date().toISOString(),
-                }));
-            }
-            return transformedBet;
-          })
-        );
-
-        const validBets = betsWithParticipants.filter((bet): bet is Bet => bet !== null);
-        const joinableBets = validBets.filter(bet => {
-          const isCreator = bet.creatorId === user.userId;
-          const isParticipant = bet.participants?.some(p => p.userId === user.userId);
-          return !isCreator && !isParticipant;
-        });
-        setLiveBets(joinableBets);
-      }
+      console.log(`✅ Refreshed ${joinableBets.length} joinable bets`);
+      setLiveBets(joinableBets);
     } catch (error) {
-      console.error('Error refreshing joinable bets:', error);
+      console.error('❌ Error refreshing joinable bets:', error);
     } finally {
       setRefreshing(false);
     }
