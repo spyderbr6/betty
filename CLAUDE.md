@@ -1,6 +1,6 @@
-# CLAUDE.md - Technical Reference
+# CLAUDE.md
 
-This file provides technical guidance to Claude Code when working with the SideBet React Native app.
+This file provides guidance to Claude Code (claude.ai/code) when working with the SideBet React Native app.
 
 ## Quick Commands
 
@@ -341,6 +341,7 @@ When given a task or request, Claude should:
 - Configuration changes (app.json, metro.config.js, etc.)
 - Database schema or API changes
 - Build or deployment related changes
+- **PATH environment variable modifications** (shell configuration files like .bashrc, .zshrc, .profile, etc.)
 
 ### Implementation Guidelines
 - Always read existing code first to understand patterns and conventions
