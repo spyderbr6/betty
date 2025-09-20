@@ -43,7 +43,6 @@
 ## 🔄 IMMEDIATE NEXT STEPS (Current Development Cycle)
 
 ### **Priority 1: UI/UX Polish & Bug Fixes**
-- [ ] **Create Bet Success Flow**: Add scroll-to-top and success indication after bet creation. 
 - [ ] **Warning Cleanup**: Resolve all soft warnings across project files
 - [ ] **Security Scanning**: Open repository for automated security scanning
 - [ ] research: why does the app fail after being open for a day or if my pc sleeps. i'm wondering if we have a state management issue or session issue causing the app to crash.

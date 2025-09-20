@@ -652,31 +652,32 @@ const styles = StyleSheet.create({
   },
   resolutionButtons: {
     flexDirection: 'row',
-    gap: spacing.sm,
     marginBottom: spacing.md,
   },
   resolutionButton: {
     flex: 1,
-    backgroundColor: colors.primary,
+    backgroundColor: colors.surface,
     borderRadius: spacing.radius.sm,
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.sm,
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 60,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   resolutionButtonA: {
-    backgroundColor: colors.info,
+    marginRight: spacing.xs,
   },
   resolutionButtonB: {
-    backgroundColor: colors.primary,
+    marginLeft: spacing.xs,
   },
   resolutionButtonDisabled: {
     opacity: 0.6,
   },
   resolutionButtonText: {
     ...textStyles.button,
-    color: colors.background,
+    color: colors.textPrimary,
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.bold,
     textAlign: 'center',
@@ -684,26 +685,26 @@ const styles = StyleSheet.create({
   },
   resolutionButtonPayout: {
     ...textStyles.caption,
-    color: colors.background,
+    color: colors.textMuted,
     fontSize: typography.fontSize.xs,
-    opacity: 0.9,
     textAlign: 'center',
   },
   resolutionButtonSelected: {
-    borderWidth: 3,
-    borderColor: colors.success,
-    backgroundColor: colors.background,
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+    borderWidth: 2,
   },
   resolutionButtonTextSelected: {
-    color: colors.success,
+    color: colors.background,
   },
   resolutionButtonPayoutSelected: {
-    color: colors.textSecondary,
+    color: colors.background,
+    opacity: 0.9,
   },
 
   // Confirm Button
   confirmButton: {
-    backgroundColor: colors.success,
+    backgroundColor: colors.primary,
     borderRadius: spacing.radius.sm,
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.md,
