@@ -46,6 +46,7 @@
 - [ ] **Warning Cleanup**: Resolve all soft warnings across project files
 - [ ] **Security Scanning**: Open repository for automated security scanning
 - [ ] research: why does the app fail after being open for a day or if my pc sleeps. i'm wondering if we have a state management issue or session issue causing the app to crash.
+- [ ] live bets should show joinable bets that your friends have created. 
 
 ### **Priority 2: Real-time Feature Enhancements**
 - [ ] **Enhanced Notifications**: Complete push notification system with expo-notifications

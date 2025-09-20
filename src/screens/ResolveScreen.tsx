@@ -398,24 +398,6 @@ export const ResolveScreen: React.FC = () => {
     console.log('Notifications pressed');
   };
 
-  // We'll fetch balance dynamically when needed rather than storing in AuthContext
-  const [userBalance, setUserBalance] = useState<number>(0);
-
-  // Fetch user balance
-  useEffect(() => {
-    const fetchUserBalance = async () => {
-      if (user?.userId) {
-        try {
-          const { data: userData } = await client.models.User.get({ id: user.userId });
-          setUserBalance(userData?.balance || 0);
-        } catch (error) {
-          console.error('Error fetching user balance:', error);
-        }
-      }
-    };
-
-    fetchUserBalance();
-  }, [user]);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>

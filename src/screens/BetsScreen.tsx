@@ -172,7 +172,20 @@ export const BetsScreen: React.FC = () => {
         );
 
         const validInvitations: BetInvitation[] = invitationsWithDetails
-          .filter((inv): inv is InvitationWithDetails => !!inv && inv.bet !== null)
+          .filter((inv): inv is InvitationWithDetails => {
+            // Filter out null invitations and invitations without bets
+            if (!inv || inv.bet === null) return false;
+
+            // Filter out invitations for bets that are no longer joinable
+            const bet = inv.bet as Bet;
+            if (bet.status !== 'ACTIVE') {
+              // Optionally decline/expire these invitations automatically
+              console.log(`Filtering out invitation for bet ${bet.id} with status ${bet.status}`);
+              return false;
+            }
+
+            return true;
+          })
           .map((inv) => ({
             id: inv.id,
             betId: inv.betId,
@@ -225,6 +238,39 @@ export const BetsScreen: React.FC = () => {
 
     try {
       setProcessingInvitations(prev => new Set(prev).add(invitation.id));
+
+      // Get current bet data to check if it's still joinable
+      const { data: currentBet } = await client.models.Bet.get({ id: invitation.betId });
+
+      if (!currentBet) {
+        Alert.alert('Error', 'This bet no longer exists.');
+        return;
+      }
+
+      // Check if bet is still in ACTIVE status (joinable)
+      if (currentBet.status !== 'ACTIVE') {
+        let statusMessage = '';
+        switch (currentBet.status) {
+          case 'RESOLVED':
+            statusMessage = 'This bet has already been resolved.';
+            break;
+          case 'PENDING_RESOLUTION':
+            statusMessage = 'This bet is pending resolution and can no longer be joined.';
+            break;
+          case 'CANCELLED':
+            statusMessage = 'This bet has been cancelled.';
+            break;
+          case 'LIVE':
+            statusMessage = 'This bet is now live and can no longer be joined.';
+            break;
+          default:
+            statusMessage = 'This bet is no longer available to join.';
+        }
+        Alert.alert('Bet Not Available', statusMessage);
+        // Remove the invalid invitation from the list
+        setBetInvitations(prev => prev.filter(inv => inv.id !== invitation.id));
+        return;
+      }
 
       // Get current user data to check balance
       const { data: currentUser } = await client.models.User.get({ id: user.userId });
@@ -1366,7 +1412,6 @@ const styles = StyleSheet.create({
     marginHorizontal: spacing.md,
     marginTop: spacing.xs,
     borderRadius: spacing.radius.sm,
-    ...commonStyles.flexCenter,
   },
   toastText: {
     ...textStyles.button,
