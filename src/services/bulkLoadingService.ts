@@ -164,7 +164,6 @@ const loadBetsWithPagination = async (
       break;
     }
 
-    console.log(`📄 Loading bets page ${pageCount}/${maxPages} (limit: ${limit})`);
 
     const query = client.models.Bet.list({
       filter: {
@@ -183,7 +182,6 @@ const loadBetsWithPagination = async (
       break;
     }
 
-    console.log(`📦 Page ${pageCount}: loaded ${result.data?.length || 0} bets (total: ${allBets.length})`);
 
   } while (nextToken && allBets.length < 1000);
 
@@ -205,7 +203,6 @@ const loadParticipantsForBets = async (
     batches.push(betIds.slice(i, i + maxBetIdsPerQuery));
   }
 
-  console.log(`👥 Loading participants in ${batches.length} batches (${betIds.length} total bet IDs)`);
 
   const allParticipants: any[] = [];
 
@@ -215,7 +212,6 @@ const loadParticipantsForBets = async (
 
     const batchPromises = concurrentBatches.map(async (batchBetIds, batchIndex) => {
       const actualBatchIndex = i + batchIndex + 1;
-      console.log(`📋 Processing participant batch ${actualBatchIndex}/${batches.length} (${batchBetIds.length} bet IDs)`);
 
       let batchParticipants: any[] = [];
       let nextToken: string | undefined;
@@ -248,7 +244,6 @@ const loadParticipantsForBets = async (
 
       } while (nextToken && batchParticipants.length < limit * 5);
 
-      console.log(`✅ Batch ${actualBatchIndex}: loaded ${batchParticipants.length} participants`);
       return batchParticipants;
     });
 
@@ -291,25 +286,20 @@ export const bulkLoadBetsWithParticipants = async (
   if (useCache && !forceRefresh) {
     const cached = cache.get<Bet[]>(cacheKey);
     if (cached) {
-      console.log(`🎯 Cache hit for ${cacheKey} (${cached.length} bets)`);
       return cached;
     }
   }
 
   try {
-    console.log('🚀 Starting controlled bulk load for bet statuses:', statusFilters);
-    console.log(`📊 Limits: ${limit} bets, ${BULK_LOADING_CONFIG.MAX_PARTICIPANTS_PER_QUERY} participants/query`);
     const startTime = performance.now();
 
     // Step 1: Fetch bets with pagination and limits
     const betsData = await loadBetsWithPagination(statusFilters, limit);
 
     if (betsData.length === 0) {
-      console.log('📭 No bets found');
       return [];
     }
 
-    console.log(`📦 Loaded ${betsData.length} bets in ${performance.now() - startTime}ms`);
 
     // Transform and validate bets
     const validBets = betsData
@@ -318,7 +308,6 @@ export const bulkLoadBetsWithParticipants = async (
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()); // Sort by createdAt descending (newest first)
 
     if (validBets.length === 0) {
-      console.log('❌ No valid bets after transformation');
       return [];
     }
 
@@ -328,7 +317,6 @@ export const bulkLoadBetsWithParticipants = async (
 
     const allParticipants = await loadParticipantsForBets(betIds);
 
-    console.log(`👥 Loaded ${allParticipants.length} participants in ${performance.now() - participantStartTime}ms`);
 
     // Step 3: Group participants by betId (client-side processing)
     const participantsByBetId = new Map<string, Participant[]>();
@@ -350,12 +338,10 @@ export const bulkLoadBetsWithParticipants = async (
     });
 
     const totalTime = performance.now() - startTime;
-    console.log(`✅ Controlled bulk loading completed in ${totalTime}ms (${validBets.length} bets, ${allParticipants.length} participants)`);
 
     // Cache the result
     if (useCache) {
       cache.set(cacheKey, validBets);
-      console.log(`💾 Cached result for ${cacheKey}`);
     }
 
     return validBets;
@@ -387,7 +373,6 @@ export const bulkLoadUserBetsWithParticipants = async (
   options: { limit?: number; useCache?: boolean; forceRefresh?: boolean } = {}
 ): Promise<Bet[]> => {
   try {
-    console.log('🧑‍💼 Bulk loading bets for user:', userId);
 
     const cacheKey = `user_bets_${userId}_${options.limit || 100}`;
 
@@ -395,7 +380,6 @@ export const bulkLoadUserBetsWithParticipants = async (
     if (options.useCache !== false && !options.forceRefresh) {
       const cached = cache.get<Bet[]>(cacheKey);
       if (cached) {
-        console.log(`🎯 Cache hit for user bets ${userId} (${cached.length} bets)`);
         return cached;
       }
     }
@@ -413,7 +397,6 @@ export const bulkLoadUserBetsWithParticipants = async (
       return isCreator || isParticipant;
     });
 
-    console.log(`👤 Found ${userBets.length} bets for user ${userId}`);
 
     // Cache the filtered result
     if (options.useCache !== false) {
@@ -438,7 +421,6 @@ export const bulkLoadJoinableBetsWithParticipants = async (
   options: { limit?: number; useCache?: boolean; forceRefresh?: boolean } = {}
 ): Promise<Bet[]> => {
   try {
-    console.log('🎯 Bulk loading joinable bets for user:', userId);
 
     const cacheKey = `joinable_bets_${userId}_${options.limit || 50}`;
 
@@ -446,7 +428,6 @@ export const bulkLoadJoinableBetsWithParticipants = async (
     if (options.useCache !== false && !options.forceRefresh) {
       const cached = cache.get<Bet[]>(cacheKey);
       if (cached) {
-        console.log(`🎯 Cache hit for joinable bets ${userId} (${cached.length} bets)`);
         return cached;
       }
     }
@@ -465,7 +446,6 @@ export const bulkLoadJoinableBetsWithParticipants = async (
       return !isCreator && !isParticipant;
     });
 
-    console.log(`🎮 Found ${joinableBets.length} joinable bets for user ${userId}`);
 
     // Cache the filtered result
     if (options.useCache !== false) {
@@ -485,7 +465,6 @@ export const bulkLoadJoinableBetsWithParticipants = async (
  */
 export const clearBulkLoadingCache = (): void => {
   cache.clear();
-  console.log('🗑️ Bulk loading cache cleared');
 };
 
 /**
@@ -496,7 +475,6 @@ export const getBulkLoadingCacheStats = (): { size: number; keys: string[] } => 
     size: (cache as any).cache.size,
     keys: Array.from((cache as any).cache.keys()) as string[]
   };
-  console.log('📊 Cache stats:', stats);
   return stats;
 };
 

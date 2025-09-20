@@ -198,7 +198,6 @@ export const BetsScreen: React.FC = () => {
 
     try {
       setIsLoading(true);
-      console.log('🧑‍💼 Fetching user bets with bulk loading for user:', user.userId);
 
       // Use bulk loading service for efficient data fetching
       const userBets = await bulkLoadUserBetsWithParticipants(user.userId, {
@@ -206,7 +205,6 @@ export const BetsScreen: React.FC = () => {
         useCache: true
       });
 
-      console.log(`✅ Bulk loaded ${userBets.length} user bets`);
       setBets(userBets);
     } catch (error) {
       console.error('❌ Error bulk loading user bets:', error);
@@ -362,7 +360,6 @@ export const BetsScreen: React.FC = () => {
   const onRefresh = async () => {
     try {
       setRefreshing(true);
-      console.log('🔄 Refreshing user bets and invitations');
 
       // Clear cache for fresh data on manual refresh
       clearBulkLoadingCache();
@@ -389,7 +386,6 @@ export const BetsScreen: React.FC = () => {
       }
     }).subscribe({
       next: async (data) => {
-        console.log('🔄 Real-time bet update detected:', data.items.length, 'bets updated');
         // Clear cache and refetch to get latest data
         clearBulkLoadingCache();
         await fetchBets();
@@ -402,7 +398,6 @@ export const BetsScreen: React.FC = () => {
     // Set up real-time subscription for participant changes
     const participantSubscription = client.models.Participant.observeQuery().subscribe({
       next: async (participantData) => {
-        console.log('🔄 Real-time participant update detected:', participantData.items.length, 'participants updated');
         // Clear cache and refetch to get latest data
         clearBulkLoadingCache();
         await fetchBets();
