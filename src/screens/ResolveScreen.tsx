@@ -73,6 +73,7 @@ export const ResolveScreen: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isResolving, setIsResolving] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [selectedSides, setSelectedSides] = useState<Record<string, 'A' | 'B' | null>>({});
 
   useEffect(() => {
     if (!user) return;
@@ -246,7 +247,7 @@ export const ResolveScreen: React.FC = () => {
     }
   };
 
-  const handleResolveBet = async (bet: Bet, winningSide: 'A' | 'B') => {
+  const handleSideSelection = (bet: Bet, side: 'A' | 'B') => {
     if (isResolving) return;
 
     // Only allow creator to resolve bets
@@ -255,14 +256,17 @@ export const ResolveScreen: React.FC = () => {
       return;
     }
 
-    Alert.alert(
-      'Resolve Bet',
-      `Resolve "${bet.title}" with ${winningSide === 'A' ? bet.odds.sideAName || 'Side A' : bet.odds.sideBName || 'Side B'} as the winner?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Resolve', onPress: () => confirmResolveBet(bet, winningSide) },
-      ]
-    );
+    setSelectedSides(prev => ({
+      ...prev,
+      [bet.id]: prev[bet.id] === side ? null : side // Toggle selection
+    }));
+  };
+
+  const handleConfirmResolution = async (bet: Bet) => {
+    const selectedSide = selectedSides[bet.id];
+    if (!selectedSide) return;
+
+    await confirmResolveBet(bet, selectedSide);
   };
 
   const confirmResolveBet = async (bet: Bet, winningSide: 'A' | 'B') => {
@@ -309,11 +313,12 @@ export const ResolveScreen: React.FC = () => {
         );
       }
 
-      Alert.alert(
-        'Bet Resolved!',
-        `"${bet.title}" has been resolved. Payouts have been distributed to winners.`,
-        [{ text: 'OK' }]
-      );
+
+      // Clear the selection for this bet
+      setSelectedSides(prev => ({
+        ...prev,
+        [bet.id]: null
+      }));
 
     } catch (error) {
       console.error('Error resolving bet:', error);
@@ -459,60 +464,91 @@ export const ResolveScreen: React.FC = () => {
               {/* Resolution Actions - Only show if user is creator */}
               {bet.creatorId === user?.userId && (
                 <View style={styles.resolutionActions}>
-                  <Text style={styles.resolutionTitle}>Resolve this bet:</Text>
+                  {/* Payout Preview */}
+                  <View style={styles.payoutPreview}>
+                    <Text style={styles.payoutTitle}>Total Pot: {formatCurrency(bet.totalPot)}</Text>
+                    <Text style={styles.payoutSubtitle}>Winners split the entire pot based on their contribution</Text>
+                  </View>
+
+                  <Text style={styles.resolutionTitle}>Select the winning side:</Text>
                   <View style={styles.resolutionButtons}>
                     <TouchableOpacity
                       style={[
                         styles.resolutionButton,
                         styles.resolutionButtonA,
+                        selectedSides[bet.id] === 'A' && styles.resolutionButtonSelected,
                         isResolving === bet.id && styles.resolutionButtonDisabled
                       ]}
-                      onPress={() => handleResolveBet(bet, 'A')}
+                      onPress={() => handleSideSelection(bet, 'A')}
                       disabled={isResolving === bet.id}
                     >
-                      {isResolving === bet.id ? (
-                        <ActivityIndicator size="small" color={colors.background} />
-                      ) : (
-                        <>
-                          <Text style={styles.resolutionButtonText}>
-                            {bet.odds.sideAName || 'Side A'} WINS
-                          </Text>
-                          <Text style={styles.resolutionButtonPayout}>
-                            {bet.participants?.filter(p => p.side === 'A').length || 0} winners
-                          </Text>
-                        </>
-                      )}
+                      <>
+                        <Text style={[
+                          styles.resolutionButtonText,
+                          selectedSides[bet.id] === 'A' && styles.resolutionButtonTextSelected
+                        ]}>
+                          {bet.odds.sideAName || 'Side A'}
+                        </Text>
+                        <Text style={[
+                          styles.resolutionButtonPayout,
+                          selectedSides[bet.id] === 'A' && styles.resolutionButtonPayoutSelected
+                        ]}>
+                          {bet.participants?.filter(p => p.side === 'A').length || 0} winners
+                        </Text>
+                      </>
                     </TouchableOpacity>
 
                     <TouchableOpacity
                       style={[
                         styles.resolutionButton,
                         styles.resolutionButtonB,
+                        selectedSides[bet.id] === 'B' && styles.resolutionButtonSelected,
                         isResolving === bet.id && styles.resolutionButtonDisabled
                       ]}
-                      onPress={() => handleResolveBet(bet, 'B')}
+                      onPress={() => handleSideSelection(bet, 'B')}
+                      disabled={isResolving === bet.id}
+                    >
+                      <>
+                        <Text style={[
+                          styles.resolutionButtonText,
+                          selectedSides[bet.id] === 'B' && styles.resolutionButtonTextSelected
+                        ]}>
+                          {bet.odds.sideBName || 'Side B'}
+                        </Text>
+                        <Text style={[
+                          styles.resolutionButtonPayout,
+                          selectedSides[bet.id] === 'B' && styles.resolutionButtonPayoutSelected
+                        ]}>
+                          {bet.participants?.filter(p => p.side === 'B').length || 0} winners
+                        </Text>
+                      </>
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Confirm Resolution Button */}
+                  {selectedSides[bet.id] && (
+                    <TouchableOpacity
+                      style={[
+                        styles.confirmButton,
+                        isResolving === bet.id && styles.confirmButtonDisabled
+                      ]}
+                      onPress={() => handleConfirmResolution(bet)}
                       disabled={isResolving === bet.id}
                     >
                       {isResolving === bet.id ? (
                         <ActivityIndicator size="small" color={colors.background} />
                       ) : (
                         <>
-                          <Text style={styles.resolutionButtonText}>
-                            {bet.odds.sideBName || 'Side B'} WINS
+                          <Text style={styles.confirmButtonText}>
+                            Resolve: {selectedSides[bet.id] === 'A' ? bet.odds.sideAName || 'Side A' : bet.odds.sideBName || 'Side B'} Wins
                           </Text>
-                          <Text style={styles.resolutionButtonPayout}>
-                            {bet.participants?.filter(p => p.side === 'B').length || 0} winners
+                          <Text style={styles.confirmButtonSubtext}>
+                            This action cannot be undone
                           </Text>
                         </>
                       )}
                     </TouchableOpacity>
-                  </View>
-
-                  {/* Payout Preview */}
-                  <View style={styles.payoutPreview}>
-                    <Text style={styles.payoutTitle}>Total Pot: {formatCurrency(bet.totalPot)}</Text>
-                    <Text style={styles.payoutSubtitle}>Winners split the entire pot based on their contribution</Text>
-                  </View>
+                  )}
                 </View>
               )}
             </View>
@@ -653,6 +689,47 @@ const styles = StyleSheet.create({
     opacity: 0.9,
     textAlign: 'center',
   },
+  resolutionButtonSelected: {
+    borderWidth: 3,
+    borderColor: colors.primary,
+    backgroundColor: colors.background,
+  },
+  resolutionButtonTextSelected: {
+    color: colors.primary,
+  },
+  resolutionButtonPayoutSelected: {
+    color: colors.textSecondary,
+  },
+
+  // Confirm Button
+  confirmButton: {
+    backgroundColor: colors.primary,
+    borderRadius: spacing.radius.sm,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.md,
+    minHeight: 50,
+  },
+  confirmButtonDisabled: {
+    opacity: 0.6,
+  },
+  confirmButtonText: {
+    ...textStyles.button,
+    color: colors.background,
+    fontSize: typography.fontSize.base,
+    fontWeight: typography.fontWeight.bold,
+    textAlign: 'center',
+    marginBottom: spacing.xs / 2,
+  },
+  confirmButtonSubtext: {
+    ...textStyles.caption,
+    color: colors.background,
+    fontSize: typography.fontSize.xs,
+    opacity: 0.8,
+    textAlign: 'center',
+  },
 
   // Payout Preview
   payoutPreview: {
@@ -661,6 +738,7 @@ const styles = StyleSheet.create({
     padding: spacing.sm,
     borderWidth: 1,
     borderColor: colors.border,
+    marginBottom: spacing.md,
   },
   payoutTitle: {
     ...textStyles.h4,
