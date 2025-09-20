@@ -82,6 +82,10 @@ export const BetsScreen: React.FC = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [processingInvitations, setProcessingInvitations] = useState<Set<string>>(new Set());
 
+  // Toast state
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+
   useEffect(() => {
     // Fetch initial bet data, bet invitations, and set up real-time subscriptions
     const fetchData = async () => {
@@ -214,54 +218,32 @@ export const BetsScreen: React.FC = () => {
   };
 
   // Handle bet invitation acceptance
-  const acceptBetInvitation = async (invitation: BetInvitation, selectedSide?: string) => {
-    if (!user?.userId || !invitation.bet) return;
+  const acceptBetInvitation = async (invitation: BetInvitation, selectedSide: string) => {
+    if (!user?.userId || !invitation.bet || !selectedSide) return;
 
-    // Check if we need to prompt for side selection
-    const hasSpecificSide = invitation.invitedSide && invitation.invitedSide.trim() !== '';
-    const sideToJoin = hasSpecificSide ? invitation.invitedSide : selectedSide;
-
-    // If no specific side and no selected side, prompt user to choose
-    if (!hasSpecificSide && !selectedSide) {
-      const parseBetOdds = (odds: any) => {
-        try {
-          const parsedOdds = typeof odds === 'string' ? JSON.parse(odds) : odds;
-          return {
-            sideAName: parsedOdds?.sideAName || 'Side A',
-            sideBName: parsedOdds?.sideBName || 'Side B',
-          };
-        } catch {
-          return { sideAName: 'Side A', sideBName: 'Side B' };
-        }
-      };
-
-      const betOdds = parseBetOdds(invitation.bet.odds);
-
-      Alert.alert(
-        'Choose Your Side',
-        `Which side do you want to join for "${invitation.bet.title}"?`,
-        [
-          {
-            text: betOdds.sideAName,
-            onPress: () => acceptBetInvitation(invitation, 'A'),
-          },
-          {
-            text: betOdds.sideBName,
-            onPress: () => acceptBetInvitation(invitation, 'B'),
-          },
-          {
-            text: 'Cancel',
-            style: 'cancel',
-          },
-        ]
-      );
-      return;
-    }
-
-    if (!sideToJoin) return;
+    const betAmount = invitation.bet.betAmount || 0;
 
     try {
       setProcessingInvitations(prev => new Set(prev).add(invitation.id));
+
+      // Get current user data to check balance
+      const { data: currentUser } = await client.models.User.get({ id: user.userId });
+
+      if (!currentUser) {
+        Alert.alert('Error', 'Unable to verify your account. Please try again.');
+        return;
+      }
+
+      const currentBalance = currentUser.balance || 0;
+
+      // Check if user has sufficient balance
+      if (currentBalance < betAmount) {
+        Alert.alert(
+          'Insufficient Balance',
+          `You need $${betAmount.toFixed(2)} to join this bet, but you only have $${currentBalance.toFixed(2)}.`
+        );
+        return;
+      }
 
       // Update invitation status
       await client.models.BetInvitation.update({
@@ -273,11 +255,24 @@ export const BetsScreen: React.FC = () => {
       await client.models.Participant.create({
         betId: invitation.betId,
         userId: user.userId,
-        side: sideToJoin,
-        amount: invitation.bet.betAmount || 0,
+        side: selectedSide,
+        amount: betAmount,
         status: 'ACCEPTED',
         payout: 0,
         joinedAt: new Date().toISOString(),
+      });
+
+      // Deduct bet amount from user's balance
+      await client.models.User.update({
+        id: user.userId,
+        balance: currentBalance - betAmount,
+      });
+
+      // Update bet's total pot
+      const currentTotalPot = invitation.bet.totalPot || 0;
+      await client.models.Bet.update({
+        id: invitation.betId,
+        totalPot: currentTotalPot + betAmount,
       });
 
       // Send notification to the inviter
@@ -297,7 +292,8 @@ export const BetsScreen: React.FC = () => {
       // Remove from local invitations
       setBetInvitations(prev => prev.filter(inv => inv.id !== invitation.id));
 
-      // Refresh bets to show updated participant list
+      // Refresh bets to show updated participant list and clear cache for fresh data
+      clearBulkLoadingCache();
       await fetchBets();
 
       // Get side name for success message
@@ -314,9 +310,16 @@ export const BetsScreen: React.FC = () => {
       };
 
       const betOdds = parseBetOdds(invitation.bet.odds);
-      const joinedSideName = sideToJoin === 'A' ? betOdds.sideAName : betOdds.sideBName;
+      const joinedSideName = selectedSide === 'A' ? betOdds.sideAName : betOdds.sideBName;
 
-      Alert.alert('Success', `You've joined "${invitation.bet.title}" on ${joinedSideName}!`);
+      // Show toast notification
+      setToastMessage(`Joined "${invitation.bet.title}" on ${joinedSideName}! $${betAmount.toFixed(2)} deducted.`);
+      setShowToast(true);
+
+      // Hide toast after 3 seconds
+      setTimeout(() => {
+        setShowToast(false);
+      }, 3000);
     } catch (error) {
       console.error('Error accepting bet invitation:', error);
       Alert.alert('Error', 'Failed to accept invitation. Please try again.');
@@ -555,6 +558,14 @@ export const BetsScreen: React.FC = () => {
         liveGame={liveGame}
       />
 
+      {/* Toast Banner */}
+      {showToast && (
+        <View style={styles.toastBanner}>
+          <Ionicons name="checkmark-circle" size={20} color={colors.background} />
+          <Text style={styles.toastText}>{toastMessage}</Text>
+        </View>
+      )}
+
       <ScrollView
         style={styles.content}
         showsVerticalScrollIndicator={false}
@@ -581,7 +592,7 @@ export const BetsScreen: React.FC = () => {
               <BetInvitationCard
                 key={invitation.id}
                 invitation={invitation}
-                onAccept={() => acceptBetInvitation(invitation)}
+                onAccept={(side) => acceptBetInvitation(invitation, side)}
                 onDecline={() => declineBetInvitation(invitation)}
                 isProcessing={processingInvitations.has(invitation.id)}
               />
@@ -732,7 +743,7 @@ export const BetsScreen: React.FC = () => {
 // Bet Invitation Card Component
 interface BetInvitationCardProps {
   invitation: BetInvitation;
-  onAccept: () => void;
+  onAccept: (side: string) => void;
   onDecline: () => void;
   isProcessing: boolean;
 }
@@ -743,6 +754,8 @@ const BetInvitationCard: React.FC<BetInvitationCardProps> = ({
   onDecline,
   isProcessing,
 }) => {
+  const [selectedSide, setSelectedSide] = React.useState<string | null>(null);
+
   if (!invitation.bet) return null;
 
   const parseBetOdds = (odds: any) => {
@@ -813,6 +826,55 @@ const BetInvitationCard: React.FC<BetInvitationCardProps> = ({
             <Text style={styles.invitationMessageText}>"{invitation.message}"</Text>
           </View>
         )}
+
+        {/* Side Selection - only show if no specific side is invited */}
+        {!hasSpecificSide && (
+          <View style={styles.sideSelectionContainer}>
+            <Text style={styles.sideSelectionLabel}>Choose your side:</Text>
+            <View style={styles.sideOptions}>
+              <TouchableOpacity
+                style={[
+                  styles.sideOption,
+                  selectedSide === 'A' && styles.sideOptionSelected
+                ]}
+                onPress={() => setSelectedSide('A')}
+                activeOpacity={0.7}
+              >
+                <View style={[
+                  styles.sideOptionIndicator,
+                  selectedSide === 'A' && styles.sideOptionIndicatorSelected
+                ]} />
+                <Text style={[
+                  styles.sideOptionText,
+                  selectedSide === 'A' && styles.sideOptionTextSelected
+                ]}>
+                  {betOdds.sideAName}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.sideOption,
+                  styles.sideOptionLast,
+                  selectedSide === 'B' && styles.sideOptionSelected
+                ]}
+                onPress={() => setSelectedSide('B')}
+                activeOpacity={0.7}
+              >
+                <View style={[
+                  styles.sideOptionIndicator,
+                  selectedSide === 'B' && styles.sideOptionIndicatorSelected
+                ]} />
+                <Text style={[
+                  styles.sideOptionText,
+                  selectedSide === 'B' && styles.sideOptionTextSelected
+                ]}>
+                  {betOdds.sideBName}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
       </View>
 
       {/* Action Buttons */}
@@ -836,17 +898,29 @@ const BetInvitationCard: React.FC<BetInvitationCardProps> = ({
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.invitationButton, styles.acceptButton]}
-          onPress={onAccept}
-          disabled={isProcessing}
+          style={[
+            styles.invitationButton,
+            styles.acceptButton,
+            (!hasSpecificSide && !selectedSide) && styles.acceptButtonDisabled
+          ]}
+          onPress={() => onAccept(hasSpecificSide ? invitation.invitedSide : selectedSide!)}
+          disabled={isProcessing || (!hasSpecificSide && !selectedSide)}
           activeOpacity={0.7}
         >
           {isProcessing ? (
             <ActivityIndicator size="small" color={colors.background} />
           ) : (
             <>
-              <Ionicons name="checkmark" size={16} color={colors.background} />
-              <Text style={[styles.invitationButtonText, styles.acceptButtonText]}>
+              <Ionicons
+                name="checkmark"
+                size={16}
+                color={(!hasSpecificSide && !selectedSide) ? colors.textMuted : colors.background}
+              />
+              <Text style={[
+                styles.invitationButtonText,
+                styles.acceptButtonText,
+                (!hasSpecificSide && !selectedSide) && styles.acceptButtonTextDisabled
+              ]}>
                 Accept & Join
               </Text>
             </>
@@ -1212,5 +1286,93 @@ const styles = StyleSheet.create({
   },
   acceptButtonText: {
     color: colors.background,
+  },
+  acceptButtonDisabled: {
+    backgroundColor: colors.border,
+    borderColor: colors.border,
+  },
+  acceptButtonTextDisabled: {
+    color: colors.textMuted,
+  },
+
+  // Side Selection Styles
+  sideSelectionContainer: {
+    marginTop: spacing.sm,
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  sideSelectionLabel: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: typography.fontWeight.medium,
+    marginBottom: spacing.xs,
+  },
+  sideOptions: {
+    flexDirection: 'row',
+  },
+  sideOption: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: spacing.radius.sm,
+    marginRight: spacing.sm,
+  },
+  sideOptionLast: {
+    marginRight: 0,
+  },
+  sideOptionSelected: {
+    backgroundColor: colors.primary + '15',
+    borderColor: colors.primary,
+  },
+  sideOptionIndicator: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: colors.border,
+    marginRight: spacing.xs,
+    backgroundColor: colors.background,
+  },
+  sideOptionIndicatorSelected: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primary,
+  },
+  sideOptionText: {
+    ...textStyles.button,
+    color: colors.textSecondary,
+    fontWeight: typography.fontWeight.medium,
+    flex: 1,
+  },
+  sideOptionTextSelected: {
+    color: colors.primary,
+    fontWeight: typography.fontWeight.semibold,
+  },
+
+  // Toast Banner
+  toastBanner: {
+    backgroundColor: colors.success,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    marginHorizontal: spacing.md,
+    marginTop: spacing.xs,
+    borderRadius: spacing.radius.sm,
+    ...commonStyles.flexCenter,
+  },
+  toastText: {
+    ...textStyles.button,
+    color: colors.background,
+    marginLeft: spacing.xs,
+    fontWeight: typography.fontWeight.medium,
+    textAlign: 'center',
   },
 });

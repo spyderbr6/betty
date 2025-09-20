@@ -33,7 +33,7 @@ const schema = a.schema({
     })
     .authorization((allow) => [
       allow.owner().to(['create', 'read', 'update', 'delete']),
-      allow.authenticated().to(['read', 'create']) // Allow authenticated users to create User records and read others
+      allow.authenticated().to(['read', 'create', 'update']) // Allow authenticated users to update any user (for balance changes, stats, etc.)
     ]),
 
   // Notification/Event Log for efficient querying
@@ -121,7 +121,7 @@ const schema = a.schema({
     })
     .authorization((allow) => [
       allow.owner().to(['create', 'read', 'update', 'delete']),
-      allow.authenticated().to(['read', 'create']) // Allow any authenticated user to create bets and read all bets
+      allow.authenticated().to(['read', 'create', 'update']) // Allow any authenticated user to create bets, read all bets, and update (for total pot changes)
     ]),
 
   Participant: a
