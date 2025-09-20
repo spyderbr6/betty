@@ -22,11 +22,19 @@
     "noFallthroughCasesInSwitch": true
   },
   "include": [
-    "**/*.ts",
-    "**/*.tsx"
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "App.tsx",
   ],
   "exclude": [
-    "node_modules"
-  ],
-  "extends": "expo/tsconfig.base"
+    "node_modules",
+    ".references",
+    "fresh-backup",
+    "dist",
+    "build",
+    ".expo",
+    "android",
+    "ios",
+    "amplify/**/*.ts",
+  ]
 }
