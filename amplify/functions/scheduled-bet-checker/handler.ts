@@ -1,4 +1,4 @@
-import type { ScheduledHandler } from 'aws-lambda';
+import type { Handler } from 'aws-lambda';
 import { Amplify } from 'aws-amplify';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../data/resource.js';
@@ -8,8 +8,8 @@ Amplify.configure(
   {
     API: {
       GraphQL: {
-        endpoint: process.env.AMPLIFY_DATA_GRAPHQL_ENDPOINT,
-        region: process.env.AWS_REGION,
+        endpoint: process.env.AMPLIFY_DATA_GRAPHQL_ENDPOINT || '',
+        region: process.env.AWS_REGION || 'us-east-1',
         defaultAuthMode: 'iam'
       }
     }
@@ -23,7 +23,7 @@ const client = generateClient<Schema>({
   authMode: 'iam'
 });
 
-export const handler: ScheduledHandler = async (event) => {
+export const handler: Handler = async (event) => {
   console.log('⏰ Scheduled bet checker triggered:', JSON.stringify(event, null, 2));
 
   try {

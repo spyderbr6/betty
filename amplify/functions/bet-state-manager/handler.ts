@@ -4,12 +4,19 @@ import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../data/resource.js';
 
 // Configure Amplify for server-side usage
+const endpoint = process.env.AMPLIFY_DATA_GRAPHQL_ENDPOINT;
+const region = process.env.AWS_REGION;
+
+if (!endpoint) {
+  throw new Error('AMPLIFY_DATA_GRAPHQL_ENDPOINT environment variable is required');
+}
+
 Amplify.configure(
   {
     API: {
       GraphQL: {
-        endpoint: process.env.AMPLIFY_DATA_GRAPHQL_ENDPOINT,
-        region: process.env.AWS_REGION,
+        endpoint,
+        region: region || 'us-east-1',
         defaultAuthMode: 'iam'
       }
     }

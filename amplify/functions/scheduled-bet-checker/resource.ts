@@ -8,5 +8,4 @@ export const scheduledBetChecker = defineFunction({
   },
   timeoutSeconds: 300, // 5 minutes timeout
   memoryMB: 512,
-  schedule: 'rate(1 minute)', // Run every minute
 });
