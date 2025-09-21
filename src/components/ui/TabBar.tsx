@@ -81,8 +81,7 @@ export const TabBar: React.FC<BottomTabBarProps> = ({
           const pendingResolutionsCount = betsWithParticipants.filter(({ bet, participants }) => {
             const isCreator = bet.creatorId === user.userId;
             const hasParticipants = participants.length > 0;
-            return isCreator && hasParticipants && (bet.status === 'PENDING_RESOLUTION' ||
-              (bet.status === 'ACTIVE' && new Date(bet.deadline!) < new Date()));
+            return isCreator && hasParticipants && bet.status === 'PENDING_RESOLUTION';
           }).length;
 
           setTabCounts({
