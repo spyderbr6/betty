@@ -12,17 +12,7 @@ export const auth = defineAuth({
     // Additional user attributes for betting platform
     preferredUsername: {
       required: true,
-    },
-    // Custom attributes for betting statistics
-    'custom:trustScore': {
-      dataType: 'Number',
-    },
-    'custom:totalBets': {
-      dataType: 'Number', 
-    },
-    'custom:winRate': {
-      dataType: 'Number',
-    },
+    }
   },
   groups: ['bettors', 'moderators'],
 });
