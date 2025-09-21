@@ -86,9 +86,9 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
-    namespace 'com.anonymous.sidebet'
+    namespace 'com.sidebet.app'
     defaultConfig {
-        applicationId 'com.anonymous.sidebet'
+        applicationId 'com.sidebet.app'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1

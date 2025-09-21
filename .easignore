@@ -1,0 +1,26 @@
+# EAS Build ignore file
+# This controls what gets uploaded to EAS Build servers
+# Note: amplify_outputs.json is NOT ignored here, so it will be included in builds
+
+# Standard ignores
+node_modules/
+.git/
+.expo/
+.amplify/
+.references/
+.claude/
+
+# Development files
+.env.local
+.vscode/
+.idea/
+
+# Build artifacts
+android/build/
+android/.gradle/
+android/app/build/
+ios/build/
+
+# Temporary files
+*.tmp
+*.log

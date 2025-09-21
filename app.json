@@ -16,8 +16,9 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.anonymous.sidebet",
-      "jsEngine": "jsc"
+      "bundleIdentifier": "com.sidebet.app",
+      "jsEngine": "jsc",
+      "buildNumber": "1"
     },
     "android": {
       "adaptiveIcon": {
@@ -25,20 +26,27 @@
         "backgroundColor": "#111827"
       },
       "jsEngine": "jsc",
-      "package": "com.anonymous.sidebet"
+      "package": "com.sidebet.app",
+      "versionCode": 1
     },
     "web": {
       "favicon": "./assets/icon.png"
     },
-    "plugins": ["expo-dev-client"],
+    "plugins": [
+      "expo-dev-client"
+    ],
     "scheme": "sidebet",
     "developmentClient": {
       "silentLaunch": false
     },
     "extra": {
       "eas": {
-        "projectId": "your-project-id"
+        "projectId": "f26fa72b-c85a-4174-90bb-1b14c526ed05"
       }
-    }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "owner": "bursicd"
   }
 }
