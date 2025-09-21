@@ -434,7 +434,7 @@ export const BetsScreen: React.FC = () => {
         ]
       }
     }).subscribe({
-      next: async (data) => {
+      next: async (_data) => {
         // Clear cache and refetch to get latest data
         clearBulkLoadingCache();
         await fetchBets();
@@ -446,7 +446,7 @@ export const BetsScreen: React.FC = () => {
 
     // Set up real-time subscription for participant changes
     const participantSubscription = client.models.Participant.observeQuery().subscribe({
-      next: async (participantData) => {
+      next: async (_participantData) => {
         // Clear cache and refetch to get latest data
         clearBulkLoadingCache();
         await fetchBets();
