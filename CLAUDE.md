@@ -9,6 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with th
 - **iOS**: `npm run ios` - Run on iOS device/simulator
 - **TypeScript**: `npm run typecheck` - Check types
 - **Linting**: `npm run lint` - Run ESLint
+- **EAS BUILD**: 'eas build -p android --profile production' - ASK FIRST DO NOT RUN YOURSELF
 
 ## Architecture Overview
 

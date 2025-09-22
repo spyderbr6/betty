@@ -49,7 +49,6 @@
 
 ### **Priority 2: Real-time Feature Enhancements**
 - [ ] **Enhanced Notifications**: Complete push notification system with expo-notifications
-- [ ] **Live Activity Feed**: Real-time participant updates and bet activity
 - [ ] **Instant Balance Updates**: Immediate balance sync after payouts and joins
 
 ### **Priority 3: Advanced Bet Experience**
@@ -71,6 +70,9 @@
 - [ ] **QR Code Integration**: Bet sharing and quick joining via QR codes
 - [ ] **Camera Features**: Photo evidence for bet resolution
 - [ ] **Advanced Analytics**: User engagement metrics and bet performance tracking
+- [ ] **Live Activity Feed**: Real-time participant updates and bet activity
+
+
 
 ---
 
