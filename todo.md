@@ -45,7 +45,7 @@
 ### **Priority 1: UI/UX Polish & Bug Fixes**
 - [ ] **Warning Cleanup**: Resolve all soft warnings across project files
 - [ ] **Security Scanning**: Open repository for automated security scanning
-
+- [ ] look into why the states arent changing. we need them to change based on the lambda event bridge function
 
 ### **Priority 2: Real-time Feature Enhancements**
 - [ ] **Enhanced Notifications**: Complete push notification system with expo-notifications
@@ -53,15 +53,12 @@
 
 ### **Priority 3: Advanced Bet Experience**
 - [ ] **Bet Card Redesign**: Highlight user's pick with "Your Pick" indicators and improved state management
-- [ ] **State Definitions**: Clear transitions between active, live, pending resolution, pending acceptance
-- [ ] **Enhanced Filtering**: Improved My Bets filtering with search functionality
 
 ---
 
 ## 🚀 MEDIUM-TERM ROADMAP (Next Major Features)
 
 ### **Enhanced User Experience**
-- [ ] **Landing Page Redesign**: Modern login experience with improved onboarding
 - [ ] **Advanced Trust System**: Reputation tracking and bet resolution verification
 - [ ] **Location Services**: Location-based bet discovery and verification
 - [ ] **Profile Enhancements**: Wire support menu to GitHub feedback, additional profile options

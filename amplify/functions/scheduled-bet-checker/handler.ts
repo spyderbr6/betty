@@ -55,7 +55,7 @@ export const handler: Handler = async (event) => {
 };
 
 /**
- * Check and update expired bets from ACTIVE to PENDING_RESOLUTION
+ * Check and update expired bets from ACTIVE to PENDING_RESOLUTION or CANCELLED
  */
 async function updateExpiredBets(): Promise<{ updated: number; cancelled: number; errors: number; checkedCount: number }> {
   let updated = 0;
@@ -65,43 +65,37 @@ async function updateExpiredBets(): Promise<{ updated: number; cancelled: number
   try {
     console.log('🕐 [Scheduled] Checking for expired ACTIVE bets...');
 
-    // Get all ACTIVE bets
-    const { data: activeBets } = await client.models.Bet.list({
-      filter: { status: { eq: 'ACTIVE' } }
+    const now = new Date();
+    const currentISOString = now.toISOString();
+
+    // Get only ACTIVE bets that have expired (deadline < now) in a single optimized query
+    const { data: expiredActiveBets } = await client.models.Bet.list({
+      filter: {
+        and: [
+          { status: { eq: 'ACTIVE' } },
+          { deadline: { lt: currentISOString } }
+        ]
+      }
     });
 
-    if (!activeBets || activeBets.length === 0) {
-      console.log('✅ [Scheduled] No active bets found');
+    if (!expiredActiveBets || expiredActiveBets.length === 0) {
+      console.log('✅ [Scheduled] No expired active bets found');
       return { updated: 0, cancelled: 0, errors: 0, checkedCount: 0 };
     }
 
-    console.log(`📊 [Scheduled] Checking ${activeBets.length} active bets for expiration`);
+    console.log(`📊 [Scheduled] Found ${expiredActiveBets.length} expired ACTIVE bets to process`);
 
-    const now = new Date();
-    const expiredBets = activeBets.filter(bet => {
-      if (!bet.deadline) {
-        console.warn(`⚠️ Bet ${bet.id} has no deadline, skipping`);
-        return false;
-      }
-      const deadline = new Date(bet.deadline);
-      const isExpired = deadline < now;
-
-      if (isExpired) {
+    // Log each expired bet for debugging
+    expiredActiveBets.forEach(bet => {
+      if (bet.deadline) {
+        const deadline = new Date(bet.deadline);
         const minutesAgo = Math.floor((now.getTime() - deadline.getTime()) / (1000 * 60));
-        console.log(`🕐 Bet "${bet.title}" expired ${minutesAgo} minutes ago`);
+        console.log(`🕐 Bet "${bet.title}" (${bet.id}) expired ${minutesAgo} minutes ago`);
       }
-
-      return isExpired;
     });
 
-    console.log(`📊 [Scheduled] Found ${expiredBets.length} expired bets out of ${activeBets.length} active bets`);
-
-    if (expiredBets.length === 0) {
-      return { updated: 0, cancelled: 0, errors: 0, checkedCount: activeBets.length };
-    }
-
     // Process each expired bet
-    for (const bet of expiredBets) {
+    for (const bet of expiredActiveBets) {
       try {
         if (!bet.id) {
           console.error('❌ Bet missing ID, skipping');
@@ -147,7 +141,7 @@ async function updateExpiredBets(): Promise<{ updated: number; cancelled: number
     }
 
     console.log(`🎯 [Scheduled] Bet state update complete: ${updated} moved to pending, ${cancelled} cancelled, ${errors} errors`);
-    return { updated, cancelled, errors, checkedCount: activeBets.length };
+    return { updated, cancelled, errors, checkedCount: expiredActiveBets.length };
 
   } catch (error) {
     console.error('❌ Error in scheduled updateExpiredBets:', error);
