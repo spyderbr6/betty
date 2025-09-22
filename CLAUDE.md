@@ -74,6 +74,61 @@ export const functionName = defineFunction({
 });
 ```
 
+#### Correct Handler Implementation Pattern
+```typescript
+// amplify/functions/{function-name}/handler.ts
+import { EventBridgeHandler } from 'aws-lambda';
+import { generateClient } from 'aws-amplify/api';  // IMPORTANT: Use 'aws-amplify/api', not 'aws-amplify/data'
+import type { Schema } from '../../data/resource';
+import { Amplify } from 'aws-amplify';
+import { getAmplifyDataClientConfig } from '@aws-amplify/backend/function/runtime';
+import { env } from '$amplify/env/{function-name}';  // Replace {function-name} with actual function name
+
+// CRITICAL: Top-level await configuration - this is required for proper client initialization
+const { resourceConfig, libraryOptions } = await getAmplifyDataClientConfig(env);
+Amplify.configure(resourceConfig, libraryOptions);
+
+const client = generateClient<Schema>();
+
+// Use EventBridgeHandler type, not generic Handler
+export const handler: EventBridgeHandler<"Scheduled Event", null, boolean> = async (event) => {
+  console.log('Function triggered:', JSON.stringify(event, null, 2));
+
+  try {
+    // Your function logic here
+    const result = await yourMainFunction();
+
+    console.log('Function completed:', result);
+    return true; // Return boolean for EventBridge
+
+  } catch (error) {
+    console.error('Function failed:', error);
+    return false; // Return boolean for EventBridge
+  }
+};
+
+async function yourMainFunction() {
+  // Use client.models.ModelName.list/update/create as needed
+  // The client is properly configured and ready to use
+}
+```
+
+#### Required package.json for Functions
+```json
+{
+  "name": "function-name",
+  "version": "1.0.0",
+  "type": "module",
+  "dependencies": {
+    "aws-amplify": "^6.15.4"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.152",
+    "@types/node": "^24.4.0"
+  }
+}
+```
+
 #### Integration Steps for New Scheduled Functions:
 
 1. **Create Function Directory**: `amplify/functions/{function-name}/`

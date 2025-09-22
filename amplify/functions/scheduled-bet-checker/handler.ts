@@ -1,56 +1,27 @@
-import type { Handler } from 'aws-lambda';
+import { EventBridgeHandler } from 'aws-lambda';
+import { generateClient } from 'aws-amplify/api';
+import type { Schema } from '../../data/resource';
 import { Amplify } from 'aws-amplify';
-import { generateClient } from 'aws-amplify/data';
-import type { Schema } from '../../data/resource.js';
+import { getAmplifyDataClientConfig } from '@aws-amplify/backend/function/runtime';
+import { env } from '$amplify/env/scheduled-bet-checker';
 
-// Configure Amplify for server-side usage
-Amplify.configure(
-  {
-    API: {
-      GraphQL: {
-        endpoint: process.env.AMPLIFY_DATA_GRAPHQL_ENDPOINT || '',
-        region: process.env.AWS_REGION || 'us-east-1',
-        defaultAuthMode: 'iam'
-      }
-    }
-  },
-  {
-    ssr: true
-  }
-);
+const { resourceConfig, libraryOptions } = await getAmplifyDataClientConfig(env);
+Amplify.configure(resourceConfig, libraryOptions);
 
-const client = generateClient<Schema>({
-  authMode: 'iam'
-});
+const client = generateClient<Schema>();
 
-export const handler: Handler = async (event) => {
+export const handler: EventBridgeHandler<"Scheduled Event", null, boolean> = async (event) => {
   console.log('⏰ Scheduled bet checker triggered:', JSON.stringify(event, null, 2));
 
   try {
     const result = await updateExpiredBets();
 
     console.log(`✅ Scheduled bet check completed: ${JSON.stringify(result)}`);
+    return true;
 
-    return {
-      statusCode: 200,
-      body: JSON.stringify({
-        message: 'Scheduled bet state update completed',
-        timestamp: new Date().toISOString(),
-        ...result
-      })
-    };
   } catch (error) {
     console.error('❌ Scheduled bet check failed:', error);
-
-    // Don't throw - we want the schedule to continue running
-    return {
-      statusCode: 500,
-      body: JSON.stringify({
-        message: 'Scheduled bet state update failed',
-        timestamp: new Date().toISOString(),
-        error: error instanceof Error ? error.message : 'Unknown error'
-      })
-    };
+    return false;
   }
 };
 
@@ -86,7 +57,7 @@ async function updateExpiredBets(): Promise<{ updated: number; cancelled: number
     console.log(`📊 [Scheduled] Found ${expiredActiveBets.length} expired ACTIVE bets to process`);
 
     // Log each expired bet for debugging
-    expiredActiveBets.forEach(bet => {
+    expiredActiveBets.forEach((bet: any) => {
       if (bet.deadline) {
         const deadline = new Date(bet.deadline);
         const minutesAgo = Math.floor((now.getTime() - deadline.getTime()) / (1000 * 60));
@@ -117,7 +88,6 @@ async function updateExpiredBets(): Promise<{ updated: number; cancelled: number
             status: 'PENDING_RESOLUTION'
           });
 
-          console.log(`✅ [Scheduled] Updated bet "${bet.title}" to PENDING_RESOLUTION (${participants.length} participants)`);
           updated++;
         } else {
           // Cancel bet if no participants joined
@@ -126,8 +96,6 @@ async function updateExpiredBets(): Promise<{ updated: number; cancelled: number
             status: 'CANCELLED',
             resolutionReason: 'No participants joined before deadline'
           });
-
-          console.log(`❌ [Scheduled] Cancelled bet "${bet.title}" - no participants joined`);
           cancelled++;
         }
 
