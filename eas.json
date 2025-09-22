@@ -23,7 +23,10 @@
       "cache": {
         "disabled": true
       },
-      "node": "18.20.4"
+      "node": "18.20.4",
+      "env": {
+        "JAVA_HOME": "/usr/lib/jvm/java-17-openjdk-amd64"
+      }
     }
   },
   "submit": {

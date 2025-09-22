@@ -1,4 +1,4 @@
-package com.anonymous.sidebet
+package com.sidebet.app
 
 import android.app.Application
 import android.content.res.Configuration

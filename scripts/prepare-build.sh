@@ -3,7 +3,11 @@
 
 echo "Preparing gradle.properties for EAS Build..."
 
-# Remove Windows-specific Java home setting
-sed -i '/org.gradle.java.home=C:/d' android/gradle.properties
+# Backup original and use EAS-specific version
+echo "Backing up original gradle.properties..."
+cp android/gradle.properties android/gradle.properties.backup
 
-echo "gradle.properties prepared for EAS Build"
+echo "Using EAS-specific gradle.properties..."
+cp android/gradle.eas.properties android/gradle.properties
+
+echo "gradle.properties updated for EAS Build"

@@ -1,4 +1,4 @@
-package com.anonymous.sidebet
+package com.sidebet.app
 
 import android.os.Build
 import android.os.Bundle
