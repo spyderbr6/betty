@@ -297,6 +297,28 @@ export const BetsScreen: React.FC = () => {
         status: 'ACCEPTED'
       });
 
+      // Notify the bet creator that their invitation was accepted
+      try {
+        const { data: accepterData } = await client.models.User.get({ id: user.userId });
+        if (accepterData && invitation.fromUserId !== user.userId) {
+          await NotificationService.createNotification({
+            userId: invitation.fromUserId,
+            type: 'BET_INVITATION_ACCEPTED',
+            title: 'Bet Invitation Accepted',
+            message: `${accepterData.displayName || accepterData.username} accepted your bet invitation for "${invitation.bet?.title}"`,
+            priority: 'MEDIUM',
+            actionType: 'view_bet',
+            actionData: { betId: invitation.betId },
+            relatedBetId: invitation.betId,
+            relatedUserId: user.userId,
+            relatedRequestId: invitation.id,
+            sendPush: true,
+          });
+        }
+      } catch (notificationError) {
+        console.warn('Failed to send bet invitation accepted notification:', notificationError);
+      }
+
       // Create participant entry for the bet
       await client.models.Participant.create({
         betId: invitation.betId,
@@ -388,6 +410,28 @@ export const BetsScreen: React.FC = () => {
         id: invitation.id,
         status: 'DECLINED'
       });
+
+      // Notify the bet creator that their invitation was declined
+      try {
+        const { data: declinerData } = await client.models.User.get({ id: user.userId });
+        if (declinerData && invitation.fromUserId !== user.userId) {
+          await NotificationService.createNotification({
+            userId: invitation.fromUserId,
+            type: 'BET_INVITATION_DECLINED',
+            title: 'Bet Invitation Declined',
+            message: `${declinerData.displayName || declinerData.username} declined your bet invitation for "${invitation.bet?.title}"`,
+            priority: 'LOW',
+            actionType: 'view_bet',
+            actionData: { betId: invitation.betId },
+            relatedBetId: invitation.betId,
+            relatedUserId: user.userId,
+            relatedRequestId: invitation.id,
+            sendPush: false, // Low priority, no push needed
+          });
+        }
+      } catch (notificationError) {
+        console.warn('Failed to send bet invitation declined notification:', notificationError);
+      }
 
       // Remove from local invitations
       setBetInvitations(prev => prev.filter(inv => inv.id !== invitation.id));

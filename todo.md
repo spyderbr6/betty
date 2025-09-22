@@ -22,7 +22,11 @@
 - **Friend Discovery**: Search by username, email, display name
 - **Bet Invitations**: Invite friends during bet creation with side selection
 - **Profile System**: Editable display names and profile pictures with S3 storage
-- **Notification System**: Real-time notifications for friend and betting activities
+- **Push Notification System**: Complete server-side push infrastructure with centralized Lambda handling
+  - ✅ All notification event triggers (bet joined, resolved, cancelled, friend/invitation responses)
+  - ✅ Priority-based push delivery (HIGH/URGENT priorities get push notifications)
+  - ✅ Automatic push token registration and cleanup
+  - ✅ GraphQL mutation API for secure notification sending
 
 #### **Professional UI/UX**
 - **Design System**: Comprehensive color, typography, and spacing tokens
@@ -42,16 +46,25 @@
 
 ## 🔄 IMMEDIATE NEXT STEPS (Current Development Cycle)
 
-### **Priority 1: UI/UX Polish & Bug Fixes**
-- [ ] **Warning Cleanup**: Resolve all soft warnings across project files
-- [ ] **Security Scanning**: Open repository for automated security scanning
-- [ ] look into why the states arent changing. we need them to change based on the lambda event bridge function
+### **Priority 1: 📧 NOTIFICATION SYSTEM COMPLETION**
+- [x] **✅ Push Notification Infrastructure**: Complete server-side Lambda function for centralized push handling
+- [x] **✅ Notification Event Triggers**: All missing notification events implemented (bet joined, resolved, cancelled, friend/invitation responses)
+- [x] **✅ Centralized Push Handling**: GraphQL mutation with proper authorization and token management
+- [ ] **NotificationScreen**: Create dedicated screen to view all notifications with mark-as-read functionality
+- [ ] **TabBar Badge**: Add unread notification count indicator on main navigation
+- [ ] **Header Bell Icon**: Quick access notification icon with real-time count updates
+- [ ] **Deep Linking**: Navigate to relevant screens (bets/friends) from notifications
+- [ ] **Toast Notifications**: Real-time in-app notification popups for immediate feedback
+- [ ] **Notification Preferences**: User control over notification types and push settings
 
 ### **Priority 2: Real-time Feature Enhancements**
-- [ ] **Enhanced Notifications**: Complete push notification system with expo-notifications
 - [ ] **Instant Balance Updates**: Immediate balance sync after payouts and joins
+- [ ] **GraphQL Subscriptions**: Real-time notification updates via WebSocket subscriptions
+- [ ] look into why the states arent changing. we need them to change based on the lambda event bridge function
 
-### **Priority 3: Advanced Bet Experience**
+### **Priority 3: UI/UX Polish & Bug Fixes**
+- [ ] **Warning Cleanup**: Resolve all soft warnings across project files
+- [ ] **Security Scanning**: Open repository for automated security scanning
 - [ ] **Bet Card Redesign**: Highlight user's pick with "Your Pick" indicators and improved state management
 
 ---
@@ -152,8 +165,8 @@ npx amplify codegen    # Generate GraphQL types
 
 ### **Current Development Branch**
 - **Main Branch**: `main` (stable, MVP complete)
-- **Development Branch**: `feature/next-development` (current work)
-- **Status**: Clean build, all major features functional
+- **Development Branch**: `notifications/push-notifications` (current work - notification system implementation)
+- **Status**: Push notification infrastructure complete, building UI components next
 
 ---
 
@@ -174,7 +187,7 @@ src/
 │   ├── FriendsScreen.tsx # Friend management
 │   └── AccountScreen.tsx # Profile & settings
 ├── contexts/           # AuthContext for user state
-├── services/           # imageUploadService, notificationService
+├── services/           # imageUploadService, notificationService, pushNotificationConfig
 ├── styles/             # Design system tokens
 └── types/              # TypeScript definitions
 ```
@@ -183,8 +196,12 @@ src/
 - **Bet Model**: Complete lifecycle from creation to resolution
 - **User Model**: Profile data, balance tracking, statistics
 - **Friend Models**: Bilateral friendships and friend requests
-- **Notification Model**: Real-time activity updates
+- **Notification Model**: Real-time activity updates with priority-based push delivery
+- **PushToken Model**: Device push token management with automatic cleanup
 - **S3 Storage**: Profile picture uploads with cleanup
+- **Lambda Functions**:
+  - `scheduledBetChecker`: Automated bet state transitions with notifications
+  - `pushNotificationSender`: Centralized push notification handling via Expo API
 
 ---
 

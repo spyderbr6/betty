@@ -1,5 +1,6 @@
 import { type ClientSchema, a, defineData } from "@aws-amplify/backend";
 import { scheduledBetChecker } from "../functions/scheduled-bet-checker/resource";
+import { pushNotificationSender } from "../functions/push-notification-sender/resource";
 
 /*== SIDEBET BETTING PLATFORM SCHEMA =======================================
 This schema defines the core data models for the SideBet peer-to-peer betting
@@ -245,9 +246,24 @@ const schema = a.schema({
     .handler(a.handler.function(scheduledBetChecker))
     .authorization((allow) => [allow.authenticated()]),
 
+  // Push Notification Function
+  sendPushNotification: a
+    .mutation()
+    .arguments({
+      userId: a.string().required(),
+      title: a.string().required(),
+      message: a.string().required(),
+      data: a.json(),
+      priority: a.enum(['HIGH', 'MEDIUM', 'LOW'])
+    })
+    .returns(a.boolean())
+    .handler(a.handler.function(pushNotificationSender))
+    .authorization((allow) => [allow.authenticated()]),
+
 }).authorization((allow) => [
-  // Allow the Lambda function to be invoked and access data
-  allow.resource(scheduledBetChecker).to(["query", "listen", "mutate"])
+  // Allow the Lambda functions to be invoked and access data
+  allow.resource(scheduledBetChecker).to(["query", "listen", "mutate"]),
+  allow.resource(pushNotificationSender).to(["query", "listen", "mutate"])
 ]);
 
 export type Schema = ClientSchema<typeof schema>;

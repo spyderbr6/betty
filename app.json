@@ -33,8 +33,23 @@
       "favicon": "./assets/icon.png"
     },
     "plugins": [
-      "expo-dev-client"
+      "expo-dev-client",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#111827",
+          "defaultChannel": "default"
+        }
+      ]
     ],
+    "notification": {
+      "icon": "./assets/icon.png",
+      "color": "#111827",
+      "iosDisplayInForeground": true,
+      "androidMode": "default",
+      "androidCollapsedTitle": "#{unread_notifications} new SideBet notifications"
+    },
     "scheme": "sidebet",
     "developmentClient": {
       "silentLaunch": false

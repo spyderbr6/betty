@@ -3,7 +3,7 @@
  * Professional sportsbook header with balance, notifications, and branding
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -18,6 +18,9 @@ import { UserBalance } from './UserBalance';
 import { LiveGameBanner, LiveGameData } from './LiveGameBanner';
 import { FeedbackModal, FeedbackData } from './FeedbackModal';
 import { submitFeedbackToGitHub } from '../../utils/github';
+import { NotificationService } from '../../services/notificationService';
+import { useAuth } from '../../contexts/AuthContext';
+import { NotificationModal } from './NotificationModal';
 
 interface HeaderProps {
   title?: string;
@@ -40,11 +43,14 @@ export const Header: React.FC<HeaderProps> = ({
   onMenuPress,
   rightComponent,
   variant = 'default',
-  notificationCount = 0,
+  notificationCount, // Remove default value, we'll fetch it
   liveGame,
 }) => {
   const insets = useSafeAreaInsets();
+  const { user } = useAuth();
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+  const [showNotificationModal, setShowNotificationModal] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   const handleMenuPress = () => {
     if (onMenuPress) {
@@ -57,6 +63,36 @@ export const Header: React.FC<HeaderProps> = ({
 
   const handleFeedbackSubmit = async (feedback: FeedbackData) => {
     await submitFeedbackToGitHub(feedback);
+  };
+
+  // Load unread notification count
+  useEffect(() => {
+    const loadNotificationCount = async () => {
+      if (user) {
+        try {
+          const count = await NotificationService.getUnreadCount(user.userId);
+          setUnreadCount(count);
+        } catch (error) {
+          console.warn('Failed to load notification count:', error);
+        }
+      }
+    };
+
+    loadNotificationCount();
+
+    // Refresh count every 30 seconds for real-time updates
+    const interval = setInterval(loadNotificationCount, 30000);
+
+    return () => clearInterval(interval);
+  }, [user]);
+
+  // Handle notification press
+  const handleNotificationPress = () => {
+    if (onNotificationsPress) {
+      onNotificationsPress();
+    } else {
+      setShowNotificationModal(true);
+    }
   };
 
   const containerStyle = [
@@ -101,7 +137,7 @@ export const Header: React.FC<HeaderProps> = ({
 
             <TouchableOpacity
               style={styles.actionButton}
-              onPress={onNotificationsPress}
+              onPress={handleNotificationPress}
               activeOpacity={0.7}
             >
               <Ionicons 
@@ -109,10 +145,10 @@ export const Header: React.FC<HeaderProps> = ({
                 size={18} 
                 color={colors.textSecondary} 
               />
-              {notificationCount > 0 && (
+              {(notificationCount ?? unreadCount) > 0 && (
                 <View style={styles.notificationBadge}>
                   <Text style={styles.notificationBadgeText}>
-                    {notificationCount > 99 ? '99+' : notificationCount}
+                    {(notificationCount ?? unreadCount) > 99 ? '99+' : (notificationCount ?? unreadCount)}
                   </Text>
                 </View>
               )}
@@ -150,6 +186,20 @@ export const Header: React.FC<HeaderProps> = ({
         visible={showFeedbackModal}
         onClose={() => setShowFeedbackModal(false)}
         onSubmit={handleFeedbackSubmit}
+      />
+
+      {/* Notification Modal */}
+      <NotificationModal
+        visible={showNotificationModal}
+        onClose={() => {
+          setShowNotificationModal(false);
+          // Refresh notification count when modal closes
+          if (user) {
+            NotificationService.getUnreadCount(user.userId)
+              .then(setUnreadCount)
+              .catch(console.warn);
+          }
+        }}
       />
     </>
   );

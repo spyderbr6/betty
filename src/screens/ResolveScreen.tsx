@@ -23,6 +23,7 @@ import { BetCard } from '../components/betting/BetCard';
 import { Bet } from '../types/betting';
 import { useAuth } from '../contexts/AuthContext';
 import { formatCurrency } from '../utils/formatting';
+import { NotificationService } from '../services/notificationService';
 
 // Initialize GraphQL client
 const client = generateClient<Schema>();
@@ -309,6 +310,19 @@ export const ResolveScreen: React.FC = () => {
 
             // Update user balance and stats
             await updateUserStats(participant.userId, isWinner, participant.amount, payout);
+
+            // Send bet resolved notification to participant
+            try {
+              await NotificationService.notifyBetResolved(
+                participant.userId,
+                bet.title,
+                isWinner,
+                payout,
+                bet.id
+              );
+            } catch (notificationError) {
+              console.warn('Failed to send bet resolved notification to participant:', notificationError);
+            }
           })
         );
       }

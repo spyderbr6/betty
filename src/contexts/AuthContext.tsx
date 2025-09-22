@@ -2,6 +2,9 @@ import React, { createContext, useContext, useEffect, useRef, useState, useCallb
 import { AppState } from 'react-native';
 import { fetchAuthSession, getCurrentUser, signOut as amplifySignOut } from 'aws-amplify/auth';
 import { Hub } from 'aws-amplify/utils';
+import { NotificationService } from '../services/notificationService';
+import { initializePushNotifications, addNotificationResponseListener, removeNotificationResponseListener } from '../services/pushNotificationConfig';
+import type { Subscription } from 'expo-notifications';
 
 interface User {
   userId: string;
@@ -35,6 +38,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isLoading, setIsLoading] = useState(true);
   const isMountedRef = useRef(true);
   const appStateRef = useRef(AppState.currentState);
+  const notificationSubscriptionRef = useRef<Subscription | null>(null);
 
   const ensureSession = useCallback(async (forceRefresh = false): Promise<boolean> => {
     try {
@@ -59,10 +63,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const currentUser = await getCurrentUser();
       if (isMountedRef.current) {
-        setUser({
+        const newUser = {
           userId: currentUser.userId,
           username: currentUser.username,
-        });
+        };
+        setUser(newUser);
+
+        // Register push token when user is authenticated
+        try {
+          await NotificationService.registerPushToken(currentUser.userId);
+        } catch (pushError) {
+          console.warn('Failed to register push token:', pushError);
+        }
       }
       return true;
     } catch (error) {
@@ -107,6 +119,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   );
 
   useEffect(() => {
+    // Initialize push notifications on app start
+    initializePushNotifications().catch((error) => {
+      console.warn('Failed to initialize push notifications:', error);
+    });
+
+    // Add notification response listener
+    notificationSubscriptionRef.current = addNotificationResponseListener();
+
     refreshAuth().catch((error) => {
       console.error('Error during initial auth refresh:', error);
     });
@@ -149,6 +169,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       isMountedRef.current = false;
       removeHubListener();
       appStateSubscription.remove();
+
+      // Remove notification listener
+      if (notificationSubscriptionRef.current) {
+        removeNotificationResponseListener(notificationSubscriptionRef.current);
+      }
     };
   }, [refreshAuth]);
 

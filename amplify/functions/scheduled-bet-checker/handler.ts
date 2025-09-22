@@ -96,6 +96,26 @@ async function updateExpiredBets(): Promise<{ updated: number; cancelled: number
             status: 'CANCELLED',
             resolutionReason: 'No participants joined before deadline'
           });
+
+          // Notify bet creator that their bet was cancelled
+          try {
+            await client.models.Notification.create({
+              userId: bet.creatorId!,
+              type: 'BET_CANCELLED',
+              title: 'Bet Cancelled',
+              message: `"${bet.title}" was cancelled because no one joined before the deadline`,
+              isRead: false,
+              priority: 'MEDIUM',
+              actionType: 'view_bet',
+              actionData: { betId: bet.id },
+              relatedBetId: bet.id,
+            });
+
+            console.log(`📧 Sent cancellation notification to bet creator ${bet.creatorId}`);
+          } catch (notificationError) {
+            console.warn(`Failed to send cancellation notification for bet ${bet.id}:`, notificationError);
+          }
+
           cancelled++;
         }
 

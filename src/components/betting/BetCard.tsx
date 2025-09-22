@@ -19,6 +19,7 @@ import { colors, typography, spacing, textStyles } from '../../styles';
 import { Bet, BetStatus } from '../../types/betting';
 import { formatCurrency, dateFormatting } from '../../utils/formatting';
 import { useAuth } from '../../contexts/AuthContext';
+import { NotificationService } from '../../services/notificationService';
 
 // Initialize GraphQL client
 const client = generateClient<Schema>();
@@ -134,6 +135,31 @@ export const BetCard: React.FC<BetCardProps> = ({
           totalPot: (bet.totalPot || 0) + amount,
           updatedAt: new Date().toISOString()
         });
+
+        // Notify bet creator that someone joined their bet
+        if (bet.creatorId !== user.userId) {
+          try {
+            const { data: creatorData } = await client.models.User.get({ id: bet.creatorId });
+            const { data: joinedUserData } = await client.models.User.get({ id: user.userId });
+
+            if (creatorData && joinedUserData) {
+              await NotificationService.createNotification({
+                userId: bet.creatorId,
+                type: 'BET_JOINED',
+                title: 'Someone Joined Your Bet!',
+                message: `${joinedUserData.displayName || joinedUserData.username} joined "${bet.title}" with $${amount}`,
+                priority: 'HIGH',
+                actionType: 'view_bet',
+                actionData: { betId: bet.id },
+                relatedBetId: bet.id,
+                relatedUserId: user.userId,
+                sendPush: true,
+              });
+            }
+          } catch (notificationError) {
+            console.warn('Failed to send bet joined notification:', notificationError);
+          }
+        }
 
         Alert.alert(
           'Joined Successfully!',
