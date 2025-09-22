@@ -89,10 +89,6 @@ export const functionName = defineFunction({
      functionName,
    });
 
-   // Grant GraphQL API access
-   backend.data.resources.graphqlApi.grantQuery(backend.functionName.resources.lambda, "private");
-   backend.data.resources.graphqlApi.grantMutation(backend.functionName.resources.lambda, "private");
-   ```
 
 3. **Add to GraphQL Schema** (`amplify/data/resource.ts`):
    ```typescript
