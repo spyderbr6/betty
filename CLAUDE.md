@@ -117,8 +117,7 @@ export const functionName = defineFunction({
    ```
 
 #### Current Scheduled Functions:
-- **scheduledBetChecker**: Runs every 5 minutes - Checks for bet deadlines and status updates
-- **betStateManager**: Runs every 5 minutes - Manages bet state transitions and cleanup
+- **scheduledBetChecker**: Runs every 5 minutes - Checks for expired ACTIVE bets, moves them to PENDING_RESOLUTION (if participants) or CANCELLED (if no participants)
 
 ## Current App Features
 

@@ -1,6 +1,5 @@
 import { type ClientSchema, a, defineData } from "@aws-amplify/backend";
 import { scheduledBetChecker } from "../functions/scheduled-bet-checker/resource";
-import { betStateManager } from "../functions/bet-state-manager/resource";
 
 /*== SIDEBET BETTING PLATFORM SCHEMA =======================================
 This schema defines the core data models for the SideBet peer-to-peer betting
@@ -236,7 +235,7 @@ const schema = a.schema({
       allow.authenticated().to(['read', 'create', 'update'])
     ]),
 
-  // Scheduled Lambda Functions
+  // Scheduled Lambda Function
   scheduledBetChecker: a
     .query()
     .arguments({
@@ -246,19 +245,9 @@ const schema = a.schema({
     .handler(a.handler.function(scheduledBetChecker))
     .authorization((allow) => [allow.authenticated()]),
 
-  betStateManager: a
-    .query()
-    .arguments({
-      triggerTime: a.string().required()  // ISO timestamp when triggered
-    })
-    .returns(a.boolean())
-    .handler(a.handler.function(betStateManager))
-    .authorization((allow) => [allow.authenticated()]),
-
 }).authorization((allow) => [
-  // Allow the Lambda functions to be invoked and access data
-  allow.resource(scheduledBetChecker).to(["query", "listen", "mutate"]),
-  allow.resource(betStateManager).to(["query", "listen", "mutate"])
+  // Allow the Lambda function to be invoked and access data
+  allow.resource(scheduledBetChecker).to(["query", "listen", "mutate"])
 ]);
 
 export type Schema = ClientSchema<typeof schema>;
