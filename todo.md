@@ -45,7 +45,7 @@
 ### **Priority 1: UI/UX Polish & Bug Fixes**
 - [ ] **Warning Cleanup**: Resolve all soft warnings across project files
 - [ ] **Security Scanning**: Open repository for automated security scanning
-- [ ] research: why does the app fail after being open for a day or if my pc sleeps. i'm wondering if we have a state management issue or session issue causing the app to crash.
+
 
 ### **Priority 2: Real-time Feature Enhancements**
 - [ ] **Enhanced Notifications**: Complete push notification system with expo-notifications

@@ -78,7 +78,7 @@ export const BetsScreen: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearch, setShowSearch] = useState(false);
-  const [selectedFilter, setSelectedFilter] = useState<'ACTIVE' | 'LIVE' | 'PENDING_RESOLUTION' | 'RESOLVED'>('ACTIVE');
+  const [selectedFilter, setSelectedFilter] = useState<'ACTIVE' | 'PENDING_RESOLUTION' | 'RESOLVED'>('ACTIVE');
   const [refreshing, setRefreshing] = useState(false);
   const [processingInvitations, setProcessingInvitations] = useState<Set<string>>(new Set());
 
@@ -570,18 +570,18 @@ export const BetsScreen: React.FC = () => {
   });
 
 
-  // Status filter options (removed 'ALL' filter)
+  // Status filter options (removed 'ALL' filter, commented out LIVE filter)
   const statusFilters = [
     { id: 'ACTIVE', label: 'Active', count: bets.filter(bet => {
       const isCreator = bet.creatorId === user?.userId;
       const isParticipant = bet.participants?.some(p => p.userId === user?.userId);
       return (isCreator || isParticipant) && bet.status === 'ACTIVE';
     }).length },
-    { id: 'LIVE', label: 'Live', count: bets.filter(bet => {
-      const isCreator = bet.creatorId === user?.userId;
-      const isParticipant = bet.participants?.some(p => p.userId === user?.userId);
-      return (isCreator || isParticipant) && bet.status === 'LIVE';
-    }).length },
+    // { id: 'LIVE', label: 'Live', count: bets.filter(bet => {
+    //   const isCreator = bet.creatorId === user?.userId;
+    //   const isParticipant = bet.participants?.some(p => p.userId === user?.userId);
+    //   return (isCreator || isParticipant) && bet.status === 'LIVE';
+    // }).length },
     { id: 'PENDING_RESOLUTION', label: 'Pending', count: bets.filter(bet => {
       const isCreator = bet.creatorId === user?.userId;
       const isParticipant = bet.participants?.some(p => p.userId === user?.userId);
@@ -750,10 +750,21 @@ export const BetsScreen: React.FC = () => {
           ))
         ) : (
           <View style={styles.emptyContainer}>
-            <Text style={styles.emptyTitle}>No {selectedFilter.toLowerCase()} Bets</Text>
-            <Text style={styles.emptyDescription}>
-              You don't have any {selectedFilter.toLowerCase()} bets at the moment.
-            </Text>
+            {selectedFilter === 'PENDING_RESOLUTION' ? (
+              <>
+                <Text style={styles.emptyTitle}>No Bets Awaiting Resolution</Text>
+                <Text style={styles.emptyDescription}>
+                  When your bets finish and need resolution, they'll appear here.
+                </Text>
+              </>
+            ) : (
+              <>
+                <Text style={styles.emptyTitle}>No {selectedFilter.toLowerCase()} Bets</Text>
+                <Text style={styles.emptyDescription}>
+                  You don't have any {selectedFilter.toLowerCase()} bets at the moment.
+                </Text>
+              </>
+            )}
           </View>
         )}
 
