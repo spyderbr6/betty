@@ -8,4 +8,7 @@ export const betStateManager = defineFunction({
   },
   timeoutSeconds: 300, // 5 minutes timeout
   memoryMB: 512,
+  schedule: [
+    "*/5 * * * ? *"  // Every 5 minutes
+  ]
 });

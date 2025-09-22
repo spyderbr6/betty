@@ -51,6 +51,75 @@ src/
 - **Real-time**: GraphQL subscriptions for live betting data
 - **Caching**: In-memory caching with TTL for improved performance
 
+### Scheduled Lambda Functions
+The app uses AWS Lambda functions with EventBridge schedules for automated background tasks:
+
+#### Function Architecture Pattern
+```typescript
+// amplify/functions/{function-name}/resource.ts
+import { defineFunction } from '@aws-amplify/backend';
+
+export const functionName = defineFunction({
+  name: 'function-name',
+  entry: './handler.ts',
+  environment: {
+    AMPLIFY_DATA_GRAPHQL_ENDPOINT: process.env.AMPLIFY_DATA_GRAPHQL_ENDPOINT || '',
+  },
+  timeoutSeconds: 300, // 5 minutes timeout
+  memoryMB: 512,
+  schedule: [
+    "*/5 * * * ? *"  // Cron expression for scheduling
+  ]
+});
+```
+
+#### Integration Steps for New Scheduled Functions:
+
+1. **Create Function Directory**: `amplify/functions/{function-name}/`
+   - `resource.ts` - Function definition with schedule
+   - `handler.ts` - Function implementation
+   - `package.json` - Dependencies
+
+2. **Add to Backend** (`amplify/backend.ts`):
+   ```typescript
+   import { functionName } from './functions/function-name/resource';
+
+   const backend = defineBackend({
+     // ... other resources
+     functionName,
+   });
+
+   // Grant GraphQL API access
+   backend.data.resources.graphqlApi.grantQuery(backend.functionName.resources.lambda, "private");
+   backend.data.resources.graphqlApi.grantMutation(backend.functionName.resources.lambda, "private");
+   ```
+
+3. **Add to GraphQL Schema** (`amplify/data/resource.ts`):
+   ```typescript
+   import { functionName } from "../functions/function-name/resource";
+
+   const schema = a.schema({
+     // ... other models
+
+     functionName: a
+       .query()
+       .arguments({
+         triggerTime: a.string().required()  // ISO timestamp when triggered
+       })
+       .returns(a.boolean())
+       .handler(a.handler.function(functionName))
+       .authorization((allow) => [allow.authenticated()]),
+
+   }).authorization((allow) => [
+     // ... other authorizations
+     allow.resource(functionName).to(["query", "listen", "mutate"])
+   ]);
+   ```
+
+#### Current Scheduled Functions:
+- **scheduledBetChecker**: Runs every 5 minutes - Checks for bet deadlines and status updates
+- **betStateManager**: Runs every 5 minutes - Manages bet state transitions and cleanup
+
 ## Current App Features
 
 ### Core Betting System

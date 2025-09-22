@@ -20,12 +20,4 @@ backend.data.resources.graphqlApi.grantMutation(backend.betStateManager.resource
 backend.data.resources.graphqlApi.grantQuery(backend.scheduledBetChecker.resources.lambda, "private");
 backend.data.resources.graphqlApi.grantMutation(backend.scheduledBetChecker.resources.lambda, "private");
 
-// Add EventBridge schedule for bet state checker
-backend.addOutput({
-  custom: {
-    betStateSchedule: {
-      functionName: backend.scheduledBetChecker.resources.lambda.functionName,
-      description: "Scheduled bet state checker runs every minute"
-    }
-  }
-});
+// EventBridge schedules are configured directly in the function resource files
