@@ -176,8 +176,9 @@ export const BetInviteModal: React.FC<BetInviteModalProps> = ({
               isInvited: false,
               hasPendingInvite: pendingInviteUserIds.has(friendUser.id!),
               isParticipating: participatingUserIds.has(friendUser.id!),
-          };
-        });
+            };
+          })
+      );
 
       setFriends(invitableFriends);
     } catch (error) {

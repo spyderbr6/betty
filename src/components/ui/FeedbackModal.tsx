@@ -215,7 +215,7 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({
             </Text>
           </View>
         </ScrollView>
-        </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
       </SafeAreaView>
     </Modal>
   );
