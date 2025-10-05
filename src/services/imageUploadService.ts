@@ -137,13 +137,21 @@ export const deleteProfilePicture = async (s3Key: string): Promise<boolean> => {
   }
 };
 
+// In-memory cache for signed URLs (valid for entire session since they expire in 1 year)
+const signedUrlCache = new Map<string, string>();
+
 /**
- * Get a fresh signed URL for a profile picture from S3 key
- * S3 URLs expire, so we generate them on-demand from the stored key
+ * Get a signed URL for a profile picture from S3 key
+ * Uses in-memory caching to avoid regenerating URLs during the same session
  */
 export const getProfilePictureUrl = async (s3Key: string): Promise<string | null> => {
   try {
     if (!s3Key) return null;
+
+    // Check cache first
+    if (signedUrlCache.has(s3Key)) {
+      return signedUrlCache.get(s3Key)!;
+    }
 
     // Generate a fresh signed URL from the S3 key
     const urlResult = await getUrl({
@@ -153,11 +161,23 @@ export const getProfilePictureUrl = async (s3Key: string): Promise<string | null
       }
     });
 
-    return urlResult.url.toString();
+    const signedUrl = urlResult.url.toString();
+
+    // Cache the signed URL for this session
+    signedUrlCache.set(s3Key, signedUrl);
+
+    return signedUrl;
   } catch (error) {
     console.error('Error getting profile picture URL:', error);
     return null;
   }
+};
+
+/**
+ * Clear the signed URL cache (useful for testing or memory management)
+ */
+export const clearProfilePictureCache = (): void => {
+  signedUrlCache.clear();
 };
 
 /**
@@ -190,9 +210,11 @@ export const updateProfilePicture = async (
       };
     }
 
-    // Step 3: Delete old image (if exists)
+    // Step 3: Delete old image and clear from cache (if exists)
     if (currentS3Key) {
       await deleteProfilePicture(currentS3Key);
+      // Remove old URL from cache
+      signedUrlCache.delete(currentS3Key);
     }
 
     return {

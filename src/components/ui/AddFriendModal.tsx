@@ -27,6 +27,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { User } from '../../types/betting';
 import { NotificationService } from '../../services/notificationService';
 import { ModalHeader } from './ModalHeader';
+import { getProfilePictureUrl } from '../../services/imageUploadService';
 
 // Initialize GraphQL client
 const client = generateClient<Schema>();
@@ -128,24 +129,35 @@ export const AddFriendModal: React.FC<AddFriendModalProps> = ({
       const pendingOutgoingIds = new Set((outgoingRequests.data || []).map(r => r.toUserId));
       const pendingIncomingIds = new Set((incomingRequests.data || []).map(r => r.fromUserId));
 
-      // Map users with relationship status
-      const resultsWithStatus: SearchResult[] = filteredUsers.map(foundUser => ({
-        id: foundUser.id!,
-        username: foundUser.username!,
-        email: foundUser.email!,
-        displayName: foundUser.displayName || undefined,
-        profilePictureUrl: foundUser.profilePictureUrl || undefined,
-        balance: foundUser.balance || 0,
-        trustScore: foundUser.trustScore || 5.0,
-        totalBets: foundUser.totalBets || 0,
-        totalWinnings: foundUser.totalWinnings || 0,
-        winRate: foundUser.winRate || 0,
-        createdAt: foundUser.createdAt || new Date().toISOString(),
-        updatedAt: foundUser.updatedAt || new Date().toISOString(),
-        isAlreadyFriend: friendIds.has(foundUser.id!),
-        hasPendingRequest: pendingOutgoingIds.has(foundUser.id!) || pendingIncomingIds.has(foundUser.id!),
-        requestSent: false,
-      }));
+      // Map users with relationship status and fresh signed URLs
+      const resultsWithStatus: SearchResult[] = await Promise.all(
+        filteredUsers.map(async (foundUser) => {
+          // Get fresh signed URL for profile picture if it exists
+          let profilePictureUrl = undefined;
+          if (foundUser.profilePictureUrl) {
+            const signedUrl = await getProfilePictureUrl(foundUser.profilePictureUrl);
+            profilePictureUrl = signedUrl || undefined;
+          }
+
+          return {
+            id: foundUser.id!,
+            username: foundUser.username!,
+            email: foundUser.email!,
+            displayName: foundUser.displayName || undefined,
+            profilePictureUrl: profilePictureUrl,
+            balance: foundUser.balance || 0,
+            trustScore: foundUser.trustScore || 5.0,
+            totalBets: foundUser.totalBets || 0,
+            totalWinnings: foundUser.totalWinnings || 0,
+            winRate: foundUser.winRate || 0,
+            createdAt: foundUser.createdAt || new Date().toISOString(),
+            updatedAt: foundUser.updatedAt || new Date().toISOString(),
+            isAlreadyFriend: friendIds.has(foundUser.id!),
+            hasPendingRequest: pendingOutgoingIds.has(foundUser.id!) || pendingIncomingIds.has(foundUser.id!),
+            requestSent: false,
+          };
+        })
+      );
 
       setSearchResults(resultsWithStatus);
     } catch (error) {

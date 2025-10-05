@@ -24,6 +24,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { User } from '../../types/betting';
 import { NotificationService } from '../../services/notificationService';
 import { ModalHeader } from './ModalHeader';
+import { getProfilePictureUrl } from '../../services/imageUploadService';
 
 // Initialize GraphQL client
 const client = generateClient<Schema>();
@@ -86,6 +87,13 @@ export const FriendRequestsModal: React.FC<FriendRequestsModalProps> = ({
             const { data: fromUser } = await client.models.User.get({ id: request.fromUserId });
 
             if (fromUser) {
+              // Get fresh signed URL for profile picture if it exists
+              let profilePictureUrl = undefined;
+              if (fromUser.profilePictureUrl) {
+                const signedUrl = await getProfilePictureUrl(fromUser.profilePictureUrl);
+                profilePictureUrl = signedUrl || undefined;
+              }
+
               return {
                 id: request.id!,
                 fromUserId: request.fromUserId!,
@@ -97,7 +105,7 @@ export const FriendRequestsModal: React.FC<FriendRequestsModalProps> = ({
                   username: fromUser.username!,
                   email: fromUser.email!,
                   displayName: fromUser.displayName || undefined,
-                  profilePictureUrl: fromUser.profilePictureUrl || undefined,
+                  profilePictureUrl: profilePictureUrl,
                   balance: fromUser.balance || 0,
                   trustScore: fromUser.trustScore || 5.0,
                   totalBets: fromUser.totalBets || 0,

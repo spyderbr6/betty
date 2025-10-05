@@ -27,6 +27,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { User, Friendship } from '../types/betting';
 import { Ionicons } from '@expo/vector-icons';
 import { NotificationService } from '../services/notificationService';
+import { getProfilePictureUrl } from '../services/imageUploadService';
 
 interface BetTemplate {
   id: string;
@@ -87,18 +88,25 @@ export const CreateBetScreen: React.FC = () => {
         friendship.user1Id === user.userId ? friendship.user2Id : friendship.user1Id
       );
 
-      // Fetch friend user details
+      // Fetch friend user details with fresh signed URLs for profile pictures
       const friendUsers = await Promise.all(
         friendIds.map(async (friendId) => {
           try {
             const { data: userData } = await client.models.User.get({ id: friendId });
             if (userData) {
+              // Get fresh signed URL for profile picture if it exists
+              let profilePictureUrl = undefined;
+              if (userData.profilePictureUrl) {
+                const signedUrl = await getProfilePictureUrl(userData.profilePictureUrl);
+                profilePictureUrl = signedUrl || undefined;
+              }
+
               return {
                 id: userData.id!,
                 username: userData.username!,
                 email: userData.email!,
                 displayName: userData.displayName || undefined,
-                profilePictureUrl: userData.profilePictureUrl || undefined,
+                profilePictureUrl: profilePictureUrl,
                 balance: userData.balance || 0,
                 trustScore: userData.trustScore || 5.0,
                 totalBets: userData.totalBets || 0,

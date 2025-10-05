@@ -25,6 +25,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { Bet, User, FriendListItem } from '../../types/betting';
 import { NotificationService } from '../../services/notificationService';
 import { ModalHeader } from './ModalHeader';
+import { getProfilePictureUrl } from '../../services/imageUploadService';
 
 // Initialize GraphQL client
 const client = generateClient<Schema>();
@@ -135,37 +136,46 @@ export const BetInviteModal: React.FC<BetInviteModalProps> = ({
         (betParticipants.data || []).map(p => p.userId)
       );
 
-      // Create InvitableFriend objects
-      const invitableFriends: InvitableFriend[] = friendUsers
-        .filter((friendUser): friendUser is NonNullable<typeof friendUser> => friendUser !== null)
-        .map((friendUser, index) => {
-          const friendship = allFriendships[index];
-          return {
-            user: {
-              id: friendUser.id!,
-              username: friendUser.username!,
-              email: friendUser.email!,
-              displayName: friendUser.displayName || undefined,
-              profilePictureUrl: friendUser.profilePictureUrl || undefined,
-              balance: friendUser.balance || 0,
-              trustScore: friendUser.trustScore || 5.0,
-              totalBets: friendUser.totalBets || 0,
-              totalWinnings: friendUser.totalWinnings || 0,
-              winRate: friendUser.winRate || 0,
-              createdAt: friendUser.createdAt || new Date().toISOString(),
-              updatedAt: friendUser.updatedAt || new Date().toISOString(),
-            },
-            friendship: {
-              id: friendship.id!,
-              user1Id: friendship.user1Id!,
-              user2Id: friendship.user2Id!,
-              createdAt: friendship.createdAt || new Date().toISOString(),
-            },
-            mutualFriends: 0,
-            lastBetTogether: undefined,
-            isInvited: false,
-            hasPendingInvite: pendingInviteUserIds.has(friendUser.id!),
-            isParticipating: participatingUserIds.has(friendUser.id!),
+      // Create InvitableFriend objects with fresh signed URLs for profile pictures
+      const invitableFriends: InvitableFriend[] = await Promise.all(
+        friendUsers
+          .filter((friendUser): friendUser is NonNullable<typeof friendUser> => friendUser !== null)
+          .map(async (friendUser, index) => {
+            const friendship = allFriendships[index];
+
+            // Get fresh signed URL for profile picture if it exists
+            let profilePictureUrl = undefined;
+            if (friendUser.profilePictureUrl) {
+              const signedUrl = await getProfilePictureUrl(friendUser.profilePictureUrl);
+              profilePictureUrl = signedUrl || undefined;
+            }
+
+            return {
+              user: {
+                id: friendUser.id!,
+                username: friendUser.username!,
+                email: friendUser.email!,
+                displayName: friendUser.displayName || undefined,
+                profilePictureUrl: profilePictureUrl,
+                balance: friendUser.balance || 0,
+                trustScore: friendUser.trustScore || 5.0,
+                totalBets: friendUser.totalBets || 0,
+                totalWinnings: friendUser.totalWinnings || 0,
+                winRate: friendUser.winRate || 0,
+                createdAt: friendUser.createdAt || new Date().toISOString(),
+                updatedAt: friendUser.updatedAt || new Date().toISOString(),
+              },
+              friendship: {
+                id: friendship.id!,
+                user1Id: friendship.user1Id!,
+                user2Id: friendship.user2Id!,
+                createdAt: friendship.createdAt || new Date().toISOString(),
+              },
+              mutualFriends: 0,
+              lastBetTogether: undefined,
+              isInvited: false,
+              hasPendingInvite: pendingInviteUserIds.has(friendUser.id!),
+              isParticipating: participatingUserIds.has(friendUser.id!),
           };
         });
 

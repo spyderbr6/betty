@@ -43,19 +43,17 @@
 ## 🔄 IMMEDIATE NEXT STEPS (Current Development Cycle)
 
 ### **Priority 1: UI/UX Polish & Bug Fixes**
-- [x] friends on the friends screen has a three dot icon anchored to the left side which is an odd design choice, it should be on the right.
-- [x] bet invitations still include the hashed userid rather than friendly
-- [x] notifications need to be ordered in descending with latest at the top.
-- [x] notifications should lazy load after more than a certain amount of notifications. we need to make it eloquent.
-- [x] profile pictures that were uploaded dont appear to be displaying anywhere once they're uploaded. 
+- [ ] the invite card's participants appear as 0 when they should be real values. the one i have up should have at least one participant.
+- [ ] resolved state bets should be blue if the user has won, and red if lost. 
+- [ ] read notifications dont need to appear so lets filter the read ones out. 
+- [ ] does the private bet option do anything when creating a bet? 
+- [ ] where does bet invite live now? i dont see the option anywhere, lets determine where it should go. please confirm with me before moving forward.
+- [ ] friend page you can select add to bet but it doesnt do anything. 
 
 
 ### **Priority 2: Real-time Feature Enhancements**
 - [ ] **Enhanced Notifications**: Complete push notification system with expo-notifications
 - [ ] **Instant Balance Updates**: Immediate balance sync after payouts and joins
-
-### **Priority 3: Advanced Bet Experience**
-- [ ] **Bet Card Redesign**: Highlight user's pick with "Your Pick" indicators and improved state management
 
 ---
 
