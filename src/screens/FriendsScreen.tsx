@@ -26,6 +26,7 @@ import { AddFriendModal } from '../components/ui/AddFriendModal';
 import { FriendRequestsModal } from '../components/ui/FriendRequestsModal';
 import { useAuth } from '../contexts/AuthContext';
 import { FriendListItem, User } from '../types/betting';
+import { getProfilePictureUrl } from '../services/imageUploadService';
 
 // Initialize GraphQL client
 const client = generateClient<Schema>();
@@ -90,36 +91,46 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ onClose }) => {
         })
       );
 
-      // Create FriendListItem objects
-      const friendListItems: FriendListItem[] = friendUsers
-        .filter((friendUser): friendUser is NonNullable<typeof friendUser> => friendUser !== null)
-        .map((friendUser, index) => {
-          const friendship = allFriendships[index];
-          return {
-            user: {
-              id: friendUser.id!,
-              username: friendUser.username!,
-              email: friendUser.email!,
-              displayName: friendUser.displayName || undefined,
-              profilePictureUrl: friendUser.profilePictureUrl || undefined,
-              balance: friendUser.balance || 0,
-              trustScore: friendUser.trustScore || 5.0,
-              totalBets: friendUser.totalBets || 0,
-              totalWinnings: friendUser.totalWinnings || 0,
-              winRate: friendUser.winRate || 0,
-              createdAt: friendUser.createdAt || new Date().toISOString(),
-              updatedAt: friendUser.updatedAt || new Date().toISOString(),
-            },
-            friendship: {
-              id: friendship.id!,
-              user1Id: friendship.user1Id!,
-              user2Id: friendship.user2Id!,
-              createdAt: friendship.createdAt || new Date().toISOString(),
-            },
-            mutualFriends: 0, // TODO: Calculate mutual friends
-            lastBetTogether: undefined, // TODO: Find last bet together
-          };
-        });
+      // Create FriendListItem objects with fresh signed URLs for profile pictures
+      const friendListItems: FriendListItem[] = await Promise.all(
+        friendUsers
+          .filter((friendUser): friendUser is NonNullable<typeof friendUser> => friendUser !== null)
+          .map(async (friendUser, index) => {
+            const friendship = allFriendships[index];
+
+            // Get fresh signed URL for profile picture if it exists
+            let profilePictureUrl = undefined;
+            if (friendUser.profilePictureUrl) {
+              const signedUrl = await getProfilePictureUrl(friendUser.profilePictureUrl);
+              profilePictureUrl = signedUrl || undefined;
+            }
+
+            return {
+              user: {
+                id: friendUser.id!,
+                username: friendUser.username!,
+                email: friendUser.email!,
+                displayName: friendUser.displayName || undefined,
+                profilePictureUrl: profilePictureUrl,
+                balance: friendUser.balance || 0,
+                trustScore: friendUser.trustScore || 5.0,
+                totalBets: friendUser.totalBets || 0,
+                totalWinnings: friendUser.totalWinnings || 0,
+                winRate: friendUser.winRate || 0,
+                createdAt: friendUser.createdAt || new Date().toISOString(),
+                updatedAt: friendUser.updatedAt || new Date().toISOString(),
+              },
+              friendship: {
+                id: friendship.id!,
+                user1Id: friendship.user1Id!,
+                user2Id: friendship.user2Id!,
+                createdAt: friendship.createdAt || new Date().toISOString(),
+              },
+              mutualFriends: 0, // TODO: Calculate mutual friends
+              lastBetTogether: undefined, // TODO: Find last bet together
+            };
+          })
+      );
 
       setFriends(friendListItems);
     } catch (error) {
@@ -532,6 +543,9 @@ const styles = StyleSheet.create({
     padding: spacing.md,
   },
   friendCard: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     backgroundColor: colors.surface,
     borderRadius: spacing.radius.md,
     padding: spacing.md,
@@ -541,6 +555,7 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   friendInfo: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
   },

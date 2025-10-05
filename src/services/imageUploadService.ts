@@ -78,7 +78,8 @@ export const pickProfileImage = async (): Promise<ImagePickerResult> => {
 };
 
 /**
- * Upload profile picture to S3 and return the public URL
+ * Upload profile picture to S3 and return the S3 key (NOT the signed URL)
+ * The key will be stored in the database and used to generate signed URLs on-demand
  */
 export const uploadProfilePicture = async (
   imageUri: string,
@@ -102,17 +103,11 @@ export const uploadProfilePicture = async (
       }
     }).result;
 
-    // Get the public URL
-    const urlResult = await getUrl({
-      key: uploadResult.key,
-      options: {
-        expiresIn: 31536000, // 1 year expiry for profile pictures
-      }
-    });
-
+    // Return the S3 key (NOT the signed URL)
+    // We'll generate signed URLs on-demand when displaying images
     return {
       success: true,
-      url: urlResult.url.toString()
+      url: uploadResult.key // This is the S3 key, NOT a signed URL
     };
   } catch (error) {
     console.error('Error uploading profile picture:', error);
@@ -126,14 +121,12 @@ export const uploadProfilePicture = async (
 /**
  * Delete old profile picture from S3
  */
-export const deleteProfilePicture = async (profilePictureUrl: string): Promise<boolean> => {
+export const deleteProfilePicture = async (s3Key: string): Promise<boolean> => {
   try {
-    // Extract the S3 key from the URL
-    const url = new URL(profilePictureUrl);
-    const key = url.pathname.substring(1); // Remove leading slash
+    if (!s3Key) return false;
 
     await remove({
-      key
+      key: s3Key
     });
 
     return true;
@@ -145,15 +138,38 @@ export const deleteProfilePicture = async (profilePictureUrl: string): Promise<b
 };
 
 /**
+ * Get a fresh signed URL for a profile picture from S3 key
+ * S3 URLs expire, so we generate them on-demand from the stored key
+ */
+export const getProfilePictureUrl = async (s3Key: string): Promise<string | null> => {
+  try {
+    if (!s3Key) return null;
+
+    // Generate a fresh signed URL from the S3 key
+    const urlResult = await getUrl({
+      key: s3Key,
+      options: {
+        expiresIn: 31536000, // 1 year expiry
+      }
+    });
+
+    return urlResult.url.toString();
+  } catch (error) {
+    console.error('Error getting profile picture URL:', error);
+    return null;
+  }
+};
+
+/**
  * Complete profile picture update workflow
  * 1. Pick image from gallery/camera
  * 2. Upload to S3
  * 3. Delete old image (if exists)
- * 4. Return new URL
+ * 4. Return new S3 key
  */
 export const updateProfilePicture = async (
   userId: string,
-  currentProfilePictureUrl?: string
+  currentS3Key?: string
 ): Promise<ImageUploadResult> => {
   try {
     // Step 1: Pick new image
@@ -175,13 +191,13 @@ export const updateProfilePicture = async (
     }
 
     // Step 3: Delete old image (if exists)
-    if (currentProfilePictureUrl) {
-      await deleteProfilePicture(currentProfilePictureUrl);
+    if (currentS3Key) {
+      await deleteProfilePicture(currentS3Key);
     }
 
     return {
       success: true,
-      url: uploadResult.url
+      url: uploadResult.url // This is the S3 key
     };
   } catch (error) {
     console.error('Error in profile picture update workflow:', error);

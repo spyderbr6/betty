@@ -302,7 +302,9 @@ export const CreateBetScreen: React.FC = () => {
         // Send invitations to selected friends
         if (selectedFriends.size > 0 && result.data) {
           try {
-            const currentUserDisplayName = user.username; // Using username from auth context
+            // Fetch current user's display name from database
+            const { data: currentUserData } = await client.models.User.get({ id: user.userId });
+            const currentUserDisplayName = currentUserData?.displayName || currentUserData?.username || user.username;
             const betId = result.data.id!;
             const invitationPromises = Array.from(selectedFriends).map(async (friendId) => {
               try {

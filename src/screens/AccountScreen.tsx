@@ -28,6 +28,7 @@ import { FriendsScreen } from './FriendsScreen';
 import { formatCurrency, formatPercentage } from '../utils/formatting';
 import { useAuth } from '../contexts/AuthContext';
 import { ProfileEditForm, User } from '../types/betting';
+import { getProfilePictureUrl } from '../services/imageUploadService';
 
 // Initialize GraphQL client
 const client = generateClient<Schema>();
@@ -99,12 +100,19 @@ export const AccountScreen: React.FC = () => {
           }
         }
 
+        // Get fresh signed URL for profile picture if it exists
+        let profilePictureUrl = undefined;
+        if (userData.profilePictureUrl) {
+          const signedUrl = await getProfilePictureUrl(userData.profilePictureUrl);
+          profilePictureUrl = signedUrl || undefined;
+        }
+
         setUserProfile({
           id: userData.id!,
           username: userData.username!,
           email: updateData.email || userData.email!,
           displayName: updateData.displayName || userData.displayName || undefined,
-          profilePictureUrl: userData.profilePictureUrl || undefined,
+          profilePictureUrl: profilePictureUrl,
           balance: userData.balance || 0,
           trustScore: userData.trustScore || 5.0,
           totalBets: userData.totalBets || 0,
@@ -128,12 +136,19 @@ export const AccountScreen: React.FC = () => {
         });
 
         if (newUser.data) {
+          // Get fresh signed URL for profile picture if it exists
+          let profilePictureUrl = undefined;
+          if (newUser.data.profilePictureUrl) {
+            const signedUrl = await getProfilePictureUrl(newUser.data.profilePictureUrl);
+            profilePictureUrl = signedUrl || undefined;
+          }
+
           setUserProfile({
             id: newUser.data.id!,
             username: newUser.data.username!,
             email: newUser.data.email!,
             displayName: newUser.data.displayName || undefined,
-            profilePictureUrl: newUser.data.profilePictureUrl || undefined,
+            profilePictureUrl: profilePictureUrl,
             balance: newUser.data.balance || 1000,
             trustScore: newUser.data.trustScore || 5.0,
             totalBets: newUser.data.totalBets || 0,
@@ -238,6 +253,10 @@ export const AccountScreen: React.FC = () => {
         });
 
         setShowProfileEditor(false);
+
+        // Refresh user stats to ensure profile picture is updated everywhere
+        await fetchUserStats();
+
         Alert.alert('Success', 'Profile updated successfully!');
       }
     } catch (error) {

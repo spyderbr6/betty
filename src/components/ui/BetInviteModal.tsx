@@ -202,7 +202,10 @@ export const BetInviteModal: React.FC<BetInviteModalProps> = ({
       setSendingInvites(new Set(selectedFriends));
 
       const selectedFriendsList = friends.filter(f => selectedFriends.has(f.user.id));
-      const currentUserDisplayName = user.username;
+
+      // Fetch current user's display name from database
+      const { data: currentUserData } = await client.models.User.get({ id: user.userId });
+      const currentUserDisplayName = currentUserData?.displayName || currentUserData?.username || user.username;
 
       // Create invitations for all selected friends
       const invitationPromises = selectedFriendsList.map(async (friend) => {

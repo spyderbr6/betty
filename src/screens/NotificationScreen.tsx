@@ -8,9 +8,8 @@ import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
+  FlatList,
   TouchableOpacity,
-  RefreshControl,
   Alert,
   ActivityIndicator,
 } from 'react-native';
@@ -163,34 +162,56 @@ interface NotificationScreenProps {
   onClose?: () => void;
 }
 
+const NOTIFICATIONS_PER_PAGE = 20;
+
 export const NotificationScreen: React.FC<NotificationScreenProps> = ({ onClose }) => {
   const { user } = useAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const [unreadCount, setUnreadCount] = useState(0);
 
-  const loadNotifications = useCallback(async () => {
+  const loadNotifications = useCallback(async (loadMore: boolean = false) => {
     if (!user) return;
 
     try {
+      if (loadMore && !hasMore) return;
+
+      const currentLimit = loadMore
+        ? notifications.length + NOTIFICATIONS_PER_PAGE
+        : NOTIFICATIONS_PER_PAGE;
+
       const userNotifications = await NotificationService.getUserNotifications(user.userId, {
-        limit: 100
+        limit: currentLimit
       });
 
       setNotifications(userNotifications);
       setUnreadCount(userNotifications.filter(n => !n.isRead).length);
+
+      // If we got fewer notifications than requested, there are no more
+      setHasMore(userNotifications.length >= currentLimit);
     } catch (error) {
       console.error('Error loading notifications:', error);
       Alert.alert('Error', 'Failed to load notifications. Please try again.');
     }
-  }, [user]);
+  }, [user, notifications.length, hasMore]);
 
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
-    await loadNotifications();
+    setHasMore(true);
+    await loadNotifications(false);
     setIsRefreshing(false);
   }, [loadNotifications]);
+
+  const handleLoadMore = useCallback(async () => {
+    if (isLoadingMore || !hasMore) return;
+
+    setIsLoadingMore(true);
+    await loadNotifications(true);
+    setIsLoadingMore(false);
+  }, [loadNotifications, isLoadingMore, hasMore]);
 
   const handleNotificationPress = useCallback((notification: Notification) => {
     // Mark as read if unread
@@ -322,18 +343,17 @@ export const NotificationScreen: React.FC<NotificationScreenProps> = ({ onClose 
         </View>
       )}
 
-      <ScrollView
-        style={styles.scrollView}
-        refreshControl={
-          <RefreshControl
-            refreshing={isRefreshing}
-            onRefresh={handleRefresh}
-            tintColor={colors.primary}
+      <FlatList
+        data={notifications}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => (
+          <NotificationItem
+            notification={item}
+            onPress={handleNotificationPress}
+            onMarkAsRead={handleMarkAsRead}
           />
-        }
-        showsVerticalScrollIndicator={false}
-      >
-        {notifications.length === 0 ? (
+        )}
+        ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Ionicons
               name="notifications-outline"
@@ -347,19 +367,22 @@ export const NotificationScreen: React.FC<NotificationScreenProps> = ({ onClose 
               You'll see notifications here when you have betting activity or friend interactions.
             </Text>
           </View>
-        ) : (
-          <View style={styles.notificationsList}>
-            {notifications.map((notification) => (
-              <NotificationItem
-                key={notification.id}
-                notification={notification}
-                onPress={handleNotificationPress}
-                onMarkAsRead={handleMarkAsRead}
-              />
-            ))}
-          </View>
-        )}
-      </ScrollView>
+        }
+        ListFooterComponent={
+          isLoadingMore ? (
+            <View style={styles.loadingMoreContainer}>
+              <ActivityIndicator size="small" color={colors.primary} />
+              <Text style={styles.loadingMoreText}>Loading more...</Text>
+            </View>
+          ) : null
+        }
+        onRefresh={handleRefresh}
+        refreshing={isRefreshing}
+        onEndReached={handleLoadMore}
+        onEndReachedThreshold={0.5}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.flatListContent}
+      />
     </SafeAreaView>
   );
 };
@@ -417,11 +440,20 @@ const styles = StyleSheet.create({
     ...textStyles.label,
     color: colors.textInverse,
   },
-  scrollView: {
-    flex: 1,
-  },
-  notificationsList: {
+  flatListContent: {
+    flexGrow: 1,
     paddingBottom: spacing.xl,
+  },
+  loadingMoreContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: spacing.md,
+  },
+  loadingMoreText: {
+    ...textStyles.caption,
+    color: colors.textMuted,
+    marginLeft: spacing.xs,
   },
   notificationItem: {
     backgroundColor: colors.surface,

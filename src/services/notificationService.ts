@@ -267,21 +267,24 @@ export class NotificationService {
         limit: options.limit || 50,
       });
 
-      return (data || []).map(notification => ({
-        id: notification.id!,
-        userId: notification.userId!,
-        type: notification.type as NotificationType,
-        title: notification.title!,
-        message: notification.message!,
-        isRead: notification.isRead || false,
-        priority: notification.priority as NotificationPriority,
-        actionType: notification.actionType || undefined,
-        actionData: notification.actionData,
-        relatedBetId: notification.relatedBetId || undefined,
-        relatedUserId: notification.relatedUserId || undefined,
-        relatedRequestId: notification.relatedRequestId || undefined,
-        createdAt: notification.createdAt || new Date().toISOString(),
-      }));
+      // Map and sort notifications by createdAt descending (newest first)
+      return (data || [])
+        .map(notification => ({
+          id: notification.id!,
+          userId: notification.userId!,
+          type: notification.type as NotificationType,
+          title: notification.title!,
+          message: notification.message!,
+          isRead: notification.isRead || false,
+          priority: notification.priority as NotificationPriority,
+          actionType: notification.actionType || undefined,
+          actionData: notification.actionData,
+          relatedBetId: notification.relatedBetId || undefined,
+          relatedUserId: notification.relatedUserId || undefined,
+          relatedRequestId: notification.relatedRequestId || undefined,
+          createdAt: notification.createdAt || new Date().toISOString(),
+        }))
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     } catch (error) {
       console.error('Error fetching notifications:', error);
       return [];
