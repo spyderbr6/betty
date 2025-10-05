@@ -921,23 +921,6 @@ const BetInvitationCard: React.FC<BetInvitationCardProps> = ({
           </View>
         </View>
 
-        {/* Participant counts */}
-        <View style={styles.participantCountsContainer}>
-          <View style={styles.participantCount}>
-            <Ionicons name="people-outline" size={12} color={colors.textSecondary} />
-            <Text style={styles.participantCountText}>
-              {betOdds.sideAName}: {sideACount}
-            </Text>
-          </View>
-          <View style={styles.participantCountDivider} />
-          <View style={styles.participantCount}>
-            <Ionicons name="people-outline" size={12} color={colors.textSecondary} />
-            <Text style={styles.participantCountText}>
-              {betOdds.sideBName}: {sideBCount}
-            </Text>
-          </View>
-        </View>
-
         {invitation.message && (
           <View style={styles.invitationMessage}>
             <Text style={styles.invitationMessageText}>"{invitation.message}"</Text>
@@ -961,12 +944,23 @@ const BetInvitationCard: React.FC<BetInvitationCardProps> = ({
                   styles.sideOptionIndicator,
                   selectedSide === 'A' && styles.sideOptionIndicatorSelected
                 ]} />
-                <Text style={[
-                  styles.sideOptionText,
-                  selectedSide === 'A' && styles.sideOptionTextSelected
-                ]}>
-                  {betOdds.sideAName}
-                </Text>
+                <View style={styles.sideOptionContent}>
+                  <Text style={[
+                    styles.sideOptionText,
+                    selectedSide === 'A' && styles.sideOptionTextSelected
+                  ]}>
+                    {betOdds.sideAName}
+                  </Text>
+                  <View style={styles.sideOptionParticipants}>
+                    <Ionicons name="people-outline" size={11} color={selectedSide === 'A' ? colors.background : colors.textMuted} />
+                    <Text style={[
+                      styles.sideOptionParticipantCount,
+                      selectedSide === 'A' && styles.sideOptionParticipantCountSelected
+                    ]}>
+                      {sideACount}
+                    </Text>
+                  </View>
+                </View>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -982,12 +976,23 @@ const BetInvitationCard: React.FC<BetInvitationCardProps> = ({
                   styles.sideOptionIndicator,
                   selectedSide === 'B' && styles.sideOptionIndicatorSelected
                 ]} />
-                <Text style={[
-                  styles.sideOptionText,
-                  selectedSide === 'B' && styles.sideOptionTextSelected
-                ]}>
-                  {betOdds.sideBName}
-                </Text>
+                <View style={styles.sideOptionContent}>
+                  <Text style={[
+                    styles.sideOptionText,
+                    selectedSide === 'B' && styles.sideOptionTextSelected
+                  ]}>
+                    {betOdds.sideBName}
+                  </Text>
+                  <View style={styles.sideOptionParticipants}>
+                    <Ionicons name="people-outline" size={11} color={selectedSide === 'B' ? colors.background : colors.textMuted} />
+                    <Text style={[
+                      styles.sideOptionParticipantCount,
+                      selectedSide === 'B' && styles.sideOptionParticipantCountSelected
+                    ]}>
+                      {sideBCount}
+                    </Text>
+                  </View>
+                </View>
               </TouchableOpacity>
             </View>
           </View>
@@ -1356,31 +1361,6 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontWeight: typography.fontWeight.bold,
   },
-  participantCountsContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: spacing.sm,
-    paddingVertical: spacing.xs,
-    backgroundColor: colors.surface,
-    borderRadius: spacing.radius.xs,
-  },
-  participantCount: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing.sm,
-  },
-  participantCountText: {
-    ...textStyles.caption,
-    color: colors.textSecondary,
-    marginLeft: spacing.xs / 2,
-    fontSize: 11,
-  },
-  participantCountDivider: {
-    width: 1,
-    height: 12,
-    backgroundColor: colors.border,
-  },
   invitationMessage: {
     backgroundColor: colors.surface,
     borderRadius: spacing.radius.xs,
@@ -1486,14 +1466,34 @@ const styles = StyleSheet.create({
     borderColor: colors.primary,
     backgroundColor: colors.primary,
   },
+  sideOptionContent: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
   sideOptionText: {
     ...textStyles.button,
     color: colors.textSecondary,
     fontWeight: typography.fontWeight.medium,
-    flex: 1,
   },
   sideOptionTextSelected: {
     color: colors.primary,
+    fontWeight: typography.fontWeight.semibold,
+  },
+  sideOptionParticipants: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: spacing.xs,
+  },
+  sideOptionParticipantCount: {
+    ...textStyles.caption,
+    color: colors.textMuted,
+    fontSize: 11,
+    marginLeft: 3,
+  },
+  sideOptionParticipantCountSelected: {
+    color: colors.background,
     fontWeight: typography.fontWeight.semibold,
   },
 
