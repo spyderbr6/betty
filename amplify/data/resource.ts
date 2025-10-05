@@ -74,8 +74,7 @@ const schema = a.schema({
       relatedBet: a.belongsTo('Bet', 'relatedBetId'),
     })
     .authorization((allow) => [
-      allow.owner().to(['read', 'update']), // Users can only read/update their own notifications
-      allow.authenticated().to(['create']) // Any authenticated user can create notifications for others
+      allow.authenticated().to(['read', 'create', 'update']) // Any authenticated user can create/read/update notifications
     ]),
 
   // Push notification tokens for mobile devices

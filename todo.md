@@ -47,6 +47,9 @@
 - [ ] bet list stats are tied to filters or not doing anything at all. 
 - [ ] opening the notification modal keeps parts of the header still, like the elipsis and bell icon. this allows you to infinitely open the notification modal. 
 - [ ] opening the friends modal keeps parts of the header.
+- [ ] none of the signup and login page validation messages appear to be working
+- [ ] new bet creation needs to refresh friend list when you open a new bet again
+- [ ] friend requests are showing as user id hashes instead of the username
 
 ### **Priority 2: Real-time Feature Enhancements**
 - [ ] **Enhanced Notifications**: Complete push notification system with expo-notifications

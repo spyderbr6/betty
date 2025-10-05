@@ -161,6 +161,8 @@ export class NotificationService {
     sendPush?: boolean;
   }): Promise<Notification | null> {
     try {
+      console.log('[Notification] Creating notification:', { userId, type, title, message, priority });
+
       const { data } = await client.models.Notification.create({
         userId,
         type,
@@ -176,6 +178,8 @@ export class NotificationService {
       });
 
       if (data) {
+        console.log('[Notification] Notification created successfully:', data.id);
+
         const notification: Notification = {
           id: data.id!,
           userId: data.userId!,
@@ -194,27 +198,34 @@ export class NotificationService {
 
         // Send push notification for high priority notifications
         if (sendPush && (priority === 'HIGH' || priority === 'URGENT')) {
-          await this.sendPushNotification(
-            userId,
-            title,
-            message,
-            {
-              notificationId: notification.id,
-              type,
-              actionType,
-              actionData,
-              relatedBetId,
-              relatedUserId,
-            },
-            priority === 'URGENT' ? 'HIGH' : 'MEDIUM'
-          );
+          console.log('[Notification] Sending push notification...');
+          try {
+            await this.sendPushNotification(
+              userId,
+              title,
+              message,
+              {
+                notificationId: notification.id,
+                type,
+                actionType,
+                actionData,
+                relatedBetId,
+                relatedUserId,
+              },
+              priority === 'URGENT' ? 'HIGH' : 'MEDIUM'
+            );
+          } catch (pushError) {
+            console.warn('[Notification] Push notification failed, but in-app notification was created:', pushError);
+            // Don't fail the whole notification creation if push fails
+          }
         }
 
         return notification;
       }
+      console.warn('[Notification] No data returned from create operation');
       return null;
     } catch (error) {
-      console.error('Error creating notification:', error);
+      console.error('[Notification] Error creating notification:', error);
       return null;
     }
   }
@@ -312,9 +323,10 @@ export class NotificationService {
   static async getUnreadCount(userId: string): Promise<number> {
     try {
       const notifications = await this.getUserNotifications(userId, { unreadOnly: true });
+      console.log(`[Notification] Unread count for user ${userId}:`, notifications.length);
       return notifications.length;
     } catch (error) {
-      console.error('Error getting unread count:', error);
+      console.error('[Notification] Error getting unread count:', error);
       return 0;
     }
   }
