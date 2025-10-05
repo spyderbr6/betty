@@ -43,7 +43,6 @@
 ## 🔄 IMMEDIATE NEXT STEPS (Current Development Cycle)
 
 ### **Priority 1: UI/UX Polish & Bug Fixes**
-- [ ] **Security Scanning**: Open repository for automated security scanning
 - [ ] bet list stats are tied to filters or not doing anything at all. 
 - [ ] opening the notification modal keeps parts of the header still, like the elipsis and bell icon. this allows you to infinitely open the notification modal. 
 - [ ] opening the friends modal keeps parts of the header.

@@ -25,11 +25,15 @@ export const Login: React.FC<LoginProps> = ({ onSignUpPress, onLoginSuccess }) =
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [focusedField, setFocusedField] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string>('');
   const { refreshAuth } = useAuth();
 
   const handleLogin = async () => {
+    // Clear previous errors
+    setErrorMessage('');
+
     if (!email.trim() || !password.trim()) {
-      Alert.alert('Error', 'Please fill in all fields');
+      setErrorMessage('Please fill in all fields');
       return;
     }
 
@@ -52,18 +56,18 @@ export const Login: React.FC<LoginProps> = ({ onSignUpPress, onLoginSuccess }) =
       console.error('Error code:', err?.code);
       console.error('Error cause:', err?.cause);
       console.error('Error stack:', err?.stack);
-      
-      // Check for common login errors
+
+      // Check for common login errors and set inline error message
       if (err.name === 'UserNotConfirmedException') {
-        Alert.alert('Account Not Confirmed', 'Please check your email and confirm your account before signing in.');
+        setErrorMessage('Please check your email and confirm your account before signing in.');
       } else if (err.name === 'NotAuthorizedException') {
-        Alert.alert('Invalid Credentials', 'Incorrect email or password. Please try again.');
+        setErrorMessage('Incorrect email or password. Please try again.');
       } else if (err.name === 'UserNotFoundException') {
-        Alert.alert('User Not Found', 'No account found with this email address.');
+        setErrorMessage('No account found with this email address.');
       } else if (err.name === 'NetworkError' || err.message?.includes('fetch')) {
-        Alert.alert('Network Error', 'Cannot connect to authentication service. Check your internet connection.');
+        setErrorMessage('Cannot connect to authentication service. Check your internet connection.');
       } else {
-        Alert.alert('Login Failed', `${err.name || 'Unknown'}: ${err.message || 'An error occurred during login'}`);
+        setErrorMessage(err.message || 'An error occurred during login');
       }
     } finally {
       setIsLoading(false);
@@ -102,6 +106,14 @@ export const Login: React.FC<LoginProps> = ({ onSignUpPress, onLoginSuccess }) =
 
             {/* Form Section */}
             <View style={styles.formContainer}>
+              {/* Error Message */}
+              {errorMessage ? (
+                <View style={styles.errorContainer}>
+                  <Ionicons name="alert-circle" size={16} color={colors.error} />
+                  <Text style={styles.errorText}>{errorMessage}</Text>
+                </View>
+              ) : null}
+
               {/* Email Input */}
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>Email</Text>
@@ -251,6 +263,22 @@ const styles = StyleSheet.create({
   },
   formContainer: {
     marginBottom: spacing.xl,
+  },
+  errorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.error + '15', // 15 is hex for ~8% opacity
+    borderWidth: 1,
+    borderColor: colors.error,
+    borderRadius: spacing.radius.sm,
+    padding: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  errorText: {
+    ...textStyles.bodySmall,
+    color: colors.error,
+    marginLeft: spacing.xs,
+    flex: 1,
   },
   inputGroup: {
     marginBottom: spacing.lg,

@@ -147,7 +147,10 @@ export const FriendRequestsModal: React.FC<FriendRequestsModalProps> = ({
       });
 
       // Send notification to the original requester
-      const currentUserDisplayName = user.username;
+      // Fetch current user's display name from database
+      const { data: currentUserData } = await client.models.User.get({ id: user.userId });
+      const currentUserDisplayName = currentUserData?.displayName || currentUserData?.username || user.username;
+
       await NotificationService.notifyFriendRequestAccepted(
         request.fromUserId,
         currentUserDisplayName,
@@ -312,7 +315,7 @@ export const FriendRequestsModal: React.FC<FriendRequestsModalProps> = ({
   };
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet">
+    <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
       <SafeAreaView style={styles.container} edges={['top']}>
         {/* Header */}
         <View style={styles.header}>

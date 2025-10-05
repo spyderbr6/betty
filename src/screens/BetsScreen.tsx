@@ -877,6 +877,10 @@ const BetInvitationCard: React.FC<BetInvitationCardProps> = ({
   const timeUntilExpiry = new Date(invitation.expiresAt).getTime() - new Date().getTime();
   const hoursLeft = Math.max(0, Math.floor(timeUntilExpiry / (1000 * 60 * 60)));
 
+  // Calculate participant counts for each side
+  const sideACount = invitation.bet.participants?.filter(p => p.side === 'A').length || 0;
+  const sideBCount = invitation.bet.participants?.filter(p => p.side === 'B').length || 0;
+
   return (
     <View style={[styles.betCard, styles.invitationCard]}>
       {/* Invitation Header */}
@@ -914,6 +918,23 @@ const BetInvitationCard: React.FC<BetInvitationCardProps> = ({
           <View style={styles.invitationAmountInfo}>
             <Text style={styles.invitationAmountLabel}>Amount:</Text>
             <Text style={styles.invitationAmount}>${invitation.bet.betAmount || 0}</Text>
+          </View>
+        </View>
+
+        {/* Participant counts */}
+        <View style={styles.participantCountsContainer}>
+          <View style={styles.participantCount}>
+            <Ionicons name="people-outline" size={12} color={colors.textSecondary} />
+            <Text style={styles.participantCountText}>
+              {betOdds.sideAName}: {sideACount}
+            </Text>
+          </View>
+          <View style={styles.participantCountDivider} />
+          <View style={styles.participantCount}>
+            <Ionicons name="people-outline" size={12} color={colors.textSecondary} />
+            <Text style={styles.participantCountText}>
+              {betOdds.sideBName}: {sideBCount}
+            </Text>
           </View>
         </View>
 
@@ -1334,6 +1355,31 @@ const styles = StyleSheet.create({
     ...textStyles.h4,
     color: colors.textPrimary,
     fontWeight: typography.fontWeight.bold,
+  },
+  participantCountsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: spacing.sm,
+    paddingVertical: spacing.xs,
+    backgroundColor: colors.surface,
+    borderRadius: spacing.radius.xs,
+  },
+  participantCount: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.sm,
+  },
+  participantCountText: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    marginLeft: spacing.xs / 2,
+    fontSize: 11,
+  },
+  participantCountDivider: {
+    width: 1,
+    height: 12,
+    backgroundColor: colors.border,
   },
   invitationMessage: {
     backgroundColor: colors.surface,

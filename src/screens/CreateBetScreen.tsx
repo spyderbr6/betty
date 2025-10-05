@@ -3,7 +3,7 @@
  * Professional bet creation interface with templates and bet types
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -17,6 +17,7 @@ import {
   Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { generateClient } from 'aws-amplify/data';
 import { getCurrentUser } from 'aws-amplify/auth';
 import type { Schema } from '../../amplify/data/resource';
@@ -64,67 +65,70 @@ export const CreateBetScreen: React.FC = () => {
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
 
-  // Fetch user friends
-  useEffect(() => {
-    const fetchFriends = async () => {
-      if (!user?.userId) return;
+  // Fetch user friends - refresh on every screen focus
+  const fetchFriends = useCallback(async () => {
+    if (!user?.userId) return;
 
-      try {
-        // Fetch friendships where current user is user1 or user2
-        const [friendships1, friendships2] = await Promise.all([
-          client.models.Friendship.list({
-            filter: { user1Id: { eq: user.userId } }
-          }),
-          client.models.Friendship.list({
-            filter: { user2Id: { eq: user.userId } }
-          })
-        ]);
+    try {
+      // Fetch friendships where current user is user1 or user2
+      const [friendships1, friendships2] = await Promise.all([
+        client.models.Friendship.list({
+          filter: { user1Id: { eq: user.userId } }
+        }),
+        client.models.Friendship.list({
+          filter: { user2Id: { eq: user.userId } }
+        })
+      ]);
 
-        const allFriendships = [...(friendships1.data || []), ...(friendships2.data || [])];
+      const allFriendships = [...(friendships1.data || []), ...(friendships2.data || [])];
 
-        // Get friend user IDs
-        const friendIds = allFriendships.map(friendship =>
-          friendship.user1Id === user.userId ? friendship.user2Id : friendship.user1Id
-        );
+      // Get friend user IDs
+      const friendIds = allFriendships.map(friendship =>
+        friendship.user1Id === user.userId ? friendship.user2Id : friendship.user1Id
+      );
 
-        // Fetch friend user details
-        const friendUsers = await Promise.all(
-          friendIds.map(async (friendId) => {
-            try {
-              const { data: userData } = await client.models.User.get({ id: friendId });
-              if (userData) {
-                return {
-                  id: userData.id!,
-                  username: userData.username!,
-                  email: userData.email!,
-                  displayName: userData.displayName || undefined,
-                  profilePictureUrl: userData.profilePictureUrl || undefined,
-                  balance: userData.balance || 0,
-                  trustScore: userData.trustScore || 5.0,
-                  totalBets: userData.totalBets || 0,
-                  totalWinnings: userData.totalWinnings || 0,
-                  winRate: userData.winRate || 0,
-                  createdAt: userData.createdAt || new Date().toISOString(),
-                  updatedAt: userData.updatedAt || new Date().toISOString(),
-                } as User;
-              }
-              return null;
-            } catch (error) {
-              console.error(`Error fetching friend ${friendId}:`, error);
-              return null;
+      // Fetch friend user details
+      const friendUsers = await Promise.all(
+        friendIds.map(async (friendId) => {
+          try {
+            const { data: userData } = await client.models.User.get({ id: friendId });
+            if (userData) {
+              return {
+                id: userData.id!,
+                username: userData.username!,
+                email: userData.email!,
+                displayName: userData.displayName || undefined,
+                profilePictureUrl: userData.profilePictureUrl || undefined,
+                balance: userData.balance || 0,
+                trustScore: userData.trustScore || 5.0,
+                totalBets: userData.totalBets || 0,
+                totalWinnings: userData.totalWinnings || 0,
+                winRate: userData.winRate || 0,
+                createdAt: userData.createdAt || new Date().toISOString(),
+                updatedAt: userData.updatedAt || new Date().toISOString(),
+              } as User;
             }
-          })
-        );
+            return null;
+          } catch (error) {
+            console.error(`Error fetching friend ${friendId}:`, error);
+            return null;
+          }
+        })
+      );
 
-        const validFriends = friendUsers.filter((friend): friend is User => friend !== null);
-        setFriends(validFriends);
-      } catch (error) {
-        console.error('Error fetching friends:', error);
-      }
-    };
-
-    fetchFriends();
+      const validFriends = friendUsers.filter((friend): friend is User => friend !== null);
+      setFriends(validFriends);
+    } catch (error) {
+      console.error('Error fetching friends:', error);
+    }
   }, [user?.userId]);
+
+  // Refresh friend list every time screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      fetchFriends();
+    }, [fetchFriends])
+  );
 
   const betTemplates: BetTemplate[] = [
     {

@@ -170,7 +170,10 @@ export const AddFriendModal: React.FC<AddFriendModalProps> = ({
 
       // Create notification for the target user
       if (newRequest) {
-        const currentUserDisplayName = user.username;
+        // Fetch current user's display name from database
+        const { data: currentUserData } = await client.models.User.get({ id: user.userId });
+        const currentUserDisplayName = currentUserData?.displayName || currentUserData?.username || user.username;
+
         await NotificationService.notifyFriendRequestReceived(
           targetUser.id,
           currentUserDisplayName,
@@ -278,7 +281,7 @@ export const AddFriendModal: React.FC<AddFriendModalProps> = ({
   };
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet">
+    <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
       <SafeAreaView style={styles.container} edges={['top']}>
         <KeyboardAvoidingView
           style={styles.content}

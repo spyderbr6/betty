@@ -27,20 +27,24 @@ export const SignUp: React.FC<SignUpProps> = ({ onLoginPress, onSignUpSuccess })
   const [isLoading, setIsLoading] = useState(false);
   const [step, setStep] = useState<'signUp' | 'confirm'>('signUp');
   const [focusedField, setFocusedField] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string>('');
 
   const handleSignUp = async () => {
+    // Clear previous errors
+    setErrorMessage('');
+
     if (!email.trim() || !password.trim() || !displayName.trim()) {
-      Alert.alert('Error', 'Please fill in all fields');
+      setErrorMessage('Please fill in all fields');
       return;
     }
 
     if (displayName.trim().length < 2) {
-      Alert.alert('Error', 'Display name must be at least 2 characters long');
+      setErrorMessage('Display name must be at least 2 characters long');
       return;
     }
 
     if (displayName.trim().length > 30) {
-      Alert.alert('Error', 'Display name must be less than 30 characters');
+      setErrorMessage('Display name must be less than 30 characters');
       return;
     }
 
@@ -58,18 +62,21 @@ export const SignUp: React.FC<SignUpProps> = ({ onLoginPress, onSignUpSuccess })
         },
       });
       setStep('confirm');
-      Alert.alert('Success', 'Please check your email for a confirmation code');
+      setErrorMessage(''); // Clear any errors on success
     } catch (error) {
       const err = error as Error;
-      Alert.alert('Sign Up Failed', err.message || 'An error occurred during sign up');
+      setErrorMessage(err.message || 'An error occurred during sign up');
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleConfirmSignUp = async () => {
+    // Clear previous errors
+    setErrorMessage('');
+
     if (!confirmationCode.trim()) {
-      Alert.alert('Error', 'Please enter the confirmation code');
+      setErrorMessage('Please enter the confirmation code');
       return;
     }
 
@@ -79,11 +86,11 @@ export const SignUp: React.FC<SignUpProps> = ({ onLoginPress, onSignUpSuccess })
         username: email.trim(),
         confirmationCode: confirmationCode.trim(),
       });
-      Alert.alert('Success', 'Account confirmed! You can now sign in.');
+      setErrorMessage(''); // Clear any errors on success
       onSignUpSuccess();
     } catch (error) {
       const err = error as Error;
-      Alert.alert('Confirmation Failed', err.message || 'An error occurred during confirmation');
+      setErrorMessage(err.message || 'An error occurred during confirmation');
     } finally {
       setIsLoading(false);
     }
@@ -122,6 +129,14 @@ export const SignUp: React.FC<SignUpProps> = ({ onLoginPress, onSignUpSuccess })
 
             {/* Form Section */}
             <View style={styles.formContainer}>
+              {/* Error Message */}
+              {errorMessage ? (
+                <View style={styles.errorContainer}>
+                  <Ionicons name="alert-circle" size={16} color={colors.error} />
+                  <Text style={styles.errorText}>{errorMessage}</Text>
+                </View>
+              ) : null}
+
               {/* Confirmation Code Input */}
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>Confirmation Code</Text>
@@ -213,6 +228,14 @@ export const SignUp: React.FC<SignUpProps> = ({ onLoginPress, onSignUpSuccess })
 
             {/* Form Section */}
             <View style={styles.formContainer}>
+              {/* Error Message */}
+              {errorMessage ? (
+                <View style={styles.errorContainer}>
+                  <Ionicons name="alert-circle" size={16} color={colors.error} />
+                  <Text style={styles.errorText}>{errorMessage}</Text>
+                </View>
+              ) : null}
+
               {/* Display Name Input */}
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>Display Name</Text>
@@ -395,6 +418,22 @@ const styles = StyleSheet.create({
   },
   formContainer: {
     marginBottom: spacing.xl,
+  },
+  errorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.error + '15', // 15 is hex for ~8% opacity
+    borderWidth: 1,
+    borderColor: colors.error,
+    borderRadius: spacing.radius.sm,
+    padding: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  errorText: {
+    ...textStyles.bodySmall,
+    color: colors.error,
+    marginLeft: spacing.xs,
+    flex: 1,
   },
   inputGroup: {
     marginBottom: spacing.lg,
