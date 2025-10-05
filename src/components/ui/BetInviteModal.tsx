@@ -24,6 +24,7 @@ import { colors, spacing, typography, textStyles } from '../../styles';
 import { useAuth } from '../../contexts/AuthContext';
 import { Bet, User, FriendListItem } from '../../types/betting';
 import { NotificationService } from '../../services/notificationService';
+import { ModalHeader } from './ModalHeader';
 
 // Initialize GraphQL client
 const client = generateClient<Schema>();
@@ -339,19 +340,10 @@ export const BetInviteModal: React.FC<BetInviteModalProps> = ({
   };
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet">
+    <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
       <SafeAreaView style={styles.container} edges={['top']}>
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.title}>Invite Friends</Text>
-          <TouchableOpacity
-            style={styles.closeButton}
-            onPress={onClose}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="close" size={24} color={colors.textSecondary} />
-          </TouchableOpacity>
-        </View>
+        {/* Standardized Modal Header */}
+        <ModalHeader title="Invite Friends" onClose={onClose} />
 
         {/* Bet Info */}
         <View style={styles.betInfo}>
@@ -474,25 +466,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
-  },
-
-  // Header
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  title: {
-    ...textStyles.h3,
-    color: colors.textPrimary,
-    fontWeight: typography.fontWeight.bold,
-  },
-  closeButton: {
-    padding: spacing.xs,
   },
 
   // Bet Info

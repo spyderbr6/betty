@@ -19,6 +19,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, typography, spacing, textStyles } from '../../styles';
+import { ModalHeader } from './ModalHeader';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 interface FeedbackModalProps {
   visible: boolean;
@@ -114,36 +116,33 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({
     <Modal
       visible={visible}
       animationType="slide"
-      presentationStyle="pageSheet"
+      presentationStyle="fullScreen"
       onRequestClose={handleClose}
     >
-      <KeyboardAvoidingView
-        style={styles.container}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      >
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.closeButton}
-            onPress={handleClose}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="close" size={24} color={colors.textSecondary} />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Send Feedback</Text>
-          <TouchableOpacity
-            style={[styles.submitButton, (!title.trim() || !description.trim() || isSubmitting) && styles.submitButtonDisabled]}
-            onPress={handleSubmit}
-            disabled={!title.trim() || !description.trim() || isSubmitting}
-            activeOpacity={0.7}
-          >
-            {isSubmitting ? (
-              <ActivityIndicator size="small" color={colors.background} />
-            ) : (
-              <Text style={styles.submitButtonText}>Send</Text>
-            )}
-          </TouchableOpacity>
-        </View>
+      <SafeAreaView style={styles.safeArea} edges={['top']}>
+        <KeyboardAvoidingView
+          style={styles.container}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          {/* Standardized Modal Header with Send Button */}
+          <ModalHeader
+            title="Send Feedback"
+            onClose={handleClose}
+            rightComponent={
+              <TouchableOpacity
+                style={[styles.submitButton, (!title.trim() || !description.trim() || isSubmitting) && styles.submitButtonDisabled]}
+                onPress={handleSubmit}
+                disabled={!title.trim() || !description.trim() || isSubmitting}
+                activeOpacity={0.7}
+              >
+                {isSubmitting ? (
+                  <ActivityIndicator size="small" color={colors.background} />
+                ) : (
+                  <Text style={styles.submitButtonText}>Send</Text>
+                )}
+              </TouchableOpacity>
+            }
+          />
 
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
           {/* Feedback Type Selection */}
@@ -216,38 +215,22 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({
             </Text>
           </View>
         </ScrollView>
-      </KeyboardAvoidingView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
     </Modal>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
+  safeArea: {
     flex: 1,
     backgroundColor: colors.background,
   },
-
-  // Header
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    backgroundColor: colors.surface,
-  },
-  closeButton: {
-    padding: spacing.xs,
-  },
-  headerTitle: {
-    ...textStyles.h3,
-    color: colors.textPrimary,
+  container: {
     flex: 1,
-    textAlign: 'center',
-    marginHorizontal: spacing.md,
   },
+
+  // Submit Button (used in ModalHeader rightComponent)
   submitButton: {
     backgroundColor: colors.primary,
     paddingHorizontal: spacing.md,

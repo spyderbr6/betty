@@ -43,10 +43,9 @@
 ## 🔄 IMMEDIATE NEXT STEPS (Current Development Cycle)
 
 ### **Priority 1: UI/UX Polish & Bug Fixes**
-- [ ] opening the notification modal keeps parts of the header still, like the elipsis and bell icon. this allows you to infinitely open the notification modal. you are saying this is fixed but i shouldnt be able to keep hitting the notification bell and open a new window each time. 
-- [ ] notification screen needs a refresh capability. implement dragdown refresh. 
-- [ ] each page bet stats is tied to filters rather than being the overall stats.
-- [ ] notifications appear to be displaying the userid hash rather than the friendly user name. 
+- [ ] friends on the friends screen has a three dot icon anchored to the left side which is an odd design choice, it should be on the right. 
+- [ ] 
+
 
 ### **Priority 2: Real-time Feature Enhancements**
 - [ ] **Enhanced Notifications**: Complete push notification system with expo-notifications

@@ -123,7 +123,7 @@ const NotificationItem: React.FC<NotificationItemProps> = ({
           </View>
           <View style={styles.notificationText}>
             <Text style={[
-              textStyles.label,
+              styles.notificationTitle,
               !notification.isRead && styles.unreadTitle
             ]}>
               {notification.title}
@@ -137,7 +137,7 @@ const NotificationItem: React.FC<NotificationItemProps> = ({
             </Text>
           </View>
           <View style={styles.notificationMeta}>
-            <Text style={textStyles.caption}>
+            <Text style={styles.timestampText}>
               {formatTimeAgo(notification.createdAt)}
             </Text>
             {!notification.isRead && (
@@ -265,7 +265,21 @@ export const NotificationScreen: React.FC<NotificationScreenProps> = ({ onClose 
   if (isLoading) {
     return (
       <SafeAreaView style={styles.container}>
-        <Header title="Notifications" />
+        {/* Custom header for modal mode */}
+        {onClose ? (
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalHeaderTitle}>Notifications</Text>
+            <TouchableOpacity
+              style={styles.closeButton}
+              onPress={onClose}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="close" size={24} color={colors.textPrimary} />
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <Header title="Notifications" />
+        )}
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={[textStyles.body, styles.loadingText]}>
@@ -278,9 +292,10 @@ export const NotificationScreen: React.FC<NotificationScreenProps> = ({ onClose 
 
   return (
     <SafeAreaView style={styles.container}>
-      <Header
-        title="Notifications"
-        rightComponent={onClose && (
+      {/* Custom header for modal mode, regular Header for screen mode */}
+      {onClose ? (
+        <View style={styles.modalHeader}>
+          <Text style={styles.modalHeaderTitle}>Notifications</Text>
           <TouchableOpacity
             style={styles.closeButton}
             onPress={onClose}
@@ -288,12 +303,14 @@ export const NotificationScreen: React.FC<NotificationScreenProps> = ({ onClose 
           >
             <Ionicons name="close" size={24} color={colors.textPrimary} />
           </TouchableOpacity>
-        )}
-      />
+        </View>
+      ) : (
+        <Header title="Notifications" />
+      )}
 
       {unreadCount > 0 && (
         <View style={styles.markAllContainer}>
-          <Text style={textStyles.bodySmall}>
+          <Text style={styles.unreadCountText}>
             {unreadCount} unread notification{unreadCount !== 1 ? 's' : ''}
           </Text>
           <TouchableOpacity
@@ -321,7 +338,7 @@ export const NotificationScreen: React.FC<NotificationScreenProps> = ({ onClose 
             <Ionicons
               name="notifications-outline"
               size={64}
-              color={colors.textMuted}
+              color={colors.textSecondary}
             />
             <Text style={[textStyles.h4, styles.emptyTitle]}>
               No notifications yet
@@ -352,6 +369,21 @@ const styles = StyleSheet.create({
     ...commonStyles.safeArea,
     backgroundColor: colors.background,
   },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    minHeight: 60,
+  },
+  modalHeaderTitle: {
+    ...textStyles.h3,
+    color: colors.textPrimary,
+  },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -369,6 +401,11 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
+  },
+  unreadCountText: {
+    ...textStyles.bodySmall,
+    color: colors.textSecondary, // #D1D5DB - 7.5:1 contrast
+    fontSize: 14,
   },
   markAllButton: {
     paddingHorizontal: spacing.md,
@@ -416,21 +453,33 @@ const styles = StyleSheet.create({
     flex: 1,
     marginRight: spacing.sm,
   },
+  notificationTitle: {
+    ...textStyles.label,
+    color: colors.textSecondary, // #D1D5DB - 7.5:1 contrast on surface
+    fontSize: 14,
+    fontWeight: typography.fontWeight.medium,
+  },
   unreadTitle: {
     fontWeight: typography.fontWeight.semibold,
-    color: colors.textPrimary,
+    color: colors.textPrimary, // #FFFFFF - Maximum contrast for unread
   },
   notificationMessage: {
     marginTop: spacing.xs / 2,
-    color: colors.textSecondary,
-    lineHeight: 18,
+    color: colors.textSecondary, // #D1D5DB - 7.5:1 contrast ratio on surface
+    lineHeight: 20, // Increased for better readability
   },
   unreadMessage: {
-    color: colors.textPrimary,
+    color: colors.textPrimary, // #FFFFFF - Maximum contrast
+    fontWeight: typography.fontWeight.medium, // Added weight for emphasis
   },
   notificationMeta: {
     alignItems: 'flex-end',
     minWidth: 60,
+  },
+  timestampText: {
+    ...textStyles.caption,
+    color: colors.textSecondary, // #D1D5DB - Better contrast than textMuted
+    fontSize: 12,
   },
   markReadButton: {
     marginTop: spacing.xs,

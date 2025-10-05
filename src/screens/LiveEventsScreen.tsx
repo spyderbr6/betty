@@ -422,24 +422,24 @@ export const LiveEventsScreen: React.FC = () => {
           )}
         </View>
 
-        {/* Joinable Bets Stats Summary */}
+        {/* Joinable Bets Stats Summary - Always show overall stats, not filtered */}
         <View style={styles.liveStatsSection}>
           <Text style={styles.sectionTitle}>BETTING STATS</Text>
           <View style={styles.statsGrid}>
             <View style={styles.statCard}>
-              <Text style={styles.statValue}>${filteredLiveBets.reduce((sum, bet) => sum + (bet.totalPot || 0), 0)}</Text>
+              <Text style={styles.statValue}>${liveBets.reduce((sum, bet) => sum + (bet.totalPot || 0), 0)}</Text>
               <Text style={styles.statLabel}>TOTAL AVAILABLE POT</Text>
             </View>
             <View style={styles.statCard}>
-              <Text style={styles.statValue}>{filteredLiveBets.reduce((sum, bet) => sum + (bet.participants?.length || 0), 0)}</Text>
+              <Text style={styles.statValue}>{liveBets.reduce((sum, bet) => sum + (bet.participants?.length || 0), 0)}</Text>
               <Text style={styles.statLabel}>ACTIVE BETTORS</Text>
             </View>
             <View style={styles.statCard}>
-              <Text style={styles.statValue}>{filteredLiveBets.length}</Text>
+              <Text style={styles.statValue}>{liveBets.length}</Text>
               <Text style={styles.statLabel}>BETS AVAILABLE</Text>
             </View>
             <View style={styles.statCard}>
-              <Text style={styles.statValue}>{filteredLiveBets.length > 0 ? Math.round(filteredLiveBets.reduce((sum, bet) => sum + (bet.betAmount || 0), 0) / filteredLiveBets.length) : 0}</Text>
+              <Text style={styles.statValue}>{liveBets.length > 0 ? Math.round(liveBets.reduce((sum, bet) => sum + (bet.betAmount || 0), 0) / liveBets.length) : 0}</Text>
               <Text style={styles.statLabel}>AVG BET AMOUNT</Text>
             </View>
           </View>

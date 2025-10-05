@@ -139,11 +139,12 @@ export const Header: React.FC<HeaderProps> = ({
               style={styles.actionButton}
               onPress={handleNotificationPress}
               activeOpacity={0.7}
+              disabled={showNotificationModal}
             >
-              <Ionicons 
-                name="notifications-outline" 
-                size={18} 
-                color={colors.textSecondary} 
+              <Ionicons
+                name="notifications-outline"
+                size={18}
+                color={colors.textSecondary}
               />
               {(notificationCount ?? unreadCount) > 0 && (
                 <View style={styles.notificationBadge}>
@@ -158,6 +159,7 @@ export const Header: React.FC<HeaderProps> = ({
               style={styles.actionButton}
               onPress={handleMenuPress}
               activeOpacity={0.7}
+              disabled={showFeedbackModal}
             >
               <Ionicons
                 name="ellipsis-horizontal"

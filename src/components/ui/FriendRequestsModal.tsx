@@ -23,6 +23,7 @@ import { colors, spacing, typography, textStyles } from '../../styles';
 import { useAuth } from '../../contexts/AuthContext';
 import { User } from '../../types/betting';
 import { NotificationService } from '../../services/notificationService';
+import { ModalHeader } from './ModalHeader';
 
 // Initialize GraphQL client
 const client = generateClient<Schema>();
@@ -317,17 +318,8 @@ export const FriendRequestsModal: React.FC<FriendRequestsModalProps> = ({
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
       <SafeAreaView style={styles.container} edges={['top']}>
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.title}>Friend Requests</Text>
-          <TouchableOpacity
-            style={styles.closeButton}
-            onPress={onClose}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="close" size={24} color={colors.textSecondary} />
-          </TouchableOpacity>
-        </View>
+        {/* Standardized Modal Header */}
+        <ModalHeader title="Friend Requests" onClose={onClose} />
 
         {/* Content */}
         <View style={styles.content}>
@@ -366,25 +358,6 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-  },
-
-  // Header
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  title: {
-    ...textStyles.h3,
-    color: colors.textPrimary,
-    fontWeight: typography.fontWeight.bold,
-  },
-  closeButton: {
-    padding: spacing.xs,
   },
 
   // Loading State
