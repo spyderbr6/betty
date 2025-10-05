@@ -21,6 +21,7 @@ import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
 import { colors, spacing, textStyles, typography, commonStyles } from '../styles';
 import { Header } from '../components/ui/Header';
+import { ModalHeader } from '../components/ui/ModalHeader';
 import { AddFriendModal } from '../components/ui/AddFriendModal';
 import { FriendRequestsModal } from '../components/ui/FriendRequestsModal';
 import { useAuth } from '../contexts/AuthContext';
@@ -29,7 +30,11 @@ import { FriendListItem, User } from '../types/betting';
 // Initialize GraphQL client
 const client = generateClient<Schema>();
 
-export const FriendsScreen: React.FC = () => {
+interface FriendsScreenProps {
+  onClose?: () => void;
+}
+
+export const FriendsScreen: React.FC<FriendsScreenProps> = ({ onClose }) => {
   const { user } = useAuth();
   const [friends, setFriends] = useState<FriendListItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -204,7 +209,23 @@ export const FriendsScreen: React.FC = () => {
   if (isLoading) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
-        <Header title="Friends" />
+        {onClose ? (
+          <ModalHeader
+            title="Friends"
+            onClose={onClose}
+            rightComponent={
+              <TouchableOpacity
+                style={styles.addButton}
+                onPress={handleAddFriend}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="person-add" size={20} color={colors.primary} />
+              </TouchableOpacity>
+            }
+          />
+        ) : (
+          <Header title="Friends" />
+        )}
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={styles.loadingText}>Loading your friends...</Text>
@@ -215,7 +236,23 @@ export const FriendsScreen: React.FC = () => {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <Header title="Friends" />
+      {onClose ? (
+        <ModalHeader
+          title="Friends"
+          onClose={onClose}
+          rightComponent={
+            <TouchableOpacity
+              style={styles.addButton}
+              onPress={handleAddFriend}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="person-add" size={20} color={colors.primary} />
+            </TouchableOpacity>
+          }
+        />
+      ) : (
+        <Header title="Friends" />
+      )}
 
       <ScrollView
         style={styles.content}
@@ -422,6 +459,12 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     marginTop: spacing.md,
     textAlign: 'center',
+  },
+
+  // Modal Header Action Button
+  addButton: {
+    padding: spacing.xs,
+    marginRight: spacing.xs,
   },
 
   // Header Section

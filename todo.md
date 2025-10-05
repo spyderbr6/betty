@@ -44,6 +44,10 @@
 
 ### **Priority 1: UI/UX Polish & Bug Fixes**
 - [ ] friends on the friends screen has a three dot icon anchored to the left side which is an odd design choice, it should be on the right. 
+- [ ] bet invitations still include the hashed userid rather than friendly
+- [ ] notifications need to be ordered in descending with latest at the top. 
+- [ ] notifications should lazy load after more than a certain amount of notifications. 
+- [ ] profile pictures that were uploaded dont appear to be displaying anywhere once they're uploaded. 
 - [ ] 
 
 

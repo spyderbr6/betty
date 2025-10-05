@@ -452,20 +452,10 @@ export const AccountScreen: React.FC = () => {
       <Modal
         visible={showFriendsScreen}
         animationType="slide"
-        presentationStyle="pageSheet"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setShowFriendsScreen(false)}
       >
-        <View style={{ flex: 1 }}>
-          <View style={styles.modalHeader}>
-            <TouchableOpacity
-              style={styles.modalCloseButton}
-              onPress={() => setShowFriendsScreen(false)}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="close" size={24} color={colors.textSecondary} />
-            </TouchableOpacity>
-          </View>
-          <FriendsScreen />
-        </View>
+        <FriendsScreen onClose={() => setShowFriendsScreen(false)} />
       </Modal>
     </SafeAreaView>
   );
@@ -719,18 +709,5 @@ const styles = StyleSheet.create({
     ...textStyles.button,
     color: colors.error,
     marginLeft: spacing.xs,
-  },
-
-  // Modal styles
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.sm,
-    backgroundColor: colors.background,
-  },
-  modalCloseButton: {
-    padding: spacing.xs,
   },
 });

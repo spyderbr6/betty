@@ -29,7 +29,7 @@ SideBet is a peer-to-peer betting platform built with React Native + Expo for mo
 src/
 ├── components/
 │   ├── betting/          # BetCard, CreateBet components
-│   ├── ui/              # Reusable UI components (Header, modals)
+│   ├── ui/              # Reusable UI components (Header, ModalHeader, modals)
 │   ├── Login.tsx        # Authentication forms
 │   └── SignUp.tsx
 ├── contexts/
@@ -42,6 +42,11 @@ src/
 ├── types/               # TypeScript definitions
 └── utils/               # Helper functions
 ```
+
+### Key Documentation Files
+- **CLAUDE.md** (this file): Main development guide and architecture overview
+- **[MODAL_STANDARDS.md](./MODAL_STANDARDS.md)**: **REQUIRED** reading before creating/modifying modals
+- **todo.md**: Current tasks and project roadmap
 
 ### Backend Integration
 - **GraphQL API**: Real-time queries with `observeQuery()` for live updates
@@ -466,6 +471,75 @@ Before any component work:
 3. Verify all colors exist in `colors.*`
 4. Confirm spacing values exist in `spacing.*`
 5. Never hardcode numeric values for fonts, colors, or spacing
+
+## Modal Standards
+
+### Overview
+**IMPORTANT**: When creating or modifying any modal component, you **MUST** follow the standardized modal pattern documented in [MODAL_STANDARDS.md](./MODAL_STANDARDS.md).
+
+### Quick Reference for Modal Implementation
+
+#### Required Modal Configuration
+```typescript
+import { ModalHeader } from '../components/ui/ModalHeader';
+import { SafeAreaView } from 'react-native-safe-area-context';
+
+<Modal
+  visible={visible}
+  animationType="slide"
+  presentationStyle="fullScreen"  // ✅ REQUIRED - Never use "pageSheet"
+  onRequestClose={onClose}         // ✅ REQUIRED - Android back button
+>
+  <SafeAreaView style={styles.container} edges={['top']}>
+    <ModalHeader title="Modal Title" onClose={onClose} />
+    {/* Modal content */}
+  </SafeAreaView>
+</Modal>
+```
+
+#### Why These Standards Exist
+1. **Prevents Modal Stacking**: Using `ModalHeader` instead of custom headers prevents users from opening infinite modals
+2. **ADA/WCAG Compliance**: Ensures 7.5:1+ contrast ratios for accessibility
+3. **Consistency**: All modals follow identical UX patterns
+4. **Platform Compatibility**: Proper safe area handling for notched devices
+
+#### Key Rules
+- ✅ **DO**: Always use `ModalHeader` component for modal headers
+- ✅ **DO**: Use `presentationStyle="fullScreen"` for all modals
+- ✅ **DO**: Wrap modal content in `SafeAreaView` with `edges={['top']}`
+- ✅ **DO**: Use high contrast colors (`textPrimary` or `textSecondary`)
+- ❌ **DON'T**: Create custom header layouts with logo, balance, or notification bell
+- ❌ **DON'T**: Use `presentationStyle="pageSheet"` (causes header overlap issues)
+- ❌ **DON'T**: Use `textMuted` for important modal content (fails ADA contrast)
+
+#### Modal with Action Button Example
+```typescript
+<ModalHeader
+  title="Send Feedback"
+  onClose={onClose}
+  rightComponent={
+    <TouchableOpacity
+      style={styles.submitButton}
+      onPress={handleSubmit}
+      disabled={!isValid}
+    >
+      <Text style={styles.submitButtonText}>Submit</Text>
+    </TouchableOpacity>
+  }
+/>
+```
+
+#### Complete Documentation
+For comprehensive details, examples, and accessibility requirements, see:
+**[MODAL_STANDARDS.md](./MODAL_STANDARDS.md)**
+
+This includes:
+- Detailed component usage
+- Accessibility compliance checklist
+- Layout specifications
+- Migration guide for existing modals
+- Anti-patterns to avoid
+- Code examples for all scenarios
 
 ## Claude Workflow Instructions
 
