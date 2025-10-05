@@ -227,9 +227,7 @@ export const LiveEventsScreen: React.FC = () => {
     console.log('Balance pressed');
   };
 
-  const handleNotificationsPress = () => {
-    console.log('Notifications pressed');
-  };
+  // Removed - Header handles notifications internally now
 
   const handleSearchChange = (query: string) => {
     setSearchQuery(query);
@@ -272,8 +270,6 @@ export const LiveEventsScreen: React.FC = () => {
       <Header
         showBalance={true}
         onBalancePress={handleBalancePress}
-        onNotificationsPress={handleNotificationsPress}
-        notificationCount={3}
         liveGame={liveGame}
         variant="default"
       />

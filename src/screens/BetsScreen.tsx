@@ -522,10 +522,7 @@ export const BetsScreen: React.FC = () => {
     // Navigate to balance/wallet screen
   };
 
-  const handleNotificationsPress = () => {
-    console.log('Notifications pressed');
-    // Navigate to notifications screen
-  };
+  // Removed - Header handles notifications internally now
 
   const handleSearchChange = (query: string) => {
     setSearchQuery(query);
@@ -643,8 +640,6 @@ export const BetsScreen: React.FC = () => {
       <Header
         showBalance={true}
         onBalancePress={handleBalancePress}
-        onNotificationsPress={handleNotificationsPress}
-        notificationCount={2}
         liveGame={liveGame}
       />
 

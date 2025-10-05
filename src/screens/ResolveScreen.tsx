@@ -408,9 +408,7 @@ export const ResolveScreen: React.FC = () => {
     console.log('Balance pressed');
   };
 
-  const handleNotificationsPress = () => {
-    console.log('Notifications pressed');
-  };
+  // Removed - Header handles notifications internally now
 
 
   return (
@@ -418,8 +416,6 @@ export const ResolveScreen: React.FC = () => {
       <Header
         showBalance={true}
         onBalancePress={handleBalancePress}
-        onNotificationsPress={handleNotificationsPress}
-        notificationCount={pendingBets.length}
       />
 
       <ScrollView

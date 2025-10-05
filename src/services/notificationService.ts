@@ -21,11 +21,11 @@ export class NotificationService {
    */
   static async registerPushToken(userId: string): Promise<string | null> {
     try {
-      // Skip device check for now - will work on simulators for testing
-      // if (!Device.isDevice) {
-      //   console.log('Push notifications only work on physical devices');
-      //   return null;
-      // }
+      // Check if push notifications are supported in this environment
+      if (!Notifications.getExpoPushTokenAsync) {
+        console.log('[Push] Notifications not supported in this environment');
+        return null;
+      }
 
       const { status: existingStatus } = await Notifications.getPermissionsAsync();
       let finalStatus = existingStatus;
@@ -36,11 +36,14 @@ export class NotificationService {
       }
 
       if (finalStatus !== 'granted') {
-        console.log('Failed to get push token for push notification!');
+        console.log('[Push] Permission not granted for push notifications');
         return null;
       }
 
-      const token = await Notifications.getExpoPushTokenAsync();
+      // Try to get expo push token with proper project ID
+      const token = await Notifications.getExpoPushTokenAsync({
+        projectId: 'f26fa72b-c85a-4174-90bb-1b14c526ed05' // EAS project ID from app.json
+      });
 
       // Store the token in database
       const deviceId = Platform.OS === 'ios' ? 'iOS-Device' : 'Android-Device';
@@ -56,10 +59,17 @@ export class NotificationService {
         lastUsed: new Date().toISOString(),
       });
 
-      console.log('Push token registered:', token.data);
+      console.log('[Push] Token registered successfully:', token.data);
       return token.data;
-    } catch (error) {
-      console.error('Error registering push token:', error);
+    } catch (error: any) {
+      // Handle Firebase initialization error specifically
+      if (error?.code === 'E_REGISTRATION_FAILED') {
+        console.warn('[Push] Firebase not configured. Push notifications require Firebase setup for Android.');
+        console.warn('[Push] For development: in-app notifications will still work');
+        console.warn('[Push] To enable push: Follow guide at https://docs.expo.dev/push-notifications/fcm-credentials/');
+      } else {
+        console.error('[Push] Error registering push token:', error);
+      }
       return null;
     }
   }
