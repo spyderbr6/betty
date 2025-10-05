@@ -162,8 +162,12 @@ export class NotificationService {
   }): Promise<Notification | null> {
     try {
       console.log('[Notification] Creating notification:', { userId, type, title, message, priority });
+      console.log('[Notification] Full params:', {
+        userId, type, title, message, priority, actionType, actionData,
+        relatedBetId, relatedUserId, relatedRequestId
+      });
 
-      const { data } = await client.models.Notification.create({
+      const result = await client.models.Notification.create({
         userId,
         type,
         title,
@@ -171,11 +175,17 @@ export class NotificationService {
         isRead: false,
         priority,
         actionType,
-        actionData,
+        actionData: actionData ? JSON.stringify(actionData) : undefined,
         relatedBetId,
         relatedUserId,
         relatedRequestId,
       });
+
+      console.log('[Notification] Create result:', result);
+      console.log('[Notification] Result data:', result.data);
+      console.log('[Notification] Result errors:', result.errors);
+
+      const { data } = result;
 
       if (data) {
         console.log('[Notification] Notification created successfully:', data.id);

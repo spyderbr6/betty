@@ -50,6 +50,8 @@
 - [ ] none of the signup and login page validation messages appear to be working
 - [ ] new bet creation needs to refresh friend list when you open a new bet again
 - [ ] friend requests are showing as user id hashes instead of the username
+- [ ] notification screen needs a refresh capability
+- [ ] bet invites need to show # of people on which side
 
 ### **Priority 2: Real-time Feature Enhancements**
 - [ ] **Enhanced Notifications**: Complete push notification system with expo-notifications
