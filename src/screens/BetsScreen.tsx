@@ -23,6 +23,7 @@ import { commonStyles, colors, spacing, typography, textStyles } from '../styles
 import { Header } from '../components/ui/Header';
 import { BetCard } from '../components/betting/BetCard';
 import { BetInviteModal } from '../components/ui/BetInviteModal';
+import { QRScannerModal } from '../components/ui/QRScannerModal';
 import { Bet, BetInvitation, BetInvitationStatus, User } from '../types/betting';
 import { useAuth } from '../contexts/AuthContext';
 import { NotificationService } from '../services/notificationService';
@@ -90,6 +91,9 @@ export const BetsScreen: React.FC = () => {
   // Invite modal state
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [selectedBetForInvite, setSelectedBetForInvite] = useState<Bet | null>(null);
+
+  // QR Scanner state
+  const [showQRScanner, setShowQRScanner] = useState(false);
 
   useEffect(() => {
     // Fetch initial bet data, bet invitations, and set up real-time subscriptions
@@ -549,6 +553,65 @@ export const BetsScreen: React.FC = () => {
     // Navigate to balance/wallet screen
   };
 
+  // Handle QR code scan
+  const handleBetScanned = async (betId: string) => {
+    try {
+      // Fetch the bet details
+      const { data: betData } = await client.models.Bet.get({ id: betId });
+
+      if (!betData) {
+        Alert.alert('Error', 'Bet not found. The QR code may be invalid.');
+        return;
+      }
+
+      // Transform to our Bet type
+      const bet = transformAmplifyBet(betData);
+
+      if (!bet) {
+        Alert.alert('Error', 'Failed to load bet details.');
+        return;
+      }
+
+      // Check if bet is still active
+      if (bet.status !== 'ACTIVE') {
+        Alert.alert('Bet Closed', 'This bet is no longer accepting participants.');
+        return;
+      }
+
+      // Check if user is already participating
+      const isParticipating = bet.participants?.some(p => p.userId === user?.userId);
+
+      if (isParticipating) {
+        Alert.alert('Already Joined', 'You are already participating in this bet.');
+        return;
+      }
+
+      // Show bet details and allow user to join
+      // For now, just show a success message - in the future, navigate to bet details
+      Alert.alert(
+        'Bet Found!',
+        `Would you like to join "${bet.title}"?`,
+        [
+          {
+            text: 'Cancel',
+            style: 'cancel',
+          },
+          {
+            text: 'View Bet',
+            onPress: () => {
+              // Navigate to bet details or show join flow
+              // For now, just refresh the bets list
+              fetchBets();
+            },
+          },
+        ]
+      );
+    } catch (error) {
+      console.error('Error processing scanned bet:', error);
+      Alert.alert('Error', 'Failed to process QR code. Please try again.');
+    }
+  };
+
   // Removed - Header handles notifications internally now
 
   const handleSearchChange = (query: string) => {
@@ -668,6 +731,15 @@ export const BetsScreen: React.FC = () => {
         showBalance={true}
         onBalancePress={handleBalancePress}
         liveGame={liveGame}
+        rightComponent={
+          <TouchableOpacity
+            style={styles.qrScanButton}
+            onPress={() => setShowQRScanner(true)}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="qr-code-outline" size={20} color={colors.primary} />
+          </TouchableOpacity>
+        }
       />
 
       {/* Toast Banner */}
@@ -878,6 +950,13 @@ export const BetsScreen: React.FC = () => {
           }}
         />
       )}
+
+      {/* QR Scanner Modal */}
+      <QRScannerModal
+        visible={showQRScanner}
+        onClose={() => setShowQRScanner(false)}
+        onBetScanned={handleBetScanned}
+      />
     </SafeAreaView>
   );
 };
@@ -1096,6 +1175,14 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+  },
+
+  // QR Scanner Button
+  qrScanButton: {
+    padding: spacing.xs,
+    backgroundColor: colors.surface,
+    borderRadius: spacing.radius.sm,
+    marginLeft: spacing.sm,
   },
 
   // Status Filters

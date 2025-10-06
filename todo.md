@@ -55,13 +55,7 @@
 ## 🔄 IMMEDIATE NEXT STEPS (Current Development Cycle)
 
 ### **Priority 1: Critical Bug Fixes & UI Polish**
-- [ ] Fix invitation accepted notifications showing userID instead of friendly display name. do a quick scan on other notifications to ensure they're all fixed. 
 - [ ] Fix notification bell counter showing incorrect count (showing 16 for 6 notifications, 6 for 3, etc.)
-- [ ] Remove ellipsis (...) from header and move notification bell to the right
-- [ ] Restructure betting history screen as balance audit trail
-  - Show all balance changes (bets, wins, losses, deposits, withdrawals)
-  - More streamlined accounting-style UI
-  - Full balance reconciliation capability
 - [ ] Need a quick join capability. maybe with qr codes, qr code can show on the 'invite to bet' screen and we need an equally easy ability on maybe the live bets screen to pull up the camera to read a qr code which will create an invite for whoever scans it.
 
 ### **Priority 2: Account Screen Enhancements**
