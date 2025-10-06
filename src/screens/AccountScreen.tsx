@@ -25,6 +25,13 @@ import { colors, spacing, commonStyles, textStyles } from '../styles';
 import { Header } from '../components/ui/Header';
 import { ProfileEditor } from '../components/ui/ProfileEditor';
 import { FriendsScreen } from './FriendsScreen';
+import { DetailedStatsScreen } from './DetailedStatsScreen';
+import { BettingHistoryScreen } from './BettingHistoryScreen';
+import { PaymentMethodsScreen } from './PaymentMethodsScreen';
+import { TrustSafetyScreen } from './TrustSafetyScreen';
+import { SettingsScreen } from './SettingsScreen';
+import { SupportScreen } from './SupportScreen';
+import { AboutScreen } from './AboutScreen';
 import { formatCurrency, formatPercentage } from '../utils/formatting';
 import { useAuth } from '../contexts/AuthContext';
 import { ProfileEditForm, User } from '../types/betting';
@@ -45,6 +52,13 @@ export const AccountScreen: React.FC = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [showProfileEditor, setShowProfileEditor] = useState(false);
   const [showFriendsScreen, setShowFriendsScreen] = useState(false);
+  const [showDetailedStats, setShowDetailedStats] = useState(false);
+  const [showBettingHistory, setShowBettingHistory] = useState(false);
+  const [showPaymentMethods, setShowPaymentMethods] = useState(false);
+  const [showTrustSafety, setShowTrustSafety] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showSupport, setShowSupport] = useState(false);
+  const [showAbout, setShowAbout] = useState(false);
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
 
   useEffect(() => {
@@ -207,19 +221,31 @@ export const AccountScreen: React.FC = () => {
   };
 
   const handleSettingsPress = () => {
-    console.log('Settings pressed');
+    setShowSettings(true);
   };
 
   const handleStatsPress = () => {
-    console.log('Stats pressed');
+    setShowDetailedStats(true);
   };
 
   const handleHistoryPress = () => {
-    console.log('History pressed');
+    setShowBettingHistory(true);
   };
 
   const handleSupportPress = () => {
-    console.log('Support pressed');
+    setShowSupport(true);
+  };
+
+  const handlePaymentMethodsPress = () => {
+    setShowPaymentMethods(true);
+  };
+
+  const handleTrustSafetyPress = () => {
+    setShowTrustSafety(true);
+  };
+
+  const handleAboutPress = () => {
+    setShowAbout(true);
   };
 
   const handleFriendsPress = () => {
@@ -415,11 +441,13 @@ export const AccountScreen: React.FC = () => {
             icon="card-outline"
             title="Payment Methods"
             subtitle="Manage deposits and withdrawals"
+            onPress={handlePaymentMethodsPress}
           />
           <MenuOption
             icon="shield-checkmark-outline"
             title="Trust & Safety"
             subtitle="Security settings and verification"
+            onPress={handleTrustSafetyPress}
           />
           <MenuOption
             icon="settings-outline"
@@ -437,6 +465,7 @@ export const AccountScreen: React.FC = () => {
             icon="information-circle-outline"
             title="About"
             subtitle="App version and legal information"
+            onPress={handleAboutPress}
           />
         </View>
 
@@ -475,6 +504,76 @@ export const AccountScreen: React.FC = () => {
         onRequestClose={() => setShowFriendsScreen(false)}
       >
         <FriendsScreen onClose={() => setShowFriendsScreen(false)} />
+      </Modal>
+
+      {/* Detailed Stats Modal */}
+      <Modal
+        visible={showDetailedStats}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setShowDetailedStats(false)}
+      >
+        <DetailedStatsScreen onClose={() => setShowDetailedStats(false)} />
+      </Modal>
+
+      {/* Betting History Modal */}
+      <Modal
+        visible={showBettingHistory}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setShowBettingHistory(false)}
+      >
+        <BettingHistoryScreen onClose={() => setShowBettingHistory(false)} />
+      </Modal>
+
+      {/* Payment Methods Modal */}
+      <Modal
+        visible={showPaymentMethods}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setShowPaymentMethods(false)}
+      >
+        <PaymentMethodsScreen onClose={() => setShowPaymentMethods(false)} />
+      </Modal>
+
+      {/* Trust & Safety Modal */}
+      <Modal
+        visible={showTrustSafety}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setShowTrustSafety(false)}
+      >
+        <TrustSafetyScreen onClose={() => setShowTrustSafety(false)} />
+      </Modal>
+
+      {/* Settings Modal */}
+      <Modal
+        visible={showSettings}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setShowSettings(false)}
+      >
+        <SettingsScreen onClose={() => setShowSettings(false)} />
+      </Modal>
+
+      {/* Support Modal */}
+      <Modal
+        visible={showSupport}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setShowSupport(false)}
+      >
+        <SupportScreen onClose={() => setShowSupport(false)} />
+      </Modal>
+
+      {/* About Modal */}
+      <Modal
+        visible={showAbout}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setShowAbout(false)}
+      >
+        <AboutScreen onClose={() => setShowAbout(false)} />
       </Modal>
     </SafeAreaView>
   );

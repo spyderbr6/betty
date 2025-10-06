@@ -43,7 +43,8 @@
 ## 🔄 IMMEDIATE NEXT STEPS (Current Development Cycle)
 
 ### **Priority 1: UI/UX Polish & Bug Fixes**
-- [ ] 
+- [ ] invitation accepted notifications still have the userID vs the friendly user name like the others. 
+- [ ] when i had 6 notifications, for some reason the bell was showing 16. i have another example where its showing 6 when there are 3, something is wrong with how it is counting. 
 
 
 ### **Priority 2: Real-time Feature Enhancements**
