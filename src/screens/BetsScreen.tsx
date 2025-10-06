@@ -413,21 +413,23 @@ export const BetsScreen: React.FC = () => {
 
       // Notify the bet creator that their invitation was declined
       try {
-        const { data: declinerData } = await client.models.User.get({ id: user.userId });
-        if (declinerData && invitation.fromUserId !== user.userId) {
-          await NotificationService.createNotification({
-            userId: invitation.fromUserId,
-            type: 'BET_INVITATION_DECLINED',
-            title: 'Bet Invitation Declined',
-            message: `${declinerData.displayName || declinerData.username} declined your bet invitation for "${invitation.bet?.title}"`,
-            priority: 'LOW',
-            actionType: 'view_bet',
-            actionData: { betId: invitation.betId },
-            relatedBetId: invitation.betId,
-            relatedUserId: user.userId,
-            relatedRequestId: invitation.id,
-            sendPush: false, // Low priority, no push needed
-          });
+        if (user?.userId) {
+          const { data: declinerData } = await client.models.User.get({ id: user.userId });
+          if (declinerData && invitation.fromUserId !== user.userId) {
+            await NotificationService.createNotification({
+              userId: invitation.fromUserId,
+              type: 'BET_INVITATION_DECLINED',
+              title: 'Bet Invitation Declined',
+              message: `${declinerData.displayName || declinerData.username} declined your bet invitation for "${invitation.bet?.title}"`,
+              priority: 'LOW',
+              actionType: 'view_bet',
+              actionData: { betId: invitation.betId },
+              relatedBetId: invitation.betId,
+              relatedUserId: user.userId,
+              relatedRequestId: invitation.id,
+              sendPush: false, // Low priority, no push needed
+            });
+          }
         }
       } catch (notificationError) {
         console.warn('Failed to send bet invitation declined notification:', notificationError);

@@ -195,17 +195,23 @@ export const FriendRequestsModal: React.FC<FriendRequestsModalProps> = ({
 
       // Notify the sender that their friend request was declined
       try {
-        await NotificationService.createNotification({
-          userId: request.fromUserId,
-          type: 'FRIEND_REQUEST_DECLINED',
-          title: 'Friend Request Declined',
-          message: `${request.toUser?.displayName || request.toUser?.username || 'Someone'} declined your friend request`,
-          priority: 'LOW',
-          actionType: 'view_friends',
-          relatedUserId: request.toUserId,
-          relatedRequestId: request.id,
-          sendPush: false, // Low priority, no push needed
-        });
+        // Fetch current user's display name for the notification
+        if (user?.userId) {
+          const { data: currentUserData } = await client.models.User.get({ id: user.userId });
+          const currentUserDisplayName = currentUserData?.displayName || currentUserData?.username || 'Someone';
+
+          await NotificationService.createNotification({
+            userId: request.fromUserId,
+            type: 'FRIEND_REQUEST_DECLINED',
+            title: 'Friend Request Declined',
+            message: `${currentUserDisplayName} declined your friend request`,
+            priority: 'LOW',
+            actionType: 'view_friends',
+            relatedUserId: request.toUserId,
+            relatedRequestId: request.id,
+            sendPush: false, // Low priority, no push needed
+          });
+        }
       } catch (notificationError) {
         console.warn('Failed to send friend request declined notification:', notificationError);
       }

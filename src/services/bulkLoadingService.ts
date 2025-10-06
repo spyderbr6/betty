@@ -291,8 +291,6 @@ export const bulkLoadBetsWithParticipants = async (
   }
 
   try {
-    const startTime = performance.now();
-
     // Step 1: Fetch bets with pagination and limits
     const betsData = await loadBetsWithPagination(statusFilters, limit);
 
@@ -313,7 +311,6 @@ export const bulkLoadBetsWithParticipants = async (
 
     // Step 2: Fetch participants with batching and limits
     const betIds = validBets.map(bet => bet.id);
-    const participantStartTime = performance.now();
 
     const allParticipants = await loadParticipantsForBets(betIds);
 
@@ -336,8 +333,6 @@ export const bulkLoadBetsWithParticipants = async (
     validBets.forEach(bet => {
       bet.participants = participantsByBetId.get(bet.id) || [];
     });
-
-    const totalTime = performance.now() - startTime;
 
     // Cache the result
     if (useCache) {

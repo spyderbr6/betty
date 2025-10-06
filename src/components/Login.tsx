@@ -5,12 +5,12 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  Alert,
   ActivityIndicator,
   KeyboardAvoidingView,
   ScrollView,
   Platform,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { signIn } from 'aws-amplify/auth';
 import { useAuth } from '../contexts/AuthContext';
 import { colors, spacing, textStyles, typography, commonStyles, shadows } from '../styles';

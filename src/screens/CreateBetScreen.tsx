@@ -24,7 +24,7 @@ import type { Schema } from '../../amplify/data/resource';
 import { colors, commonStyles, textStyles, spacing, typography } from '../styles';
 import { Header } from '../components/ui/Header';
 import { useAuth } from '../contexts/AuthContext';
-import { User, Friendship } from '../types/betting';
+import { User } from '../types/betting';
 import { Ionicons } from '@expo/vector-icons';
 import { NotificationService } from '../services/notificationService';
 import { getProfilePictureUrl } from '../services/imageUploadService';
@@ -60,7 +60,6 @@ export const CreateBetScreen: React.FC = () => {
   // Friend selection state
   const [friends, setFriends] = useState<User[]>([]);
   const [selectedFriends, setSelectedFriends] = useState<Set<string>>(new Set());
-  const [showAllFriends, setShowAllFriends] = useState(false);
 
   // Toast state
   const [showToast, setShowToast] = useState(false);
@@ -436,10 +435,6 @@ export const CreateBetScreen: React.FC = () => {
     return friends.slice(0, 4);
   };
 
-  const getRemainingFriendsCount = () => {
-    return Math.max(0, friends.length - 4);
-  };
-
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <Header
@@ -674,22 +669,6 @@ export const CreateBetScreen: React.FC = () => {
                     </Text>
                   </TouchableOpacity>
                 ))}
-
-                {/* See More Friends Button */}
-                {getRemainingFriendsCount() > 0 && (
-                  <TouchableOpacity
-                    style={styles.seeMoreButton}
-                    onPress={() => setShowAllFriends(true)}
-                    activeOpacity={0.7}
-                  >
-                    <View style={styles.seeMoreIcon}>
-                      <Ionicons name="add" size={20} color={colors.textSecondary} />
-                    </View>
-                    <Text style={styles.seeMoreText}>
-                      +{getRemainingFriendsCount()} more
-                    </Text>
-                  </TouchableOpacity>
-                )}
               </ScrollView>
 
               {/* Selected Friends Count */}
@@ -1120,8 +1099,6 @@ const styles = StyleSheet.create({
   toastBanner: {
     backgroundColor: colors.success,
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
     marginHorizontal: spacing.md,

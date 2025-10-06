@@ -155,7 +155,7 @@ export const LiveEventsScreen: React.FC = () => {
         status: { eq: 'ACTIVE' }
       }
     }).subscribe({
-      next: async (data) => {
+      next: async () => {
         console.log('🔄 Real-time bet update detected, refreshing joinable bets');
         // Clear cache and refetch to get latest data
         clearBulkLoadingCache();
@@ -168,7 +168,7 @@ export const LiveEventsScreen: React.FC = () => {
 
     // Set up real-time subscription for participant changes
     const participantSubscription = client.models.Participant.observeQuery().subscribe({
-      next: async (participantData) => {
+      next: async () => {
         console.log('🔄 Real-time participant update detected, refreshing joinable bets');
         // Clear cache and refetch to get latest data
         clearBulkLoadingCache();
