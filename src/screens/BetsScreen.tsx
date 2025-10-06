@@ -368,7 +368,8 @@ export const BetsScreen: React.FC = () => {
       });
 
       // Send notification to the inviter
-      const currentUserDisplayName = user.username;
+      const { data: accepterData } = await client.models.User.get({ id: user.userId });
+      const currentUserDisplayName = accepterData?.displayName || accepterData?.username || user.username;
       await NotificationService.createNotification({
         userId: invitation.fromUserId,
         type: 'BET_INVITATION_ACCEPTED',

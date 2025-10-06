@@ -16,8 +16,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, typography, spacing, textStyles, shadows } from '../../styles';
 import { UserBalance } from './UserBalance';
 import { LiveGameBanner, LiveGameData } from './LiveGameBanner';
-import { FeedbackModal, FeedbackData } from './FeedbackModal';
-import { submitFeedbackToGitHub } from '../../utils/github';
 import { NotificationService } from '../../services/notificationService';
 import { useAuth } from '../../contexts/AuthContext';
 import { NotificationModal } from './NotificationModal';
@@ -27,7 +25,6 @@ interface HeaderProps {
   showBalance?: boolean;
   onBalancePress?: () => void;
   onNotificationsPress?: () => void;
-  onMenuPress?: () => void;
   rightComponent?: React.ReactNode;
   variant?: 'default' | 'transparent' | 'minimal';
   notificationCount?: number;
@@ -40,7 +37,6 @@ export const Header: React.FC<HeaderProps> = ({
   showBalance = true,
   onBalancePress,
   onNotificationsPress,
-  onMenuPress,
   rightComponent,
   variant = 'default',
   notificationCount, // Remove default value, we'll fetch it
@@ -48,22 +44,8 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
-  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [showNotificationModal, setShowNotificationModal] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
-
-  const handleMenuPress = () => {
-    if (onMenuPress) {
-      onMenuPress();
-    } else {
-      // Default behavior: show feedback modal
-      setShowFeedbackModal(true);
-    }
-  };
-
-  const handleFeedbackSubmit = async (feedback: FeedbackData) => {
-    await submitFeedbackToGitHub(feedback);
-  };
 
   // Load unread notification count
   useEffect(() => {
@@ -135,11 +117,12 @@ export const Header: React.FC<HeaderProps> = ({
               />
             )}
 
+            {rightComponent}
+
             <TouchableOpacity
               style={styles.actionButton}
               onPress={handleNotificationPress}
               activeOpacity={0.7}
-              disabled={showNotificationModal}
             >
               <Ionicons
                 name="notifications-outline"
@@ -154,21 +137,6 @@ export const Header: React.FC<HeaderProps> = ({
                 </View>
               )}
             </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={handleMenuPress}
-              activeOpacity={0.7}
-              disabled={showFeedbackModal}
-            >
-              <Ionicons
-                name="ellipsis-horizontal"
-                size={18}
-                color={colors.textSecondary}
-              />
-            </TouchableOpacity>
-
-            {rightComponent}
           </View>
         </View>
 
@@ -182,13 +150,6 @@ export const Header: React.FC<HeaderProps> = ({
           />
         )}
       </View>
-
-      {/* Feedback Modal */}
-      <FeedbackModal
-        visible={showFeedbackModal}
-        onClose={() => setShowFeedbackModal(false)}
-        onSubmit={handleFeedbackSubmit}
-      />
 
       {/* Notification Modal */}
       <NotificationModal

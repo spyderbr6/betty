@@ -184,11 +184,12 @@ export const NotificationScreen: React.FC<NotificationScreenProps> = ({ onClose 
         : NOTIFICATIONS_PER_PAGE;
 
       const userNotifications = await NotificationService.getUserNotifications(user.userId, {
-        limit: currentLimit
+        limit: currentLimit,
+        unreadOnly: true // Fetch only unread notifications from database
       });
 
-      // Filter out read notifications - only show unread
-      const unreadNotifications = userNotifications.filter(n => !n.isRead);
+      // No need to filter - already filtered by database query
+      const unreadNotifications = userNotifications;
 
       setNotifications(unreadNotifications);
       setUnreadCount(unreadNotifications.length);

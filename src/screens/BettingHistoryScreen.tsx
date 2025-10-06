@@ -1,6 +1,6 @@
 /**
- * Betting History Screen
- * Review past bets and outcomes with filtering options
+ * Balance Audit Trail Screen
+ * Complete transaction history showing all balance changes
  */
 
 import React, { useState, useEffect } from 'react';
@@ -30,21 +30,27 @@ interface BettingHistoryScreenProps {
   onClose: () => void;
 }
 
-type FilterType = 'all' | 'won' | 'lost' | 'cancelled';
+type FilterType = 'all' | 'bets_placed' | 'wins' | 'losses' | 'refunds';
 
-interface HistoryBet extends Bet {
-  userSide?: 'A' | 'B';
-  userAmount?: number;
-  userPayout?: number;
-  outcome: 'won' | 'lost' | 'cancelled' | 'active';
+interface Transaction {
+  id: string;
+  date: string;
+  type: 'BET_PLACED' | 'BET_WON' | 'BET_LOST' | 'BET_REFUNDED';
+  description: string;
+  betTitle: string;
+  amount: number; // Positive for credits, negative for debits
+  balance?: number; // Running balance after transaction
+  betId: string;
+  userSide?: string;
 }
 
 export const BettingHistoryScreen: React.FC<BettingHistoryScreenProps> = ({ onClose }) => {
   const { user } = useAuth();
-  const [bets, setBets] = useState<HistoryBet[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<FilterType>('all');
+  const [currentBalance, setCurrentBalance] = useState(0);
 
   const fetchBettingHistory = async () => {
     if (!user) return;
@@ -52,35 +58,94 @@ export const BettingHistoryScreen: React.FC<BettingHistoryScreenProps> = ({ onCl
     try {
       setIsLoading(true);
 
+      // Fetch user data for current balance
+      const { data: userData } = await client.models.User.get({ id: user.userId });
+      setCurrentBalance(userData?.balance || 0);
+
       // Fetch user's bets with participants
       const userBets = await bulkLoadUserBetsWithParticipants(user.userId);
 
-      // Transform to history bets with outcome info
-      const historyBets: HistoryBet[] = userBets.map(bet => {
+      // Convert bets to transactions
+      const allTransactions: Transaction[] = [];
+
+      userBets.forEach(bet => {
         const userParticipation = bet.participants?.find(p => p.userId === user.userId);
+        if (!userParticipation) return;
 
-        let outcome: HistoryBet['outcome'] = 'active';
-        if (bet.status === 'CANCELLED') {
-          outcome = 'cancelled';
-        } else if (bet.status === 'RESOLVED' && bet.winningSide && userParticipation) {
-          outcome = userParticipation.side === bet.winningSide ? 'won' : 'lost';
-        }
-
-        return {
-          ...bet,
-          userSide: userParticipation?.side as 'A' | 'B' | undefined,
-          userAmount: userParticipation?.amount,
-          userPayout: userParticipation?.payout,
-          outcome,
+        const parseBetOdds = (odds: any) => {
+          try {
+            const parsedOdds = typeof odds === 'string' ? JSON.parse(odds) : odds;
+            return {
+              sideAName: parsedOdds?.sideAName || 'Side A',
+              sideBName: parsedOdds?.sideBName || 'Side B',
+            };
+          } catch {
+            return { sideAName: 'Side A', sideBName: 'Side B' };
+          }
         };
+
+        const betOdds = parseBetOdds(bet.odds);
+        const userSideName = userParticipation.side === 'A' ? betOdds.sideAName : betOdds.sideBName;
+
+        // Transaction 1: Bet Placed (debit)
+        allTransactions.push({
+          id: `${bet.id}-placed`,
+          date: userParticipation.joinedAt,
+          type: 'BET_PLACED',
+          description: `Bet placed on ${userSideName}`,
+          betTitle: bet.title,
+          amount: -userParticipation.amount,
+          betId: bet.id,
+          userSide: userSideName,
+        });
+
+        // Transaction 2: Outcome (if resolved)
+        if (bet.status === 'RESOLVED' && bet.winningSide) {
+          const won = userParticipation.side === bet.winningSide;
+          if (won && userParticipation.payout) {
+            allTransactions.push({
+              id: `${bet.id}-won`,
+              date: bet.updatedAt,
+              type: 'BET_WON',
+              description: `Won bet on ${userSideName}`,
+              betTitle: bet.title,
+              amount: userParticipation.payout,
+              betId: bet.id,
+              userSide: userSideName,
+            });
+          } else {
+            allTransactions.push({
+              id: `${bet.id}-lost`,
+              date: bet.updatedAt,
+              type: 'BET_LOST',
+              description: `Lost bet on ${userSideName}`,
+              betTitle: bet.title,
+              amount: 0, // No money back on loss
+              betId: bet.id,
+              userSide: userSideName,
+            });
+          }
+        } else if (bet.status === 'CANCELLED') {
+          // Transaction 2: Refund (if cancelled)
+          allTransactions.push({
+            id: `${bet.id}-refunded`,
+            date: bet.updatedAt,
+            type: 'BET_REFUNDED',
+            description: `Bet cancelled - refund issued`,
+            betTitle: bet.title,
+            amount: userParticipation.amount,
+            betId: bet.id,
+            userSide: userSideName,
+          });
+        }
       });
 
-      // Sort by creation date, newest first
-      historyBets.sort((a, b) =>
-        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      // Sort by date, newest first
+      allTransactions.sort((a, b) =>
+        new Date(b.date).getTime() - new Date(a.date).getTime()
       );
 
-      setBets(historyBets);
+      setTransactions(allTransactions);
     } catch (error) {
       console.error('Error fetching betting history:', error);
     } finally {
@@ -98,9 +163,13 @@ export const BettingHistoryScreen: React.FC<BettingHistoryScreenProps> = ({ onCl
     fetchBettingHistory();
   }, [user]);
 
-  const filteredBets = bets.filter(bet => {
+  const filteredTransactions = transactions.filter(transaction => {
     if (filter === 'all') return true;
-    return bet.outcome === filter;
+    if (filter === 'bets_placed') return transaction.type === 'BET_PLACED';
+    if (filter === 'wins') return transaction.type === 'BET_WON';
+    if (filter === 'losses') return transaction.type === 'BET_LOST';
+    if (filter === 'refunds') return transaction.type === 'BET_REFUNDED';
+    return true;
   });
 
   const renderFilterButton = (type: FilterType, label: string, icon: keyof typeof Ionicons.glyphMap) => (
@@ -123,10 +192,10 @@ export const BettingHistoryScreen: React.FC<BettingHistoryScreenProps> = ({ onCl
   if (isLoading) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
-        <ModalHeader title="Betting History" onClose={onClose} />
+        <ModalHeader title="Balance Audit Trail" onClose={onClose} />
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={styles.loadingText}>Loading your history...</Text>
+          <Text style={styles.loadingText}>Loading transactions...</Text>
         </View>
       </SafeAreaView>
     );
@@ -134,14 +203,21 @@ export const BettingHistoryScreen: React.FC<BettingHistoryScreenProps> = ({ onCl
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <ModalHeader title="Betting History" onClose={onClose} />
+      <ModalHeader title="Balance Audit Trail" onClose={onClose} />
+
+      {/* Current Balance Summary */}
+      <View style={styles.balanceSummary}>
+        <Text style={styles.balanceSummaryLabel}>Current Balance</Text>
+        <Text style={styles.balanceSummaryAmount}>{formatCurrency(currentBalance)}</Text>
+      </View>
 
       {/* Filters */}
       <View style={styles.filtersContainer}>
         {renderFilterButton('all', 'All', 'list-outline')}
-        {renderFilterButton('won', 'Won', 'trophy-outline')}
-        {renderFilterButton('lost', 'Lost', 'close-circle-outline')}
-        {renderFilterButton('cancelled', 'Cancelled', 'ban-outline')}
+        {renderFilterButton('bets_placed', 'Bets', 'arrow-down-outline')}
+        {renderFilterButton('wins', 'Wins', 'arrow-up-outline')}
+        {renderFilterButton('losses', 'Losses', 'close-circle-outline')}
+        {renderFilterButton('refunds', 'Refunds', 'refresh-outline')}
       </View>
 
       <ScrollView
@@ -155,16 +231,16 @@ export const BettingHistoryScreen: React.FC<BettingHistoryScreenProps> = ({ onCl
           />
         }
       >
-        {filteredBets.length === 0 ? (
+        {filteredTransactions.length === 0 ? (
           <View style={styles.emptyContainer}>
-            <Ionicons name="time-outline" size={64} color={colors.textMuted} />
+            <Ionicons name="receipt-outline" size={64} color={colors.textMuted} />
             <Text style={styles.emptyText}>
-              {filter === 'all' ? 'No betting history' : `No ${filter} bets`}
+              {filter === 'all' ? 'No transaction history' : `No ${filter.replace('_', ' ')} transactions`}
             </Text>
           </View>
         ) : (
-          filteredBets.map((bet) => (
-            <HistoryBetCard key={bet.id} bet={bet} />
+          filteredTransactions.map((transaction) => (
+            <TransactionCard key={transaction.id} transaction={transaction} />
           ))
         )}
       </ScrollView>
@@ -172,108 +248,75 @@ export const BettingHistoryScreen: React.FC<BettingHistoryScreenProps> = ({ onCl
   );
 };
 
-// History Bet Card Component
-interface HistoryBetCardProps {
-  bet: HistoryBet;
+// Transaction Card Component
+interface TransactionCardProps {
+  transaction: Transaction;
 }
 
-const HistoryBetCard: React.FC<HistoryBetCardProps> = ({ bet }) => {
-  const getOutcomeColor = () => {
-    switch (bet.outcome) {
-      case 'won': return colors.info;
-      case 'lost': return colors.error;
-      case 'cancelled': return colors.textMuted;
-      default: return colors.success;
+const TransactionCard: React.FC<TransactionCardProps> = ({ transaction }) => {
+  const getTransactionIcon = (): keyof typeof Ionicons.glyphMap => {
+    switch (transaction.type) {
+      case 'BET_PLACED': return 'arrow-down';
+      case 'BET_WON': return 'arrow-up';
+      case 'BET_LOST': return 'close-circle';
+      case 'BET_REFUNDED': return 'refresh';
     }
   };
 
-  const getOutcomeLabel = () => {
-    switch (bet.outcome) {
-      case 'won': return 'Won';
-      case 'lost': return 'Lost';
-      case 'cancelled': return 'Cancelled';
-      default: return 'Active';
+  const getTransactionColor = () => {
+    switch (transaction.type) {
+      case 'BET_PLACED': return colors.error; // Red for money out
+      case 'BET_WON': return colors.success; // Green for money in
+      case 'BET_LOST': return colors.textMuted; // Gray for loss (no money movement)
+      case 'BET_REFUNDED': return colors.warning; // Yellow for refund
     }
   };
 
-  const getOutcomeIcon = (): keyof typeof Ionicons.glyphMap => {
-    switch (bet.outcome) {
-      case 'won': return 'trophy';
-      case 'lost': return 'close-circle';
-      case 'cancelled': return 'ban';
-      default: return 'hourglass';
+  const getTransactionLabel = () => {
+    switch (transaction.type) {
+      case 'BET_PLACED': return 'Bet Placed';
+      case 'BET_WON': return 'Bet Won';
+      case 'BET_LOST': return 'Bet Lost';
+      case 'BET_REFUNDED': return 'Refunded';
     }
   };
 
-  const parseBetOdds = (odds: any) => {
-    try {
-      const parsedOdds = typeof odds === 'string' ? JSON.parse(odds) : odds;
-      return {
-        sideAName: parsedOdds?.sideAName || 'Side A',
-        sideBName: parsedOdds?.sideBName || 'Side B',
-      };
-    } catch {
-      return { sideAName: 'Side A', sideBName: 'Side B' };
-    }
+  const formatAmount = () => {
+    if (transaction.amount === 0) return '-';
+    const sign = transaction.amount > 0 ? '+' : '';
+    return `${sign}${formatCurrency(Math.abs(transaction.amount))}`;
   };
 
-  const betOdds = parseBetOdds(bet.odds);
-  const userSideName = bet.userSide === 'A' ? betOdds.sideAName : betOdds.sideBName;
-  const netResult = bet.outcome === 'won'
-    ? (bet.userPayout || 0) - (bet.userAmount || 0)
-    : bet.outcome === 'lost'
-    ? -(bet.userAmount || 0)
-    : 0;
+  const isCredit = transaction.amount > 0;
+  const isDebit = transaction.amount < 0;
 
   return (
-    <View style={[styles.historyCard, { borderLeftColor: getOutcomeColor() }]}>
-      <View style={styles.historyCardHeader}>
-        <View style={styles.historyCardHeaderLeft}>
-          <Ionicons name={getOutcomeIcon()} size={20} color={getOutcomeColor()} />
-          <Text style={[styles.outcomeLabel, { color: getOutcomeColor() }]}>
-            {getOutcomeLabel()}
+    <View style={styles.transactionCard}>
+      <View style={styles.transactionHeader}>
+        <View style={[styles.transactionIconContainer, { backgroundColor: getTransactionColor() + '20' }]}>
+          <Ionicons name={getTransactionIcon()} size={20} color={getTransactionColor()} />
+        </View>
+        <View style={styles.transactionInfo}>
+          <Text style={styles.transactionType}>{getTransactionLabel()}</Text>
+          <Text style={styles.transactionBetTitle} numberOfLines={1}>
+            {transaction.betTitle}
+          </Text>
+          <Text style={styles.transactionDescription} numberOfLines={1}>
+            {transaction.description}
           </Text>
         </View>
-        <Text style={styles.dateText}>
-          {new Date(bet.createdAt).toLocaleDateString()}
-        </Text>
-      </View>
-
-      <Text style={styles.historyBetTitle}>{bet.title}</Text>
-      <Text style={styles.historyBetDescription} numberOfLines={2}>
-        {bet.description}
-      </Text>
-
-      {bet.userSide && (
-        <View style={styles.userSideContainer}>
-          <Text style={styles.userSideLabel}>Your side:</Text>
-          <Text style={styles.userSideName}>{userSideName}</Text>
+        <View style={styles.transactionAmountContainer}>
+          <Text style={[
+            styles.transactionAmount,
+            isCredit && styles.transactionAmountCredit,
+            isDebit && styles.transactionAmountDebit,
+          ]}>
+            {formatAmount()}
+          </Text>
+          <Text style={styles.transactionDate}>
+            {new Date(transaction.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+          </Text>
         </View>
-      )}
-
-      <View style={styles.historyCardFooter}>
-        <View style={styles.amountContainer}>
-          <Text style={styles.amountLabel}>Wagered</Text>
-          <Text style={styles.amountValue}>{formatCurrency(bet.userAmount || 0)}</Text>
-        </View>
-
-        {bet.outcome === 'won' && (
-          <View style={styles.amountContainer}>
-            <Text style={styles.amountLabel}>Won</Text>
-            <Text style={[styles.amountValue, { color: colors.info }]}>
-              +{formatCurrency(netResult)}
-            </Text>
-          </View>
-        )}
-
-        {bet.outcome === 'lost' && (
-          <View style={styles.amountContainer}>
-            <Text style={styles.amountLabel}>Lost</Text>
-            <Text style={[styles.amountValue, { color: colors.error }]}>
-              {formatCurrency(netResult)}
-            </Text>
-          </View>
-        )}
       </View>
     </View>
   );
@@ -310,6 +353,27 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
   },
 
+  // Balance Summary
+  balanceSummary: {
+    backgroundColor: colors.surface,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    alignItems: 'center',
+  },
+  balanceSummaryLabel: {
+    ...textStyles.caption,
+    color: colors.textMuted,
+    fontSize: 11,
+    marginBottom: spacing.xs / 2,
+  },
+  balanceSummaryAmount: {
+    ...textStyles.h2,
+    color: colors.primary,
+    fontWeight: typography.fontWeight.bold,
+  },
+
   // Filters
   filtersContainer: {
     flexDirection: 'row',
@@ -341,80 +405,70 @@ const styles = StyleSheet.create({
     color: colors.background,
   },
 
-  // History Card
-  historyCard: {
+  // Transaction Card
+  transactionCard: {
     backgroundColor: colors.surface,
     borderRadius: spacing.radius.md,
-    padding: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
     marginHorizontal: spacing.md,
-    marginVertical: spacing.xs,
-    borderLeftWidth: 4,
+    marginVertical: spacing.xs / 2,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.border,
   },
-  historyCardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.sm,
-  },
-  historyCardHeaderLeft: {
+  transactionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  outcomeLabel: {
+  transactionIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: spacing.sm,
+  },
+  transactionInfo: {
+    flex: 1,
+    marginRight: spacing.sm,
+  },
+  transactionType: {
     ...textStyles.button,
-    fontWeight: typography.fontWeight.semibold,
-    marginLeft: spacing.xs,
-  },
-  dateText: {
-    ...textStyles.caption,
-    color: colors.textMuted,
-    fontSize: 11,
-  },
-  historyBetTitle: {
-    ...textStyles.h4,
     color: colors.textPrimary,
-    marginBottom: spacing.xs / 2,
-  },
-  historyBetDescription: {
-    ...textStyles.body,
-    color: colors.textSecondary,
     fontSize: typography.fontSize.sm,
-    marginBottom: spacing.sm,
-  },
-  userSideContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: spacing.sm,
-  },
-  userSideLabel: {
-    ...textStyles.caption,
-    color: colors.textMuted,
-    marginRight: spacing.xs,
-  },
-  userSideName: {
-    ...textStyles.button,
-    color: colors.primary,
     fontWeight: typography.fontWeight.semibold,
-  },
-  historyCardFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingTop: spacing.sm,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-  },
-  amountContainer: {
-    alignItems: 'flex-start',
-  },
-  amountLabel: {
-    ...textStyles.caption,
-    color: colors.textMuted,
-    fontSize: 11,
     marginBottom: 2,
   },
-  amountValue: {
+  transactionBetTitle: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    fontSize: 12,
+    marginBottom: 2,
+  },
+  transactionDescription: {
+    ...textStyles.caption,
+    color: colors.textMuted,
+    fontSize: 11,
+  },
+  transactionAmountContainer: {
+    alignItems: 'flex-end',
+  },
+  transactionAmount: {
     ...textStyles.button,
     color: colors.textPrimary,
-    fontWeight: typography.fontWeight.semibold,
+    fontSize: typography.fontSize.base,
+    fontWeight: typography.fontWeight.bold,
+    marginBottom: 2,
+  },
+  transactionAmountCredit: {
+    color: colors.success,
+  },
+  transactionAmountDebit: {
+    color: colors.error,
+  },
+  transactionDate: {
+    ...textStyles.caption,
+    color: colors.textMuted,
+    fontSize: 10,
   },
 });
