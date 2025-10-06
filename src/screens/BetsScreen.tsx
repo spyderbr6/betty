@@ -948,27 +948,18 @@ const BetInvitationCard: React.FC<BetInvitationCardProps> = ({
 
       {/* Bet Details */}
       <View style={styles.invitationBetDetails}>
-        <Text style={styles.invitationBetTitle}>{invitation.bet.title}</Text>
+        <View style={styles.invitationTitleRow}>
+          <Text style={styles.invitationBetTitle}>{invitation.bet.title}</Text>
+          <Text style={styles.invitationAmount}>${invitation.bet.betAmount || 0}</Text>
+        </View>
         <Text style={styles.invitationBetDescription} numberOfLines={2}>
           {invitation.bet.description}
         </Text>
 
-        <View style={styles.invitationBetInfo}>
-          {hasSpecificSide && (
-            <View style={styles.invitationSideInfo}>
-              <Text style={styles.invitationSideLabel}>Your side:</Text>
-              <Text style={styles.invitationSideName}>{invitedSideName}</Text>
-            </View>
-          )}
-          <View style={styles.invitationAmountInfo}>
-            <Text style={styles.invitationAmountLabel}>Amount:</Text>
-            <Text style={styles.invitationAmount}>${invitation.bet.betAmount || 0}</Text>
-          </View>
-        </View>
-
-        {invitation.message && (
-          <View style={styles.invitationMessage}>
-            <Text style={styles.invitationMessageText}>"{invitation.message}"</Text>
+        {hasSpecificSide && (
+          <View style={styles.invitationSideInfo}>
+            <Text style={styles.invitationSideLabel}>Your side:</Text>
+            <Text style={styles.invitationSideName}>{invitedSideName}</Text>
           </View>
         )}
 
@@ -1361,11 +1352,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     paddingBottom: spacing.sm,
   },
+  invitationTitleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: spacing.xs / 2,
+  },
   invitationBetTitle: {
     ...textStyles.h4,
     color: colors.textPrimary,
     fontWeight: typography.fontWeight.semibold,
-    marginBottom: spacing.xs / 2,
+    flex: 1,
+    marginRight: spacing.sm,
   },
   invitationBetDescription: {
     ...textStyles.body,
@@ -1402,8 +1400,9 @@ const styles = StyleSheet.create({
     fontSize: 11,
   },
   invitationAmount: {
-    ...textStyles.h4,
-    color: colors.textPrimary,
+    ...textStyles.pot,
+    color: colors.warning,
+    fontSize: typography.fontSize.lg,
     fontWeight: typography.fontWeight.bold,
   },
   invitationMessage: {

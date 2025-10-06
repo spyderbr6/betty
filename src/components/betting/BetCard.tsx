@@ -207,7 +207,7 @@ export const BetCard: React.FC<BetCardProps> = ({
         // Blue if user won, red if lost, default green if user didn't participate
         if (userParticipation.hasJoined && bet.winningSide) {
           if (userParticipation.side === bet.winningSide) {
-            return colors.primary; // Blue for win
+            return colors.info; // Blue for win
           } else {
             return colors.error; // Red for loss
           }

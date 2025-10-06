@@ -253,11 +253,11 @@ export const BetInviteModal: React.FC<BetInviteModalProps> = ({
 
       if (successCount > 0) {
         onInvitesSent?.(successCount);
+        onClose();
         Alert.alert(
           'Invitations Sent!',
           `Successfully sent ${successCount} invitation${successCount > 1 ? 's' : ''} to your friends.`
         );
-        onClose();
       } else {
         Alert.alert('Error', 'Failed to send invitations. Please try again.');
       }

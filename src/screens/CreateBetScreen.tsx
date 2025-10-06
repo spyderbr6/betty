@@ -321,7 +321,6 @@ export const CreateBetScreen: React.FC = () => {
                   fromUserId: user.userId,
                   toUserId: friendId,
                   status: 'PENDING',
-                  message: `Join my bet: ${betTitle}`,
                   invitedSide: '', // Empty string since they can choose their own side
                   expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // 24 hours
                 });
