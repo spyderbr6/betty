@@ -14,7 +14,6 @@ import {
   FlatList,
   Image,
   Modal,
-  TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -53,16 +52,12 @@ export const BetInviteModal: React.FC<BetInviteModalProps> = ({
   const [friends, setFriends] = useState<InvitableFriend[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [sendingInvites, setSendingInvites] = useState<Set<string>>(new Set());
-  const [selectedSide, setSelectedSide] = useState<'A' | 'B'>('A');
-  const [inviteMessage, setInviteMessage] = useState('');
   const [selectedFriends, setSelectedFriends] = useState<Set<string>>(new Set());
 
   // Reset state when modal opens/closes
   useEffect(() => {
     if (visible && user?.userId) {
-      setInviteMessage('');
       setSelectedFriends(new Set());
-      setSelectedSide('A');
       fetchInvitableFriends();
     } else {
       setFriends([]);
@@ -225,14 +220,12 @@ export const BetInviteModal: React.FC<BetInviteModalProps> = ({
           const expiresAt = new Date();
           expiresAt.setHours(expiresAt.getHours() + 24);
 
-          // Create bet invitation
+          // Create bet invitation (no side or message)
           const { data: invitation } = await client.models.BetInvitation.create({
             betId: bet.id,
             fromUserId: user.userId,
             toUserId: friend.user.id,
             status: 'PENDING',
-            message: inviteMessage || undefined,
-            invitedSide: selectedSide,
             expiresAt: expiresAt.toISOString(),
           });
 
@@ -285,23 +278,6 @@ export const BetInviteModal: React.FC<BetInviteModalProps> = ({
       .join('')
       .slice(0, 2) || '??';
   };
-
-  const parseBetOdds = (odds: any) => {
-    try {
-      const parsedOdds = typeof odds === 'string' ? JSON.parse(odds) : odds;
-      return {
-        sideAName: parsedOdds?.sideAName || 'Side A',
-        sideBName: parsedOdds?.sideBName || 'Side B',
-      };
-    } catch {
-      return {
-        sideAName: 'Side A',
-        sideBName: 'Side B',
-      };
-    }
-  };
-
-  const betOdds = parseBetOdds(bet.odds);
 
   const renderFriend = ({ item }: { item: InvitableFriend }) => {
     const isSelected = selectedFriends.has(item.user.id);
@@ -365,58 +341,6 @@ export const BetInviteModal: React.FC<BetInviteModalProps> = ({
           <Text style={styles.betDescription} numberOfLines={2}>
             {bet.description}
           </Text>
-        </View>
-
-        {/* Side Selection */}
-        <View style={styles.sideSelection}>
-          <Text style={styles.sectionTitle}>Invite to side:</Text>
-          <View style={styles.sideButtons}>
-            <TouchableOpacity
-              style={[
-                styles.sideButton,
-                selectedSide === 'A' && styles.sideButtonSelected
-              ]}
-              onPress={() => setSelectedSide('A')}
-              activeOpacity={0.7}
-            >
-              <Text style={[
-                styles.sideButtonText,
-                selectedSide === 'A' && styles.sideButtonTextSelected
-              ]}>
-                {betOdds.sideAName}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.sideButton,
-                selectedSide === 'B' && styles.sideButtonSelected
-              ]}
-              onPress={() => setSelectedSide('B')}
-              activeOpacity={0.7}
-            >
-              <Text style={[
-                styles.sideButtonText,
-                selectedSide === 'B' && styles.sideButtonTextSelected
-              ]}>
-                {betOdds.sideBName}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Message Input */}
-        <View style={styles.messageSection}>
-          <Text style={styles.sectionTitle}>Message (optional):</Text>
-          <TextInput
-            style={styles.messageInput}
-            placeholder="Add a personal message..."
-            placeholderTextColor={colors.textMuted}
-            value={inviteMessage}
-            onChangeText={setInviteMessage}
-            maxLength={200}
-            multiline
-            textAlignVertical="top"
-          />
         </View>
 
         {/* Friends List */}
@@ -499,65 +423,11 @@ const styles = StyleSheet.create({
     ...textStyles.body,
     color: colors.textSecondary,
   },
-
-  // Side Selection
-  sideSelection: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
   sectionTitle: {
     ...textStyles.label,
     color: colors.textPrimary,
     marginBottom: spacing.sm,
     fontWeight: typography.fontWeight.semibold,
-  },
-  sideButtons: {
-    flexDirection: 'row',
-  },
-  sideButton: {
-    flex: 1,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    marginRight: spacing.sm,
-    borderRadius: spacing.radius.sm,
-    alignItems: 'center',
-  },
-  sideButtonSelected: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  sideButtonText: {
-    ...textStyles.button,
-    color: colors.textPrimary,
-    fontWeight: typography.fontWeight.medium,
-  },
-  sideButtonTextSelected: {
-    color: colors.background,
-  },
-
-  // Message Section
-  messageSection: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  messageInput: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: spacing.radius.sm,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.sm,
-    minHeight: 60,
-    fontSize: typography.fontSize.base,
-    color: colors.textPrimary,
-    fontFamily: typography.fontFamily.regular,
   },
 
   // Friends Section
