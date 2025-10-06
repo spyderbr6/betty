@@ -43,12 +43,12 @@
 ## 🔄 IMMEDIATE NEXT STEPS (Current Development Cycle)
 
 ### **Priority 1: UI/UX Polish & Bug Fixes**
-- [ ] the invite card's participants appear as 0 when they should be real values. the one i have up should have at least one participant.
 - [ ] resolved state bets should be blue if the user has won, and red if lost. 
-- [ ] read notifications dont need to appear so lets filter the read ones out. 
 - [ ] does the private bet option do anything when creating a bet? 
 - [ ] where does bet invite live now? i dont see the option anywhere, lets determine where it should go. please confirm with me before moving forward.
-- [ ] friend page you can select add to bet but it doesnt do anything. 
+- [ ] friend page you can select add to bet but it doesnt appear to do anything. 
+- [ ] bet invite: remove bet invite message "join my bet..."
+- [ ] bet invite: move the amount to the right side to align better with the other cards. 
 
 
 ### **Priority 2: Real-time Feature Enhancements**

@@ -187,8 +187,11 @@ export const NotificationScreen: React.FC<NotificationScreenProps> = ({ onClose 
         limit: currentLimit
       });
 
-      setNotifications(userNotifications);
-      setUnreadCount(userNotifications.filter(n => !n.isRead).length);
+      // Filter out read notifications - only show unread
+      const unreadNotifications = userNotifications.filter(n => !n.isRead);
+
+      setNotifications(unreadNotifications);
+      setUnreadCount(unreadNotifications.length);
 
       // If we got fewer notifications than requested, there are no more
       setHasMore(userNotifications.length >= currentLimit);

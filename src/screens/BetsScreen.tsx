@@ -22,6 +22,7 @@ import type { Schema } from '../../amplify/data/resource';
 import { commonStyles, colors, spacing, typography, textStyles } from '../styles';
 import { Header } from '../components/ui/Header';
 import { BetCard } from '../components/betting/BetCard';
+import { BetInviteModal } from '../components/ui/BetInviteModal';
 import { Bet, BetInvitation, BetInvitationStatus, User } from '../types/betting';
 import { useAuth } from '../contexts/AuthContext';
 import { NotificationService } from '../services/notificationService';
@@ -86,6 +87,10 @@ export const BetsScreen: React.FC = () => {
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
 
+  // Invite modal state
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [selectedBetForInvite, setSelectedBetForInvite] = useState<Bet | null>(null);
+
   useEffect(() => {
     // Fetch initial bet data, bet invitations, and set up real-time subscriptions
     const fetchData = async () => {
@@ -129,12 +134,31 @@ export const BetsScreen: React.FC = () => {
         const invitationsWithDetails: (InvitationWithDetails | null)[] = await Promise.all(
           invitations.map(async (invitation) => {
             try {
-              const [betResult, fromUserResult] = await Promise.all([
+              const [betResult, fromUserResult, participantsResult] = await Promise.all([
                 client.models.Bet.get({ id: invitation.betId }),
-                client.models.User.get({ id: invitation.fromUserId })
+                client.models.User.get({ id: invitation.fromUserId }),
+                client.models.Participant.list({
+                  filter: { betId: { eq: invitation.betId } }
+                })
               ]);
 
               if (betResult.data && fromUserResult.data) {
+                const transformedBet = transformAmplifyBet(betResult.data);
+
+                // Populate participants for the bet
+                if (transformedBet && participantsResult.data) {
+                  transformedBet.participants = participantsResult.data
+                    .filter(p => p.userId && p.side)
+                    .map(p => ({
+                      id: p.id!,
+                      betId: p.betId!,
+                      userId: p.userId!,
+                      side: p.side!,
+                      amount: p.amount || 0,
+                      joinedAt: p.joinedAt || p.createdAt || new Date().toISOString(),
+                    }));
+                }
+
                 return {
                   id: invitation.id!,
                   betId: invitation.betId!,
@@ -146,7 +170,7 @@ export const BetsScreen: React.FC = () => {
                   createdAt: invitation.createdAt || new Date().toISOString(),
                   updatedAt: invitation.updatedAt || new Date().toISOString(),
                   expiresAt: invitation.expiresAt || new Date().toISOString(),
-                  bet: transformAmplifyBet(betResult.data),
+                  bet: transformedBet,
                   fromUser: {
                     id: fromUserResult.data.id!,
                     username: fromUserResult.data.username!,
@@ -787,6 +811,10 @@ export const BetsScreen: React.FC = () => {
               onPress={handleBetPress}
               onJoinBet={handleJoinBet}
               showJoinOptions={bet.status === 'ACTIVE'}
+              onInviteFriends={(bet) => {
+                setSelectedBetForInvite(bet);
+                setShowInviteModal(true);
+              }}
             />
           ))
         ) : (
@@ -834,6 +862,21 @@ export const BetsScreen: React.FC = () => {
           </View>
         </View>
       </ScrollView>
+
+      {/* Bet Invite Modal */}
+      {selectedBetForInvite && (
+        <BetInviteModal
+          visible={showInviteModal}
+          onClose={() => {
+            setShowInviteModal(false);
+            setSelectedBetForInvite(null);
+          }}
+          bet={selectedBetForInvite}
+          onInvitesSent={(count) => {
+            showToastMessage(`Successfully invited ${count} friend${count > 1 ? 's' : ''}!`);
+          }}
+        />
+      )}
     </SafeAreaView>
   );
 };

@@ -30,6 +30,7 @@ export interface BetCardProps {
   variant?: 'default' | 'compact';
   onJoinBet?: (betId: string, side: string, amount: number) => void;
   showJoinOptions?: boolean;
+  onInviteFriends?: (bet: Bet) => void;
 }
 
 export const BetCard: React.FC<BetCardProps> = ({
@@ -37,6 +38,7 @@ export const BetCard: React.FC<BetCardProps> = ({
   onPress,
   onJoinBet,
   showJoinOptions = true,
+  onInviteFriends,
 }) => {
   const { user } = useAuth();
   const [isJoining, setIsJoining] = useState(false);
@@ -202,7 +204,15 @@ export const BetCard: React.FC<BetCardProps> = ({
       case 'PENDING_RESOLUTION':
         return colors.warning;
       case 'RESOLVED':
-        return colors.success;
+        // Blue if user won, red if lost, default green if user didn't participate
+        if (userParticipation.hasJoined && bet.winningSide) {
+          if (userParticipation.side === bet.winningSide) {
+            return colors.primary; // Blue for win
+          } else {
+            return colors.error; // Red for loss
+          }
+        }
+        return colors.success; // Default green if not participated
       case 'CANCELLED':
         return colors.error;
       default:
@@ -335,7 +345,7 @@ export const BetCard: React.FC<BetCardProps> = ({
         </View>
       )}
 
-      {/* Bottom Section - Participants */}
+      {/* Bottom Section - Participants & Invite */}
       <View style={styles.bottomSection}>
         <View style={styles.participantInfo}>
           <Text style={styles.participantIcon}>👥</Text>
@@ -343,6 +353,16 @@ export const BetCard: React.FC<BetCardProps> = ({
             {participantCount} PLAYERS
           </Text>
         </View>
+
+        {onInviteFriends && bet.status === 'ACTIVE' && (
+          <TouchableOpacity
+            style={styles.inviteButton}
+            onPress={() => onInviteFriends(bet)}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.inviteButtonText}>Invite Friends</Text>
+          </TouchableOpacity>
+        )}
       </View>
     </TouchableOpacity>
   );
@@ -499,7 +519,7 @@ const styles = StyleSheet.create({
   // Bottom Section
   bottomSection: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
+    justifyContent: 'space-between',
     alignItems: 'center',
   },
   participantInfo: {
@@ -515,5 +535,17 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 11,
     fontWeight: typography.fontWeight.medium,
+  },
+  inviteButton: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs / 2,
+    backgroundColor: colors.primary,
+    borderRadius: spacing.radius.xs,
+  },
+  inviteButtonText: {
+    ...textStyles.caption,
+    color: colors.background,
+    fontSize: 11,
+    fontWeight: typography.fontWeight.semibold,
   },
 });

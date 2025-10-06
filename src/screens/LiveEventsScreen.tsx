@@ -21,6 +21,7 @@ import type { Schema } from '../../amplify/data/resource';
 import { colors, commonStyles, textStyles, spacing, typography } from '../styles';
 import { Header } from '../components/ui/Header';
 import { BetCard } from '../components/betting/BetCard';
+import { BetInviteModal } from '../components/ui/BetInviteModal';
 import { Bet } from '../types/betting';
 import { useAuth } from '../contexts/AuthContext';
 import { bulkLoadJoinableBetsWithParticipants, bulkLoadFriendsBetsWithParticipants, clearBulkLoadingCache } from '../services/bulkLoadingService';
@@ -116,6 +117,10 @@ export const LiveEventsScreen: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearch, setShowSearch] = useState(false);
   const [viewMode, setViewMode] = useState<'friends' | 'all'>('friends');
+
+  // Invite modal state
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [selectedBetForInvite, setSelectedBetForInvite] = useState<Bet | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -403,6 +408,10 @@ export const LiveEventsScreen: React.FC = () => {
                 onPress={handleBetPress}
                 onJoinBet={handleJoinBet}
                 showJoinOptions={true}
+                onInviteFriends={(bet) => {
+                  setSelectedBetForInvite(bet);
+                  setShowInviteModal(true);
+                }}
               />
             ))
           ) : (
@@ -467,6 +476,18 @@ export const LiveEventsScreen: React.FC = () => {
           </View>
         </View>
       </ScrollView>
+
+      {/* Bet Invite Modal */}
+      {selectedBetForInvite && (
+        <BetInviteModal
+          visible={showInviteModal}
+          onClose={() => {
+            setShowInviteModal(false);
+            setSelectedBetForInvite(null);
+          }}
+          bet={selectedBetForInvite}
+        />
+      )}
     </SafeAreaView>
   );
 };
