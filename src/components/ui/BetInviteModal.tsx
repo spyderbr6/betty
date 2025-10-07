@@ -24,7 +24,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { Bet, User, FriendListItem } from '../../types/betting';
 import { NotificationService } from '../../services/notificationService';
 import { ModalHeader } from './ModalHeader';
-import { BetQRCodeModal } from './BetQRCodeModal';
+// import { BetQRCodeModal } from './BetQRCodeModal'; // Disabled until native rebuild
 import { getProfilePictureUrl } from '../../services/imageUploadService';
 
 // Initialize GraphQL client
@@ -54,7 +54,7 @@ export const BetInviteModal: React.FC<BetInviteModalProps> = ({
   const [isLoading, setIsLoading] = useState(true);
   const [sendingInvites, setSendingInvites] = useState<Set<string>>(new Set());
   const [selectedFriends, setSelectedFriends] = useState<Set<string>>(new Set());
-  const [showQRCode, setShowQRCode] = useState(false);
+  // const [showQRCode, setShowQRCode] = useState(false); // Disabled until native rebuild
 
   // Reset state when modal opens/closes
   useEffect(() => {
@@ -338,15 +338,16 @@ export const BetInviteModal: React.FC<BetInviteModalProps> = ({
         <ModalHeader
           title="Invite Friends"
           onClose={onClose}
-          rightComponent={
-            <TouchableOpacity
-              style={styles.qrButton}
-              onPress={() => setShowQRCode(true)}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="qr-code-outline" size={20} color={colors.primary} />
-            </TouchableOpacity>
-          }
+          // QR button disabled until native rebuild
+          // rightComponent={
+          //   <TouchableOpacity
+          //     style={styles.qrButton}
+          //     onPress={() => setShowQRCode(true)}
+          //     activeOpacity={0.7}
+          //   >
+          //     <Ionicons name="qr-code-outline" size={20} color={colors.primary} />
+          //   </TouchableOpacity>
+          // }
         />
 
         {/* Bet Info */}
@@ -411,12 +412,12 @@ export const BetInviteModal: React.FC<BetInviteModalProps> = ({
         </View>
       </SafeAreaView>
 
-      {/* QR Code Modal */}
-      <BetQRCodeModal
+      {/* QR Code Modal - Disabled until native rebuild */}
+      {/* <BetQRCodeModal
         visible={showQRCode}
         onClose={() => setShowQRCode(false)}
         bet={bet}
-      />
+      /> */}
     </Modal>
   );
 };

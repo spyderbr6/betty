@@ -54,9 +54,18 @@
 
 ## 🔄 IMMEDIATE NEXT STEPS (Current Development Cycle)
 
-### **Priority 1: Critical Bug Fixes & UI Polish**
-- [ ] Fix notification bell counter showing incorrect count (showing 16 for 6 notifications, 6 for 3, etc.)
-- [ ] Need a quick join capability. maybe with qr codes, qr code can show on the 'invite to bet' screen and we need an equally easy ability on maybe the live bets screen to pull up the camera to read a qr code which will create an invite for whoever scans it.
+### **Priority 1: Critical Bug Fixes & UI Polish** ✅ COMPLETED
+- [x] Fix invitation accepted notifications showing userID instead of friendly display name
+- [x] Scan all notifications to ensure display names are used
+- [x] Fix notification bell counter showing incorrect count
+- [x] Remove ellipsis from header and move notification bell to the right
+- [x] Restructure betting history screen as balance audit trail
+- [x] QR code quick join capability (implemented, disabled until native rebuild)
+  - ✅ Code complete: QRScannerModal.tsx, BetQRCodeModal.tsx
+  - ✅ Integration complete in BetsScreen and BetInviteModal
+  - ⚠️ Currently disabled (commented out) due to native module build issues
+  - 📋 To enable: Re-add expo-camera plugin to app.json and rebuild
+  - 📁 Files ready: `src/components/ui/QRScannerModal.tsx`, `src/components/ui/BetQRCodeModal.tsx`
 
 ### **Priority 2: Account Screen Enhancements**
 - [ ] Wire up Payment Methods screen to actual payment integration
