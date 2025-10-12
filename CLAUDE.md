@@ -192,6 +192,13 @@ async function yourMainFunction() {
 - **Bet Invitations**: Invite friends during bet creation with flexible side choice
 - **Profile System**: Editable display names and profile pictures
 
+### Payment Management System
+- **Venmo Integration**: Add funds and withdraw via Venmo (manual admin verification)
+- **Payment Methods**: Add/manage multiple Venmo accounts with verification
+- **Transaction Service**: Complete audit trail for all balance changes
+- **Unified History**: Single screen showing deposits, withdrawals, bets, wins, refunds
+- **Admin Workflow**: Manual approval process for deposits/withdrawals (pending admin dashboard)
+
 ### User Experience
 - **Authentication**: AWS Cognito with native UI components
 - **Navigation**: Bottom tab navigation (Home, Create, My Bets, Friends, Account)
@@ -282,6 +289,44 @@ Notification {
   relatedBetId?: string
   relatedUserId?: string
 }
+
+// Payment Management
+PaymentMethod {
+  id: string
+  userId: string
+  type: 'VENMO' | 'PAYPAL' | 'BANK_ACCOUNT' | 'CASH_APP'
+  venmoUsername?: string
+  venmoPhone?: string
+  venmoEmail?: string
+  isVerified: boolean
+  verifiedAt?: datetime
+  verificationMethod?: 'MANUAL' | 'MICRO_DEPOSIT' | 'TRANSACTION_ID'
+  isDefault: boolean
+  isActive: boolean
+  displayName: string
+  createdAt: datetime
+}
+
+Transaction {
+  id: string
+  userId: string
+  type: 'DEPOSIT' | 'WITHDRAWAL' | 'BET_PLACED' | 'BET_WON' | 'BET_CANCELLED' | 'BET_REFUND' | 'ADMIN_ADJUSTMENT'
+  status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'CANCELLED'
+  amount: number
+  balanceBefore: number
+  balanceAfter: number
+  paymentMethodId?: string
+  venmoTransactionId?: string
+  venmoUsername?: string
+  relatedBetId?: string
+  relatedParticipantId?: string
+  notes?: string
+  failureReason?: string
+  processedBy?: string
+  createdAt: datetime
+  processedAt?: datetime
+  completedAt?: datetime
+}
 ```
 
 ## AWS Storage Configuration
@@ -348,6 +393,124 @@ const userBets = await bulkLoadUserBetsWithParticipants(userId, {
 });
 
 const joinableBets = await bulkLoadJoinableBetsWithParticipants(userId);
+```
+
+### Transaction Service
+```typescript
+// src/services/transactionService.ts
+// Complete transaction management with automatic balance updates
+
+// Core Functions:
+TransactionService.createTransaction(params) -> Promise<Transaction>
+  - Creates transaction record with automatic balance calculation
+  - Validates sufficient balance for debits
+  - Updates user balance for COMPLETED transactions
+  - Records balanceBefore and balanceAfter for audit trail
+
+TransactionService.createDeposit(userId, amount, paymentMethodId, venmoTransactionId) -> Promise<Transaction>
+  - Creates PENDING deposit (requires admin approval)
+  - Does NOT update balance until admin approves
+
+TransactionService.createWithdrawal(userId, amount, paymentMethodId, venmoUsername) -> Promise<Transaction>
+  - Creates PENDING withdrawal (requires admin processing)
+  - Validates sufficient balance before creating request
+
+TransactionService.recordBetPlacement(userId, amount, betId, participantId) -> Promise<Transaction>
+  - Automatically called when user joins bet
+  - Creates COMPLETED transaction
+  - Deducts balance immediately
+
+TransactionService.recordBetWinnings(userId, amount, betId, participantId) -> Promise<Transaction>
+  - Automatically called when bet is resolved
+  - Creates COMPLETED transaction
+  - Credits balance with winnings
+
+TransactionService.recordBetCancellation(userId, amount, betId, participantId) -> Promise<Transaction>
+  - Refunds user when bet is cancelled
+  - Creates COMPLETED transaction
+  - Credits balance with original bet amount
+
+TransactionService.getUserTransactions(userId, options?) -> Promise<Transaction[]>
+  - Get user's transaction history with filtering
+  - Supports type filter (DEPOSIT, WITHDRAWAL, BET_PLACED, etc.)
+  - Sorted by date (newest first)
+
+TransactionService.updateTransactionStatus(transactionId, status, failureReason?, processedBy?) -> Promise<boolean>
+  - Admin function to approve/reject transactions
+  - Updates balance when deposit/withdrawal is COMPLETED
+  - Sends notifications for status changes
+
+// Usage Examples:
+// User joins bet (automatic)
+const transaction = await TransactionService.recordBetPlacement(
+  userId,
+  50,
+  betId,
+  participantId
+);
+
+// User requests deposit (manual admin approval needed)
+const deposit = await TransactionService.createDeposit(
+  userId,
+  100,
+  paymentMethodId,
+  'venmo-transaction-id-here'
+);
+
+// Admin approves deposit
+await TransactionService.updateTransactionStatus(
+  depositId,
+  'COMPLETED',
+  undefined,
+  adminUserId
+);
+```
+
+### Payment Method Service
+```typescript
+// src/services/paymentMethodService.ts
+// Manage user payment methods (Venmo, PayPal, etc.)
+
+// Core Functions:
+PaymentMethodService.createPaymentMethod(params) -> Promise<PaymentMethod>
+  - Add new Venmo/PayPal/Bank account
+  - Validates Venmo username format
+  - Automatically sets as default if first method
+
+PaymentMethodService.getUserPaymentMethods(userId, activeOnly?) -> Promise<PaymentMethod[]>
+  - Get all payment methods for user
+  - Sorted by default first, then creation date
+
+PaymentMethodService.verifyPaymentMethod(paymentMethodId, verificationMethod) -> Promise<boolean>
+  - Admin function to verify payment method
+  - Required before withdrawals allowed
+
+PaymentMethodService.setDefaultPaymentMethod(userId, paymentMethodId) -> Promise<boolean>
+  - Set payment method as default
+  - Clears other defaults automatically
+
+PaymentMethodService.removePaymentMethod(paymentMethodId) -> Promise<boolean>
+  - Soft delete (marks as inactive)
+  - Does not delete transaction history
+
+PaymentMethodService.validateVenmoUsername(username) -> boolean
+  - Validates format: 5-30 characters, alphanumeric, hyphens, underscores
+
+// Usage Examples:
+// User adds Venmo account
+const method = await PaymentMethodService.createPaymentMethod({
+  userId,
+  type: 'VENMO',
+  venmoUsername: '@johndoe',
+  venmoEmail: 'john@example.com',
+  isDefault: true
+});
+
+// Admin verifies payment method
+await PaymentMethodService.verifyPaymentMethod(
+  methodId,
+  'MANUAL'
+);
 ```
 
 ## SideBet Design System Architecture
