@@ -47,8 +47,7 @@
         {
           "cameraPermission": "Allow SideBet to access your camera to scan QR codes for quick bet joining."
         }
-      ],
-      "expo-barcode-scanner"
+      ]
     ],
     "notification": {
       "icon": "./assets/icon.png",
