@@ -32,6 +32,7 @@ import { TrustSafetyScreen } from './TrustSafetyScreen';
 import { SettingsScreen } from './SettingsScreen';
 import { SupportScreen } from './SupportScreen';
 import { AboutScreen } from './AboutScreen';
+import { AdminDashboardScreen } from './AdminDashboardScreen';
 import { formatCurrency, formatPercentage } from '../utils/formatting';
 import { useAuth } from '../contexts/AuthContext';
 import { ProfileEditForm, User } from '../types/betting';
@@ -59,6 +60,7 @@ export const AccountScreen: React.FC = () => {
   const [showSettings, setShowSettings] = useState(false);
   const [showSupport, setShowSupport] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
+  const [showAdminDashboard, setShowAdminDashboard] = useState(false);
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
 
   useEffect(() => {
@@ -248,6 +250,10 @@ export const AccountScreen: React.FC = () => {
     setShowAbout(true);
   };
 
+  const handleAdminDashboardPress = () => {
+    setShowAdminDashboard(true);
+  };
+
   const handleFriendsPress = () => {
     setShowFriendsScreen(true);
   };
@@ -419,6 +425,31 @@ export const AccountScreen: React.FC = () => {
 
         {/* Menu Options */}
         <View style={styles.menuSection}>
+          {/* Admin Dashboard - Show for all users during development */}
+          <View style={styles.adminMenuOption}>
+            <TouchableOpacity
+              style={styles.menuOption}
+              onPress={handleAdminDashboardPress}
+              activeOpacity={0.7}
+            >
+              <View style={styles.menuOptionLeft}>
+                <View style={[styles.menuIconContainer, styles.adminIconContainer]}>
+                  <Ionicons name="shield-checkmark" size={22} color={colors.warning} />
+                </View>
+                <View style={styles.menuOptionContent}>
+                  <View style={styles.adminTitleRow}>
+                    <Text style={styles.menuOptionTitle}>Admin Dashboard</Text>
+                    <View style={styles.adminBadge}>
+                      <Text style={styles.adminBadgeText}>ADMIN</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.menuOptionSubtitle}>Approve deposits and withdrawals</Text>
+                </View>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+            </TouchableOpacity>
+          </View>
+
           <MenuOption
             icon="people-outline"
             title="Friends"
@@ -574,6 +605,16 @@ export const AccountScreen: React.FC = () => {
         onRequestClose={() => setShowAbout(false)}
       >
         <AboutScreen onClose={() => setShowAbout(false)} />
+      </Modal>
+
+      {/* Admin Dashboard Modal */}
+      <Modal
+        visible={showAdminDashboard}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setShowAdminDashboard(false)}
+      >
+        <AdminDashboardScreen onClose={() => setShowAdminDashboard(false)} />
       </Modal>
     </SafeAreaView>
   );
@@ -772,6 +813,31 @@ const styles = StyleSheet.create({
   menuSection: {
     backgroundColor: colors.surface,
     marginTop: spacing.md,
+  },
+  adminMenuOption: {
+    borderBottomWidth: 2,
+    borderBottomColor: colors.warning + '30',
+  },
+  adminTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 2,
+  },
+  adminIconContainer: {
+    backgroundColor: colors.warning + '20',
+  },
+  adminBadge: {
+    backgroundColor: colors.warning,
+    paddingHorizontal: spacing.xs,
+    paddingVertical: 2,
+    borderRadius: spacing.radius.xs,
+    marginLeft: spacing.xs,
+  },
+  adminBadgeText: {
+    ...textStyles.caption,
+    color: colors.background,
+    fontWeight: '700',
+    fontSize: 10,
   },
   menuOption: {
     flexDirection: 'row',
