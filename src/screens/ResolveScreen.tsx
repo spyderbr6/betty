@@ -24,6 +24,7 @@ import { Bet } from '../types/betting';
 import { useAuth } from '../contexts/AuthContext';
 import { formatCurrency } from '../utils/formatting';
 import { NotificationService } from '../services/notificationService';
+import { TransactionService } from '../services/transactionService';
 
 // Initialize GraphQL client
 const client = generateClient<Schema>();
@@ -308,7 +309,17 @@ export const ResolveScreen: React.FC = () => {
               status: isWinner ? 'ACCEPTED' : 'DECLINED'
             });
 
-            // Update user balance and stats
+            // Record transaction for winners
+            if (isWinner && payout > 0) {
+              await TransactionService.recordBetWinnings(
+                participant.userId,
+                payout,
+                bet.id,
+                participant.id
+              );
+            }
+
+            // Update user stats (win rate, total bets, etc.)
             await updateUserStats(participant.userId, isWinner, participant.amount, payout);
 
             // Send bet resolved notification to participant
@@ -364,8 +375,9 @@ export const ResolveScreen: React.FC = () => {
         let newWinRate = currentWinRate;
 
         if (isWinner) {
-          // Winner gets payout added to balance
-          newBalance = currentBalance + payout;
+          // Winner balance is already updated by TransactionService.recordBetWinnings
+          // Just update stats here
+          newBalance = currentBalance; // Balance already updated by transaction
           newTotalWinnings = currentTotalWinnings + (payout - betAmount); // Profit only
 
           // Calculate new win rate (winners count / total bets)

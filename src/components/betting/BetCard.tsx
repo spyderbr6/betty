@@ -20,6 +20,7 @@ import { Bet, BetStatus } from '../../types/betting';
 import { formatCurrency, dateFormatting } from '../../utils/formatting';
 import { useAuth } from '../../contexts/AuthContext';
 import { NotificationService } from '../../services/notificationService';
+import { TransactionService } from '../../services/transactionService';
 
 // Initialize GraphQL client
 const client = generateClient<Schema>();
@@ -124,12 +125,19 @@ export const BetCard: React.FC<BetCardProps> = ({
       });
 
       if (result.data) {
-        // Deduct amount from user balance
-        await client.models.User.update({
-          id: user.userId,
-          balance: currentBalance - amount,
-          updatedAt: new Date().toISOString()
-        });
+        // Record transaction for bet placement (this handles balance deduction automatically)
+        const transaction = await TransactionService.recordBetPlacement(
+          user.userId,
+          amount,
+          bet.id,
+          result.data.id
+        );
+
+        if (!transaction) {
+          // Rollback participant creation if transaction fails
+          await client.models.Participant.delete({ id: result.data.id });
+          throw new Error('Failed to record transaction');
+        }
 
         // Update bet total pot
         await client.models.Bet.update({
