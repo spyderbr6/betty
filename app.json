@@ -41,6 +41,12 @@
           "color": "#111827",
           "defaultChannel": "default"
         }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow SideBet to access your camera to scan QR codes for quick bet joining."
+        }
       ]
     ],
     "notification": {

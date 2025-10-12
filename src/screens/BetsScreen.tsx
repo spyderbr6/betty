@@ -23,7 +23,7 @@ import { commonStyles, colors, spacing, typography, textStyles } from '../styles
 import { Header } from '../components/ui/Header';
 import { BetCard } from '../components/betting/BetCard';
 import { BetInviteModal } from '../components/ui/BetInviteModal';
-// import { QRScannerModal } from '../components/ui/QRScannerModal'; // Disabled until native rebuild
+import { QRScannerModal } from '../components/ui/QRScannerModal';
 import { Bet, BetInvitation, BetInvitationStatus, User } from '../types/betting';
 import { useAuth } from '../contexts/AuthContext';
 import { NotificationService } from '../services/notificationService';
@@ -92,8 +92,8 @@ export const BetsScreen: React.FC = () => {
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [selectedBetForInvite, setSelectedBetForInvite] = useState<Bet | null>(null);
 
-  // QR Scanner state - Disabled until native rebuild
-  // const [showQRScanner, setShowQRScanner] = useState(false);
+  // QR Scanner state
+  const [showQRScanner, setShowQRScanner] = useState(false);
 
   useEffect(() => {
     // Fetch initial bet data, bet invitations, and set up real-time subscriptions
@@ -731,16 +731,15 @@ export const BetsScreen: React.FC = () => {
         showBalance={true}
         onBalancePress={handleBalancePress}
         liveGame={liveGame}
-        // QR Scanner button disabled until native rebuild
-        // rightComponent={
-        //   <TouchableOpacity
-        //     style={styles.qrScanButton}
-        //     onPress={() => setShowQRScanner(true)}
-        //     activeOpacity={0.7}
-        //   >
-        //     <Ionicons name="qr-code-outline" size={20} color={colors.primary} />
-        //   </TouchableOpacity>
-        // }
+        rightComponent={
+          <TouchableOpacity
+            style={styles.qrScanButton}
+            onPress={() => setShowQRScanner(true)}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="qr-code-outline" size={20} color={colors.primary} />
+          </TouchableOpacity>
+        }
       />
 
       {/* Toast Banner */}
@@ -952,12 +951,12 @@ export const BetsScreen: React.FC = () => {
         />
       )}
 
-      {/* QR Scanner Modal - Disabled until native rebuild */}
-      {/* <QRScannerModal
+      {/* QR Scanner Modal */}
+      <QRScannerModal
         visible={showQRScanner}
         onClose={() => setShowQRScanner(false)}
         onBetScanned={handleBetScanned}
-      /> */}
+      />
     </SafeAreaView>
   );
 };
