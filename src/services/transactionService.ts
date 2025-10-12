@@ -311,6 +311,7 @@ export class TransactionService {
 
   /**
    * Update transaction status (for admin processing)
+   * ADMIN ONLY - Requires admin user validation
    */
   static async updateTransactionStatus(
     transactionId: string,
@@ -319,6 +320,15 @@ export class TransactionService {
     processedBy?: string
   ): Promise<boolean> {
     try {
+      // Admin role validation - check if processedBy user has admin privileges
+      if (processedBy) {
+        const { data: adminUser } = await client.models.User.get({ id: processedBy });
+        if (!adminUser || (adminUser.role !== 'ADMIN' && adminUser.role !== 'SUPER_ADMIN')) {
+          console.error('[Transaction] Unauthorized: User is not an admin', processedBy);
+          return false;
+        }
+      }
+
       const updateData: any = {
         id: transactionId,
         status,

@@ -14,6 +14,7 @@ const schema = a.schema({
       email: a.string().required(),
       displayName: a.string(), // Friendly/display name for friends
       profilePictureUrl: a.string(), // S3 URL for profile picture
+      role: a.enum(['USER', 'ADMIN', 'SUPER_ADMIN']).default('USER'), // User role for access control
       balance: a.float().default(0),
       trustScore: a.float().default(5.0),
       totalBets: a.integer().default(0),
@@ -313,8 +314,11 @@ const schema = a.schema({
       relatedBet: a.belongsTo('Bet', 'relatedBetId'),
     })
     .authorization((allow) => [
-      allow.owner().to(['create', 'read']),
-      allow.authenticated().to(['read', 'create', 'update']) // Admin can update status
+      allow.owner().to(['create', 'read']), // Users can create their own transactions and read them
+      allow.authenticated().to(['read', 'create']), // All authenticated users can read/create transactions (for bet operations)
+      // NOTE: Admin-only update permissions enforced in app logic by checking user.role
+      // DynamoDB authorization rules don't support custom field-based permissions
+      // TransactionService validates admin role before allowing status updates
     ]),
 
   // Scheduled Lambda Function

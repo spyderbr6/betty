@@ -2,13 +2,20 @@ import React, { createContext, useContext, useEffect, useRef, useState, useCallb
 import { AppState } from 'react-native';
 import { fetchAuthSession, getCurrentUser, signOut as amplifySignOut } from 'aws-amplify/auth';
 import { Hub } from 'aws-amplify/utils';
+import { generateClient } from 'aws-amplify/data';
+import type { Schema } from '../../amplify/data/resource';
 import { NotificationService } from '../services/notificationService';
 import { initializePushNotifications, addNotificationResponseListener, removeNotificationResponseListener } from '../services/pushNotificationConfig';
 import type { Subscription } from 'expo-notifications';
 
+const client = generateClient<Schema>();
+
+type UserRole = 'USER' | 'ADMIN' | 'SUPER_ADMIN';
+
 interface User {
   userId: string;
   username: string;
+  role: UserRole;
 }
 
 interface RefreshOptions {
@@ -62,10 +69,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const checkAuthState = useCallback(async (): Promise<boolean> => {
     try {
       const currentUser = await getCurrentUser();
+
+      // Fetch user data from database to get role
+      const { data: userData } = await client.models.User.get({ id: currentUser.userId });
+
       if (isMountedRef.current) {
         const newUser = {
           userId: currentUser.userId,
           username: currentUser.username,
+          role: (userData?.role as UserRole) || 'USER', // Default to USER if role not set
         };
         setUser(newUser);
 

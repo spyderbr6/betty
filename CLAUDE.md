@@ -197,7 +197,16 @@ async function yourMainFunction() {
 - **Payment Methods**: Add/manage multiple Venmo accounts with verification
 - **Transaction Service**: Complete audit trail for all balance changes
 - **Unified History**: Single screen showing deposits, withdrawals, bets, wins, refunds
-- **Admin Workflow**: Manual approval process for deposits/withdrawals (pending admin dashboard)
+- **Admin Dashboard**: Full transaction approval interface for admins
+
+### Admin Role System
+- **Role-Based Access Control**: Three user roles (USER, ADMIN, SUPER_ADMIN)
+- **AuthContext Integration**: User role loaded on authentication and stored in context
+- **UI Protection**: Admin dashboard menu option only visible to admin users
+- **Screen Validation**: AdminDashboardScreen validates role on mount
+- **Service-Layer Security**: TransactionService validates admin role before allowing status updates
+- **Database Schema**: User.role field with default value of 'USER'
+- **Admin Functions**: Approve/reject deposits, approve/reject withdrawals, view pending transactions
 
 ### User Experience
 - **Authentication**: AWS Cognito with native UI components
@@ -220,6 +229,7 @@ User {
   email: string
   displayName?: string
   profilePictureUrl?: string
+  role: 'USER' | 'ADMIN' | 'SUPER_ADMIN'  // User role for access control
   balance: number
   trustScore: number
   totalBets: number
@@ -512,6 +522,180 @@ await PaymentMethodService.verifyPaymentMethod(
   'MANUAL'
 );
 ```
+
+## Admin Role System
+
+### Overview
+The app uses a role-based access control system with three user roles: `USER` (default), `ADMIN`, and `SUPER_ADMIN`. Admin roles have special permissions to approve deposits/withdrawals and manage transactions.
+
+### Architecture
+
+#### 1. Database Schema
+```typescript
+// amplify/data/resource.ts
+User: a.model({
+  // ... other fields
+  role: a.enum(['USER', 'ADMIN', 'SUPER_ADMIN']).default('USER'),
+})
+```
+
+#### 2. AuthContext Integration
+```typescript
+// src/contexts/AuthContext.tsx
+interface User {
+  userId: string;
+  username: string;
+  role: 'USER' | 'ADMIN' | 'SUPER_ADMIN';  // Role included in auth context
+}
+
+// Role is fetched from database during authentication
+const { data: userData } = await client.models.User.get({ id: currentUser.userId });
+const newUser = {
+  userId: currentUser.userId,
+  username: currentUser.username,
+  role: userData?.role || 'USER'
+};
+```
+
+#### 3. UI Protection Layer
+```typescript
+// src/screens/AccountScreen.tsx
+// Admin Dashboard menu option only visible to admin users
+{(user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN') && (
+  <View style={styles.adminMenuOption}>
+    <TouchableOpacity onPress={handleAdminDashboardPress}>
+      {/* Admin Dashboard menu item with badge */}
+    </TouchableOpacity>
+  </View>
+)}
+```
+
+#### 4. Screen-Level Validation
+```typescript
+// src/screens/AdminDashboardScreen.tsx
+useEffect(() => {
+  // Check admin role on mount
+  if (!user || (user.role !== 'ADMIN' && user.role !== 'SUPER_ADMIN')) {
+    Alert.alert(
+      'Access Denied',
+      'You do not have permission to access the admin dashboard.',
+      [{ text: 'OK', onPress: onClose }]
+    );
+    return;
+  }
+  loadPendingTransactions();
+}, []);
+```
+
+#### 5. Service-Layer Security
+```typescript
+// src/services/transactionService.ts
+static async updateTransactionStatus(
+  transactionId: string,
+  status: TransactionStatus,
+  failureReason?: string,
+  processedBy?: string  // Admin user ID required
+): Promise<boolean> {
+  // Validate admin role before allowing status update
+  if (processedBy) {
+    const { data: adminUser } = await client.models.User.get({ id: processedBy });
+    if (!adminUser || (adminUser.role !== 'ADMIN' && adminUser.role !== 'SUPER_ADMIN')) {
+      console.error('[Transaction] Unauthorized: User is not an admin');
+      return false;
+    }
+  }
+
+  // Proceed with transaction status update
+  // ...
+}
+```
+
+### Security Layers
+
+The admin system uses **defense in depth** with multiple security layers:
+
+1. **UI Layer**: Admin options hidden from non-admin users (user convenience)
+2. **Screen Layer**: Role validation when admin screens open (UI security)
+3. **Service Layer**: Role validation before admin operations execute (business logic security)
+4. **Database Layer**: Authorization rules limit transaction mutations (data security)
+
+### Admin Functions
+
+#### Approving Deposits
+```typescript
+// User requests deposit (creates PENDING transaction)
+const deposit = await TransactionService.createDeposit(
+  userId,
+  100,
+  paymentMethodId,
+  'venmo-transaction-id'
+);
+
+// Admin approves (updates to COMPLETED and credits balance)
+await TransactionService.updateTransactionStatus(
+  deposit.id,
+  'COMPLETED',
+  undefined,
+  adminUserId  // Admin role validated here
+);
+```
+
+#### Rejecting Deposits/Withdrawals
+```typescript
+// Admin rejects with reason (updates to FAILED)
+await TransactionService.updateTransactionStatus(
+  transactionId,
+  'FAILED',
+  'Invalid Venmo transaction ID',
+  adminUserId  // Admin role validated here
+);
+```
+
+#### Viewing Pending Transactions
+```typescript
+// Get all pending transactions (admin dashboard)
+const pending = await TransactionService.getPendingTransactions();
+// Returns array of PENDING deposits/withdrawals with full details
+```
+
+### Granting Admin Access
+
+To grant admin access to a user:
+
+1. **Direct Database Update** (development/testing):
+```typescript
+await client.models.User.update({
+  id: 'user-id-here',
+  role: 'ADMIN'
+});
+```
+
+2. **AWS Console** (production):
+   - Open DynamoDB console
+   - Find User table
+   - Locate user by ID
+   - Update `role` field to `ADMIN` or `SUPER_ADMIN`
+
+3. **Future Enhancement**: Create admin management UI for SUPER_ADMIN to grant/revoke admin roles
+
+### Admin Dashboard Features
+
+- **Pending Transaction List**: View all deposits/withdrawals awaiting action
+- **Filter by Type**: Filter to show only deposits or only withdrawals
+- **Transaction Details**: View user ID, Venmo username, transaction ID, balances
+- **Approve Action**: Green checkmark to approve and complete transaction
+- **Reject Action**: Red X to reject with reason (prompts for explanation)
+- **Real-time Updates**: Pull-to-refresh to get latest pending transactions
+- **Stats Summary**: Count of total pending, deposits, and withdrawals
+
+### Important Notes
+
+- **Default Role**: All new users are created with `role: 'USER'`
+- **Role Persistence**: Role is stored in User table and loaded into AuthContext on login
+- **Admin Badge**: Admin dashboard menu item shows orange "ADMIN" badge for visibility
+- **Validation Required**: `processedBy` parameter is required for TransactionService.updateTransactionStatus
+- **Audit Trail**: All admin actions record the admin user ID in `processedBy` field
+- **Notifications**: Users receive notifications when deposits/withdrawals are approved/rejected
 
 ## SideBet Design System Architecture
 

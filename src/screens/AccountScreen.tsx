@@ -425,30 +425,32 @@ export const AccountScreen: React.FC = () => {
 
         {/* Menu Options */}
         <View style={styles.menuSection}>
-          {/* Admin Dashboard - Show for all users during development */}
-          <View style={styles.adminMenuOption}>
-            <TouchableOpacity
-              style={styles.menuOption}
-              onPress={handleAdminDashboardPress}
-              activeOpacity={0.7}
-            >
-              <View style={styles.menuOptionLeft}>
-                <View style={[styles.menuIconContainer, styles.adminIconContainer]}>
-                  <Ionicons name="shield-checkmark" size={22} color={colors.warning} />
-                </View>
-                <View style={styles.menuOptionContent}>
-                  <View style={styles.adminTitleRow}>
-                    <Text style={styles.menuOptionTitle}>Admin Dashboard</Text>
-                    <View style={styles.adminBadge}>
-                      <Text style={styles.adminBadgeText}>ADMIN</Text>
-                    </View>
+          {/* Admin Dashboard - Only show for admin users */}
+          {(user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN') && (
+            <View style={styles.adminMenuOption}>
+              <TouchableOpacity
+                style={styles.menuOption}
+                onPress={handleAdminDashboardPress}
+                activeOpacity={0.7}
+              >
+                <View style={styles.menuOptionLeft}>
+                  <View style={[styles.menuIconContainer, styles.adminIconContainer]}>
+                    <Ionicons name="shield-checkmark" size={22} color={colors.warning} />
                   </View>
-                  <Text style={styles.menuOptionSubtitle}>Approve deposits and withdrawals</Text>
+                  <View style={styles.menuOptionContent}>
+                    <View style={styles.adminTitleRow}>
+                      <Text style={styles.menuOptionTitle}>Admin Dashboard</Text>
+                      <View style={styles.adminBadge}>
+                        <Text style={styles.adminBadgeText}>ADMIN</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.menuOptionSubtitle}>Approve deposits and withdrawals</Text>
+                  </View>
                 </View>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
-            </TouchableOpacity>
-          </View>
+                <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+          )}
 
           <MenuOption
             icon="people-outline"

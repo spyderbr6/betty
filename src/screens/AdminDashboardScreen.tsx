@@ -41,7 +41,16 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [filter, setFilter] = useState<'ALL' | 'DEPOSITS' | 'WITHDRAWALS'>('ALL');
 
+  // Check admin role on mount
   useEffect(() => {
+    if (!user || (user.role !== 'ADMIN' && user.role !== 'SUPER_ADMIN')) {
+      Alert.alert(
+        'Access Denied',
+        'You do not have permission to access the admin dashboard.',
+        [{ text: 'OK', onPress: onClose }]
+      );
+      return;
+    }
     loadPendingTransactions();
   }, []);
 
