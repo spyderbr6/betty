@@ -104,17 +104,12 @@
   - Friend leaderboards
 
 ### **Social Features**
-- [ ] **Group Betting**
-  - Multiple users on same side
-  - Team-based betting
-  - Group chat for bets
 - [ ] **Bet Templates**
   - Popular bet types
   - Custom user templates
-  - Template sharing
+  - generally simplify the options. 
 - [ ] **Activity Feed**
-  - Friend betting activity
-  - Recent wins/losses
+  - Friend betting activity. either a separate live bet screen section or prioritized in the list.
   - Trending topics
 
 ### **Platform Expansion**
@@ -122,6 +117,9 @@
 - [ ] **Camera Features**: Photo evidence for bet resolution
 - [ ] **Location Services**: Location-based bet discovery
 - [ ] **Advanced Analytics Dashboard**: Deep insights into betting patterns
+
+### **Long Term Ideas**
+- [ ] **Nemesis identification**: the person you've lose to the most get called out differently than others. 
 
 ---
 
