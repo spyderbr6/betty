@@ -8,7 +8,8 @@ import { env } from '$amplify/env/scheduled-bet-checker';
 const { resourceConfig, libraryOptions } = await getAmplifyDataClientConfig(env);
 Amplify.configure(resourceConfig, libraryOptions);
 
-const client = generateClient<Schema>();
+// Use non-generic client to avoid complex union type inference
+const client = generateClient<Schema>() as any;
 
 export const handler: EventBridgeHandler<"Scheduled Event", null, boolean> = async (event) => {
   console.log('⏰ Scheduled bet checker triggered:', JSON.stringify(event, null, 2));

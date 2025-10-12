@@ -61,18 +61,20 @@ export class PaymentMethodService {
         await this.clearDefaultPaymentMethods(params.userId);
       }
 
-      const { data: paymentMethod, errors } = await client.models.PaymentMethod.create({
+      const result = await client.models.PaymentMethod.create({
         userId: params.userId,
         type: params.type,
-        venmoUsername: params.venmoUsername,
-        venmoPhone: params.venmoPhone,
-        venmoEmail: params.venmoEmail,
+        venmoUsername: params.venmoUsername || null,
+        venmoPhone: params.venmoPhone || null,
+        venmoEmail: params.venmoEmail || null,
         isVerified: false,
         isDefault: params.isDefault || false,
         isActive: true,
         displayName,
-        createdAt: new Date().toISOString(),
       });
+
+      const paymentMethod = result.data;
+      const errors = result.errors;
 
       if (errors || !paymentMethod) {
         console.error('[PaymentMethod] Error creating payment method:', errors);
@@ -211,7 +213,6 @@ export class PaymentMethodService {
       await client.models.PaymentMethod.update({
         id: paymentMethodId,
         isDefault: true,
-        updatedAt: new Date().toISOString(),
       });
 
       console.log('[PaymentMethod] Default payment method updated:', paymentMethodId);
@@ -235,7 +236,6 @@ export class PaymentMethodService {
           client.models.PaymentMethod.update({
             id: pm.id,
             isDefault: false,
-            updatedAt: new Date().toISOString(),
           })
         )
       );
@@ -253,7 +253,6 @@ export class PaymentMethodService {
       await client.models.PaymentMethod.update({
         id: paymentMethodId,
         isActive: false,
-        updatedAt: new Date().toISOString(),
       });
 
       console.log('[PaymentMethod] Payment method removed:', paymentMethodId);
@@ -277,7 +276,6 @@ export class PaymentMethodService {
         isVerified: true,
         verifiedAt: new Date().toISOString(),
         verificationMethod,
-        updatedAt: new Date().toISOString(),
       });
 
       console.log('[PaymentMethod] Payment method verified:', paymentMethodId);
@@ -296,7 +294,6 @@ export class PaymentMethodService {
       await client.models.PaymentMethod.update({
         id: paymentMethodId,
         lastUsed: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
       });
     } catch (error) {
       console.error('[PaymentMethod] Error updating last used:', error);

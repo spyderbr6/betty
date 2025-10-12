@@ -127,7 +127,6 @@ const schema = a.schema({
       evidence: a.hasMany('Evidence', 'betId'),
       invitations: a.hasMany('BetInvitation', 'betId'),
       notifications: a.hasMany('Notification', 'relatedBetId'),
-      transactions: a.hasMany('Transaction', 'relatedBetId'),
     })
     .authorization((allow) => [
       allow.owner().to(['create', 'read', 'update', 'delete']),
@@ -312,7 +311,6 @@ const schema = a.schema({
       // Relations
       user: a.belongsTo('User', 'userId'),
       paymentMethod: a.belongsTo('PaymentMethod', 'paymentMethodId'),
-      relatedBet: a.belongsTo('Bet', 'relatedBetId'),
     })
     .authorization((allow) => [
       allow.owner().to(['create', 'read']), // Users can create their own transactions and read them

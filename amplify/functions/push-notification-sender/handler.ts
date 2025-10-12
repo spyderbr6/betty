@@ -9,7 +9,8 @@ import { env } from '$amplify/env/push-notification-sender';
 const { resourceConfig, libraryOptions } = await getAmplifyDataClientConfig(env);
 Amplify.configure(resourceConfig, libraryOptions);
 
-const client = generateClient<Schema>();
+// Use non-generic client to avoid complex union type inference
+const client = generateClient<Schema>() as any;
 
 interface PushNotificationArgs {
   userId: string;
@@ -40,7 +41,7 @@ export const handler: AppSyncResolverHandler<PushNotificationArgs, boolean> = as
     }
 
     // Prepare notifications for all active tokens
-    const notifications = tokens.map(tokenRecord => ({
+    const notifications = tokens.map((tokenRecord: any) => ({
       to: tokenRecord.token!,
       sound: 'default',
       title,
