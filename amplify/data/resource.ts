@@ -32,6 +32,8 @@ const schema = a.schema({
       receivedBetInvitations: a.hasMany('BetInvitation', 'toUserId'),
       notifications: a.hasMany('Notification', 'userId'),
       pushTokens: a.hasMany('PushToken', 'userId'),
+      paymentMethods: a.hasMany('PaymentMethod', 'userId'),
+      transactions: a.hasMany('Transaction', 'userId'),
     })
     .authorization((allow) => [
       allow.owner().to(['create', 'read', 'update', 'delete']),
@@ -55,6 +57,11 @@ const schema = a.schema({
         'BET_CANCELLED',
         'BET_DISPUTED',
         'BET_DEADLINE_APPROACHING',
+        'DEPOSIT_COMPLETED',
+        'DEPOSIT_FAILED',
+        'WITHDRAWAL_COMPLETED',
+        'WITHDRAWAL_FAILED',
+        'PAYMENT_METHOD_VERIFIED',
         'SYSTEM_ANNOUNCEMENT'
       ]),
       title: a.string().required(), // Short notification title
@@ -235,6 +242,81 @@ const schema = a.schema({
       allow.authenticated().to(['read', 'create', 'update'])
     ]),
 
+  // Payment Management Models
+  PaymentMethod: a
+    .model({
+      id: a.id(),
+      userId: a.id().required(),
+      type: a.enum(['VENMO', 'PAYPAL', 'BANK_ACCOUNT', 'CASH_APP']),
+      // Venmo-specific fields
+      venmoUsername: a.string(),
+      venmoPhone: a.string(), // Last 4 digits for verification
+      venmoEmail: a.string(), // Email associated with Venmo account
+      // Verification
+      isVerified: a.boolean().default(false),
+      verifiedAt: a.datetime(),
+      verificationMethod: a.enum(['MANUAL', 'MICRO_DEPOSIT', 'TRANSACTION_ID']),
+      // Status
+      isDefault: a.boolean().default(false),
+      isActive: a.boolean().default(true),
+      // Metadata
+      displayName: a.string(), // e.g., "Venmo (@username)"
+      lastUsed: a.datetime(),
+      createdAt: a.datetime(),
+      updatedAt: a.datetime(),
+      // Relations
+      user: a.belongsTo('User', 'userId'),
+      transactions: a.hasMany('Transaction', 'paymentMethodId'),
+    })
+    .authorization((allow) => [
+      allow.owner().to(['create', 'read', 'update', 'delete']),
+      allow.authenticated().to(['read']) // Admin can read for verification
+    ]),
+
+  Transaction: a
+    .model({
+      id: a.id(),
+      userId: a.id().required(),
+      type: a.enum([
+        'DEPOSIT',           // User adds funds
+        'WITHDRAWAL',        // User withdraws funds
+        'BET_PLACED',        // Balance deducted when joining bet
+        'BET_WON',          // Winnings paid out
+        'BET_CANCELLED',    // Refund when bet cancelled
+        'BET_REFUND',       // Manual refund by admin
+        'ADMIN_ADJUSTMENT'  // Admin balance correction
+      ]),
+      status: a.enum(['PENDING', 'PROCESSING', 'COMPLETED', 'FAILED', 'CANCELLED']),
+      amount: a.float().required(),
+      // Balance tracking
+      balanceBefore: a.float().required(),
+      balanceAfter: a.float().required(),
+      // Payment method info (for deposits/withdrawals)
+      paymentMethodId: a.id(),
+      // Venmo-specific fields
+      venmoTransactionId: a.string(), // User-provided Venmo transaction ID for verification
+      venmoUsername: a.string(), // Captured at time of transaction
+      // Related entities
+      relatedBetId: a.id(),
+      relatedParticipantId: a.id(),
+      // Transaction metadata
+      notes: a.string(), // Admin notes or user description
+      failureReason: a.string(), // Why transaction failed
+      processedBy: a.id(), // Admin user who processed manual transaction
+      // Timestamps
+      createdAt: a.datetime(),
+      processedAt: a.datetime(), // When status changed to PROCESSING
+      completedAt: a.datetime(), // When status changed to COMPLETED/FAILED
+      // Relations
+      user: a.belongsTo('User', 'userId'),
+      paymentMethod: a.belongsTo('PaymentMethod', 'paymentMethodId'),
+      relatedBet: a.belongsTo('Bet', 'relatedBetId'),
+    })
+    .authorization((allow) => [
+      allow.owner().to(['create', 'read']),
+      allow.authenticated().to(['read', 'create', 'update']) // Admin can update status
+    ]),
+
   // Scheduled Lambda Function
   scheduledBetChecker: a
     .query()
@@ -351,5 +433,65 @@ const { data: pendingInvites } = await client.models.BetInvitation.list({
       { status: { eq: "PENDING" } }
     ]
   }
+});
+
+// PAYMENT MANAGEMENT EXAMPLES
+// Add Venmo payment method
+const paymentMethod = await client.models.PaymentMethod.create({
+  userId: "current-user-id",
+  type: "VENMO",
+  venmoUsername: "@johndoe",
+  venmoEmail: "john@example.com",
+  displayName: "Venmo (@johndoe)",
+  isDefault: true
+});
+
+// Create deposit transaction
+const deposit = await client.models.Transaction.create({
+  userId: "current-user-id",
+  type: "DEPOSIT",
+  status: "PENDING",
+  amount: 50.00,
+  balanceBefore: 100.00,
+  balanceAfter: 150.00,
+  paymentMethodId: "payment-method-id",
+  venmoTransactionId: "3FA12345678",
+  venmoUsername: "@johndoe",
+  notes: "Deposit via Venmo"
+});
+
+// Create withdrawal transaction
+const withdrawal = await client.models.Transaction.create({
+  userId: "current-user-id",
+  type: "WITHDRAWAL",
+  status: "PENDING",
+  amount: 25.00,
+  balanceBefore: 100.00,
+  balanceAfter: 75.00,
+  paymentMethodId: "payment-method-id",
+  venmoUsername: "@johndoe",
+  notes: "Withdrawal to Venmo"
+});
+
+// Record bet transaction when joining
+const betTransaction = await client.models.Transaction.create({
+  userId: "current-user-id",
+  type: "BET_PLACED",
+  status: "COMPLETED",
+  amount: 20.00,
+  balanceBefore: 100.00,
+  balanceAfter: 80.00,
+  relatedBetId: "bet-id-here",
+  notes: "Joined bet: Lakers vs Warriors"
+});
+
+// Get user's transaction history
+const { data: transactions } = await client.models.Transaction.list({
+  filter: { userId: { eq: "current-user-id" } }
+});
+
+// Get pending transactions (for admin)
+const { data: pendingTransactions } = await client.models.Transaction.list({
+  filter: { status: { eq: "PENDING" } }
 });
 ========================================================================*/

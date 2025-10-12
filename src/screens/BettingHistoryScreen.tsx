@@ -1,6 +1,6 @@
 /**
  * Balance Audit Trail Screen
- * Complete transaction history showing all balance changes
+ * Complete transaction history showing all balance changes (payments + bets)
  */
 
 import React, { useState, useEffect } from 'react';
@@ -15,139 +15,44 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { generateClient } from 'aws-amplify/data';
-import type { Schema } from '../../amplify/data/resource';
 import { colors, spacing, textStyles, typography } from '../styles';
 import { ModalHeader } from '../components/ui/ModalHeader';
 import { useAuth } from '../contexts/AuthContext';
-import { Bet } from '../types/betting';
 import { formatCurrency } from '../utils/formatting';
-import { bulkLoadUserBetsWithParticipants } from '../services/bulkLoadingService';
-
-const client = generateClient<Schema>();
+import { TransactionService } from '../services/transactionService';
+import type { Transaction, TransactionType } from '../services/transactionService';
 
 interface BettingHistoryScreenProps {
   onClose: () => void;
 }
 
-type FilterType = 'all' | 'bets_placed' | 'wins' | 'losses' | 'refunds';
-
-interface Transaction {
-  id: string;
-  date: string;
-  type: 'BET_PLACED' | 'BET_WON' | 'BET_LOST' | 'BET_REFUNDED';
-  description: string;
-  betTitle: string;
-  amount: number; // Positive for credits, negative for debits
-  balance?: number; // Running balance after transaction
-  betId: string;
-  userSide?: string;
-}
+type FilterType = 'ALL' | 'DEPOSITS' | 'WITHDRAWALS' | 'BETS' | 'WINNINGS' | 'REFUNDS';
 
 export const BettingHistoryScreen: React.FC<BettingHistoryScreenProps> = ({ onClose }) => {
   const { user } = useAuth();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [filteredTransactions, setFilteredTransactions] = useState<Transaction[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [filter, setFilter] = useState<FilterType>('all');
+  const [filter, setFilter] = useState<FilterType>('ALL');
   const [currentBalance, setCurrentBalance] = useState(0);
 
-  const fetchBettingHistory = async () => {
-    if (!user) return;
+  const fetchTransactions = async () => {
+    if (!user?.userId) return;
 
     try {
       setIsLoading(true);
 
-      // Fetch user data for current balance
-      const { data: userData } = await client.models.User.get({ id: user.userId });
-      setCurrentBalance(userData?.balance || 0);
+      // Fetch balance and transactions in parallel
+      const [balance, txns] = await Promise.all([
+        TransactionService.getUserBalance(user.userId),
+        TransactionService.getUserTransactions(user.userId, { limit: 100 }),
+      ]);
 
-      // Fetch user's bets with participants
-      const userBets = await bulkLoadUserBetsWithParticipants(user.userId);
-
-      // Convert bets to transactions
-      const allTransactions: Transaction[] = [];
-
-      userBets.forEach(bet => {
-        const userParticipation = bet.participants?.find(p => p.userId === user.userId);
-        if (!userParticipation) return;
-
-        const parseBetOdds = (odds: any) => {
-          try {
-            const parsedOdds = typeof odds === 'string' ? JSON.parse(odds) : odds;
-            return {
-              sideAName: parsedOdds?.sideAName || 'Side A',
-              sideBName: parsedOdds?.sideBName || 'Side B',
-            };
-          } catch {
-            return { sideAName: 'Side A', sideBName: 'Side B' };
-          }
-        };
-
-        const betOdds = parseBetOdds(bet.odds);
-        const userSideName = userParticipation.side === 'A' ? betOdds.sideAName : betOdds.sideBName;
-
-        // Transaction 1: Bet Placed (debit)
-        allTransactions.push({
-          id: `${bet.id}-placed`,
-          date: userParticipation.joinedAt,
-          type: 'BET_PLACED',
-          description: `Bet placed on ${userSideName}`,
-          betTitle: bet.title,
-          amount: -userParticipation.amount,
-          betId: bet.id,
-          userSide: userSideName,
-        });
-
-        // Transaction 2: Outcome (if resolved)
-        if (bet.status === 'RESOLVED' && bet.winningSide) {
-          const won = userParticipation.side === bet.winningSide;
-          if (won && userParticipation.payout) {
-            allTransactions.push({
-              id: `${bet.id}-won`,
-              date: bet.updatedAt,
-              type: 'BET_WON',
-              description: `Won bet on ${userSideName}`,
-              betTitle: bet.title,
-              amount: userParticipation.payout,
-              betId: bet.id,
-              userSide: userSideName,
-            });
-          } else {
-            allTransactions.push({
-              id: `${bet.id}-lost`,
-              date: bet.updatedAt,
-              type: 'BET_LOST',
-              description: `Lost bet on ${userSideName}`,
-              betTitle: bet.title,
-              amount: 0, // No money back on loss
-              betId: bet.id,
-              userSide: userSideName,
-            });
-          }
-        } else if (bet.status === 'CANCELLED') {
-          // Transaction 2: Refund (if cancelled)
-          allTransactions.push({
-            id: `${bet.id}-refunded`,
-            date: bet.updatedAt,
-            type: 'BET_REFUNDED',
-            description: `Bet cancelled - refund issued`,
-            betTitle: bet.title,
-            amount: userParticipation.amount,
-            betId: bet.id,
-            userSide: userSideName,
-          });
-        }
-      });
-
-      // Sort by date, newest first
-      allTransactions.sort((a, b) =>
-        new Date(b.date).getTime() - new Date(a.date).getTime()
-      );
-
-      setTransactions(allTransactions);
+      setCurrentBalance(balance);
+      setTransactions(txns);
     } catch (error) {
-      console.error('Error fetching betting history:', error);
+      console.error('Error fetching transactions:', error);
     } finally {
       setIsLoading(false);
     }
@@ -155,22 +60,35 @@ export const BettingHistoryScreen: React.FC<BettingHistoryScreenProps> = ({ onCl
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await fetchBettingHistory();
+    await fetchTransactions();
     setRefreshing(false);
   };
 
   useEffect(() => {
-    fetchBettingHistory();
-  }, [user]);
+    fetchTransactions();
+  }, [user?.userId]);
 
-  const filteredTransactions = transactions.filter(transaction => {
-    if (filter === 'all') return true;
-    if (filter === 'bets_placed') return transaction.type === 'BET_PLACED';
-    if (filter === 'wins') return transaction.type === 'BET_WON';
-    if (filter === 'losses') return transaction.type === 'BET_LOST';
-    if (filter === 'refunds') return transaction.type === 'BET_REFUNDED';
-    return true;
-  });
+  useEffect(() => {
+    applyFilter();
+  }, [filter, transactions]);
+
+  const applyFilter = () => {
+    if (filter === 'ALL') {
+      setFilteredTransactions(transactions);
+    } else {
+      const typeMap: Record<FilterType, TransactionType[]> = {
+        ALL: [],
+        DEPOSITS: ['DEPOSIT'],
+        WITHDRAWALS: ['WITHDRAWAL'],
+        BETS: ['BET_PLACED'],
+        WINNINGS: ['BET_WON'],
+        REFUNDS: ['BET_CANCELLED', 'BET_REFUND'],
+      };
+
+      const types = typeMap[filter] || [];
+      setFilteredTransactions(transactions.filter(t => types.includes(t.type)));
+    }
+  };
 
   const renderFilterButton = (type: FilterType, label: string, icon: keyof typeof Ionicons.glyphMap) => (
     <TouchableOpacity
@@ -209,16 +127,20 @@ export const BettingHistoryScreen: React.FC<BettingHistoryScreenProps> = ({ onCl
       <View style={styles.balanceSummary}>
         <Text style={styles.balanceSummaryLabel}>Current Balance</Text>
         <Text style={styles.balanceSummaryAmount}>{formatCurrency(currentBalance)}</Text>
+        <Text style={styles.balanceSummarySubtext}>{transactions.length} total transactions</Text>
       </View>
 
       {/* Filters */}
-      <View style={styles.filtersContainer}>
-        {renderFilterButton('all', 'All', 'list-outline')}
-        {renderFilterButton('bets_placed', 'Bets', 'arrow-down-outline')}
-        {renderFilterButton('wins', 'Wins', 'arrow-up-outline')}
-        {renderFilterButton('losses', 'Losses', 'close-circle-outline')}
-        {renderFilterButton('refunds', 'Refunds', 'refresh-outline')}
-      </View>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filtersContainer}>
+        <View style={styles.filtersContent}>
+          {renderFilterButton('ALL', 'All', 'list-outline')}
+          {renderFilterButton('DEPOSITS', 'Deposits', 'arrow-down-circle-outline')}
+          {renderFilterButton('WITHDRAWALS', 'Withdrawals', 'arrow-up-circle-outline')}
+          {renderFilterButton('BETS', 'Bets', 'game-controller-outline')}
+          {renderFilterButton('WINNINGS', 'Wins', 'trophy-outline')}
+          {renderFilterButton('REFUNDS', 'Refunds', 'refresh-outline')}
+        </View>
+      </ScrollView>
 
       <ScrollView
         style={styles.content}
@@ -235,7 +157,7 @@ export const BettingHistoryScreen: React.FC<BettingHistoryScreenProps> = ({ onCl
           <View style={styles.emptyContainer}>
             <Ionicons name="receipt-outline" size={64} color={colors.textMuted} />
             <Text style={styles.emptyText}>
-              {filter === 'all' ? 'No transaction history' : `No ${filter.replace('_', ' ')} transactions`}
+              {filter === 'ALL' ? 'No transaction history' : `No ${filter.toLowerCase()} transactions`}
             </Text>
           </View>
         ) : (
@@ -256,65 +178,167 @@ interface TransactionCardProps {
 const TransactionCard: React.FC<TransactionCardProps> = ({ transaction }) => {
   const getTransactionIcon = (): keyof typeof Ionicons.glyphMap => {
     switch (transaction.type) {
-      case 'BET_PLACED': return 'arrow-down';
-      case 'BET_WON': return 'arrow-up';
-      case 'BET_LOST': return 'close-circle';
-      case 'BET_REFUNDED': return 'refresh';
+      case 'DEPOSIT': return 'arrow-down-circle';
+      case 'WITHDRAWAL': return 'arrow-up-circle';
+      case 'BET_PLACED': return 'game-controller';
+      case 'BET_WON': return 'trophy';
+      case 'BET_CANCELLED':
+      case 'BET_REFUND': return 'refresh-circle';
+      case 'ADMIN_ADJUSTMENT': return 'settings';
+      default: return 'swap-horizontal';
     }
   };
 
   const getTransactionColor = () => {
+    if (transaction.status === 'FAILED') return colors.error;
+    if (transaction.status === 'PENDING') return colors.warning;
+
     switch (transaction.type) {
-      case 'BET_PLACED': return colors.error; // Red for money out
-      case 'BET_WON': return colors.success; // Green for money in
-      case 'BET_LOST': return colors.textMuted; // Gray for loss (no money movement)
-      case 'BET_REFUNDED': return colors.warning; // Yellow for refund
+      case 'DEPOSIT':
+      case 'BET_WON':
+      case 'BET_CANCELLED':
+      case 'BET_REFUND':
+        return colors.success;
+      case 'WITHDRAWAL':
+      case 'BET_PLACED':
+        return colors.error;
+      case 'ADMIN_ADJUSTMENT':
+        return colors.info;
+      default:
+        return colors.textSecondary;
     }
   };
 
   const getTransactionLabel = () => {
     switch (transaction.type) {
+      case 'DEPOSIT': return 'Deposit';
+      case 'WITHDRAWAL': return 'Withdrawal';
       case 'BET_PLACED': return 'Bet Placed';
       case 'BET_WON': return 'Bet Won';
-      case 'BET_LOST': return 'Bet Lost';
-      case 'BET_REFUNDED': return 'Refunded';
+      case 'BET_CANCELLED': return 'Bet Cancelled';
+      case 'BET_REFUND': return 'Refund';
+      case 'ADMIN_ADJUSTMENT': return 'Adjustment';
+      default: return 'Transaction';
     }
   };
 
-  const formatAmount = () => {
-    if (transaction.amount === 0) return '-';
-    const sign = transaction.amount > 0 ? '+' : '';
-    return `${sign}${formatCurrency(Math.abs(transaction.amount))}`;
+  const getTransactionDescription = () => {
+    if (transaction.notes) return transaction.notes;
+
+    switch (transaction.type) {
+      case 'DEPOSIT':
+        return transaction.venmoUsername
+          ? `From Venmo ${transaction.venmoUsername}`
+          : 'Deposit to account';
+      case 'WITHDRAWAL':
+        return transaction.venmoUsername
+          ? `To Venmo ${transaction.venmoUsername}`
+          : 'Withdrawal from account';
+      case 'BET_PLACED':
+        return 'Joined a bet';
+      case 'BET_WON':
+        return 'Winnings payout';
+      case 'BET_CANCELLED':
+        return 'Bet cancelled - refund';
+      case 'BET_REFUND':
+        return 'Manual refund';
+      case 'ADMIN_ADJUSTMENT':
+        return 'Balance adjustment';
+      default:
+        return 'Transaction';
+    }
   };
 
-  const isCredit = transaction.amount > 0;
-  const isDebit = transaction.amount < 0;
+  const getStatusBadge = () => {
+    if (transaction.status === 'COMPLETED') return null;
+
+    let statusColor = colors.textMuted;
+    let statusText = transaction.status;
+
+    switch (transaction.status) {
+      case 'PENDING':
+        statusColor = colors.warning;
+        statusText = 'Pending';
+        break;
+      case 'PROCESSING':
+        statusColor = colors.info;
+        statusText = 'Processing';
+        break;
+      case 'FAILED':
+        statusColor = colors.error;
+        statusText = 'Failed';
+        break;
+      case 'CANCELLED':
+        statusColor = colors.textMuted;
+        statusText = 'Cancelled';
+        break;
+    }
+
+    return (
+      <View style={[styles.statusBadge, { backgroundColor: statusColor + '20' }]}>
+        <Text style={[styles.statusText, { color: statusColor }]}>{statusText}</Text>
+      </View>
+    );
+  };
+
+  const formatAmount = () => {
+    const isCredit = transaction.type === 'DEPOSIT' ||
+                     transaction.type === 'BET_WON' ||
+                     transaction.type === 'BET_CANCELLED' ||
+                     transaction.type === 'BET_REFUND';
+
+    const sign = isCredit ? '+' : '-';
+    return `${sign}${formatCurrency(transaction.amount)}`;
+  };
+
+  const formatDate = () => {
+    const date = new Date(transaction.createdAt);
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+  };
+
+  const isCredit = transaction.type === 'DEPOSIT' ||
+                   transaction.type === 'BET_WON' ||
+                   transaction.type === 'BET_CANCELLED' ||
+                   transaction.type === 'BET_REFUND';
 
   return (
-    <View style={styles.transactionCard}>
+    <View style={[styles.transactionCard, { borderLeftColor: getTransactionColor() }]}>
       <View style={styles.transactionHeader}>
         <View style={[styles.transactionIconContainer, { backgroundColor: getTransactionColor() + '20' }]}>
           <Ionicons name={getTransactionIcon()} size={20} color={getTransactionColor()} />
         </View>
         <View style={styles.transactionInfo}>
-          <Text style={styles.transactionType}>{getTransactionLabel()}</Text>
-          <Text style={styles.transactionBetTitle} numberOfLines={1}>
-            {transaction.betTitle}
+          <View style={styles.transactionTitleRow}>
+            <Text style={styles.transactionType}>{getTransactionLabel()}</Text>
+            {getStatusBadge()}
+          </View>
+          <Text style={styles.transactionDescription} numberOfLines={2}>
+            {getTransactionDescription()}
           </Text>
-          <Text style={styles.transactionDescription} numberOfLines={1}>
-            {transaction.description}
-          </Text>
+          <View style={styles.transactionMeta}>
+            <Text style={styles.transactionDate}>{formatDate()}</Text>
+            {transaction.venmoTransactionId && (
+              <Text style={styles.transactionId}>
+                ID: {transaction.venmoTransactionId.substring(0, 8)}...
+              </Text>
+            )}
+          </View>
         </View>
         <View style={styles.transactionAmountContainer}>
           <Text style={[
             styles.transactionAmount,
-            isCredit && styles.transactionAmountCredit,
-            isDebit && styles.transactionAmountDebit,
+            isCredit ? styles.transactionAmountCredit : styles.transactionAmountDebit,
           ]}>
             {formatAmount()}
           </Text>
-          <Text style={styles.transactionDate}>
-            {new Date(transaction.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+          <Text style={styles.transactionBalance}>
+            Bal: {formatCurrency(transaction.balanceAfter)}
           </Text>
         </View>
       </View>
@@ -351,6 +375,7 @@ const styles = StyleSheet.create({
     ...textStyles.h4,
     color: colors.textMuted,
     marginTop: spacing.md,
+    textAlign: 'center',
   },
 
   // Balance Summary
@@ -373,14 +398,23 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontWeight: typography.fontWeight.bold,
   },
+  balanceSummarySubtext: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    fontSize: 11,
+    marginTop: spacing.xs / 2,
+  },
 
   // Filters
   filtersContainer: {
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    backgroundColor: colors.background,
+  },
+  filtersContent: {
     flexDirection: 'row',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
   },
   filterButton: {
     flexDirection: 'row',
@@ -403,6 +437,7 @@ const styles = StyleSheet.create({
   },
   filterButtonTextActive: {
     color: colors.background,
+    fontWeight: typography.fontWeight.semibold,
   },
 
   // Transaction Card
@@ -414,11 +449,10 @@ const styles = StyleSheet.create({
     marginHorizontal: spacing.md,
     marginVertical: spacing.xs / 2,
     borderLeftWidth: 3,
-    borderLeftColor: colors.border,
   },
   transactionHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
   },
   transactionIconContainer: {
     width: 40,
@@ -427,35 +461,63 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: spacing.sm,
+    marginTop: 2,
   },
   transactionInfo: {
     flex: 1,
     marginRight: spacing.sm,
+  },
+  transactionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 2,
   },
   transactionType: {
     ...textStyles.button,
     color: colors.textPrimary,
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.semibold,
-    marginBottom: 2,
+    marginRight: spacing.xs,
   },
-  transactionBetTitle: {
+  statusBadge: {
+    paddingHorizontal: spacing.xs,
+    paddingVertical: 2,
+    borderRadius: spacing.radius.xs,
+  },
+  statusText: {
     ...textStyles.caption,
-    color: colors.textSecondary,
-    fontSize: 12,
-    marginBottom: 2,
+    fontWeight: typography.fontWeight.semibold,
+    fontSize: 10,
+    textTransform: 'uppercase',
   },
   transactionDescription: {
     ...textStyles.caption,
+    color: colors.textSecondary,
+    fontSize: 12,
+    marginBottom: spacing.xs / 2,
+    lineHeight: 16,
+  },
+  transactionMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  transactionDate: {
+    ...textStyles.caption,
     color: colors.textMuted,
-    fontSize: 11,
+    fontSize: 10,
+  },
+  transactionId: {
+    ...textStyles.caption,
+    color: colors.textMuted,
+    fontSize: 10,
+    marginLeft: spacing.xs,
+    fontFamily: typography.fontFamily.mono,
   },
   transactionAmountContainer: {
     alignItems: 'flex-end',
   },
   transactionAmount: {
     ...textStyles.button,
-    color: colors.textPrimary,
     fontSize: typography.fontSize.base,
     fontWeight: typography.fontWeight.bold,
     marginBottom: 2,
@@ -466,7 +528,7 @@ const styles = StyleSheet.create({
   transactionAmountDebit: {
     color: colors.error,
   },
-  transactionDate: {
+  transactionBalance: {
     ...textStyles.caption,
     color: colors.textMuted,
     fontSize: 10,
