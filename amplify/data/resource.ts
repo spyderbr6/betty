@@ -14,7 +14,7 @@ const schema = a.schema({
       email: a.string().required(),
       displayName: a.string(), // Friendly/display name for friends
       profilePictureUrl: a.string(), // S3 URL for profile picture
-      role: a.enum(['USER', 'ADMIN', 'SUPER_ADMIN']).default('USER'), // User role for access control
+      role: a.enum(['USER', 'ADMIN', 'SUPER_ADMIN']), // User role for access control
       balance: a.float().default(0),
       trustScore: a.float().default(5.0),
       totalBets: a.integer().default(0),
@@ -127,6 +127,7 @@ const schema = a.schema({
       evidence: a.hasMany('Evidence', 'betId'),
       invitations: a.hasMany('BetInvitation', 'betId'),
       notifications: a.hasMany('Notification', 'relatedBetId'),
+      transactions: a.hasMany('Transaction', 'relatedBetId'),
     })
     .authorization((allow) => [
       allow.owner().to(['create', 'read', 'update', 'delete']),
