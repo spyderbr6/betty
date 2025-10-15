@@ -55,12 +55,12 @@
 ## 🔄 IMMEDIATE NEXT STEPS (Current Development Cycle)
 
 ### **Priority 1: Critical Bug Fixes & UI Polish** ✅ COMPLETED
-- [x] Fix invitation accepted notifications showing userID instead of friendly display name
-- [x] Scan all notifications to ensure display names are used
-- [x] Fix notification bell counter showing incorrect count
-- [x] Remove ellipsis from header and move notification bell to the right
-- [x] Restructure betting history screen as balance audit trail
-- [x] QR code quick join capability (implemented, disabled until native rebuild)
+- [ ] Payment Methods - delete payment method trashcan icon doesnt do anything. 
+- [ ] Payment Methods - the add payment method button on the quick actions modals doesnt appear to do anything. 
+- [ ] Payment Method - Add payment method screen, move the "add" action out of the header and make it a button like the rest of the actions in the app. 
+- [ ] payment method - the star icon doesnt appear to change the default payment method.
+- [ ] payment method. add payment method screen stays up once you add a payment, i accidently added multiple of the same payment method. 
+- [ ] QR code quick join capability (implemented, partially disabled and still not working)
   - ✅ Code complete: QRScannerModal.tsx, BetQRCodeModal.tsx
   - ✅ Integration complete in BetsScreen and BetInviteModal
   - ⚠️ Currently disabled (commented out) due to native module build issues

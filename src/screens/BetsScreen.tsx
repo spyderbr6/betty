@@ -24,7 +24,7 @@ import { Header } from '../components/ui/Header';
 import { BetCard } from '../components/betting/BetCard';
 import { BetInviteModal } from '../components/ui/BetInviteModal';
 import { QRScannerModal } from '../components/ui/QRScannerModal';
-import { Bet, BetInvitation, BetInvitationStatus, User } from '../types/betting';
+import { Bet, BetInvitation, BetInvitationStatus, User, ParticipantStatus } from '../types/betting';
 import { useAuth } from '../contexts/AuthContext';
 import { NotificationService } from '../services/notificationService';
 import { bulkLoadUserBetsWithParticipants, clearBulkLoadingCache } from '../services/bulkLoadingService';
@@ -159,6 +159,8 @@ export const BetsScreen: React.FC = () => {
                       userId: p.userId!,
                       side: p.side!,
                       amount: p.amount || 0,
+                      status: p.status as ParticipantStatus || 'ACCEPTED',
+                      payout: p.payout || 0,
                       joinedAt: p.joinedAt || p.createdAt || new Date().toISOString(),
                     }));
                 }
@@ -946,7 +948,11 @@ export const BetsScreen: React.FC = () => {
           }}
           bet={selectedBetForInvite}
           onInvitesSent={(count) => {
-            showToastMessage(`Successfully invited ${count} friend${count > 1 ? 's' : ''}!`);
+            setToastMessage(`Successfully invited ${count} friend${count > 1 ? 's' : ''}!`);
+            setShowToast(true);
+            setTimeout(() => {
+              setShowToast(false);
+            }, 3000);
           }}
         />
       )}
