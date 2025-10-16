@@ -19,7 +19,7 @@ import { Ionicons } from '@expo/vector-icons';
 // import { generateClient } from 'aws-amplify/data';
 // import type { Schema } from '../../amplify/data/resource';
 import { colors, spacing, textStyles, commonStyles, typography } from '../styles';
-import { Header } from '../components/ui/Header';
+import { ModalHeader } from '../components/ui/ModalHeader';
 import { useAuth } from '../contexts/AuthContext';
 import { NotificationService } from '../services/notificationService';
 import { Notification, NotificationType } from '../types/betting';
@@ -289,22 +289,8 @@ export const NotificationScreen: React.FC<NotificationScreenProps> = ({ onClose 
 
   if (isLoading) {
     return (
-      <SafeAreaView style={styles.container}>
-        {/* Custom header for modal mode */}
-        {onClose ? (
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalHeaderTitle}>Notifications</Text>
-            <TouchableOpacity
-              style={styles.closeButton}
-              onPress={onClose}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="close" size={24} color={colors.textPrimary} />
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <Header title="Notifications" />
-        )}
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <ModalHeader title="Notifications" onClose={onClose} />
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={[textStyles.body, styles.loadingText]}>
@@ -316,22 +302,8 @@ export const NotificationScreen: React.FC<NotificationScreenProps> = ({ onClose 
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      {/* Custom header for modal mode, regular Header for screen mode */}
-      {onClose ? (
-        <View style={styles.modalHeader}>
-          <Text style={styles.modalHeaderTitle}>Notifications</Text>
-          <TouchableOpacity
-            style={styles.closeButton}
-            onPress={onClose}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="close" size={24} color={colors.textPrimary} />
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <Header title="Notifications" />
-      )}
+    <SafeAreaView style={styles.container} edges={['top']}>
+      <ModalHeader title="Notifications" onClose={onClose} />
 
       {unreadCount > 0 && (
         <View style={styles.markAllContainer}>
@@ -395,21 +367,6 @@ const styles = StyleSheet.create({
   container: {
     ...commonStyles.safeArea,
     backgroundColor: colors.background,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    backgroundColor: colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    minHeight: 60,
-  },
-  modalHeaderTitle: {
-    ...textStyles.h3,
-    color: colors.textPrimary,
   },
   loadingContainer: {
     flex: 1,
@@ -547,10 +504,6 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     textAlign: 'center',
     lineHeight: 22,
-  },
-  closeButton: {
-    padding: spacing.xs,
-    marginLeft: spacing.sm,
   },
 });
 
