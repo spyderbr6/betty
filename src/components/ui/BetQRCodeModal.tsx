@@ -80,10 +80,6 @@ export const BetQRCodeModal: React.FC<BetQRCodeModalProps> = ({
                 size={220}
                 color={colors.textPrimary}
                 backgroundColor={colors.background}
-                logo={require('../../../assets/icon.png')}
-                logoSize={40}
-                logoBackgroundColor={colors.background}
-                logoBorderRadius={8}
               />
             </View>
           </View>
