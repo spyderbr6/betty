@@ -3,15 +3,14 @@ import { generateClient } from 'aws-amplify/api';
 import type { Schema } from '../../data/resource';
 import { Amplify } from 'aws-amplify';
 import { getAmplifyDataClientConfig } from '@aws-amplify/backend/function/runtime';
+// @ts-ignore - Generated at build time by Amplify
+import { env } from '$amplify/env/event-fetcher';
 
-// CRITICAL: Configure Amplify with environment
-const { resourceConfig, libraryOptions } = await getAmplifyDataClientConfig(
-  // @ts-ignore - env is provided at runtime by Amplify
-  globalThis.amplify?.env?.['event-fetcher'] || {}
-);
+const { resourceConfig, libraryOptions } = await getAmplifyDataClientConfig(env);
 Amplify.configure(resourceConfig, libraryOptions);
 
-const client = generateClient<Schema>();
+// Use non-generic client to avoid complex union type inference
+const client = generateClient<Schema>() as any;
 
 // TheSportsDB API configuration
 const SPORTSDB_API_BASE = 'https://www.thesportsdb.com/api/v1/json/3';
