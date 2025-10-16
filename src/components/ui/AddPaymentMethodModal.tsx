@@ -144,25 +144,7 @@ export const AddPaymentMethodModal: React.FC<AddPaymentMethodModalProps> = ({
           style={styles.content}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
-          <ModalHeader
-            title="Add Payment Method"
-            onClose={onClose}
-            rightComponent={
-              <TouchableOpacity
-                style={[styles.saveButton, (!venmoUsername || usernameError || isSubmitting) && styles.saveButtonDisabled]}
-                onPress={handleSubmit}
-                disabled={!venmoUsername || !!usernameError || isSubmitting}
-              >
-                {isSubmitting ? (
-                  <ActivityIndicator size="small" color={colors.primary} />
-                ) : (
-                  <Text style={[styles.saveButtonText, (!venmoUsername || usernameError) && styles.saveButtonTextDisabled]}>
-                    Add
-                  </Text>
-                )}
-              </TouchableOpacity>
-            }
-          />
+          <ModalHeader title="Add Payment Method" onClose={onClose} />
 
           <ScrollView style={styles.scrollContent} showsVerticalScrollIndicator={false}>
             {/* Payment Type Selector */}
@@ -291,6 +273,23 @@ export const AddPaymentMethodModal: React.FC<AddPaymentMethodModalProps> = ({
                 Your payment information is encrypted and stored securely
               </Text>
             </View>
+
+            {/* Add Payment Method Button */}
+            <TouchableOpacity
+              style={[styles.addButton, (!venmoUsername || usernameError || isSubmitting) && styles.addButtonDisabled]}
+              onPress={handleSubmit}
+              disabled={!venmoUsername || !!usernameError || isSubmitting}
+              activeOpacity={0.8}
+            >
+              {isSubmitting ? (
+                <ActivityIndicator size="small" color={colors.background} />
+              ) : (
+                <>
+                  <Ionicons name="add-circle" size={20} color={colors.background} />
+                  <Text style={styles.addButtonText}>Add Payment Method</Text>
+                </>
+              )}
+            </TouchableOpacity>
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -477,20 +476,24 @@ const styles = StyleSheet.create({
     marginLeft: spacing.xs,
   },
 
-  // Header Buttons
-  saveButton: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
+  // Add Button
+  addButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primary,
+    paddingVertical: spacing.md,
+    borderRadius: spacing.radius.md,
+    marginTop: spacing.lg,
+    marginBottom: spacing.md,
   },
-  saveButtonDisabled: {
-    opacity: 0.5,
+  addButtonDisabled: {
+    backgroundColor: colors.disabled,
   },
-  saveButtonText: {
+  addButtonText: {
     ...textStyles.button,
-    color: colors.primary,
+    color: colors.background,
+    marginLeft: spacing.xs,
     fontWeight: typography.fontWeight.semibold,
-  },
-  saveButtonTextDisabled: {
-    color: colors.textMuted,
   },
 });
