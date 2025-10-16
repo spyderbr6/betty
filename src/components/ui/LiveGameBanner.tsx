@@ -79,7 +79,22 @@ export const LiveGameBanner: React.FC<LiveGameBannerProps> = ({
         </View>
 
         <View style={styles.centerSection}>
-          {/* Could add score or other game info here */}
+          <View style={styles.scoreContainer}>
+            <View style={styles.teamScoreRow}>
+              <Text style={styles.teamNameText}>{liveGame.awayTeam}</Text>
+              <Text style={styles.scoreText}>{liveGame.awayScore}</Text>
+            </View>
+            <View style={styles.teamScoreRow}>
+              <Text style={styles.teamNameText}>{liveGame.homeTeam}</Text>
+              <Text style={styles.scoreText}>{liveGame.homeScore}</Text>
+            </View>
+          </View>
+          {liveGame.quarter && (
+            <Text style={styles.quarterText}>
+              {liveGame.quarter}
+              {liveGame.timeLeft && ` • ${liveGame.timeLeft}`}
+            </Text>
+          )}
         </View>
 
         <View style={componentStyles.rightSection}>
@@ -200,6 +215,39 @@ const styles = StyleSheet.create({
   centerSection: {
     flex: 1,
     alignItems: 'center',
+    marginHorizontal: spacing.sm,
+  },
+  scoreContainer: {
+    flexDirection: 'column',
+    alignItems: 'center',
+  },
+  teamScoreRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    minWidth: 120,
+    marginVertical: 2,
+  },
+  teamNameText: {
+    ...textStyles.caption,
+    color: colors.background,
+    fontSize: typography.fontSize.xs,
+    fontWeight: typography.fontWeight.medium,
+    marginRight: spacing.sm,
+  },
+  scoreText: {
+    ...textStyles.caption,
+    color: colors.background,
+    fontSize: typography.fontSize.base,
+    fontWeight: typography.fontWeight.bold,
+  },
+  quarterText: {
+    ...textStyles.caption,
+    color: colors.background,
+    fontSize: 10,
+    fontWeight: typography.fontWeight.medium,
+    marginTop: spacing.xs / 2,
+    opacity: 0.9,
   },
   betsCountText: {
     ...textStyles.caption,

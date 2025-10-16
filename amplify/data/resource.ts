@@ -1,6 +1,8 @@
 import { type ClientSchema, a, defineData } from "@aws-amplify/backend";
 import { scheduledBetChecker } from "../functions/scheduled-bet-checker/resource";
 import { pushNotificationSender } from "../functions/push-notification-sender/resource";
+import { eventFetcher } from "../functions/event-fetcher/resource";
+import { liveScoreUpdater } from "../functions/live-score-updater/resource";
 
 /*== SIDEBET BETTING PLATFORM SCHEMA =======================================
 This schema defines the core data models for the SideBet peer-to-peer betting
@@ -35,6 +37,7 @@ const schema = a.schema({
       pushTokens: a.hasMany('PushToken', 'userId'),
       paymentMethods: a.hasMany('PaymentMethod', 'userId'),
       transactions: a.hasMany('Transaction', 'userId'),
+      eventCheckIns: a.hasMany('EventCheckIn', 'userId'),
     })
     .authorization((allow) => [
       allow.owner().to(['create', 'read', 'update', 'delete']),
@@ -119,6 +122,7 @@ const schema = a.schema({
       deadline: a.datetime().required(),
       winningSide: a.string(), // Which side won
       resolutionReason: a.string(), // Why the bet was resolved this way
+      eventId: a.id(), // Optional link to live event
       createdAt: a.datetime(),
       updatedAt: a.datetime(),
       // Relations
@@ -126,7 +130,7 @@ const schema = a.schema({
       participants: a.hasMany('Participant', 'betId'),
       evidence: a.hasMany('Evidence', 'betId'),
       invitations: a.hasMany('BetInvitation', 'betId'),
-      notifications: a.hasMany('Notification', 'relatedBetId'),
+      notifications: a.hasMany('Notification', 'relatedBetId')
     })
     .authorization((allow) => [
       allow.owner().to(['create', 'read', 'update', 'delete']),
@@ -320,6 +324,69 @@ const schema = a.schema({
       // TransactionService validates admin role before allowing status updates
     ]),
 
+  // Live Event Models
+  LiveEvent: a
+    .model({
+      id: a.id(),
+      // Event identification
+      externalId: a.string().required(), // TheSportsDB event ID for deduplication
+      sport: a.enum(['NBA', 'NFL', 'MLB', 'NHL', 'SOCCER', 'COLLEGE_FOOTBALL', 'COLLEGE_BASKETBALL', 'OTHER']),
+      league: a.string(), // e.g., "NBA", "Premier League"
+      // Event details
+      homeTeam: a.string().required(),
+      awayTeam: a.string().required(),
+      homeTeamCode: a.string(), // e.g., "LAL", "GSW"
+      awayTeamCode: a.string(),
+      // Venue
+      venue: a.string(),
+      city: a.string(),
+      country: a.string(),
+      // Scores
+      homeScore: a.integer().default(0),
+      awayScore: a.integer().default(0),
+      // Game state
+      status: a.enum(['UPCOMING', 'LIVE', 'HALFTIME', 'FINISHED', 'POSTPONED', 'CANCELLED']),
+      quarter: a.string(), // e.g., "Q1", "Q2", "Halftime", "OT"
+      timeLeft: a.string(), // e.g., "8:42", "00:00"
+      // Timestamps
+      scheduledTime: a.datetime().required(),
+      startTime: a.datetime(),
+      endTime: a.datetime(),
+      // Metadata
+      season: a.string(), // e.g., "2024-2025"
+      round: a.string(), // Week number or round
+      checkInCount: a.integer().default(0), // Denormalized count for trending
+      betCount: a.integer().default(0), // Number of bets linked to this event
+      createdAt: a.datetime(),
+      updatedAt: a.datetime(),
+      // Relations
+      checkIns: a.hasMany('EventCheckIn', 'eventId')
+    })
+    .authorization((allow) => [
+      allow.authenticated().to(['read']), // All users can read events
+      allow.authenticated().to(['create', 'update']) // Lambda functions can create/update
+    ]),
+
+  EventCheckIn: a
+    .model({
+      id: a.id(),
+      userId: a.id().required(),
+      eventId: a.id().required(),
+      // Check-in metadata
+      checkInTime: a.datetime().required(),
+      checkOutTime: a.datetime(), // Automatically set when event ends or user checks out
+      isActive: a.boolean().default(true),
+      // Location context (optional)
+      location: a.json(), // { latitude, longitude, accuracy }
+      // Relations
+      user: a.belongsTo('User', 'userId'),
+      event: a.belongsTo('LiveEvent', 'eventId'),
+    })
+    .authorization((allow) => [
+      allow.owner().to(['create', 'read', 'update', 'delete']),
+      allow.authenticated().to(['read', 'create', 'update']) // Allow users to check in others (social features)
+    ]),
+
   // Scheduled Lambda Function
   scheduledBetChecker: a
     .query()
@@ -347,7 +414,9 @@ const schema = a.schema({
 }).authorization((allow) => [
   // Allow the Lambda functions to be invoked and access data
   allow.resource(scheduledBetChecker).to(["query", "listen", "mutate"]),
-  allow.resource(pushNotificationSender).to(["query", "listen", "mutate"])
+  allow.resource(pushNotificationSender).to(["query", "listen", "mutate"]),
+  allow.resource(eventFetcher).to(["query", "listen", "mutate"]),
+  allow.resource(liveScoreUpdater).to(["query", "listen", "mutate"]),
 ]);
 
 export type Schema = ClientSchema<typeof schema>;

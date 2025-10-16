@@ -28,6 +28,9 @@ import { Bet, BetInvitation, BetInvitationStatus, User, ParticipantStatus } from
 import { useAuth } from '../contexts/AuthContext';
 import { NotificationService } from '../services/notificationService';
 import { bulkLoadUserBetsWithParticipants, clearBulkLoadingCache } from '../services/bulkLoadingService';
+import { getUserCheckedInEvent, checkOutOfEvent } from '../services/eventService';
+import { EventDiscoveryModal } from '../components/ui/EventDiscoveryModal';
+import type { LiveEvent } from '../types/events';
 
 // Initialize GraphQL client
 const client = generateClient<Schema>();
@@ -95,16 +98,35 @@ export const BetsScreen: React.FC = () => {
   // QR Scanner state
   const [showQRScanner, setShowQRScanner] = useState(false);
 
+  // Event check-in state
+  const [showEventDiscovery, setShowEventDiscovery] = useState(false);
+  const [checkedInEvent, setCheckedInEvent] = useState<LiveEvent | null>(null);
+
   useEffect(() => {
     // Fetch initial bet data, bet invitations, and set up real-time subscriptions
     const fetchData = async () => {
-      await Promise.all([fetchBets(), fetchBetInvitations()]);
+      await Promise.all([fetchBets(), fetchBetInvitations(), fetchCheckedInEvent()]);
     };
 
     if (user?.userId) {
       fetchData();
     }
   }, [user?.userId]);
+
+  const fetchCheckedInEvent = async () => {
+    if (!user?.userId) return;
+
+    try {
+      const result = await getUserCheckedInEvent(user.userId);
+      if (result) {
+        setCheckedInEvent(result.event);
+      } else {
+        setCheckedInEvent(null);
+      }
+    } catch (error) {
+      console.error('Error fetching checked-in event:', error);
+    }
+  };
 
   const fetchBetInvitations = async () => {
     if (!user?.userId) return;
@@ -666,17 +688,17 @@ export const BetsScreen: React.FC = () => {
     fetchUserStats();
   }, [user]);
 
-  // Mock live game data
-  const liveGame = {
-    homeTeam: 'LAL',
-    awayTeam: 'GSW',
-    homeScore: 89,
-    awayScore: 92,
-    quarter: 'Q3',
-    timeLeft: '8:42',
-    venue: 'Crypto.com Arena',
-    liveBetsCount: 12,
-  };
+  // Transform checked-in event to live game data
+  const liveGame = checkedInEvent ? {
+    homeTeam: checkedInEvent.homeTeamCode || checkedInEvent.homeTeam,
+    awayTeam: checkedInEvent.awayTeamCode || checkedInEvent.awayTeam,
+    homeScore: checkedInEvent.homeScore,
+    awayScore: checkedInEvent.awayScore,
+    quarter: checkedInEvent.quarter || checkedInEvent.status,
+    timeLeft: checkedInEvent.timeLeft || '',
+    venue: checkedInEvent.venue || '',
+    liveBetsCount: checkedInEvent.betCount || 0,
+  } : undefined;
 
   // Filter for user's specific bets (created by user OR user is participant)
   const filteredBets = bets.filter(bet => {
@@ -734,13 +756,52 @@ export const BetsScreen: React.FC = () => {
         onBalancePress={handleBalancePress}
         liveGame={liveGame}
         rightComponent={
-          <TouchableOpacity
-            style={styles.qrScanButton}
-            onPress={() => setShowQRScanner(true)}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="qr-code-outline" size={20} color={colors.primary} />
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row' }}>
+            <TouchableOpacity
+              style={styles.eventButton}
+              onPress={() => {
+                if (checkedInEvent && user?.userId) {
+                  Alert.alert(
+                    'Checked In',
+                    `You're checked into ${checkedInEvent.homeTeam} vs ${checkedInEvent.awayTeam}`,
+                    [
+                      {
+                        text: 'Check Out',
+                        style: 'destructive',
+                        onPress: async () => {
+                          const result = await getUserCheckedInEvent(user.userId);
+                          if (result) {
+                            await checkOutOfEvent(user.userId, result.checkIn.id);
+                            setCheckedInEvent(null);
+                          }
+                        }
+                      },
+                      {
+                        text: 'Cancel',
+                        style: 'cancel'
+                      }
+                    ]
+                  );
+                } else {
+                  setShowEventDiscovery(true);
+                }
+              }}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name={checkedInEvent ? "checkmark-circle" : "calendar-outline"}
+                size={20}
+                color={checkedInEvent ? colors.success : colors.primary}
+              />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.qrScanButton}
+              onPress={() => setShowQRScanner(true)}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="qr-code-outline" size={20} color={colors.primary} />
+            </TouchableOpacity>
+          </View>
         }
       />
 
@@ -963,6 +1024,17 @@ export const BetsScreen: React.FC = () => {
         onClose={() => setShowQRScanner(false)}
         onBetScanned={handleBetScanned}
       />
+
+      {/* Event Discovery Modal */}
+      <EventDiscoveryModal
+        visible={showEventDiscovery}
+        onClose={() => setShowEventDiscovery(false)}
+        currentUserId={user?.userId || ''}
+        onCheckInSuccess={(event) => {
+          setCheckedInEvent(event);
+          fetchCheckedInEvent();
+        }}
+      />
     </SafeAreaView>
   );
 };
@@ -1183,7 +1255,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
-  // QR Scanner Button
+  // Event and QR Scanner Buttons
+  eventButton: {
+    padding: spacing.xs,
+    backgroundColor: colors.surface,
+    borderRadius: spacing.radius.sm,
+    marginLeft: spacing.sm,
+  },
   qrScanButton: {
     padding: spacing.xs,
     backgroundColor: colors.surface,
