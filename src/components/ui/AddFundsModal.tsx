@@ -30,6 +30,7 @@ interface AddFundsModalProps {
   visible: boolean;
   onClose: () => void;
   onSuccess?: () => void;
+  onAddPaymentMethod?: () => void;
 }
 
 const APP_VENMO_USERNAME = '@SideBet'; // Replace with actual app Venmo username
@@ -40,6 +41,7 @@ export const AddFundsModal: React.FC<AddFundsModalProps> = ({
   visible,
   onClose,
   onSuccess,
+  onAddPaymentMethod,
 }) => {
   const { user } = useAuth();
   const [amount, setAmount] = useState('');
@@ -216,7 +218,14 @@ export const AddFundsModal: React.FC<AddFundsModalProps> = ({
           <Text style={styles.emptyDescription}>
             You need to add a Venmo account before you can deposit funds
           </Text>
-          <TouchableOpacity style={styles.addMethodButton} activeOpacity={0.8}>
+          <TouchableOpacity
+            style={styles.addMethodButton}
+            onPress={() => {
+              onClose();
+              setTimeout(() => onAddPaymentMethod?.(), 300);
+            }}
+            activeOpacity={0.8}
+          >
             <Ionicons name="add" size={20} color={colors.background} />
             <Text style={styles.addMethodButtonText}>Add Venmo Account</Text>
           </TouchableOpacity>

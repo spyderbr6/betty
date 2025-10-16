@@ -31,6 +31,7 @@ interface WithdrawFundsModalProps {
   visible: boolean;
   onClose: () => void;
   onSuccess?: () => void;
+  onAddPaymentMethod?: () => void;
 }
 
 const MIN_WITHDRAWAL = 10;
@@ -40,6 +41,7 @@ export const WithdrawFundsModal: React.FC<WithdrawFundsModalProps> = ({
   visible,
   onClose,
   onSuccess,
+  onAddPaymentMethod,
 }) => {
   const { user } = useAuth();
   const [amount, setAmount] = useState('');
@@ -236,7 +238,14 @@ export const WithdrawFundsModal: React.FC<WithdrawFundsModalProps> = ({
           <Text style={styles.emptyDescription}>
             You need a verified Venmo account before you can withdraw funds. Please add and verify a payment method first.
           </Text>
-          <TouchableOpacity style={styles.addMethodButton} onPress={onClose} activeOpacity={0.8}>
+          <TouchableOpacity
+            style={styles.addMethodButton}
+            onPress={() => {
+              onClose();
+              setTimeout(() => onAddPaymentMethod?.(), 300);
+            }}
+            activeOpacity={0.8}
+          >
             <Ionicons name="add" size={20} color={colors.background} />
             <Text style={styles.addMethodButtonText}>Add Venmo Account</Text>
           </TouchableOpacity>
