@@ -78,7 +78,19 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({
 
       if (result.success && result.url) {
         setProfilePicture(result.url);
-        Alert.alert('Success', 'Profile picture updated successfully!');
+
+        // Automatically save the profile picture to the database
+        try {
+          const profileData: ProfileEditForm = {
+            displayName: displayName.trim() || user.displayName,
+            profilePicture: result.url,
+          };
+          await onSave(profileData);
+          // Success alert is shown by the parent component
+        } catch (saveError) {
+          console.error('Error saving profile picture:', saveError);
+          Alert.alert('Error', 'Profile picture uploaded but failed to save. Please try clicking Save Changes.');
+        }
       } else {
         Alert.alert('Error', result.error || 'Failed to update profile picture');
       }
