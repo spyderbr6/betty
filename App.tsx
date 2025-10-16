@@ -5,6 +5,8 @@ import 'react-native-get-random-values';
 // Import Intl polyfills for Hermes compatibility
 import 'intl';
 import 'intl/locale-data/jsonp/en-US';
+// Import TextEncoder/TextDecoder polyfill for QR code generation
+import 'text-encoding';
 
 import { useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
