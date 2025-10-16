@@ -206,16 +206,23 @@ export class PaymentMethodService {
    */
   static async setDefaultPaymentMethod(userId: string, paymentMethodId: string): Promise<boolean> {
     try {
+      console.log('[PaymentMethod] Setting default payment method:', paymentMethodId);
+
       // First, unset all defaults for this user
       await this.clearDefaultPaymentMethods(userId);
 
       // Set the new default
-      await client.models.PaymentMethod.update({
+      const result = await client.models.PaymentMethod.update({
         id: paymentMethodId,
         isDefault: true,
       });
 
-      console.log('[PaymentMethod] Default payment method updated:', paymentMethodId);
+      if (result.errors || !result.data) {
+        console.error('[PaymentMethod] Error setting default payment method:', result.errors);
+        return false;
+      }
+
+      console.log('[PaymentMethod] Default payment method updated successfully:', paymentMethodId);
       return true;
     } catch (error) {
       console.error('[PaymentMethod] Error setting default payment method:', error);
@@ -249,13 +256,20 @@ export class PaymentMethodService {
    */
   static async removePaymentMethod(paymentMethodId: string): Promise<boolean> {
     try {
+      console.log('[PaymentMethod] Removing payment method:', paymentMethodId);
+
       // Soft delete - just mark as inactive
-      await client.models.PaymentMethod.update({
+      const result = await client.models.PaymentMethod.update({
         id: paymentMethodId,
         isActive: false,
       });
 
-      console.log('[PaymentMethod] Payment method removed:', paymentMethodId);
+      if (result.errors || !result.data) {
+        console.error('[PaymentMethod] Error removing payment method:', result.errors);
+        return false;
+      }
+
+      console.log('[PaymentMethod] Payment method removed successfully:', paymentMethodId);
       return true;
     } catch (error) {
       console.error('[PaymentMethod] Error removing payment method:', error);

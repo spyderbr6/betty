@@ -60,12 +60,10 @@
 - [ ] Payment Method - Add payment method screen, move the "add" action out of the header and make it a button like the rest of the actions in the app. 
 - [ ] payment method - the star icon doesnt appear to change the default payment method.
 - [ ] payment method. add payment method screen stays up once you add a payment, i accidently added multiple of the same payment method. 
-- [ ] QR code quick join capability (implemented, partially disabled and still not working)
-  - ✅ Code complete: QRScannerModal.tsx, BetQRCodeModal.tsx
-  - ✅ Integration complete in BetsScreen and BetInviteModal
-  - ⚠️ Currently disabled (commented out) due to native module build issues
-  - 📋 To enable: Re-add expo-camera plugin to app.json and rebuild
-  - 📁 Files ready: `src/components/ui/QRScannerModal.tsx`, `src/components/ui/BetQRCodeModal.tsx`
+- [ ] QR code generation doesnt appear to be working. selecting it on the invite page crashes the whole app.  
+- [ ] betting history the filters now take up half the page length. 
+- [ ] profile picture saving isnt working on the mobile app itself. it lets you load and even modify the picture. once you finish the page reloads, the profile picture doesnt show and the save changes doesnt let you select it (this works on the web interface though)
+- [ ] Require cycle: src\components\ui\Header.tsx -> src\components\ui\NotificationModal.tsx -> src\screens\NotificationScreen.tsx -> src\components\ui\Header.tsx Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
 
 ### **Priority 2: Account Screen Enhancements**
 - [ ] Wire up Payment Methods screen to actual payment integration
