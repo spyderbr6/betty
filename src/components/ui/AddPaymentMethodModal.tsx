@@ -116,19 +116,17 @@ export const AddPaymentMethodModal: React.FC<AddPaymentMethodModalProps> = ({
         return;
       }
 
-      Alert.alert(
-        'Payment Method Added',
-        'Your Venmo account has been added successfully! It will need to be verified before you can withdraw funds.',
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              onSuccess?.();
-              onClose();
-            },
-          },
-        ]
-      );
+      // Call success callback and close modal
+      onSuccess?.();
+      onClose();
+
+      // Show success alert after modal is closed
+      setTimeout(() => {
+        Alert.alert(
+          'Payment Method Added',
+          'Your Venmo account has been added successfully! It will need to be verified before you can withdraw funds.'
+        );
+      }, 300);
     } catch (error) {
       console.error('Error adding payment method:', error);
       Alert.alert('Error', 'Failed to add payment method. Please try again.');
