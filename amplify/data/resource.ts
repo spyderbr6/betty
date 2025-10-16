@@ -363,8 +363,7 @@ const schema = a.schema({
       checkIns: a.hasMany('EventCheckIn', 'eventId')
     })
     .authorization((allow) => [
-      allow.authenticated().to(['read']), // All users can read events
-      allow.authenticated().to(['create', 'update']) // Lambda functions can create/update
+      allow.authenticated().to(['read', 'create', 'update']) // All authenticated users can read, Lambda functions can create/update
     ]),
 
   EventCheckIn: a
