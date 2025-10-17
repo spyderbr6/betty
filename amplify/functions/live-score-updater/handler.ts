@@ -46,22 +46,42 @@ async function fetchEventByIdFromAPI(eventId: string): Promise<SportsDBEvent | n
   try {
     const url = `${SPORTSDB_API_BASE}/lookupevent.php?id=${eventId}`;
 
+    console.log(`🔍 Fetching event by ID: ${eventId}`);
+    console.log(`🌐 Full URL: ${url}`);
+
     const response = await fetch(url);
 
+    console.log(`📡 HTTP Response: ${response.status} ${response.statusText}`);
+
     if (!response.ok) {
-      console.error(`HTTP error! status: ${response.status}`);
+      console.error(`❌ HTTP error! status: ${response.status}`);
       return null;
     }
 
-    const data: SportsDBResponse = await response.json();
+    const rawText = await response.text();
+    console.log(`📦 Raw API response:`, rawText.substring(0, 500));
+
+    const data: SportsDBResponse = JSON.parse(rawText);
 
     if (!data.events || data.events.length === 0) {
+      console.log(`⚠️  Event ${eventId} not found in API response`);
       return null;
     }
 
-    return data.events[0];
+    const event = data.events[0];
+    console.log(`✅ Found event:`, {
+      id: event.idEvent,
+      name: event.strEvent,
+      status: event.strStatus,
+      homeScore: event.intHomeScore,
+      awayScore: event.intAwayScore,
+      progress: event.strProgress
+    });
+
+    return event;
   } catch (error) {
-    console.error(`Error fetching event ${eventId}:`, error);
+    console.error(`❌ Error fetching event ${eventId}:`, error);
+    console.error(`❌ Error details:`, error instanceof Error ? error.message : String(error));
     return null;
   }
 }
