@@ -33,6 +33,7 @@ import { SettingsScreen } from './SettingsScreen';
 import { SupportScreen } from './SupportScreen';
 import { AboutScreen } from './AboutScreen';
 import { AdminDashboardScreen } from './AdminDashboardScreen';
+import { AdminTestingScreen } from './AdminTestingScreen';
 import { formatCurrency, formatPercentage } from '../utils/formatting';
 import { useAuth } from '../contexts/AuthContext';
 import { ProfileEditForm, User } from '../types/betting';
@@ -61,6 +62,7 @@ export const AccountScreen: React.FC = () => {
   const [showSupport, setShowSupport] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
   const [showAdminDashboard, setShowAdminDashboard] = useState(false);
+  const [showAdminTesting, setShowAdminTesting] = useState(false);
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
 
   useEffect(() => {
@@ -252,6 +254,10 @@ export const AccountScreen: React.FC = () => {
 
   const handleAdminDashboardPress = () => {
     setShowAdminDashboard(true);
+  };
+
+  const handleAdminTestingPress = () => {
+    setShowAdminTesting(true);
   };
 
   const handleFriendsPress = () => {
@@ -449,6 +455,28 @@ export const AccountScreen: React.FC = () => {
                 </View>
                 <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
               </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.menuOption}
+                onPress={handleAdminTestingPress}
+                activeOpacity={0.7}
+              >
+                <View style={styles.menuOptionLeft}>
+                  <View style={[styles.menuIconContainer, styles.adminIconContainer]}>
+                    <Ionicons name="flask" size={22} color={colors.warning} />
+                  </View>
+                  <View style={styles.menuOptionContent}>
+                    <View style={styles.adminTitleRow}>
+                      <Text style={styles.menuOptionTitle}>Admin Testing Tools</Text>
+                      <View style={styles.adminBadge}>
+                        <Text style={styles.adminBadgeText}>DEBUG</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.menuOptionSubtitle}>Test and debug system features</Text>
+                  </View>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+              </TouchableOpacity>
             </View>
           )}
 
@@ -617,6 +645,16 @@ export const AccountScreen: React.FC = () => {
         onRequestClose={() => setShowAdminDashboard(false)}
       >
         <AdminDashboardScreen onClose={() => setShowAdminDashboard(false)} />
+      </Modal>
+
+      {/* Admin Testing Modal */}
+      <Modal
+        visible={showAdminTesting}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setShowAdminTesting(false)}
+      >
+        <AdminTestingScreen onClose={() => setShowAdminTesting(false)} />
       </Modal>
     </SafeAreaView>
   );
