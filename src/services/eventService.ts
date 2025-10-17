@@ -391,7 +391,12 @@ export async function getTrendingEvents(limit: number = 20): Promise<LiveEventDa
 }
 
 /**
- * Get live events (currently in progress)
+ * Get live events (currently in progress based on scheduled time)
+ *
+ * A game is considered "live" if:
+ * - Scheduled time was in the past (game has started)
+ * - Less than 4 hours have passed since scheduled time (game duration)
+ * - Status is not FINISHED or CANCELLED
  *
  * @param sport - Optional sport filter
  * @returns Array of live events
@@ -400,17 +405,25 @@ export async function getLiveEvents(
   sport?: 'NBA' | 'NFL' | 'MLB' | 'NHL' | 'SOCCER' | 'COLLEGE_FOOTBALL' | 'COLLEGE_BASKETBALL' | 'OTHER'
 ): Promise<LiveEventData[]> {
   try {
-    console.log('[EventService] Fetching live events');
+    console.log('[EventService] Fetching live events (time-based)');
 
+    const now = new Date();
+    const fourHoursAgo = new Date(now.getTime() - 4 * 60 * 60 * 1000);
+
+    // Get events that:
+    // 1. Started within last 4 hours
+    // 2. Are not finished or cancelled
     const filter: any = {
-      or: [
-        { status: { eq: 'LIVE' } },
-        { status: { eq: 'HALFTIME' } }
+      and: [
+        { scheduledTime: { le: now.toISOString() } },
+        { scheduledTime: { ge: fourHoursAgo.toISOString() } },
+        { status: { ne: 'FINISHED' } },
+        { status: { ne: 'CANCELLED' } }
       ]
     };
 
     if (sport) {
-      filter.and = [{ sport: { eq: sport } }];
+      filter.and.push({ sport: { eq: sport } });
     }
 
     const { data: events, errors } = await client.models.LiveEvent.list({
@@ -422,6 +435,9 @@ export async function getLiveEvents(
       console.error('[EventService] Error fetching live events:', errors);
       return [];
     }
+
+    console.log(`[EventService] Found ${events.length} live events based on time`);
+
 
     return events.map(event => ({
       id: event.id,
