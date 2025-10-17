@@ -13,7 +13,7 @@ Amplify.configure(resourceConfig, libraryOptions);
 const client = generateClient<Schema>() as any;
 
 // TheSportsDB API configuration
-const SPORTSDB_API_BASE = 'https://www.thesportsdb.com/api/v1/json/3';
+const SPORTSDB_API_BASE = 'https://www.thesportsdb.com/api/v1/json/123';
 
 interface SportsDBEvent {
   idEvent: string;

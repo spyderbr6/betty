@@ -12,8 +12,8 @@ Amplify.configure(resourceConfig, libraryOptions);
 // Use non-generic client to avoid complex union type inference
 const client = generateClient<Schema>() as any;
 
-// TheSportsDB API configuration (API key "3" is the free tier patreon key)
-const SPORTSDB_API_BASE = 'https://www.thesportsdb.com/api/v1/json/3';
+// TheSportsDB API configuration (API key "123" is the correct endpoint)
+const SPORTSDB_API_BASE = 'https://www.thesportsdb.com/api/v1/json/123';
 
 interface SportsDBEvent {
   idEvent: string;
@@ -52,7 +52,7 @@ const LEAGUE_IDS: Record<string, string> = {
 async function fetchEventsFromAPI(league: string, date: string): Promise<SportsDBEvent[]> {
   try {
     const leagueId = LEAGUE_IDS[league];
-    const url = `${SPORTSDB_API_BASE}/eventsday.php?d=${date}&l=${leagueId}`;
+    const url = `${SPORTSDB_API_BASE}/eventsday.php?d=${date}&id=${leagueId}`;
 
     console.log(`🔍 Fetching events for ${league} (League ID: ${leagueId}) on ${date}`);
     console.log(`🌐 Full URL: ${url}`);
