@@ -78,20 +78,44 @@ async function fetchEventsFromAPI(league: string, date: string): Promise<SportsD
       return [];
     }
 
-    console.log(`✅ Found ${data.events.length} events for ${league} on ${date}`);
+    console.log(`✅ Found ${data.events.length} total events for ${league} on ${date}`);
+
+    // Filter to only the specific league (API returns all games for the sport)
+    const filteredEvents = data.events.filter(event => {
+      // For NFL, only include events where league is exactly "NFL"
+      if (league === 'NFL') {
+        return event.strLeague === 'NFL';
+      }
+      // For NBA, only include events where league is exactly "NBA"
+      if (league === 'NBA') {
+        return event.strLeague === 'NBA';
+      }
+      // For MLB, only include events where league is exactly "American Major League Baseball"
+      if (league === 'MLB') {
+        return event.strLeague.includes('Major League Baseball');
+      }
+      // For NHL, only include events where league is exactly "NHL"
+      if (league === 'NHL') {
+        return event.strLeague === 'NHL';
+      }
+      return true;
+    });
+
+    console.log(`🔍 After filtering: ${filteredEvents.length} ${league} events (excluded ${data.events.length - filteredEvents.length} non-${league} games)`);
 
     // Log first event for verification
-    if (data.events.length > 0) {
+    if (filteredEvents.length > 0) {
       console.log(`📋 Sample event:`, {
-        id: data.events[0].idEvent,
-        name: data.events[0].strEvent,
-        date: data.events[0].dateEvent,
-        time: data.events[0].strTime,
-        status: data.events[0].strStatus
+        id: filteredEvents[0].idEvent,
+        league: filteredEvents[0].strLeague,
+        name: filteredEvents[0].strEvent,
+        date: filteredEvents[0].dateEvent,
+        time: filteredEvents[0].strTime,
+        status: filteredEvents[0].strStatus
       });
     }
 
-    return data.events;
+    return filteredEvents;
   } catch (error) {
     console.error(`❌ Error fetching events for ${league}:`, error);
     console.error(`❌ Error details:`, error instanceof Error ? error.message : String(error));
