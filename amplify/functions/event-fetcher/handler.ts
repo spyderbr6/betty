@@ -12,7 +12,7 @@ Amplify.configure(resourceConfig, libraryOptions);
 // Use non-generic client to avoid complex union type inference
 const client = generateClient<Schema>() as any;
 
-// TheSportsDB API configuration
+// TheSportsDB API configuration (API key "3" is the free tier patreon key)
 const SPORTSDB_API_BASE = 'https://www.thesportsdb.com/api/v1/json/3';
 
 interface SportsDBEvent {
@@ -54,25 +54,47 @@ async function fetchEventsFromAPI(league: string, date: string): Promise<SportsD
     const leagueId = LEAGUE_IDS[league];
     const url = `${SPORTSDB_API_BASE}/eventsday.php?d=${date}&l=${leagueId}`;
 
-    console.log(`Fetching events for ${league} on ${date}`);
+    console.log(`🔍 Fetching events for ${league} (League ID: ${leagueId}) on ${date}`);
+    console.log(`🌐 Full URL: ${url}`);
 
     const response = await fetch(url);
 
+    console.log(`📡 HTTP Response: ${response.status} ${response.statusText}`);
+
     if (!response.ok) {
-      console.error(`HTTP error! status: ${response.status}`);
+      console.error(`❌ HTTP error! status: ${response.status}`);
+      const errorText = await response.text();
+      console.error(`❌ Error body: ${errorText}`);
       return [];
     }
 
-    const data: SportsDBResponse = await response.json();
+    const rawText = await response.text();
+    console.log(`📦 Raw API response for ${league} on ${date}:`, rawText.substring(0, 500)); // Log first 500 chars
+
+    const data: SportsDBResponse = JSON.parse(rawText);
 
     if (!data.events || data.events.length === 0) {
-      console.log(`No events found for ${league} on ${date}`);
+      console.log(`⚠️  No events found for ${league} on ${date} (API returned null/empty - normal if no games)`);
       return [];
+    }
+
+    console.log(`✅ Found ${data.events.length} events for ${league} on ${date}`);
+
+    // Log first event for verification
+    if (data.events.length > 0) {
+      console.log(`📋 Sample event:`, {
+        id: data.events[0].idEvent,
+        name: data.events[0].strEvent,
+        date: data.events[0].dateEvent,
+        time: data.events[0].strTime,
+        status: data.events[0].strStatus
+      });
     }
 
     return data.events;
   } catch (error) {
-    console.error(`Error fetching events for ${league}:`, error);
+    console.error(`❌ Error fetching events for ${league}:`, error);
+    console.error(`❌ Error details:`, error instanceof Error ? error.message : String(error));
     return [];
   }
 }
