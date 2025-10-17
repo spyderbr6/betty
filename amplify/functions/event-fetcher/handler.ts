@@ -208,22 +208,33 @@ export const handler: EventBridgeHandler<"Scheduled Event", null, boolean> = asy
 
   try {
     // Get today's date
-    const today = new Date().toISOString().split('T')[0];
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
 
-    // Get tomorrow's date
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const tomorrowStr = tomorrow.toISOString().split('T')[0];
+    console.log(`📅 Current date: ${todayStr}`);
 
-    // Fetch events for NBA and NFL for today and tomorrow
+    // Get next 7 days
+    const dates: string[] = [];
+    for (let i = 0; i < 7; i++) {
+      const date = new Date(today);
+      date.setDate(today.getDate() + i);
+      dates.push(date.toISOString().split('T')[0]);
+    }
+
+    console.log(`📅 Checking dates: ${dates.join(', ')}`);
+
+    // Fetch events for NBA and NFL for next 7 days
     const leagues = ['NBA', 'NFL'];
-    const dates = [today, tomorrowStr];
 
     let totalEventsProcessed = 0;
+    let totalApiCalls = 0;
 
     for (const league of leagues) {
       for (const date of dates) {
+        totalApiCalls++;
         const events = await fetchEventsFromAPI(league, date);
+
+        console.log(`📊 ${league} on ${date}: Found ${events.length} events`);
 
         for (const eventData of events) {
           await upsertEvent(eventData);
@@ -232,7 +243,7 @@ export const handler: EventBridgeHandler<"Scheduled Event", null, boolean> = asy
       }
     }
 
-    console.log(`Event Fetcher completed. Processed ${totalEventsProcessed} events.`);
+    console.log(`✅ Event Fetcher completed. Made ${totalApiCalls} API calls, processed ${totalEventsProcessed} events.`);
     return true;
 
   } catch (error) {

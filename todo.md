@@ -6,6 +6,15 @@
 ---
 
 ## 🎉 CURRENT STATUS: MVP COMPLETE + FULL ACCOUNT SYSTEM
+7:56:02 PM [WARNING] aws-cdk-lib.aws_lambda.FunctionOptions#logRetention is deprecated.
+  use `logGroup` instead
+  This API will be removed in the next major release.
+
+7:56:08 PM Be careful when using @auth directives on a field in a root type. @auth directives on field definitions use the source object to perform authorization logic and the source will be an empty object for fields on root types. Static group authorization should perform as expected.
+
+7:56:11 PM WARNING: owners may reassign ownership for the following model(s) and role(s): User: [owner], PushToken: [owner], Bet: [owner], Participant: [owner], Evidence: [owner], UserStats: [owner], FriendRequest: [owner], Friendship: [owner], BetInvitation: [owner], PaymentMethod: [owner], Transaction: [owner], EventCheckIn: [owner]. If this is not intentional, you may want to apply field-level authorization rules to these fields. To read more: https://docs.amplify.aws/cli/graphql/authorization-rules/#per-user--owner-based-data-access.
+
+
 
 ### ✅ **FULLY IMPLEMENTED FEATURES**
 

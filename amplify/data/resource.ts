@@ -410,6 +410,26 @@ const schema = a.schema({
     .handler(a.handler.function(pushNotificationSender))
     .authorization((allow) => [allow.authenticated()]),
 
+  // Manual Event Fetch Function (for testing)
+  fetchEventsManually: a
+    .query()
+    .arguments({
+      triggerTime: a.string().required()  // ISO timestamp when triggered
+    })
+    .returns(a.boolean())
+    .handler(a.handler.function(eventFetcher))
+    .authorization((allow) => [allow.authenticated()]),
+
+  // Manual Score Update Function (for testing)
+  updateScoresManually: a
+    .query()
+    .arguments({
+      triggerTime: a.string().required()  // ISO timestamp when triggered
+    })
+    .returns(a.boolean())
+    .handler(a.handler.function(liveScoreUpdater))
+    .authorization((allow) => [allow.authenticated()]),
+
 }).authorization((allow) => [
   // Allow the Lambda functions to be invoked and access data
   allow.resource(scheduledBetChecker).to(["query", "listen", "mutate"]),
