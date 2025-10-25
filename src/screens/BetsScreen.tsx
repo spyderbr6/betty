@@ -101,11 +101,12 @@ export const BetsScreen: React.FC = () => {
   // Event check-in state
   const [showEventDiscovery, setShowEventDiscovery] = useState(false);
   const [checkedInEvent, setCheckedInEvent] = useState<LiveEvent | null>(null);
+  const [nearbyEventsCount, setNearbyEventsCount] = useState(0);
 
   useEffect(() => {
     // Fetch initial bet data, bet invitations, and set up real-time subscriptions
     const fetchData = async () => {
-      await Promise.all([fetchBets(), fetchBetInvitations(), fetchCheckedInEvent()]);
+      await Promise.all([fetchBets(), fetchBetInvitations(), fetchCheckedInEvent(), fetchNearbyEventsCount()]);
     };
 
     if (user?.userId) {
@@ -125,6 +126,38 @@ export const BetsScreen: React.FC = () => {
       }
     } catch (error) {
       console.error('Error fetching checked-in event:', error);
+    }
+  };
+
+  const fetchNearbyEventsCount = async () => {
+    try {
+      // Fetch live events count
+      const { data: liveEvents } = await client.models.LiveEvent.list({
+        filter: {
+          status: { eq: 'LIVE' }
+        }
+      });
+      setNearbyEventsCount(liveEvents?.length || 0);
+    } catch (error) {
+      console.error('Error fetching nearby events count:', error);
+    }
+  };
+
+  const handleCheckOut = async () => {
+    if (!user?.userId || !checkedInEvent) return;
+
+    try {
+      const result = await getUserCheckedInEvent(user.userId);
+      if (result) {
+        await checkOutOfEvent(user.userId, result.checkIn.id);
+        setCheckedInEvent(null);
+        // Refresh nearby events count after checkout
+        await fetchNearbyEventsCount();
+        Alert.alert('Checked Out', 'You have been checked out of the event.');
+      }
+    } catch (error) {
+      console.error('Error checking out:', error);
+      Alert.alert('Error', 'Failed to check out. Please try again.');
     }
   };
 
@@ -688,17 +721,6 @@ export const BetsScreen: React.FC = () => {
     fetchUserStats();
   }, [user]);
 
-  // Transform checked-in event to live game data
-  const liveGame = checkedInEvent ? {
-    homeTeam: checkedInEvent.homeTeamCode || checkedInEvent.homeTeam,
-    awayTeam: checkedInEvent.awayTeamCode || checkedInEvent.awayTeam,
-    homeScore: checkedInEvent.homeScore,
-    awayScore: checkedInEvent.awayScore,
-    quarter: checkedInEvent.quarter || checkedInEvent.status,
-    timeLeft: checkedInEvent.timeLeft || '',
-    venue: checkedInEvent.venue || '',
-    liveBetsCount: checkedInEvent.betCount || 0,
-  } : undefined;
 
   // Filter for user's specific bets (created by user OR user is participant)
   const filteredBets = bets.filter(bet => {
@@ -754,54 +776,18 @@ export const BetsScreen: React.FC = () => {
       <Header
         showBalance={true}
         onBalancePress={handleBalancePress}
-        liveGame={liveGame}
+        checkedInEvent={checkedInEvent}
+        nearbyEventsCount={nearbyEventsCount}
+        onCheckInPress={() => setShowEventDiscovery(true)}
+        onCheckOutPress={handleCheckOut}
         rightComponent={
-          <View style={{ flexDirection: 'row' }}>
-            <TouchableOpacity
-              style={styles.eventButton}
-              onPress={() => {
-                if (checkedInEvent && user?.userId) {
-                  Alert.alert(
-                    'Checked In',
-                    `You're checked into ${checkedInEvent.homeTeam} vs ${checkedInEvent.awayTeam}`,
-                    [
-                      {
-                        text: 'Check Out',
-                        style: 'destructive',
-                        onPress: async () => {
-                          const result = await getUserCheckedInEvent(user.userId);
-                          if (result) {
-                            await checkOutOfEvent(user.userId, result.checkIn.id);
-                            setCheckedInEvent(null);
-                          }
-                        }
-                      },
-                      {
-                        text: 'Cancel',
-                        style: 'cancel'
-                      }
-                    ]
-                  );
-                } else {
-                  setShowEventDiscovery(true);
-                }
-              }}
-              activeOpacity={0.7}
-            >
-              <Ionicons
-                name={checkedInEvent ? "checkmark-circle" : "calendar-outline"}
-                size={20}
-                color={checkedInEvent ? colors.success : colors.primary}
-              />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.qrScanButton}
-              onPress={() => setShowQRScanner(true)}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="qr-code-outline" size={20} color={colors.primary} />
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity
+            style={styles.qrScanButton}
+            onPress={() => setShowQRScanner(true)}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="qr-code-outline" size={20} color={colors.primary} />
+          </TouchableOpacity>
         }
       />
 
@@ -1031,8 +1017,12 @@ export const BetsScreen: React.FC = () => {
         onClose={() => setShowEventDiscovery(false)}
         currentUserId={user?.userId || ''}
         onCheckInSuccess={(event) => {
+          // Update local state immediately for instant UI feedback
           setCheckedInEvent(event);
-          fetchCheckedInEvent();
+          // Close modal (will also be called by modal itself, but safe to call twice)
+          setShowEventDiscovery(false);
+          // Refresh nearby events count
+          fetchNearbyEventsCount();
         }}
       />
     </SafeAreaView>
@@ -1255,13 +1245,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
-  // Event and QR Scanner Buttons
-  eventButton: {
-    padding: spacing.xs,
-    backgroundColor: colors.surface,
-    borderRadius: spacing.radius.sm,
-    marginLeft: spacing.sm,
-  },
+  // QR Scanner Button
   qrScanButton: {
     padding: spacing.xs,
     backgroundColor: colors.surface,

@@ -15,10 +15,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, typography, spacing, textStyles, shadows } from '../../styles';
 import { UserBalance } from './UserBalance';
-import { LiveGameBanner, LiveGameData } from './LiveGameBanner';
+import { LiveGameBanner } from './LiveGameBanner';
 import { NotificationService } from '../../services/notificationService';
 import { useAuth } from '../../contexts/AuthContext';
 import { NotificationModal } from './NotificationModal';
+import type { LiveEvent } from '../../types/events';
 
 interface HeaderProps {
   title?: string;
@@ -28,8 +29,11 @@ interface HeaderProps {
   rightComponent?: React.ReactNode;
   variant?: 'default' | 'transparent' | 'minimal';
   notificationCount?: number;
-  // Live game data
-  liveGame?: LiveGameData;
+  // Event check-in data
+  checkedInEvent?: LiveEvent | null;
+  nearbyEventsCount?: number;
+  onCheckInPress?: () => void;
+  onCheckOutPress?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -40,7 +44,10 @@ export const Header: React.FC<HeaderProps> = ({
   rightComponent,
   variant = 'default',
   notificationCount, // Remove default value, we'll fetch it
-  liveGame,
+  checkedInEvent,
+  nearbyEventsCount = 0,
+  onCheckInPress,
+  onCheckOutPress,
 }) => {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
@@ -140,15 +147,13 @@ export const Header: React.FC<HeaderProps> = ({
           </View>
         </View>
 
-        {/* Live Game Banner */}
-        {liveGame && (
-          <LiveGameBanner
-            liveGame={liveGame}
-            variant="default"
-            showBetsCount={true}
-            showVenue={true}
-          />
-        )}
+        {/* Event Check-In Banner - Always visible */}
+        <LiveGameBanner
+          checkedInEvent={checkedInEvent}
+          nearbyEventsCount={nearbyEventsCount}
+          onCheckInPress={onCheckInPress}
+          onCheckOutPress={onCheckOutPress}
+        />
       </View>
 
       {/* Notification Modal */}

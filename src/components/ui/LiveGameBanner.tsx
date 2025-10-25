@@ -1,7 +1,8 @@
 /**
  * LiveGameBanner Component
- * Standalone component for displaying live game information
- * Can be used in headers or anywhere live game data needs to be shown
+ * Interactive banner for event check-ins with two states:
+ * 1. Not Checked In - Prompt to check in to nearby events
+ * 2. Checked In - Shows checked-in event with details and check-out option
  */
 
 import React from 'react';
@@ -11,7 +12,9 @@ import {
   TouchableOpacity,
   StyleSheet,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { colors, typography, spacing, textStyles } from '../../styles';
+import type { LiveEvent } from '../../types/events';
 
 export interface LiveGameData {
   homeTeam: string;
@@ -21,195 +24,191 @@ export interface LiveGameData {
 }
 
 export interface LiveGameBannerProps {
-  liveGame: LiveGameData;
-  onPress?: () => void;
-  variant?: 'default' | 'compact' | 'minimal';
-  showBetsCount?: boolean;
-  showVenue?: boolean;
+  // Checked-in event (if user is checked in)
+  checkedInEvent?: LiveEvent | null;
+  // Total count of nearby live events (for not-checked-in state)
+  nearbyEventsCount?: number;
+  // Callbacks
+  onCheckInPress?: () => void;  // Opens event discovery modal
+  onCheckOutPress?: () => void; // Checks out of current event
+  onBannerPress?: () => void;   // Additional tap handler (optional)
 }
 
 export const LiveGameBanner: React.FC<LiveGameBannerProps> = ({
-  liveGame,
-  onPress,
-  variant = 'default',
-  showBetsCount = true,
-  showVenue = true,
+  checkedInEvent,
+  nearbyEventsCount = 0,
+  onCheckInPress,
+  onCheckOutPress,
+  onBannerPress,
 }) => {
-  const getStyles = () => {
-    switch (variant) {
-      case 'compact':
-        return {
-          container: styles.compactContainer,
-          content: styles.compactContent,
-          leftSection: styles.compactLeftSection,
-          rightSection: styles.compactRightSection,
-        };
-      case 'minimal':
-        return {
-          container: styles.minimalContainer,
-          content: styles.minimalContent,
-          leftSection: styles.minimalLeftSection,
-          rightSection: styles.minimalRightSection,
-        };
-      default:
-        return {
-          container: styles.container,
-          content: styles.content,
-          leftSection: styles.leftSection,
-          rightSection: styles.rightSection,
-        };
-    }
-  };
-
-  const componentStyles = getStyles();
-
-  const content = (
-    <View style={componentStyles.container}>
-      <View style={componentStyles.content}>
-        <View style={componentStyles.leftSection}>
-          <View style={styles.liveIndicator} />
-          <Text style={styles.liveText}>LIVE</Text>
-          {showVenue && (
-            <Text style={styles.venueText}>{liveGame.venue}</Text>
-          )}
-        </View>
-
-        <View style={styles.centerSection}>
-          <Text style={styles.matchupText}>
-            {liveGame.awayTeam} @ {liveGame.homeTeam}
-          </Text>
-        </View>
-
-        <View style={componentStyles.rightSection}>
-          {showBetsCount && (
-            <Text style={styles.betsCountText}>
-              {liveGame.liveBetsCount} LIVE BETS
+  // NOT CHECKED IN STATE
+  if (!checkedInEvent) {
+    return (
+      <TouchableOpacity
+        style={styles.notCheckedInContainer}
+        onPress={onCheckInPress}
+        activeOpacity={0.7}
+      >
+        <View style={styles.notCheckedInContent}>
+          <View style={styles.notCheckedInLeft}>
+            <Ionicons name="location-outline" size={16} color={colors.primary} />
+            <Text style={styles.notCheckedInText}>
+              Check in to nearby event
+            </Text>
+          </View>
+          {nearbyEventsCount > 0 && (
+            <Text style={styles.nearbyCount}>
+              {nearbyEventsCount} live
             </Text>
           )}
         </View>
-      </View>
-    </View>
-  );
-
-  if (onPress) {
-    return (
-      <TouchableOpacity onPress={onPress} activeOpacity={0.9}>
-        {content}
       </TouchableOpacity>
     );
   }
 
-  return content;
+  // CHECKED IN STATE
+  const handleBannerPress = () => {
+    if (onBannerPress) {
+      onBannerPress();
+    } else if (onCheckInPress) {
+      // Default: open event discovery to change venue
+      onCheckInPress();
+    }
+  };
+
+  const handleCheckOutPress = (e: any) => {
+    e.stopPropagation();
+    if (onCheckOutPress) {
+      onCheckOutPress();
+    }
+  };
+
+  return (
+    <TouchableOpacity
+      style={styles.checkedInContainer}
+      onPress={handleBannerPress}
+      activeOpacity={0.7}
+    >
+      <View style={styles.checkedInContent}>
+        <View style={styles.checkedInLeft}>
+          <View style={styles.checkmarkCircle}>
+            <Ionicons name="checkmark" size={14} color={colors.background} />
+          </View>
+          <View style={styles.eventInfo}>
+            <Text style={styles.checkedInLabel}>Checked in</Text>
+            <Text style={styles.eventName} numberOfLines={1}>
+              {checkedInEvent.homeTeam} vs {checkedInEvent.awayTeam}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.checkedInRight}>
+          {checkedInEvent.betCount > 0 && (
+            <Text style={styles.betCount}>
+              {checkedInEvent.betCount} {checkedInEvent.betCount === 1 ? 'bet' : 'bets'}
+            </Text>
+          )}
+          <TouchableOpacity
+            onPress={handleCheckOutPress}
+            style={styles.checkOutButton}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons name="close" size={16} color={colors.textMuted} />
+          </TouchableOpacity>
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
 };
 
 const styles = StyleSheet.create({
-  // Default variant
-  container: {
-    backgroundColor: colors.live,
+  // NOT CHECKED IN STATE
+  notCheckedInContainer: {
+    backgroundColor: colors.surface,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    borderRadius: spacing.radius.sm,
-    marginHorizontal: spacing.md,
-    marginVertical: spacing.xs,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
   },
-  content: {
+  notCheckedInContent: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
+    alignItems: 'center',
   },
-  leftSection: {
+  notCheckedInLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    flex: 1,
   },
-  rightSection: {
-    alignItems: 'flex-end',
+  notCheckedInText: {
+    ...textStyles.body,
+    color: colors.textSecondary,
+    fontSize: typography.fontSize.sm,
+    marginLeft: spacing.sm,
   },
-
-  // Compact variant
-  compactContainer: {
-    backgroundColor: colors.live,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    borderRadius: spacing.radius.xs,
-    marginHorizontal: spacing.sm,
-    marginVertical: spacing.xs / 2,
-  },
-  compactContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  compactLeftSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  compactRightSection: {
-    alignItems: 'flex-end',
-  },
-
-  // Minimal variant
-  minimalContainer: {
-    backgroundColor: 'transparent',
-    paddingHorizontal: spacing.xs,
-    paddingVertical: spacing.xs / 2,
-    borderRadius: 0,
-    marginHorizontal: 0,
-    marginVertical: 0,
-    borderWidth: 1,
-    borderColor: colors.live,
-  },
-  minimalContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  minimalLeftSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  minimalRightSection: {
-    alignItems: 'flex-end',
-  },
-
-  // Common elements
-  liveIndicator: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: colors.background,
-    marginRight: spacing.xs,
-  },
-  liveText: {
+  nearbyCount: {
     ...textStyles.caption,
-    color: colors.background,
-    fontSize: typography.fontSize.xs,
-    fontWeight: typography.fontWeight.bold,
+    color: colors.textMuted,
+    fontSize: typography.fontSize.sm,
+  },
+
+  // CHECKED IN STATE
+  checkedInContainer: {
+    backgroundColor: colors.surface,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.primary,
+  },
+  checkedInContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  checkedInLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
     marginRight: spacing.sm,
   },
-  venueText: {
-    ...textStyles.caption,
-    color: colors.background,
-    fontSize: typography.fontSize.xs,
-    opacity: 0.9,
-  },
-  centerSection: {
-    flex: 1,
+  checkmarkCircle: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: colors.success,
     alignItems: 'center',
-    marginHorizontal: spacing.sm,
+    justifyContent: 'center',
+    marginRight: spacing.sm,
   },
-  matchupText: {
-    ...textStyles.caption,
-    color: colors.background,
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
+  eventInfo: {
+    flex: 1,
   },
-  betsCountText: {
+  checkedInLabel: {
     ...textStyles.caption,
-    color: colors.background,
+    color: colors.success,
     fontSize: typography.fontSize.xs,
+    fontWeight: typography.fontWeight.semibold,
+    marginBottom: 2,
+  },
+  eventName: {
+    ...textStyles.body,
+    color: colors.textPrimary,
+    fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.medium,
+  },
+  checkedInRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  betCount: {
+    ...textStyles.caption,
+    color: colors.primary,
+    fontSize: typography.fontSize.xs,
+    fontWeight: typography.fontWeight.semibold,
+    marginRight: spacing.sm,
+  },
+  checkOutButton: {
+    padding: spacing.xs / 2,
   },
 });

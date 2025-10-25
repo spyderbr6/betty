@@ -245,18 +245,6 @@ export const LiveEventsScreen: React.FC = () => {
     }
   };
 
-  // Mock live game data
-  const liveGame = {
-    homeTeam: 'LAL',
-    awayTeam: 'GSW',
-    homeScore: 89,
-    awayScore: 92,
-    quarter: 'Q3',
-    timeLeft: '8:42',
-    venue: 'Crypto.com Arena',
-    liveBetsCount: liveBets.length,
-  };
-
   // Filter liveBets by search query
   const filteredLiveBets = liveBets.filter(bet => {
     if (searchQuery.trim()) {
@@ -275,7 +263,6 @@ export const LiveEventsScreen: React.FC = () => {
       <Header
         showBalance={true}
         onBalancePress={handleBalancePress}
-        liveGame={liveGame}
         variant="default"
       />
       

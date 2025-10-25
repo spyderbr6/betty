@@ -47,6 +47,9 @@ export const EventDiscoveryModal: React.FC<EventDiscoveryModalProps> = ({
   useEffect(() => {
     if (visible) {
       loadEvents();
+    } else {
+      // Reset checking-in state when modal closes
+      setCheckingIn(null);
     }
   }, [visible, activeTab]);
 
@@ -84,28 +87,28 @@ export const EventDiscoveryModal: React.FC<EventDiscoveryModalProps> = ({
 
       if (!checkIn) {
         Alert.alert('Error', 'Failed to check in. Please try again.');
+        setCheckingIn(null);
         return;
       }
 
-      Alert.alert(
-        'Checked In!',
-        `You're now checked into ${event.homeTeam} vs ${event.awayTeam}`,
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              if (onCheckInSuccess) {
-                onCheckInSuccess(event);
-              }
-              onClose();
-            },
-          },
-        ]
-      );
+      // Call success callback first to update parent state
+      if (onCheckInSuccess) {
+        onCheckInSuccess(event);
+      }
+
+      // Close modal immediately
+      onClose();
+
+      // Show success message (optional - non-blocking)
+      setTimeout(() => {
+        Alert.alert(
+          'Checked In!',
+          `You're now checked into ${event.homeTeam} vs ${event.awayTeam}`
+        );
+      }, 300); // Small delay to allow modal close animation
     } catch (error) {
       console.error('Error checking in:', error);
       Alert.alert('Error', 'Failed to check in. Please try again.');
-    } finally {
       setCheckingIn(null);
     }
   };
