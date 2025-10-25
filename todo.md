@@ -60,6 +60,10 @@
   This API will be removed in the next major release.
 - [ ] extend upcoming game window for live event picker to 48 hours instead of 24. 
 - [ ] when checked into an event, the create bet options should reflect the teams within the event you're checked into. 
+- [ ] bet types. remove weather and entertainment. lets add an over/under type bet, which will need the creator to enter a value for bettors to pick an over or an under. it needs to remain as simple and quick as possible
+- [ ] on live bets, friends and all tab buttons need to be slightly taller to be easier for mobile users. 
+- [ ] check into this warning. 12:44:09 PM Be careful when using @auth directives on a field in a root type. @auth directives on field definitions use the source object to perform authorization logic and the source will be an empty object for fields on root types. Static group authorization should perform as expected.
+- [ ] check into this warning. 12:44:11 PM WARNING: owners may reassign ownership for the following model(s) and role(s): User: [owner], PushToken: [owner], Bet: [owner], Participant: [owner], Evidence: [owner], UserStats: [owner], FriendRequest: [owner], Friendship: [owner], BetInvitation: [owner], PaymentMethod: [owner], Transaction: [owner], EventCheckIn: [owner]. If this is not intentional, you may want to apply field-level authorization rules to these fields. To read more: https://docs.amplify.aws/cli/graphql/authorization-rules/#per-user--owner-based-data-access.
 
 
 
@@ -68,8 +72,9 @@
 - [x] Implement Trust & Safety features **✅ COMPLETED**
   - [x] Change password functionality (AWS Cognito updatePassword)
   - [x] Two-factor authentication setup (AWS Cognito TOTP)
-  - [ ] Profile visibility controls
-  - [ ] Blocked users management
+  - [ ] Two-factor SMS
+- [ ] Notifications need properly configured. 
+
 - [ ] Settings screen functionality
   - Connect notification toggles to actual notification system
   - Language/currency preference persistence

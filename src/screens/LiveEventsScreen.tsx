@@ -535,7 +535,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: spacing.xs,
+    paddingVertical: spacing.sm, // Increased from spacing.xs for better mobile tap target
     paddingHorizontal: spacing.sm,
     borderRadius: spacing.radius.xs,
     marginRight: spacing.xs / 2,

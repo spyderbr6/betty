@@ -245,7 +245,7 @@ export async function checkOutOfEvent(
 }
 
 /**
- * Get upcoming events (next 24 hours)
+ * Get upcoming events (next 48 hours)
  *
  * @param sport - Optional sport filter
  * @param limit - Maximum number of events to return
@@ -259,12 +259,12 @@ export async function getUpcomingEvents(
     console.log('[EventService] Fetching upcoming events');
 
     const now = new Date().toISOString();
-    const next24Hours = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    const next48Hours = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
 
     const filter: any = {
       and: [
         { scheduledTime: { ge: now } },
-        { scheduledTime: { le: next24Hours } },
+        { scheduledTime: { le: next48Hours } },
         { status: { ne: 'CANCELLED' } }
       ]
     };
