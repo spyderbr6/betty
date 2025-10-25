@@ -28,9 +28,6 @@ import { Bet, BetInvitation, BetInvitationStatus, User, ParticipantStatus } from
 import { useAuth } from '../contexts/AuthContext';
 import { NotificationService } from '../services/notificationService';
 import { bulkLoadUserBetsWithParticipants, clearBulkLoadingCache } from '../services/bulkLoadingService';
-import { getUserCheckedInEvent, checkOutOfEvent } from '../services/eventService';
-import { EventDiscoveryModal } from '../components/ui/EventDiscoveryModal';
-import type { LiveEvent } from '../types/events';
 
 // Initialize GraphQL client
 const client = generateClient<Schema>();
@@ -98,68 +95,16 @@ export const BetsScreen: React.FC = () => {
   // QR Scanner state
   const [showQRScanner, setShowQRScanner] = useState(false);
 
-  // Event check-in state
-  const [showEventDiscovery, setShowEventDiscovery] = useState(false);
-  const [checkedInEvent, setCheckedInEvent] = useState<LiveEvent | null>(null);
-  const [nearbyEventsCount, setNearbyEventsCount] = useState(0);
-
   useEffect(() => {
     // Fetch initial bet data, bet invitations, and set up real-time subscriptions
     const fetchData = async () => {
-      await Promise.all([fetchBets(), fetchBetInvitations(), fetchCheckedInEvent(), fetchNearbyEventsCount()]);
+      await Promise.all([fetchBets(), fetchBetInvitations()]);
     };
 
     if (user?.userId) {
       fetchData();
     }
   }, [user?.userId]);
-
-  const fetchCheckedInEvent = async () => {
-    if (!user?.userId) return;
-
-    try {
-      const result = await getUserCheckedInEvent(user.userId);
-      if (result) {
-        setCheckedInEvent(result.event);
-      } else {
-        setCheckedInEvent(null);
-      }
-    } catch (error) {
-      console.error('Error fetching checked-in event:', error);
-    }
-  };
-
-  const fetchNearbyEventsCount = async () => {
-    try {
-      // Fetch live events count
-      const { data: liveEvents } = await client.models.LiveEvent.list({
-        filter: {
-          status: { eq: 'LIVE' }
-        }
-      });
-      setNearbyEventsCount(liveEvents?.length || 0);
-    } catch (error) {
-      console.error('Error fetching nearby events count:', error);
-    }
-  };
-
-  const handleCheckOut = async () => {
-    if (!user?.userId || !checkedInEvent) return;
-
-    try {
-      const result = await getUserCheckedInEvent(user.userId);
-      if (result) {
-        await checkOutOfEvent(user.userId, result.checkIn.id);
-        setCheckedInEvent(null);
-        // Refresh nearby events count after checkout
-        await fetchNearbyEventsCount();
-        Alert.alert('Checked Out', 'You have been checked out of the event.');
-      }
-    } catch (error) {
-      console.error('Error checking out:', error);
-      Alert.alert('Error', 'Failed to check out. Please try again.');
-    }
-  };
 
   const fetchBetInvitations = async () => {
     if (!user?.userId) return;
@@ -776,10 +721,6 @@ export const BetsScreen: React.FC = () => {
       <Header
         showBalance={true}
         onBalancePress={handleBalancePress}
-        checkedInEvent={checkedInEvent}
-        nearbyEventsCount={nearbyEventsCount}
-        onCheckInPress={() => setShowEventDiscovery(true)}
-        onCheckOutPress={handleCheckOut}
         rightComponent={
           <TouchableOpacity
             style={styles.qrScanButton}
@@ -1009,21 +950,6 @@ export const BetsScreen: React.FC = () => {
         visible={showQRScanner}
         onClose={() => setShowQRScanner(false)}
         onBetScanned={handleBetScanned}
-      />
-
-      {/* Event Discovery Modal */}
-      <EventDiscoveryModal
-        visible={showEventDiscovery}
-        onClose={() => setShowEventDiscovery(false)}
-        currentUserId={user?.userId || ''}
-        onCheckInSuccess={(event) => {
-          // Update local state immediately for instant UI feedback
-          setCheckedInEvent(event);
-          // Close modal (will also be called by modal itself, but safe to call twice)
-          setShowEventDiscovery(false);
-          // Refresh nearby events count
-          fetchNearbyEventsCount();
-        }}
       />
     </SafeAreaView>
   );

@@ -16,10 +16,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, typography, spacing, textStyles, shadows } from '../../styles';
 import { UserBalance } from './UserBalance';
 import { LiveGameBanner } from './LiveGameBanner';
+import { EventDiscoveryModal } from './EventDiscoveryModal';
 import { NotificationService } from '../../services/notificationService';
 import { useAuth } from '../../contexts/AuthContext';
+import { useEventCheckIn } from '../../hooks/useEventCheckIn';
 import { NotificationModal } from './NotificationModal';
-import type { LiveEvent } from '../../types/events';
 
 interface HeaderProps {
   title?: string;
@@ -29,11 +30,6 @@ interface HeaderProps {
   rightComponent?: React.ReactNode;
   variant?: 'default' | 'transparent' | 'minimal';
   notificationCount?: number;
-  // Event check-in data
-  checkedInEvent?: LiveEvent | null;
-  nearbyEventsCount?: number;
-  onCheckInPress?: () => void;
-  onCheckOutPress?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -44,15 +40,22 @@ export const Header: React.FC<HeaderProps> = ({
   rightComponent,
   variant = 'default',
   notificationCount, // Remove default value, we'll fetch it
-  checkedInEvent,
-  nearbyEventsCount = 0,
-  onCheckInPress,
-  onCheckOutPress,
 }) => {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const [showNotificationModal, setShowNotificationModal] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+
+  // Event check-in state (managed globally by hook)
+  const {
+    checkedInEvent,
+    nearbyEventsCount,
+    showEventDiscovery,
+    setShowEventDiscovery,
+    handleCheckInPress,
+    handleCheckOut,
+    handleCheckInSuccess,
+  } = useEventCheckIn();
 
   // Load unread notification count
   useEffect(() => {
@@ -151,8 +154,8 @@ export const Header: React.FC<HeaderProps> = ({
         <LiveGameBanner
           checkedInEvent={checkedInEvent}
           nearbyEventsCount={nearbyEventsCount}
-          onCheckInPress={onCheckInPress}
-          onCheckOutPress={onCheckOutPress}
+          onCheckInPress={handleCheckInPress}
+          onCheckOutPress={handleCheckOut}
         />
       </View>
 
@@ -168,6 +171,14 @@ export const Header: React.FC<HeaderProps> = ({
               .catch(console.warn);
           }
         }}
+      />
+
+      {/* Event Discovery Modal */}
+      <EventDiscoveryModal
+        visible={showEventDiscovery}
+        onClose={() => setShowEventDiscovery(false)}
+        currentUserId={user?.userId || ''}
+        onCheckInSuccess={handleCheckInSuccess}
       />
     </>
   );
