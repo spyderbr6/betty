@@ -59,6 +59,7 @@
   use `logGroup` instead
   This API will be removed in the next major release.
 - [ ] we need to make the live even check in a little easier to navigate. i dont like the header icon. looking for options between the banner and the checkin icon. 
+- [ ] extend upcoming game window for live event picker to 48 hours instead of 24. 
 
 
 
