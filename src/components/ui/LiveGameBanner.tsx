@@ -16,10 +16,6 @@ import { colors, typography, spacing, textStyles } from '../../styles';
 export interface LiveGameData {
   homeTeam: string;
   awayTeam: string;
-  homeScore: number;
-  awayScore: number;
-  quarter: string;
-  timeLeft: string;
   venue: string;
   liveBetsCount: number;
 }
@@ -79,22 +75,9 @@ export const LiveGameBanner: React.FC<LiveGameBannerProps> = ({
         </View>
 
         <View style={styles.centerSection}>
-          <View style={styles.scoreContainer}>
-            <View style={styles.teamScoreRow}>
-              <Text style={styles.teamNameText}>{liveGame.awayTeam}</Text>
-              <Text style={styles.scoreText}>{liveGame.awayScore}</Text>
-            </View>
-            <View style={styles.teamScoreRow}>
-              <Text style={styles.teamNameText}>{liveGame.homeTeam}</Text>
-              <Text style={styles.scoreText}>{liveGame.homeScore}</Text>
-            </View>
-          </View>
-          {liveGame.quarter && (
-            <Text style={styles.quarterText}>
-              {liveGame.quarter}
-              {liveGame.timeLeft && ` • ${liveGame.timeLeft}`}
-            </Text>
-          )}
+          <Text style={styles.matchupText}>
+            {liveGame.awayTeam} @ {liveGame.homeTeam}
+          </Text>
         </View>
 
         <View style={componentStyles.rightSection}>
@@ -217,37 +200,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginHorizontal: spacing.sm,
   },
-  scoreContainer: {
-    flexDirection: 'column',
-    alignItems: 'center',
-  },
-  teamScoreRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    minWidth: 120,
-    marginVertical: 2,
-  },
-  teamNameText: {
+  matchupText: {
     ...textStyles.caption,
     color: colors.background,
-    fontSize: typography.fontSize.xs,
-    fontWeight: typography.fontWeight.medium,
-    marginRight: spacing.sm,
-  },
-  scoreText: {
-    ...textStyles.caption,
-    color: colors.background,
-    fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.bold,
-  },
-  quarterText: {
-    ...textStyles.caption,
-    color: colors.background,
-    fontSize: 10,
-    fontWeight: typography.fontWeight.medium,
-    marginTop: spacing.xs / 2,
-    opacity: 0.9,
+    fontSize: typography.fontSize.sm,
+    fontWeight: typography.fontWeight.semibold,
   },
   betsCountText: {
     ...textStyles.caption,

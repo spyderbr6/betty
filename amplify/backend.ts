@@ -5,7 +5,6 @@ import { storage } from './storage/resource';
 import { scheduledBetChecker } from './functions/scheduled-bet-checker/resource';
 import { pushNotificationSender } from './functions/push-notification-sender/resource';
 import { eventFetcher } from './functions/event-fetcher/resource';
-import { liveScoreUpdater } from './functions/live-score-updater/resource';
 
 const backend = defineBackend({
   auth,
@@ -14,5 +13,5 @@ const backend = defineBackend({
   scheduledBetChecker,
   pushNotificationSender,
   eventFetcher,
-  liveScoreUpdater,
+  // Note: liveScoreUpdater removed - TheSportsDB score updates are too unreliable
 });
