@@ -23,14 +23,14 @@
 - **Friend Discovery**: Search by username, email, display name
 - **Bet Invitations**: Invite friends to existing bets with one tap
 - **Profile System**: Editable display names and profile pictures with S3 storage
-- **Notification System**: Real-time notifications for friend and betting activities
+- **Notification System**: Complete preference system with in-app toasts, database records, and push notification infrastructure (needs Firebase setup)
 
 #### **Complete Account Menu System**
 - **Detailed Stats Screen**: Comprehensive analytics with win/loss streaks, financial tracking, performance metrics
 - **Betting History Screen**: Full transaction history with filtering (all, won, lost, cancelled)
 - **Payment Methods Screen**: Balance management interface (ready for payment integration)
-- **Trust & Safety Screen**: Security settings, verification status, privacy controls
-- **Settings Screen**: Notification preferences, language/currency options
+- **Trust & Safety Screen**: Security settings with password change and 2FA (TOTP)
+- **Settings Screen**: Full notification preference system with database persistence (8 notification types, master controls, DND scheduling)
 - **Support Screen**: FAQ, GitHub issue reporting, help resources
 - **About Screen**: App version, legal links, tech stack credits
 
@@ -68,11 +68,34 @@
   - [x] Change password functionality (AWS Cognito updatePassword)
   - [x] Two-factor authentication setup (AWS Cognito TOTP)
   - [ ] Two-factor SMS
-- [ ] Notifications need properly configured. 
+- [x] **Notification System Implementation** **✅ COMPLETED (2025-10-26)**
+  - [x] Database schema for user notification preferences
+  - [x] Notification preferences service with CRUD operations
+  - [x] Settings screen with real-time preference persistence
+  - [x] Master controls (push, in-app, email)
+  - [x] Granular notification type filters (8 categories)
+  - [x] Do Not Disturb scheduling
+  - [x] Toast notification system with smart batching and rate limiting
+  - [x] Snackbar-style UI with priority-based display
+  - [x] Type-specific navigation handlers
+  - [x] Integration with notification creation flow
+  - [ ] **BLOCKERS for Push Notifications:**
+    - [ ] Firebase configuration for Android (E_REGISTRATION_FAILED)
+    - [ ] EXPO_ACCESS_TOKEN environment variable in Lambda
+  - [ ] **Missing Notification Triggers:**
+    - [ ] BET_JOINED (add to BetsScreen.tsx when user joins)
+    - [ ] BET_RESOLVED (add to ResolveScreen.tsx when resolved)
+    - [ ] BET_CANCELLED (add to cancellation logic)
+    - [ ] DEPOSIT_COMPLETED/FAILED (add to transactionService.ts)
+    - [ ] WITHDRAWAL_COMPLETED/FAILED (add to transactionService.ts)
+    - [ ] PAYMENT_METHOD_VERIFIED (add to paymentMethodService.ts)
+  - [x] **Currently Working:** FRIEND_REQUEST_RECEIVED, FRIEND_REQUEST_ACCEPTED, FRIEND_REQUEST_DECLINED
 
-- [ ] Settings screen functionality
-  - Connect notification toggles to actual notification system
-  - Language/currency preference persistence
+- [x] Settings screen functionality **✅ COMPLETED**
+  - [x] Connect notification toggles to database with real-time persistence
+  - [x] Optimistic UI updates with error rollback
+  - [x] Loading states and error handling
+  - [ ] Language/currency preference persistence (UI exists, needs backend)
 - [ ] Support screen improvements
   - Add more FAQ entries
   - Direct support contact method
@@ -81,9 +104,16 @@
 - [ ] Remove or implement private bet functionality
   - Currently toggle exists but does nothing
   - Either wire up private bet logic or remove the option
-- [ ] Enhanced push notifications with expo-notifications
+- [x] In-app toast notifications with expo-notifications **✅ COMPLETED**
+  - [x] Smart batching (3+ same type → single batch toast)
+  - [x] Rate limiting (max 1 toast per 3 seconds)
+  - [x] Priority-based display (URGENT > HIGH > MEDIUM)
+  - [x] Queue overflow protection (5+ → batch message)
+  - [x] Auto-dismiss based on priority (5s/4s/3s)
+- [ ] Push notifications configuration
+  - Infrastructure complete, needs Firebase setup + EXPO_ACCESS_TOKEN
 - [ ] Instant balance updates after payouts and joins
-- [ ] Real-time notification delivery improvements
+- [ ] Add missing notification event triggers (bet events, payment events)
 
 ---
 
@@ -356,10 +386,12 @@ src/
 │   └── ResolveScreen.tsx          # Bet resolution
 ├── contexts/               # AuthContext for user state
 ├── services/
-│   ├── bulkLoadingService.ts      # Optimized data fetching
-│   ├── notificationService.ts     # Push & in-app notifications
-│   ├── imageUploadService.ts      # S3 profile pictures
-│   └── pushNotificationConfig.ts  # Expo notifications setup
+│   ├── bulkLoadingService.ts             # Optimized data fetching
+│   ├── notificationService.ts            # Push & in-app notifications with preference checking
+│   ├── notificationPreferencesService.ts # User notification preference management
+│   ├── toastNotificationService.ts       # In-app toast with batching & rate limiting
+│   ├── imageUploadService.ts             # S3 profile pictures
+│   └── pushNotificationConfig.ts         # Expo notifications setup
 ├── styles/                 # Design system tokens
 └── types/                  # TypeScript definitions
 ```
@@ -371,6 +403,8 @@ src/
 - **Friend Models**: Bilateral friendships and friend requests
 - **BetInvitation Model**: Friend invite system
 - **Notification Model**: Real-time activity updates
+- **NotificationPreferences Model**: User notification settings (master controls, type filters, DND)
+- **PushToken Model**: Device push notification tokens
 - **S3 Storage**: Profile picture uploads with on-demand signed URLs
 - **Lambda Functions**: Scheduled bet checker, push notification sender
 
@@ -390,7 +424,35 @@ src/
 
 ## 📈 RECENT MILESTONES
 
-- ✅ **P1 Bug Fixes & UX Improvements** (Latest - 2025-10-25)
+- ✅ **Comprehensive Notification System** (Latest - 2025-10-26)
+  - **Notification Preferences System:**
+    - Database schema for user preferences (NotificationPreferences model)
+    - Complete preference service with CRUD operations
+    - Settings screen with real-time database persistence
+    - Master controls (push, in-app, email)
+    - 8 granular notification type filters (friends, bets, payments, system)
+    - Do Not Disturb scheduling with time windows
+    - All preferences default to enabled for good UX
+  - **Intelligent Toast Notification System:**
+    - Smart batching: 3+ same-type notifications → single batch toast
+    - Rate limiting: Max 1 toast per 3 seconds to prevent spam
+    - Queue overflow protection: 5+ notifications → batch message
+    - Priority-based display: URGENT (red, 5s) > HIGH (green, 4s) > MEDIUM (blue, 3s)
+    - LOW priority = DB record only (no toast, no push)
+    - Snackbar-style UI positioned at bottom above tab bar
+    - Type-specific navigation handlers for all 17 notification types
+    - AppState detection (toasts only when app is active)
+  - **Integration & UX:**
+    - NotificationService respects all user preferences
+    - DND windows respected (creates DB records but skips push/toast)
+    - Push notifications for background, toasts for foreground (never both)
+    - Optimistic UI updates with error rollback
+    - Comprehensive logging for debugging
+  - **Known Blockers:**
+    - Push notifications need Firebase configuration for Android
+    - EXPO_ACCESS_TOKEN needed in Lambda function
+    - Missing notification triggers for bet events and payment events
+- ✅ **P1 Bug Fixes & UX Improvements** (2025-10-25)
   - Event check-in integration with bet creation (auto-fills team names)
   - Extended event discovery window from 24 to 48 hours
   - Improved bet type templates (removed weather/entertainment, added over/under)
@@ -408,4 +470,4 @@ src/
 
 ---
 
-*Last Updated: P1 bug fixes completed - Event check-in integration, bet type improvements, UX enhancements*
+*Last Updated: Comprehensive notification system completed - User preferences, intelligent toast notifications with batching/rate limiting, navigation handlers (2025-10-26)*
