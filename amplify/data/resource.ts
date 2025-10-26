@@ -34,6 +34,7 @@ const schema = a.schema({
       receivedBetInvitations: a.hasMany('BetInvitation', 'toUserId'),
       notifications: a.hasMany('Notification', 'userId'),
       pushTokens: a.hasMany('PushToken', 'userId'),
+      notificationPreferences: a.hasOne('NotificationPreferences', 'userId'),
       paymentMethods: a.hasMany('PaymentMethod', 'userId'),
       transactions: a.hasMany('Transaction', 'userId'),
       eventCheckIns: a.hasMany('EventCheckIn', 'userId'),
@@ -105,6 +106,49 @@ const schema = a.schema({
     .authorization((allow) => [
       allow.owner().to(['create', 'read', 'update', 'delete']),
       allow.authenticated().to(['create']) // Allow users to register tokens for others (admin use)
+    ]),
+
+  // User notification preferences for controlling which notifications to receive
+  NotificationPreferences: a
+    .model({
+      id: a.id(),
+      userId: a.id().required(),
+
+      // Global notification controls
+      pushEnabled: a.boolean().default(true),        // Master switch for push notifications
+      inAppEnabled: a.boolean().default(true),       // Master switch for in-app toast notifications
+      emailEnabled: a.boolean().default(false),      // Email notifications (future feature)
+
+      // Notification type preferences - grouped by category
+      // Friend notifications
+      friendRequestsEnabled: a.boolean().default(true),      // Friend requests received/accepted/declined
+
+      // Bet notifications
+      betInvitationsEnabled: a.boolean().default(true),      // Bet invitations received/accepted/declined
+      betJoinedEnabled: a.boolean().default(true),           // Someone joined your bet
+      betResolvedEnabled: a.boolean().default(true),         // Bet resolved (won/lost)
+      betCancelledEnabled: a.boolean().default(true),        // Bet cancelled
+      betDeadlineEnabled: a.boolean().default(true),         // Bet deadline approaching
+
+      // Payment notifications
+      paymentNotificationsEnabled: a.boolean().default(true), // Deposits/withdrawals completed/failed & payment method verified
+
+      // System notifications
+      systemAnnouncementsEnabled: a.boolean().default(true), // System announcements and updates
+
+      // Do Not Disturb schedule
+      dndEnabled: a.boolean().default(false),        // Enable quiet hours
+      dndStartHour: a.integer(),                     // Start hour (0-23, e.g., 22 = 10 PM)
+      dndEndHour: a.integer(),                       // End hour (0-23, e.g., 7 = 7 AM)
+
+      createdAt: a.datetime(),
+      updatedAt: a.datetime(),
+
+      // Relations
+      user: a.belongsTo('User', 'userId'),
+    })
+    .authorization((allow) => [
+      allow.owner().to(['create', 'read', 'update', 'delete']),
     ]),
 
   Bet: a
