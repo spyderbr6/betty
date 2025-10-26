@@ -28,14 +28,25 @@ import { User } from '../types/betting';
 import { Ionicons } from '@expo/vector-icons';
 import { NotificationService } from '../services/notificationService';
 import { getProfilePictureUrl } from '../services/imageUploadService';
+import { useEventCheckIn } from '../hooks/useEventCheckIn';
 
 interface BetTemplate {
   id: string;
-  title: string;
-  description: string;
+  displayName: string; // Name shown on template card
   category: string;
   icon: string;
-  sides: { sideAName: string; sideBName: string; };
+  // Default values (auto-fill on template selection)
+  defaultTitle?: string;
+  defaultDescription?: string;
+  // Placeholders (shown when field is empty/cleared)
+  titlePlaceholder: string;
+  descriptionPlaceholder: string;
+  sideAPlaceholder: string;
+  sideBPlaceholder: string;
+  // Smart defaults (only for locked fields like over/under sides)
+  lockSides?: boolean;
+  lockedSideA?: string;
+  lockedSideB?: string;
 }
 
 // Initialize GraphQL client
@@ -43,6 +54,7 @@ const client = generateClient<Schema>();
 
 export const CreateBetScreen: React.FC = () => {
   const { user } = useAuth();
+  const { checkedInEvent } = useEventCheckIn();
   const scrollRef = React.useRef<ScrollView | null>(null);
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [betTitle, setBetTitle] = useState('');
@@ -56,6 +68,10 @@ export const CreateBetScreen: React.FC = () => {
   const [sideBName, setSideBName] = useState('No');
   const [selectedSide, setSelectedSide] = useState<'A' | 'B' | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+
+  // Track if fields have been manually edited (for clear-on-focus behavior)
+  const [titleEdited, setTitleEdited] = useState(false);
+  const [descriptionEdited, setDescriptionEdited] = useState(false);
 
   // Friend selection state
   const [friends, setFriends] = useState<User[]>([]);
@@ -140,51 +156,66 @@ export const CreateBetScreen: React.FC = () => {
   const betTemplates: BetTemplate[] = [
     {
       id: 'next-score',
-      title: 'Next Score',
-      description: 'Which team scores next?',
+      displayName: 'Next Score',
       category: 'SPORTS',
       icon: '🏀',
-      sides: { sideAName: 'Home', sideBName: 'Away' },
+      defaultTitle: 'Next Score',
+      defaultDescription: 'Which team scores next?',
+      titlePlaceholder: 'e.g., Who scores the next basket?',
+      descriptionPlaceholder: 'Which team will score the next points?',
+      sideAPlaceholder: 'Home Team',
+      sideBPlaceholder: 'Away Team',
     },
     {
       id: 'player-prop',
-      title: 'Player Prop',
-      description: 'Player performance bet',
+      displayName: 'Player Prop',
       category: 'SPORTS',
       icon: '⭐',
-      sides: { sideAName: 'Over', sideBName: 'Under' },
+      defaultTitle: 'Player Prop',
+      defaultDescription: 'Player performance bet',
+      titlePlaceholder: 'e.g., LeBron 30+ points',
+      descriptionPlaceholder: 'Will the player achieve this stat line?',
+      sideAPlaceholder: 'Over',
+      sideBPlaceholder: 'Under',
+    },
+    {
+      id: 'over-under',
+      displayName: 'Over/Under',
+      category: 'SPORTS',
+      icon: '📊',
+      // No defaults - user must specify the target value
+      titlePlaceholder: 'e.g., National Anthem Length',
+      descriptionPlaceholder: 'e.g., 4 minutes, 50 points, 3.5 goals',
+      sideAPlaceholder: 'Over',
+      sideBPlaceholder: 'Under',
+      lockSides: true,
+      lockedSideA: 'Over',
+      lockedSideB: 'Under',
     },
     {
       id: 'yes-no',
-      title: 'Yes/No Bet',
-      description: 'Simple yes or no question',
+      displayName: 'Yes/No Bet',
       category: 'CUSTOM',
       icon: '❓',
-      sides: { sideAName: 'Yes', sideBName: 'No' },
-    },
-    {
-      id: 'weather',
-      title: 'Weather Bet',
-      description: 'Weather prediction bet',
-      category: 'WEATHER',
-      icon: '🌤️',
-      sides: { sideAName: 'Rain', sideBName: 'No Rain' },
-    },
-    {
-      id: 'entertainment',
-      title: 'Entertainment',
-      description: 'Entertainment event outcome',
-      category: 'ENTERTAINMENT',
-      icon: '🎬',
-      sides: { sideAName: 'Winner A', sideBName: 'Winner B' },
+      // No defaults - user must specify the question
+      titlePlaceholder: 'e.g., Will it rain tomorrow?',
+      descriptionPlaceholder: 'Describe the yes/no question',
+      sideAPlaceholder: 'Yes',
+      sideBPlaceholder: 'No',
+      lockSides: true,
+      lockedSideA: 'Yes',
+      lockedSideB: 'No',
     },
     {
       id: 'custom',
-      title: 'Custom Bet',
-      description: 'Create your own unique bet',
+      displayName: 'Custom Bet',
       category: 'CUSTOM',
       icon: '✨',
-      sides: { sideAName: 'Side A', sideBName: 'Side B' },
+      // No defaults - fully custom bet
+      titlePlaceholder: 'Enter your bet title',
+      descriptionPlaceholder: 'Describe what you\'re betting on',
+      sideAPlaceholder: 'Option A',
+      sideBPlaceholder: 'Option B',
     },
   ];
 
@@ -196,11 +227,30 @@ export const CreateBetScreen: React.FC = () => {
 
   const handleTemplateSelect = (template: BetTemplate) => {
     setSelectedTemplate(template.id);
-    setBetTitle(template.title);
-    setBetDescription(template.description);
     setSelectedCategory(template.category);
-    setSideAName(template.sides.sideAName);
-    setSideBName(template.sides.sideBName);
+
+    // Set default values (if provided), otherwise empty for placeholders
+    setBetTitle(template.defaultTitle || '');
+    setBetDescription(template.defaultDescription || '');
+
+    // Reset edited flags when template changes
+    setTitleEdited(false);
+    setDescriptionEdited(false);
+
+    // Handle side names with smart defaults
+    if (template.lockSides) {
+      // Locked sides (over/under, yes/no) - always use locked values
+      setSideAName(template.lockedSideA || '');
+      setSideBName(template.lockedSideB || '');
+    } else if (checkedInEvent && template.category === 'SPORTS') {
+      // Event check-in: use team names for sports bets
+      setSideAName(checkedInEvent.homeTeam);
+      setSideBName(checkedInEvent.awayTeam);
+    } else {
+      // Empty fields - use placeholders
+      setSideAName('');
+      setSideBName('');
+    }
   };
 
   const handleAmountChange = (text: string) => {
@@ -434,6 +484,9 @@ export const CreateBetScreen: React.FC = () => {
     return friends.slice(0, 4);
   };
 
+  // Get current template for dynamic placeholders
+  const currentTemplate = betTemplates.find(t => t.id === selectedTemplate) || betTemplates[0];
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <Header
@@ -471,7 +524,7 @@ export const CreateBetScreen: React.FC = () => {
                   styles.templateTitle,
                   selectedTemplate === template.id && styles.templateTitleSelected
                 ]}>
-                  {template.title}
+                  {template.displayName}
                 </Text>
                 <Text style={[
                   styles.templateCategory,
@@ -492,26 +545,47 @@ export const CreateBetScreen: React.FC = () => {
             <Text style={styles.fieldLabel}>Bet Title *</Text>
             <TextInput
               style={styles.textInput}
-              placeholder="Enter bet title"
+              placeholder={currentTemplate.titlePlaceholder}
               placeholderTextColor={colors.textMuted}
               value={betTitle}
               onChangeText={setBetTitle}
+              onFocus={() => {
+                // Clear default value on first focus
+                if (!titleEdited && betTitle === currentTemplate.defaultTitle) {
+                  setBetTitle('');
+                }
+                setTitleEdited(true);
+              }}
               maxLength={100}
             />
           </View>
 
           <View style={styles.formGroup}>
-            <Text style={styles.fieldLabel}>Description *</Text>
+            <Text style={styles.fieldLabel}>
+              {selectedTemplate === 'over-under' ? 'Target Value *' : 'Description *'}
+            </Text>
             <TextInput
-              style={[styles.textInput, styles.textAreaInput]}
-              placeholder="Describe your bet in detail"
+              style={[styles.textInput, selectedTemplate !== 'over-under' && styles.textAreaInput]}
+              placeholder={currentTemplate.descriptionPlaceholder}
               placeholderTextColor={colors.textMuted}
               value={betDescription}
               onChangeText={setBetDescription}
-              multiline
-              numberOfLines={3}
-              maxLength={500}
+              onFocus={() => {
+                // Clear default value on first focus
+                if (!descriptionEdited && betDescription === currentTemplate.defaultDescription) {
+                  setBetDescription('');
+                }
+                setDescriptionEdited(true);
+              }}
+              multiline={selectedTemplate !== 'over-under'}
+              numberOfLines={selectedTemplate !== 'over-under' ? 3 : 1}
+              maxLength={selectedTemplate === 'over-under' ? 50 : 500}
             />
+            {selectedTemplate === 'over-under' && (
+              <Text style={styles.fieldHint}>
+                This is the value that bettors will choose "Over" or "Under" on
+              </Text>
+            )}
           </View>
 
           <View style={styles.formRow}>
@@ -553,17 +627,22 @@ export const CreateBetScreen: React.FC = () => {
         {/* Betting Sides */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>BETTING SIDES</Text>
-          <Text style={styles.sectionSubtitle}>Customize the two sides people can bet on</Text>
+          <Text style={styles.sectionSubtitle}>
+            {currentTemplate.lockSides
+              ? `Sides are locked to "${currentTemplate.lockedSideA}" and "${currentTemplate.lockedSideB}" for this bet type`
+              : 'Customize the two sides people can bet on'}
+          </Text>
 
           <View style={styles.sidesContainer}>
             <View style={styles.sideCard}>
               <Text style={styles.sideLabel}>Side A</Text>
               <TextInput
                 style={styles.sideInput}
-                placeholder="Side A Name"
+                placeholder={currentTemplate.sideAPlaceholder}
                 placeholderTextColor={colors.textMuted}
                 value={sideAName}
                 onChangeText={setSideAName}
+                editable={!currentTemplate.lockSides}
               />
             </View>
 
@@ -575,10 +654,11 @@ export const CreateBetScreen: React.FC = () => {
               <Text style={styles.sideLabel}>Side B</Text>
               <TextInput
                 style={styles.sideInput}
-                placeholder="Side B Name"
+                placeholder={currentTemplate.sideBPlaceholder}
                 placeholderTextColor={colors.textMuted}
                 value={sideBName}
                 onChangeText={setSideBName}
+                editable={!currentTemplate.lockSides}
               />
             </View>
           </View>
@@ -812,6 +892,12 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginBottom: spacing.xs,
     fontWeight: typography.fontWeight.medium,
+  },
+  fieldHint: {
+    ...textStyles.caption,
+    color: colors.textMuted,
+    marginTop: spacing.xs,
+    fontSize: 11,
   },
   textInput: {
     ...commonStyles.textInput,

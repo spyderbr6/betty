@@ -55,15 +55,10 @@
 ## 🔄 IMMEDIATE NEXT STEPS (Current Development Cycle)
 
 ### **Priority 1: Critical Bug Fixes & UI Polish** ✅ COMPLETED
-- [ ] Fix this issue. 9:20:01 PM [WARNING] aws-cdk-lib.aws_lambda.FunctionOptions#logRetention is deprecated.
-  use `logGroup` instead
-  This API will be removed in the next major release.
-- [ ] extend upcoming game window for live event picker to 48 hours instead of 24. 
-- [ ] when checked into an event, the create bet options should reflect the teams within the event you're checked into. 
-- [ ] bet types. remove weather and entertainment. lets add an over/under type bet, which will need the creator to enter a value for bettors to pick an over or an under. it needs to remain as simple and quick as possible
-- [ ] on live bets, friends and all tab buttons need to be slightly taller to be easier for mobile users. 
-- [ ] check into this warning. 12:44:09 PM Be careful when using @auth directives on a field in a root type. @auth directives on field definitions use the source object to perform authorization logic and the source will be an empty object for fields on root types. Static group authorization should perform as expected.
-- [ ] check into this warning. 12:44:11 PM WARNING: owners may reassign ownership for the following model(s) and role(s): User: [owner], PushToken: [owner], Bet: [owner], Participant: [owner], Evidence: [owner], UserStats: [owner], FriendRequest: [owner], Friendship: [owner], BetInvitation: [owner], PaymentMethod: [owner], Transaction: [owner], EventCheckIn: [owner]. If this is not intentional, you may want to apply field-level authorization rules to these fields. To read more: https://docs.amplify.aws/cli/graphql/authorization-rules/#per-user--owner-based-data-access.
+- [ ] create bet: i want to merge the betting sides stuff to make it easier. right now you can edit the sides and it shows the vs sides and then you choose a side. i'd like you to work up a way where, you select the sides and remove the duplicate side language where in this example it shows side a, philadelphia eagles, then another section that also says philadelphia eagles and you have to select it.
+
+- [ ] Check @auth directive warning on root type fields - Static group authorization concern
+- [ ] Check ownership reassignment warning for models - Field-level authorization recommendation
 
 
 
@@ -395,7 +390,12 @@ src/
 
 ## 📈 RECENT MILESTONES
 
-- ✅ **Change Password & 2FA Implementation** (Latest - 2025-10-25)
+- ✅ **P1 Bug Fixes & UX Improvements** (Latest - 2025-10-25)
+  - Event check-in integration with bet creation (auto-fills team names)
+  - Extended event discovery window from 24 to 48 hours
+  - Improved bet type templates (removed weather/entertainment, added over/under)
+  - Enhanced mobile UX with taller tab buttons on LiveEventsScreen
+- ✅ **Change Password & 2FA Implementation** (2025-10-25)
   - AWS Cognito password change with validation
   - Two-factor authentication (TOTP) setup and management
   - Comprehensive security modals with real-time validation
@@ -405,8 +405,7 @@ src/
 - ✅ Profile Picture S3 Integration with Signed URLs
 - ✅ Notification Screen with Filtering
 - ✅ Bulk Loading Service for Performance
-- ✅ P1 Bug Fixes (invite cards, resolved bet colors, notification filtering)
 
 ---
 
-*Last Updated: 2FA and Change Password implemented - Trust & Safety features complete*
+*Last Updated: P1 bug fixes completed - Event check-in integration, bet type improvements, UX enhancements*
