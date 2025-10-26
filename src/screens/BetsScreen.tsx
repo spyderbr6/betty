@@ -703,40 +703,6 @@ export const BetsScreen: React.FC = () => {
           </>
         )}
 
-        {/* Search Input (conditionally shown) */}
-        {showSearch && (
-          <View style={styles.searchContainer}>
-            <View style={styles.searchInputContainer}>
-              <Ionicons
-                name="search"
-                size={16}
-                color={colors.textMuted}
-                style={styles.searchIcon}
-              />
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Search your bets..."
-                placeholderTextColor={colors.textMuted}
-                value={searchQuery}
-                onChangeText={handleSearchChange}
-                autoFocus={true}
-              />
-              {searchQuery.length > 0 && (
-                <TouchableOpacity
-                  onPress={() => setSearchQuery('')}
-                  style={styles.clearButton}
-                >
-                  <Ionicons
-                    name="close-circle"
-                    size={16}
-                    color={colors.textMuted}
-                  />
-                </TouchableOpacity>
-              )}
-            </View>
-          </View>
-        )}
-
         {/* Status Filters with Search Icon */}
         <View style={styles.filtersContainer}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filtersScrollView}>
@@ -785,6 +751,40 @@ export const BetsScreen: React.FC = () => {
             </TouchableOpacity>
           </ScrollView>
         </View>
+
+        {/* Search Input (conditionally shown) */}
+        {showSearch && (
+          <View style={styles.searchContainer}>
+            <View style={styles.searchInputContainer}>
+              <Ionicons
+                name="search"
+                size={16}
+                color={colors.textMuted}
+                style={styles.searchIcon}
+              />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search your bets..."
+                placeholderTextColor={colors.textMuted}
+                value={searchQuery}
+                onChangeText={handleSearchChange}
+                autoFocus={true}
+              />
+              {searchQuery.length > 0 && (
+                <TouchableOpacity
+                  onPress={() => setSearchQuery('')}
+                  style={styles.clearButton}
+                >
+                  <Ionicons
+                    name="close-circle"
+                    size={16}
+                    color={colors.textMuted}
+                  />
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        )}
 
         {/* Loading State */}
         {isLoading ? (
@@ -1177,6 +1177,7 @@ const styles = StyleSheet.create({
   // Search Input
   searchContainer: {
     paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
     paddingBottom: spacing.sm,
     backgroundColor: colors.background,
   },
