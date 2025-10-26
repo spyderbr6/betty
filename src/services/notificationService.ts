@@ -13,6 +13,7 @@ import * as Notifications from 'expo-notifications';
 // import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import { NotificationPreferencesService } from './notificationPreferencesService';
+import ToastNotificationService from './toastNotificationService';
 
 const client = generateClient<Schema>();
 
@@ -258,6 +259,38 @@ export class NotificationService {
             pushEnabled: preferences.pushEnabled,
             priority,
             inDndWindow
+          });
+        }
+
+        // Show in-app toast if:
+        // 1. User wants in-app notifications (preferences.inAppEnabled)
+        // 2. Not in DND window
+        // 3. Not LOW priority (LOW = DB record only)
+        if (preferences.inAppEnabled && !inDndWindow && priority !== 'LOW') {
+          console.log('[Notification] Showing in-app toast...');
+          try {
+            await ToastNotificationService.showToast(
+              type,
+              title,
+              message,
+              priority,
+              {
+                notificationId: notification.id,
+                actionType,
+                actionData,
+                relatedBetId,
+                relatedUserId,
+              }
+            );
+          } catch (toastError) {
+            console.warn('[Notification] In-app toast failed:', toastError);
+            // Don't fail the whole notification creation if toast fails
+          }
+        } else {
+          console.log('[Notification] Skipping in-app toast:', {
+            inAppEnabled: preferences.inAppEnabled,
+            inDndWindow,
+            priority
           });
         }
 

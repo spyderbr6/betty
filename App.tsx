@@ -19,6 +19,8 @@ import { Login } from './src/components/Login';
 import { SignUp } from './src/components/SignUp';
 import { AppNavigator } from './src/navigation/AppNavigator';
 import { colors } from './src/styles';
+import Toast from 'react-native-toast-message';
+import { toastConfig } from './src/components/ui/ToastConfig';
 
 // Configure Amplify for React Native
 Amplify.configure(amplifyconfig);
@@ -74,6 +76,7 @@ export default function App() {
       <View style={styles.container}>
         <MainApp />
         <StatusBar style="light" backgroundColor={colors.background} />
+        <Toast config={toastConfig} />
       </View>
     </AuthProvider>
   );
