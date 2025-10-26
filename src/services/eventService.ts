@@ -394,7 +394,7 @@ export async function getTrendingEvents(limit: number = 20): Promise<LiveEventDa
  * Get live events (currently in progress based on scheduled time)
  *
  * A game is considered "live" if:
- * - Scheduled time was in the past (game has started)
+ * - Scheduled time is within 90 minutes in the future OR has already started
  * - Less than 4 hours have passed since scheduled time (game duration)
  * - Status is not FINISHED or CANCELLED
  *
@@ -408,14 +408,15 @@ export async function getLiveEvents(
     console.log('[EventService] Fetching live events (time-based)');
 
     const now = new Date();
+    const ninetyMinutesFromNow = new Date(now.getTime() + 90 * 60 * 1000);
     const fourHoursAgo = new Date(now.getTime() - 4 * 60 * 60 * 1000);
 
     // Get events that:
-    // 1. Started within last 4 hours
+    // 1. Start within 90 minutes OR started within last 4 hours
     // 2. Are not finished or cancelled
     const filter: any = {
       and: [
-        { scheduledTime: { le: now.toISOString() } },
+        { scheduledTime: { le: ninetyMinutesFromNow.toISOString() } },
         { scheduledTime: { ge: fourHoursAgo.toISOString() } },
         { status: { ne: 'FINISHED' } },
         { status: { ne: 'CANCELLED' } }

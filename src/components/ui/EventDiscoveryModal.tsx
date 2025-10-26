@@ -60,6 +60,13 @@ export const EventDiscoveryModal: React.FC<EventDiscoveryModalProps> = ({
       let fetchedEvents: LiveEvent[];
       if (activeTab === 'live') {
         fetchedEvents = await getLiveEvents();
+
+        // If no live events found, automatically switch to upcoming tab
+        if (fetchedEvents.length === 0) {
+          console.log('[EventDiscoveryModal] No live events found, switching to upcoming tab');
+          setActiveTab('upcoming');
+          fetchedEvents = await getUpcomingEvents();
+        }
       } else {
         fetchedEvents = await getUpcomingEvents();
       }
@@ -227,13 +234,12 @@ export const EventDiscoveryModal: React.FC<EventDiscoveryModalProps> = ({
           </Text>
         )}
 
-        <View style={styles.checkInButton}>
-          {isCheckingInThis ? (
+        {isCheckingInThis && (
+          <View style={styles.checkingInContainer}>
             <ActivityIndicator color={colors.primary} size="small" />
-          ) : (
-            <Text style={styles.checkInButtonText}>Check In</Text>
-          )}
-        </View>
+            <Text style={styles.checkingInText}>Checking in...</Text>
+          </View>
+        )}
       </TouchableOpacity>
     );
   };
@@ -392,20 +398,19 @@ const styles = StyleSheet.create({
   venue: {
     fontSize: typography.fontSize.xs,
     color: colors.textMuted,
-    marginBottom: spacing.sm,
+    marginBottom: spacing.xs,
   },
-  checkInButton: {
-    backgroundColor: colors.primary,
-    paddingVertical: spacing.sm,
-    borderRadius: spacing.radius.sm,
+  checkingInContainer: {
+    flexDirection: 'row',
     alignItems: 'center',
-    minHeight: 40,
     justifyContent: 'center',
+    paddingVertical: spacing.xs,
   },
-  checkInButtonText: {
-    color: colors.textInverse,
-    fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.semibold,
+  checkingInText: {
+    marginLeft: spacing.sm,
+    fontSize: typography.fontSize.sm,
+    color: colors.primary,
+    fontWeight: typography.fontWeight.medium,
   },
   emptyContainer: {
     flex: 1,
