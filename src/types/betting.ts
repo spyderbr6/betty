@@ -266,6 +266,11 @@ export type NotificationType =
   | 'BET_CANCELLED'
   | 'BET_DISPUTED'
   | 'BET_DEADLINE_APPROACHING'
+  | 'DEPOSIT_COMPLETED'
+  | 'DEPOSIT_FAILED'
+  | 'WITHDRAWAL_COMPLETED'
+  | 'WITHDRAWAL_FAILED'
+  | 'PAYMENT_METHOD_VERIFIED'
   | 'SYSTEM_ANNOUNCEMENT';
 
 export type NotificationPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
@@ -284,4 +289,32 @@ export interface Notification {
   relatedUserId?: string;
   relatedRequestId?: string;
   createdAt: string;
+}
+
+export interface NotificationPreferences {
+  id: string;
+  userId: string;
+
+  // Global notification controls
+  pushEnabled: boolean;
+  inAppEnabled: boolean;
+  emailEnabled: boolean;
+
+  // Notification type preferences - grouped by category
+  friendRequestsEnabled: boolean;
+  betInvitationsEnabled: boolean;
+  betJoinedEnabled: boolean;
+  betResolvedEnabled: boolean;
+  betCancelledEnabled: boolean;
+  betDeadlineEnabled: boolean;
+  paymentNotificationsEnabled: boolean;
+  systemAnnouncementsEnabled: boolean;
+
+  // Do Not Disturb schedule
+  dndEnabled: boolean;
+  dndStartHour?: number;
+  dndEndHour?: number;
+
+  createdAt: string;
+  updatedAt: string;
 }

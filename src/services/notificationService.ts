@@ -12,6 +12,7 @@ import * as Notifications from 'expo-notifications';
 // Removed Constants import to avoid dependency issues
 // import Constants from 'expo-constants';
 import { Platform } from 'react-native';
+import { NotificationPreferencesService } from './notificationPreferencesService';
 
 const client = generateClient<Schema>();
 
@@ -162,6 +163,25 @@ export class NotificationService {
   }): Promise<Notification | null> {
     try {
       console.log('[Notification] Creating notification:', { userId, type, title, message, priority });
+
+      // Check if user has this notification type enabled
+      const isEnabled = await NotificationPreferencesService.isNotificationEnabled(userId, type);
+      if (!isEnabled) {
+        console.log(`[Notification] User ${userId} has ${type} notifications disabled - skipping`);
+        return null;
+      }
+
+      // Get user preferences to check DND and delivery methods
+      const preferences = await NotificationPreferencesService.getUserPreferences(userId);
+
+      // Check if in Do Not Disturb window
+      const inDndWindow = NotificationPreferencesService.isInDndWindow(preferences);
+      if (inDndWindow) {
+        console.log(`[Notification] User ${userId} is in DND window - creating DB record but no push/in-app`);
+        sendPush = false;
+        // Note: in-app notifications will also be skipped (we'll add this feature in Phase 4)
+      }
+
       console.log('[Notification] Full params:', {
         userId, type, title, message, priority, actionType, actionData,
         relatedBetId, relatedUserId, relatedRequestId
@@ -206,8 +226,12 @@ export class NotificationService {
           createdAt: data.createdAt || new Date().toISOString(),
         };
 
-        // Send push notification for high priority notifications
-        if (sendPush && (priority === 'HIGH' || priority === 'URGENT')) {
+        // Send push notification if:
+        // 1. User wants push notifications (preferences.pushEnabled)
+        // 2. Not in DND window
+        // 3. High/Urgent priority
+        // 4. sendPush parameter is true
+        if (sendPush && preferences.pushEnabled && (priority === 'HIGH' || priority === 'URGENT')) {
           console.log('[Notification] Sending push notification...');
           try {
             await this.sendPushNotification(
@@ -228,6 +252,13 @@ export class NotificationService {
             console.warn('[Notification] Push notification failed, but in-app notification was created:', pushError);
             // Don't fail the whole notification creation if push fails
           }
+        } else {
+          console.log('[Notification] Skipping push notification:', {
+            sendPush,
+            pushEnabled: preferences.pushEnabled,
+            priority,
+            inDndWindow
+          });
         }
 
         return notification;
