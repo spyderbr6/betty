@@ -72,7 +72,7 @@ export const useEventCheckIn = () => {
         setCheckedInEvent(null);
         // Refresh nearby events count after checkout
         await fetchNearbyEventsCount();
-        Alert.alert('Checked Out', 'You have been checked out of the event.');
+        // Removed success message - checkout is implied by UI change
       }
     } catch (error) {
       console.error('Error checking out:', error);

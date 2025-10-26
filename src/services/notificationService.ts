@@ -7,6 +7,7 @@ import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
 import { NotificationType, NotificationPriority, Notification } from '../types/betting';
 import * as Notifications from 'expo-notifications';
+import { getCurrentUser } from 'aws-amplify/auth';
 // Temporarily remove Device import to avoid native module issues
 // import * as Device from 'expo-device';
 // Removed Constants import to avoid dependency issues
@@ -266,22 +267,33 @@ export class NotificationService {
         // 1. User wants in-app notifications (preferences.inAppEnabled)
         // 2. Not in DND window
         // 3. Not LOW priority (LOW = DB record only)
+        // 4. Notification is for the currently logged-in user
         if (preferences.inAppEnabled && !inDndWindow && priority !== 'LOW') {
-          console.log('[Notification] Showing in-app toast...');
+          console.log('[Notification] Checking if should show in-app toast...');
           try {
-            await ToastNotificationService.showToast(
-              type,
-              title,
-              message,
-              priority,
-              {
-                notificationId: notification.id,
-                actionType,
-                actionData,
-                relatedBetId,
-                relatedUserId,
-              }
-            );
+            // Only show toast if notification is for the current logged-in user
+            const currentUser = await getCurrentUser();
+            if (currentUser.userId === userId) {
+              console.log('[Notification] Showing in-app toast for current user');
+              await ToastNotificationService.showToast(
+                type,
+                title,
+                message,
+                priority,
+                {
+                  notificationId: notification.id,
+                  actionType,
+                  actionData,
+                  relatedBetId,
+                  relatedUserId,
+                }
+              );
+            } else {
+              console.log('[Notification] Skipping toast - notification is for different user:', {
+                notificationUserId: userId,
+                currentUserId: currentUser.userId
+              });
+            }
           } catch (toastError) {
             console.warn('[Notification] In-app toast failed:', toastError);
             // Don't fail the whole notification creation if toast fails

@@ -4,6 +4,8 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { generateClient } from 'aws-amplify/data';
+import type { Schema } from '../../amplify/data/resource';
 import {
   View,
   Text,
@@ -17,13 +19,10 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { generateClient } from 'aws-amplify/data';
-import type { Schema } from '../../amplify/data/resource';
 import { commonStyles, colors, spacing, typography, textStyles } from '../styles';
 import { Header } from '../components/ui/Header';
 import { BetCard } from '../components/betting/BetCard';
 import { BetInviteModal } from '../components/ui/BetInviteModal';
-import { QRScannerModal } from '../components/ui/QRScannerModal';
 import { Bet, BetInvitation, BetInvitationStatus, User, ParticipantStatus } from '../types/betting';
 import { useAuth } from '../contexts/AuthContext';
 import { NotificationService } from '../services/notificationService';
@@ -91,9 +90,6 @@ export const BetsScreen: React.FC = () => {
   // Invite modal state
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [selectedBetForInvite, setSelectedBetForInvite] = useState<Bet | null>(null);
-
-  // QR Scanner state
-  const [showQRScanner, setShowQRScanner] = useState(false);
 
   useEffect(() => {
     // Fetch initial bet data, bet invitations, and set up real-time subscriptions
@@ -555,64 +551,6 @@ export const BetsScreen: React.FC = () => {
     // Navigate to balance/wallet screen
   };
 
-  // Handle QR code scan
-  const handleBetScanned = async (betId: string) => {
-    try {
-      // Fetch the bet details
-      const { data: betData } = await client.models.Bet.get({ id: betId });
-
-      if (!betData) {
-        Alert.alert('Error', 'Bet not found. The QR code may be invalid.');
-        return;
-      }
-
-      // Transform to our Bet type
-      const bet = transformAmplifyBet(betData);
-
-      if (!bet) {
-        Alert.alert('Error', 'Failed to load bet details.');
-        return;
-      }
-
-      // Check if bet is still active
-      if (bet.status !== 'ACTIVE') {
-        Alert.alert('Bet Closed', 'This bet is no longer accepting participants.');
-        return;
-      }
-
-      // Check if user is already participating
-      const isParticipating = bet.participants?.some(p => p.userId === user?.userId);
-
-      if (isParticipating) {
-        Alert.alert('Already Joined', 'You are already participating in this bet.');
-        return;
-      }
-
-      // Show bet details and allow user to join
-      // For now, just show a success message - in the future, navigate to bet details
-      Alert.alert(
-        'Bet Found!',
-        `Would you like to join "${bet.title}"?`,
-        [
-          {
-            text: 'Cancel',
-            style: 'cancel',
-          },
-          {
-            text: 'View Bet',
-            onPress: () => {
-              // Navigate to bet details or show join flow
-              // For now, just refresh the bets list
-              fetchBets();
-            },
-          },
-        ]
-      );
-    } catch (error) {
-      console.error('Error processing scanned bet:', error);
-      Alert.alert('Error', 'Failed to process QR code. Please try again.');
-    }
-  };
 
   // Removed - Header handles notifications internally now
 
@@ -721,15 +659,6 @@ export const BetsScreen: React.FC = () => {
       <Header
         showBalance={true}
         onBalancePress={handleBalancePress}
-        rightComponent={
-          <TouchableOpacity
-            style={styles.qrScanButton}
-            onPress={() => setShowQRScanner(true)}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="qr-code-outline" size={20} color={colors.primary} />
-          </TouchableOpacity>
-        }
       />
 
       {/* Toast Banner */}
@@ -774,22 +703,6 @@ export const BetsScreen: React.FC = () => {
           </>
         )}
 
-        {/* My Bets Section */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>MY BETS</Text>
-          <TouchableOpacity
-            style={styles.searchIconButton}
-            onPress={handleSearchToggle}
-            activeOpacity={0.7}
-          >
-            <Ionicons
-              name={showSearch ? "close" : "search"}
-              size={18}
-              color={colors.textSecondary}
-            />
-          </TouchableOpacity>
-        </View>
-
         {/* Search Input (conditionally shown) */}
         {showSearch && (
           <View style={styles.searchContainer}>
@@ -824,7 +737,7 @@ export const BetsScreen: React.FC = () => {
           </View>
         )}
 
-        {/* Status Filters */}
+        {/* Status Filters with Search Icon */}
         <View style={styles.filtersContainer}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filtersScrollView}>
             {statusFilters.map((filter) => (
@@ -857,6 +770,19 @@ export const BetsScreen: React.FC = () => {
                 )}
               </TouchableOpacity>
             ))}
+
+            {/* Search Icon Button */}
+            <TouchableOpacity
+              style={styles.searchIconButtonInline}
+              onPress={handleSearchToggle}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name={showSearch ? "close" : "search"}
+                size={18}
+                color={colors.textSecondary}
+              />
+            </TouchableOpacity>
           </ScrollView>
         </View>
 
@@ -944,13 +870,6 @@ export const BetsScreen: React.FC = () => {
           }}
         />
       )}
-
-      {/* QR Scanner Modal */}
-      <QRScannerModal
-        visible={showQRScanner}
-        onClose={() => setShowQRScanner(false)}
-        onBetScanned={handleBetScanned}
-      />
     </SafeAreaView>
   );
 };
@@ -1171,19 +1090,10 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
-  // QR Scanner Button
-  qrScanButton: {
-    padding: spacing.xs,
-    backgroundColor: colors.surface,
-    borderRadius: spacing.radius.sm,
-    marginLeft: spacing.sm,
-  },
-
   // Status Filters
   filtersContainer: {
     backgroundColor: colors.background,
-    paddingVertical: spacing.sm,
-    paddingTop: 0,
+    paddingVertical: spacing.md,
   },
   filtersScrollView: {
     paddingHorizontal: spacing.md,
@@ -1235,8 +1145,20 @@ const styles = StyleSheet.create({
   filterBadgeTextActive: {
     color: colors.primary,
   },
-  
-  // Section Header
+  searchIconButtonInline: {
+    backgroundColor: colors.surface,
+    borderRadius: spacing.radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    marginRight: spacing.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 36,
+  },
+
+  // Section Header (for invitations)
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1250,13 +1172,6 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontWeight: typography.fontWeight.bold,
     fontSize: typography.fontSize.lg,
-  },
-  searchIconButton: {
-    padding: spacing.xs,
-    backgroundColor: colors.surface,
-    borderRadius: spacing.radius.sm,
-    borderWidth: 1,
-    borderColor: colors.border,
   },
 
   // Search Input

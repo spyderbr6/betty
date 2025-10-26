@@ -25,6 +25,7 @@ import { BetInviteModal } from '../components/ui/BetInviteModal';
 import { Bet } from '../types/betting';
 import { useAuth } from '../contexts/AuthContext';
 import { bulkLoadJoinableBetsWithParticipants, bulkLoadFriendsBetsWithParticipants, clearBulkLoadingCache } from '../services/bulkLoadingService';
+import { QRScannerModal } from '../components/ui/QRScannerModal';
 
 // Initialize GraphQL client
 const client = generateClient<Schema>();
@@ -121,6 +122,9 @@ export const LiveEventsScreen: React.FC = () => {
   // Invite modal state
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [selectedBetForInvite, setSelectedBetForInvite] = useState<Bet | null>(null);
+
+  // QR Scanner modal state
+  const [showQRScanner, setShowQRScanner] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -245,6 +249,17 @@ export const LiveEventsScreen: React.FC = () => {
     }
   };
 
+  const handleBetScanned = async (betId: string) => {
+    console.log('Bet scanned:', betId);
+    // TODO: Navigate to bet details or join flow for scanned bet
+    // For now, just find it in the list and highlight it
+    const scannedBet = liveBets.find(bet => bet.id === betId);
+    if (scannedBet) {
+      console.log('Found scanned bet:', scannedBet.title);
+      // Could navigate to bet details or show join options
+    }
+  };
+
   // Filter liveBets by search query
   const filteredLiveBets = liveBets.filter(bet => {
     if (searchQuery.trim()) {
@@ -281,66 +296,77 @@ export const LiveEventsScreen: React.FC = () => {
         {/* Friends' Bets Section */}
         <View style={styles.liveBetsSection}>
           <View style={styles.sectionHeader}>
-            <View style={styles.sectionTitleContainer}>
-              <Text style={styles.sectionTitle}>
-                {viewMode === 'friends' ? 'FRIENDS\' BETS' : 'ALL JOINABLE BETS'}
-              </Text>
-              <TouchableOpacity
-                style={styles.searchIconButton}
-                onPress={handleSearchToggle}
-                activeOpacity={0.7}
-              >
-                <Ionicons
-                  name={showSearch ? "close" : "search"}
-                  size={18}
-                  color={colors.textSecondary}
-                />
-              </TouchableOpacity>
-            </View>
+            {/* View Mode Toggle with Action Icons */}
+            <View style={styles.toggleWithActionsContainer}>
+              <View style={styles.toggleContainer}>
+                <TouchableOpacity
+                  style={[
+                    styles.toggleButton,
+                    viewMode === 'friends' && styles.toggleButtonActive
+                  ]}
+                  onPress={() => setViewMode('friends')}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons
+                    name="people"
+                    size={16}
+                    color={viewMode === 'friends' ? colors.background : colors.textSecondary}
+                  />
+                  <Text style={[
+                    styles.toggleButtonText,
+                    viewMode === 'friends' && styles.toggleButtonTextActive
+                  ]}>
+                    Friends
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.toggleButton,
+                    styles.toggleButtonLast,
+                    viewMode === 'all' && styles.toggleButtonActive
+                  ]}
+                  onPress={() => setViewMode('all')}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons
+                    name="globe"
+                    size={16}
+                    color={viewMode === 'all' ? colors.background : colors.textSecondary}
+                  />
+                  <Text style={[
+                    styles.toggleButtonText,
+                    viewMode === 'all' && styles.toggleButtonTextActive
+                  ]}>
+                    All
+                  </Text>
+                </TouchableOpacity>
+              </View>
 
-            {/* View Mode Toggle */}
-            <View style={styles.toggleContainer}>
-              <TouchableOpacity
-                style={[
-                  styles.toggleButton,
-                  viewMode === 'friends' && styles.toggleButtonActive
-                ]}
-                onPress={() => setViewMode('friends')}
-                activeOpacity={0.7}
-              >
-                <Ionicons
-                  name="people"
-                  size={16}
-                  color={viewMode === 'friends' ? colors.background : colors.textSecondary}
-                />
-                <Text style={[
-                  styles.toggleButtonText,
-                  viewMode === 'friends' && styles.toggleButtonTextActive
-                ]}>
-                  Friends
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.toggleButton,
-                  styles.toggleButtonLast,
-                  viewMode === 'all' && styles.toggleButtonActive
-                ]}
-                onPress={() => setViewMode('all')}
-                activeOpacity={0.7}
-              >
-                <Ionicons
-                  name="globe"
-                  size={16}
-                  color={viewMode === 'all' ? colors.background : colors.textSecondary}
-                />
-                <Text style={[
-                  styles.toggleButtonText,
-                  viewMode === 'all' && styles.toggleButtonTextActive
-                ]}>
-                  All
-                </Text>
-              </TouchableOpacity>
+              {/* Action Icons */}
+              <View style={styles.headerActions}>
+                <TouchableOpacity
+                  style={styles.actionIconButton}
+                  onPress={() => setShowQRScanner(true)}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons
+                    name="qr-code-outline"
+                    size={18}
+                    color={colors.textSecondary}
+                  />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.actionIconButton}
+                  onPress={handleSearchToggle}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons
+                    name={showSearch ? "close" : "search"}
+                    size={18}
+                    color={colors.textSecondary}
+                  />
+                </TouchableOpacity>
+              </View>
             </View>
 
             <Text style={styles.sectionSubtitle}>
@@ -475,6 +501,13 @@ export const LiveEventsScreen: React.FC = () => {
           bet={selectedBetForInvite}
         />
       )}
+
+      {/* QR Scanner Modal */}
+      <QRScannerModal
+        visible={showQRScanner}
+        onClose={() => setShowQRScanner(false)}
+        onBetScanned={handleBetScanned}
+      />
     </SafeAreaView>
   );
 };
@@ -495,28 +528,28 @@ const styles = StyleSheet.create({
   sectionHeader: {
     marginBottom: spacing.md,
   },
-  sectionTitleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 4,
-  },
-  sectionTitle: {
-    ...textStyles.h3,
-    color: colors.textPrimary,
-    fontWeight: typography.fontWeight.bold,
-  },
   sectionSubtitle: {
     ...textStyles.caption,
     color: colors.textMuted,
     fontSize: 12,
+    marginTop: spacing.xs,
   },
-  searchIconButton: {
+  toggleWithActionsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  actionIconButton: {
     padding: spacing.xs,
     backgroundColor: colors.surface,
     borderRadius: spacing.radius.sm,
     borderWidth: 1,
     borderColor: colors.border,
+    marginLeft: spacing.xs,
   },
 
   // View Mode Toggle
@@ -525,10 +558,10 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderRadius: spacing.radius.sm,
     padding: spacing.xs / 2,
-    marginTop: spacing.sm,
-    marginBottom: spacing.xs,
     borderWidth: 1,
     borderColor: colors.border,
+    flex: 1,
+    marginRight: spacing.sm,
   },
   toggleButton: {
     flex: 1,

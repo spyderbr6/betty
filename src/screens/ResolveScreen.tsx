@@ -322,17 +322,19 @@ export const ResolveScreen: React.FC = () => {
             // Update user stats (win rate, total bets, etc.)
             await updateUserStats(participant.userId, isWinner, participant.amount, payout);
 
-            // Send bet resolved notification to participant
-            try {
-              await NotificationService.notifyBetResolved(
-                participant.userId,
-                bet.title,
-                isWinner,
-                payout,
-                bet.id
-              );
-            } catch (notificationError) {
-              console.warn('Failed to send bet resolved notification to participant:', notificationError);
+            // Send bet resolved notification to participant (but not to the resolver/creator)
+            if (participant.userId !== user?.userId) {
+              try {
+                await NotificationService.notifyBetResolved(
+                  participant.userId,
+                  bet.title,
+                  isWinner,
+                  payout,
+                  bet.id
+                );
+              } catch (notificationError) {
+                console.warn('Failed to send bet resolved notification to participant:', notificationError);
+              }
             }
           })
         );

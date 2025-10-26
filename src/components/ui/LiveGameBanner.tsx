@@ -95,7 +95,6 @@ export const LiveGameBanner: React.FC<LiveGameBannerProps> = ({
             <Ionicons name="checkmark" size={14} color={colors.background} />
           </View>
           <View style={styles.eventInfo}>
-            <Text style={styles.checkedInLabel}>Checked in</Text>
             <Text style={styles.eventName} numberOfLines={1}>
               {checkedInEvent.homeTeam} vs {checkedInEvent.awayTeam}
             </Text>
@@ -183,13 +182,6 @@ const styles = StyleSheet.create({
   },
   eventInfo: {
     flex: 1,
-  },
-  checkedInLabel: {
-    ...textStyles.caption,
-    color: colors.success,
-    fontSize: typography.fontSize.xs,
-    fontWeight: typography.fontWeight.semibold,
-    marginBottom: 2,
   },
   eventName: {
     ...textStyles.body,

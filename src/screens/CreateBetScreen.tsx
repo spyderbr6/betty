@@ -225,6 +225,19 @@ export const CreateBetScreen: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Update side names when checked-in event changes
+  useEffect(() => {
+    if (selectedTemplate && checkedInEvent) {
+      const currentTemplate = betTemplates.find(t => t.id === selectedTemplate);
+      if (currentTemplate && currentTemplate.category === 'SPORTS' && !currentTemplate.lockSides) {
+        // Update side names with checked-in event team names
+        setSideAName(checkedInEvent.homeTeam);
+        setSideBName(checkedInEvent.awayTeam);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [checkedInEvent]);
+
   const handleTemplateSelect = (template: BetTemplate) => {
     setSelectedTemplate(template.id);
     setSelectedCategory(template.category);
@@ -630,66 +643,72 @@ export const CreateBetScreen: React.FC = () => {
           <Text style={styles.sectionSubtitle}>
             {currentTemplate.lockSides
               ? `Sides are locked to "${currentTemplate.lockedSideA}" and "${currentTemplate.lockedSideB}" for this bet type`
-              : 'Customize the two sides people can bet on'}
+              : 'Customize the two sides and choose which one you want to join'}
           </Text>
 
           <View style={styles.sidesContainer}>
-            <View style={styles.sideCard}>
-              <Text style={styles.sideLabel}>Side A</Text>
+            <TouchableOpacity
+              style={[
+                styles.sideCard,
+                selectedSide === 'A' && styles.sideCardSelected
+              ]}
+              onPress={() => setSelectedSide('A')}
+              activeOpacity={0.9}
+            >
+              <Text style={[
+                styles.sideLabel,
+                selectedSide === 'A' && styles.sideLabelSelected
+              ]}>
+                Side A {selectedSide === 'A' && '✓'}
+              </Text>
               <TextInput
-                style={styles.sideInput}
+                style={[
+                  styles.sideInput,
+                  selectedSide === 'A' && styles.sideInputSelected
+                ]}
                 placeholder={currentTemplate.sideAPlaceholder}
                 placeholderTextColor={colors.textMuted}
                 value={sideAName}
                 onChangeText={setSideAName}
                 editable={!currentTemplate.lockSides}
               />
-            </View>
+            </TouchableOpacity>
 
             <View style={styles.vsContainer}>
               <Text style={styles.vsText}>VS</Text>
             </View>
 
-            <View style={styles.sideCard}>
-              <Text style={styles.sideLabel}>Side B</Text>
+            <TouchableOpacity
+              style={[
+                styles.sideCard,
+                selectedSide === 'B' && styles.sideCardSelected
+              ]}
+              onPress={() => setSelectedSide('B')}
+              activeOpacity={0.9}
+            >
+              <Text style={[
+                styles.sideLabel,
+                selectedSide === 'B' && styles.sideLabelSelected
+              ]}>
+                Side B {selectedSide === 'B' && '✓'}
+              </Text>
               <TextInput
-                style={styles.sideInput}
+                style={[
+                  styles.sideInput,
+                  selectedSide === 'B' && styles.sideInputSelected
+                ]}
                 placeholder={currentTemplate.sideBPlaceholder}
                 placeholderTextColor={colors.textMuted}
                 value={sideBName}
                 onChangeText={setSideBName}
                 editable={!currentTemplate.lockSides}
               />
-            </View>
+            </TouchableOpacity>
           </View>
 
-          {/* Choose your side */}
-          <View style={{ marginTop: spacing.sm }}>
-            <Text style={styles.sideLabel}>Choose your side to join *</Text>
-            <View style={styles.sideSelectContainer}>
-              <TouchableOpacity
-                style={[styles.sideOption, selectedSide === 'A' && styles.sideOptionSelected]}
-                onPress={() => setSelectedSide('A')}
-                activeOpacity={0.8}
-              >
-                <Text style={[styles.sideOptionText, selectedSide === 'A' && styles.sideOptionTextSelected]}>
-                  {sideAName || 'Side A'}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.sideOption, selectedSide === 'B' && styles.sideOptionSelected]}
-                onPress={() => setSelectedSide('B')}
-                activeOpacity={0.8}
-              >
-                <Text style={[styles.sideOptionText, selectedSide === 'B' && styles.sideOptionTextSelected]}>
-                  {sideBName || 'Side B'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-            {!selectedSide && (
-              <Text style={styles.sideHint}>You must pick a side before creating the bet.</Text>
-            )}
-          </View>
+          {!selectedSide && (
+            <Text style={styles.sideHint}>Tap a side to select it before creating the bet.</Text>
+          )}
         </View>
 
         {/* Bet Settings */}
@@ -940,14 +959,23 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderRadius: spacing.radius.sm,
     padding: spacing.md,
-    borderWidth: 1,
+    borderWidth: 2,
     borderColor: colors.border,
+  },
+  sideCardSelected: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
   sideLabel: {
     ...textStyles.label,
     color: colors.textMuted,
     marginBottom: spacing.xs,
     textAlign: 'center',
+    fontWeight: typography.fontWeight.medium,
+  },
+  sideLabelSelected: {
+    color: colors.background,
+    fontWeight: typography.fontWeight.bold,
   },
   sideInput: {
     backgroundColor: colors.background,
@@ -960,6 +988,13 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: spacing.xs,
     textAlignVertical: 'center',
+  },
+  sideInputSelected: {
+    backgroundColor: colors.background,
+    borderColor: colors.primary,
+    borderWidth: 2,
+    color: colors.textPrimary,
+    fontWeight: typography.fontWeight.bold,
   },
   oddsInput: {
     backgroundColor: colors.background,
@@ -1028,38 +1063,11 @@ const styles = StyleSheet.create({
     fontWeight: typography.fontWeight.bold,
     fontSize: typography.fontSize.lg,
   },
-  // Side choose UI
-  sideSelectContainer: {
-    flexDirection: 'row',
-    marginTop: spacing.xs,
-  },
-  sideOption: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: spacing.sm,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: spacing.radius.sm,
-    backgroundColor: colors.surface,
-    marginRight: spacing.sm,
-  },
-  sideOptionSelected: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  sideOptionText: {
-    ...textStyles.button,
-    color: colors.textSecondary,
-  },
-  sideOptionTextSelected: {
-    color: colors.background,
-    fontWeight: typography.fontWeight.bold,
-  },
   sideHint: {
     ...textStyles.caption,
     color: colors.warning,
     marginTop: spacing.xs,
+    textAlign: 'center',
   },
 
   // Friend Selection Styles

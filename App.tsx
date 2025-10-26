@@ -8,12 +8,16 @@ import 'intl/locale-data/jsonp/en-US';
 // Import TextEncoder/TextDecoder polyfill for QR code generation
 import 'text-encoding';
 
-import { useState } from 'react';
-import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, View, ActivityIndicator } from 'react-native';
+// Configure Amplify BEFORE importing any components that use it
 import { Amplify } from 'aws-amplify';
 import '@aws-amplify/react-native';
 import amplifyconfig from './amplify_outputs.json';
+Amplify.configure(amplifyconfig);
+
+// Now import components that use Amplify
+import { useState } from 'react';
+import { StatusBar } from 'expo-status-bar';
+import { StyleSheet, View, ActivityIndicator } from 'react-native';
 import { AuthProvider, useAuth } from './src/contexts/AuthContext';
 import { Login } from './src/components/Login';
 import { SignUp } from './src/components/SignUp';
@@ -21,9 +25,6 @@ import { AppNavigator } from './src/navigation/AppNavigator';
 import { colors } from './src/styles';
 import Toast from 'react-native-toast-message';
 import { toastConfig } from './src/components/ui/ToastConfig';
-
-// Configure Amplify for React Native
-Amplify.configure(amplifyconfig);
 
 type AuthScreen = 'login' | 'signup';
 

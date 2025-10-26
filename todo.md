@@ -55,10 +55,9 @@
 ## 🔄 IMMEDIATE NEXT STEPS (Current Development Cycle)
 
 ### **Priority 1: Critical Bug Fixes & UI Polish** ✅ COMPLETED
-- [ ] create bet: i want to merge the betting sides stuff to make it easier. right now you can edit the sides and it shows the vs sides and then you choose a side. i'd like you to work up a way where, you select the sides and remove the duplicate side language where in this example it shows side a, philadelphia eagles, then another section that also says philadelphia eagles and you have to select it.
-
-- [ ] Check @auth directive warning on root type fields - Static group authorization concern
-- [ ] Check ownership reassignment warning for models - Field-level authorization recommendation
+- [ ] Amplify build warning: Check @auth directive warning on root type fields - Static group authorization concern
+- [ ] Amplify build warning: Check ownership reassignment warning for models - Field-level authorization recommendation
+- [ ] live now events should be live an hour before the game starts. 
 
 
 
