@@ -166,6 +166,7 @@ const schema = a.schema({
       winningSide: a.string(), // Which side won
       resolutionReason: a.string(), // Why the bet was resolved this way
       eventId: a.id(), // Optional link to live event
+      isPrivate: a.boolean().default(false), // Private bets only visible to invited users
       createdAt: a.datetime(),
       updatedAt: a.datetime(),
       // Relations

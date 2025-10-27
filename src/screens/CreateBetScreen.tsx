@@ -351,6 +351,7 @@ export const CreateBetScreen: React.FC = () => {
         betAmount: amount, // Store the individual bet amount for joining
         odds: oddsObject,
         deadline: deadlineDate.toISOString(),
+        isPrivate: isPrivate, // Pass the private bet setting
       });
 
       console.log('GraphQL result:', result);

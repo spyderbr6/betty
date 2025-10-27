@@ -105,6 +105,7 @@ const transformAmplifyBet = (bet: any): Bet | null => {
     deadline: bet.deadline || new Date().toISOString(),
     winningSide: bet.winningSide || undefined,
     resolutionReason: bet.resolutionReason || undefined,
+    isPrivate: bet.isPrivate || false, // Default to false for existing bets
     createdAt: bet.createdAt || new Date().toISOString(),
     updatedAt: bet.updatedAt || new Date().toISOString(),
     participants: [], // Will be populated by bulk loading
@@ -407,6 +408,7 @@ export const bulkLoadUserBetsWithParticipants = async (
 
 /**
  * Bulk load joinable bets (user is NOT creator and NOT participant)
+ * Private bets are filtered out unless the user has been invited
  * @param userId - Current user's ID
  * @param options - Loading options
  * @returns Promise<Bet[]> - Joinable bets
@@ -434,11 +436,44 @@ export const bulkLoadJoinableBetsWithParticipants = async (
       forceRefresh: options.forceRefresh
     });
 
-    // Filter to only bets where user is NOT creator and NOT participant
+    // Get user's bet invitations to check if they're invited to private bets
+    const invitationsQuery = await queryWithTimeout(
+      client.models.BetInvitation.list({
+        filter: {
+          and: [
+            { toUserId: { eq: userId } },
+            { status: { eq: 'PENDING' } }
+          ]
+        }
+      }),
+      'Bet invitations query'
+    );
+
+    const invitedBetIds = new Set(
+      (invitationsQuery.data || []).map(inv => inv.betId).filter(Boolean) as string[]
+    );
+
+    // Filter to only bets where:
+    // 1. User is NOT creator and NOT participant
+    // 2. If bet is private, user must be invited
     const joinableBets = activeBets.filter(bet => {
       const isCreator = bet.creatorId === userId;
       const isParticipant = bet.participants?.some(p => p.userId === userId);
-      return !isCreator && !isParticipant;
+      const isPrivate = bet.isPrivate === true;
+      const isInvited = invitedBetIds.has(bet.id);
+
+      // User cannot join if they're the creator or already a participant
+      if (isCreator || isParticipant) {
+        return false;
+      }
+
+      // If bet is private, user must be invited
+      if (isPrivate && !isInvited) {
+        return false;
+      }
+
+      // Otherwise, bet is joinable
+      return true;
     });
 
 
@@ -456,6 +491,7 @@ export const bulkLoadJoinableBetsWithParticipants = async (
 
 /**
  * Bulk load friends' joinable bets (created by friends, user is NOT creator and NOT participant)
+ * Private bets are filtered out unless the user has been invited
  * @param userId - Current user's ID
  * @param options - Loading options
  * @returns Promise<Bet[]> - Friends' joinable bets
@@ -515,13 +551,48 @@ export const bulkLoadFriendsBetsWithParticipants = async (
       forceRefresh: options.forceRefresh
     });
 
+    // Get user's bet invitations to check if they're invited to private bets
+    const invitationsQuery = await queryWithTimeout(
+      client.models.BetInvitation.list({
+        filter: {
+          and: [
+            { toUserId: { eq: userId } },
+            { status: { eq: 'PENDING' } }
+          ]
+        }
+      }),
+      'Bet invitations query'
+    );
+
+    const invitedBetIds = new Set(
+      (invitationsQuery.data || []).map(inv => inv.betId).filter(Boolean) as string[]
+    );
+
     // Filter to only bets created by friends where user is NOT creator and NOT participant
+    // Private bets are only included if user has been invited
     const friendsBets = activeBets.filter(bet => {
       const isCreatedByFriend = friendUserIds.includes(bet.creatorId);
       const isCreator = bet.creatorId === userId;
       const isParticipant = bet.participants?.some(p => p.userId === userId);
+      const isPrivate = bet.isPrivate === true;
+      const isInvited = invitedBetIds.has(bet.id);
 
-      return isCreatedByFriend && !isCreator && !isParticipant;
+      // Must be created by a friend
+      if (!isCreatedByFriend) {
+        return false;
+      }
+
+      // User cannot join if they're the creator or already a participant
+      if (isCreator || isParticipant) {
+        return false;
+      }
+
+      // If bet is private, user must be invited
+      if (isPrivate && !isInvited) {
+        return false;
+      }
+
+      return true;
     });
 
     // Cache the filtered result

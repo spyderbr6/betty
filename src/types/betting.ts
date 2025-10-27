@@ -32,6 +32,7 @@ export interface Bet {
   deadline: string;
   winningSide?: string;
   resolutionReason?: string;
+  isPrivate?: boolean; // Private bets only visible to invited users
   createdAt: string;
   updatedAt: string;
   participants?: Participant[];
