@@ -464,7 +464,6 @@ export const ResolveScreen: React.FC = () => {
               <BetCard
                 bet={bet}
                 onPress={handleBetPress}
-                showJoinOptions={false}
               />
 
               {/* Resolution Actions - Only show if user is creator */}

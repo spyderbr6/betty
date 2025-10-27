@@ -362,16 +362,17 @@ export const BetsScreen: React.FC = () => {
       }
 
       // Record transaction for bet placement (this handles balance deduction automatically)
+      const participantId = participantResult.data.id || '';
       const transaction = await TransactionService.recordBetPlacement(
         user.userId,
         betAmount,
         invitation.betId,
-        participantResult.data.id
+        participantId
       );
 
       if (!transaction) {
         // Rollback participant creation if transaction fails
-        await client.models.Participant.delete({ id: participantResult.data.id });
+        await client.models.Participant.delete({ id: participantId });
         throw new Error('Failed to record transaction');
       }
 
@@ -812,7 +813,6 @@ export const BetsScreen: React.FC = () => {
               bet={bet}
               onPress={handleBetPress}
               onJoinBet={handleJoinBet}
-              showJoinOptions={bet.status === 'ACTIVE'}
               onInviteFriends={(bet) => {
                 setSelectedBetForInvite(bet);
                 setShowInviteModal(true);

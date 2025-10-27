@@ -420,7 +420,6 @@ export const LiveEventsScreen: React.FC = () => {
                 bet={bet}
                 onPress={handleBetPress}
                 onJoinBet={handleJoinBet}
-                showJoinOptions={true}
                 onInviteFriends={(bet) => {
                   setSelectedBetForInvite(bet);
                   setShowInviteModal(true);

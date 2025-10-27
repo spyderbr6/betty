@@ -149,9 +149,9 @@ export const BetInviteModal: React.FC<BetInviteModalProps> = ({
 
             return {
               user: {
-                id: friendUser.id!,
-                username: friendUser.username!,
-                email: friendUser.email!,
+                id: friendUser.id || '',
+                username: friendUser.username || '',
+                email: friendUser.email || '',
                 displayName: friendUser.displayName || undefined,
                 profilePictureUrl: profilePictureUrl,
                 balance: friendUser.balance || 0,
@@ -163,16 +163,16 @@ export const BetInviteModal: React.FC<BetInviteModalProps> = ({
                 updatedAt: friendUser.updatedAt || new Date().toISOString(),
               },
               friendship: {
-                id: friendship.id!,
-                user1Id: friendship.user1Id!,
-                user2Id: friendship.user2Id!,
+                id: friendship.id || '',
+                user1Id: friendship.user1Id || '',
+                user2Id: friendship.user2Id || '',
                 createdAt: friendship.createdAt || new Date().toISOString(),
               },
               mutualFriends: 0,
               lastBetTogether: undefined,
               isInvited: false,
-              hasPendingInvite: pendingInviteUserIds.has(friendUser.id!),
-              isParticipating: participatingUserIds.has(friendUser.id!),
+              hasPendingInvite: pendingInviteUserIds.has(friendUser.id || ''),
+              isParticipating: participatingUserIds.has(friendUser.id || ''),
             };
           })
       );
@@ -232,14 +232,14 @@ export const BetInviteModal: React.FC<BetInviteModalProps> = ({
           });
 
           // Send notification
-          if (invitation) {
+          if (invitation && invitation.id) {
             await NotificationService.notifyBetInvitationReceived(
               friend.user.id,
               currentUserDisplayName,
               bet.title,
               user.userId,
               bet.id,
-              invitation.id!
+              invitation.id
             );
           }
 
@@ -320,10 +320,10 @@ export const BetInviteModal: React.FC<BetInviteModalProps> = ({
             </Text>
             <Text style={styles.friendEmail}>{item.user.email || ''}</Text>
             {item.isParticipating && (
-              <Text style={styles.statusText}>Already participating</Text>
+              <Text style={styles.friendStatusText}>Already participating</Text>
             )}
             {item.hasPendingInvite && (
-              <Text style={styles.statusText}>Invitation pending</Text>
+              <Text style={styles.friendStatusText}>Invitation pending</Text>
             )}
           </View>
         </View>
@@ -349,12 +349,25 @@ export const BetInviteModal: React.FC<BetInviteModalProps> = ({
           }
         />
 
-        {/* Bet Info */}
-        <View style={styles.betInfo}>
+        {/* Bet Info Card */}
+        <View style={styles.betInfoCard}>
+          <View style={styles.betCardHeader}>
+            <View style={[styles.statusBadge, { backgroundColor: colors.success }]}>
+              <Text style={styles.statusText}>{bet.status}</Text>
+            </View>
+            <View style={styles.potContainer}>
+              <Text style={styles.potAmount}>
+                ${bet.totalPot || 0}
+              </Text>
+              <Text style={styles.potLabel}>POT</Text>
+            </View>
+          </View>
           <Text style={styles.betTitle}>{bet.title}</Text>
-          <Text style={styles.betDescription} numberOfLines={2}>
-            {bet.description}
-          </Text>
+          {bet.description && (
+            <Text style={styles.betDescription} numberOfLines={2}>
+              {bet.description}
+            </Text>
+          )}
         </View>
 
         {/* Friends List */}
@@ -432,22 +445,60 @@ const styles = StyleSheet.create({
     padding: spacing.xs,
   },
 
-  // Bet Info
-  betInfo: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+  // Bet Info Card - matching BetCard design
+  betInfoCard: {
+    backgroundColor: colors.surface,
+    marginHorizontal: spacing.sm,
+    marginVertical: spacing.sm,
+    padding: spacing.md,
+    borderRadius: spacing.radius.lg,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.primary,
+  },
+  betCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: spacing.sm,
+  },
+  statusBadge: {
+    paddingHorizontal: spacing.xs,
+    paddingVertical: 2,
+    borderRadius: spacing.radius.xs,
+  },
+  statusText: {
+    ...textStyles.caption,
+    color: colors.background,
+    fontSize: 10,
+    fontWeight: typography.fontWeight.bold,
+  },
+  potContainer: {
+    alignItems: 'flex-end',
+  },
+  potAmount: {
+    ...textStyles.pot,
+    color: colors.primary,
+    fontSize: typography.fontSize.xl,
+    fontWeight: typography.fontWeight.bold,
+    lineHeight: typography.fontSize.xl * 1.2,
+  },
+  potLabel: {
+    ...textStyles.caption,
+    color: colors.textMuted,
+    fontSize: 9,
+    fontWeight: typography.fontWeight.medium,
+    marginTop: -2,
   },
   betTitle: {
     ...textStyles.h4,
     color: colors.textPrimary,
-    fontWeight: typography.fontWeight.semibold,
-    marginBottom: spacing.xs / 2,
+    marginBottom: spacing.xs,
+    fontSize: typography.fontSize.lg,
   },
   betDescription: {
-    ...textStyles.body,
+    ...textStyles.bodySmall,
     color: colors.textSecondary,
+    fontSize: typography.fontSize.sm,
   },
   sectionTitle: {
     ...textStyles.label,
@@ -467,15 +518,16 @@ const styles = StyleSheet.create({
   },
   friendItem: {
     backgroundColor: colors.surface,
-    borderRadius: spacing.radius.sm,
-    padding: spacing.sm,
-    marginBottom: spacing.xs,
-    borderWidth: 1,
+    borderRadius: spacing.radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    borderWidth: 1.5,
     borderColor: colors.border,
   },
   friendItemSelected: {
     borderColor: colors.primary,
-    backgroundColor: colors.primary + '10',
+    borderWidth: 2,
+    backgroundColor: 'transparent',
   },
   friendItemDisabled: {
     opacity: 0.5,
@@ -533,7 +585,7 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 12,
   },
-  statusText: {
+  friendStatusText: {
     ...textStyles.caption,
     color: colors.textMuted,
     fontSize: 11,
@@ -583,15 +635,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: colors.primary,
     paddingVertical: spacing.sm,
-    borderRadius: spacing.radius.sm,
+    borderRadius: spacing.radius.md,
   },
   sendButtonDisabled: {
     backgroundColor: colors.disabled,
+    opacity: 0.6,
   },
   sendButtonText: {
     ...textStyles.button,
     color: colors.background,
     marginLeft: spacing.xs,
-    fontWeight: typography.fontWeight.semibold,
+    fontSize: 13,
+    fontWeight: typography.fontWeight.bold,
   },
 });
