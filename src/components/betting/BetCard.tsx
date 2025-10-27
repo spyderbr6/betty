@@ -1,6 +1,6 @@
 /**
  * BetCard Component
- * Clean bet card matching the exact sportsbook mockup design
+ * Improved layout matching proposed design specifications
  */
 
 import React, { useState, useEffect } from 'react';
@@ -12,12 +12,13 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { generateClient } from 'aws-amplify/data';
 import { getCurrentUser } from 'aws-amplify/auth';
 import type { Schema } from '../../../amplify/data/resource';
 import { colors, typography, spacing, textStyles, shadows } from '../../styles';
 import { Bet, BetStatus } from '../../types/betting';
-import { formatCurrency, dateFormatting } from '../../utils/formatting';
+import { formatCurrency } from '../../utils/formatting';
 import { useAuth } from '../../contexts/AuthContext';
 import { NotificationService } from '../../services/notificationService';
 import { TransactionService } from '../../services/transactionService';
@@ -30,16 +31,44 @@ export interface BetCardProps {
   onPress?: (bet: Bet) => void;
   variant?: 'default' | 'compact';
   onJoinBet?: (betId: string, side: string, amount: number) => void;
-  showJoinOptions?: boolean;
   onInviteFriends?: (bet: Bet) => void;
+  onEndBet?: (bet: Bet) => void;
 }
+
+// Time formatting utility
+const formatTimeRemaining = (deadline: string): string => {
+  const now = Date.now();
+  const deadlineTime = new Date(deadline).getTime();
+  const remainingMs = deadlineTime - now;
+
+  if (remainingMs <= 0) return 'Closed';
+
+  const totalMinutes = Math.floor(remainingMs / (1000 * 60));
+  const totalHours = Math.floor(remainingMs / (1000 * 60 * 60));
+  const totalDays = Math.floor(remainingMs / (1000 * 60 * 60 * 24));
+
+  if (totalMinutes < 60) {
+    // Less than 60 minutes: show minutes only
+    return `${totalMinutes}m`;
+  } else if (totalHours < 24) {
+    // Less than 24 hours: show hours and minutes
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    return `${hours}h ${minutes}m`;
+  } else {
+    // 24+ hours: show days and hours
+    const days = totalDays;
+    const hours = totalHours % 24;
+    return `${days}d ${hours}h`;
+  }
+};
 
 export const BetCard: React.FC<BetCardProps> = ({
   bet,
   onPress,
   onJoinBet,
-  showJoinOptions = true,
   onInviteFriends,
+  onEndBet,
 }) => {
   const { user } = useAuth();
   const [isJoining, setIsJoining] = useState(false);
@@ -49,7 +78,7 @@ export const BetCard: React.FC<BetCardProps> = ({
     side: 'A' | 'B' | null;
     amount: number;
   }>({ hasJoined: false, side: null, amount: 0 });
-  const [now, setNow] = useState(Date.now());
+  const [timeRemaining, setTimeRemaining] = useState<string>('');
 
   // Check if current user has joined this bet
   useEffect(() => {
@@ -67,11 +96,18 @@ export const BetCard: React.FC<BetCardProps> = ({
     }
   }, [user, bet.participants]);
 
-  // Tick for countdown (active bets only)
+  // Update countdown timer for ACTIVE bets
   useEffect(() => {
     if (bet.status !== 'ACTIVE' || !bet.deadline) return;
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
+
+    const updateTimer = () => {
+      setTimeRemaining(formatTimeRemaining(bet.deadline!));
+    };
+
+    updateTimer(); // Initial update
+    const interval = setInterval(updateTimer, 60000); // Update every minute
+
+    return () => clearInterval(interval);
   }, [bet.status, bet.deadline]);
 
   const handlePress = () => {
@@ -81,12 +117,12 @@ export const BetCard: React.FC<BetCardProps> = ({
   const handleJoinBet = async (side: 'A' | 'B') => {
     if (isJoining) return;
 
-    // Use the bet's own amount - dollar bets are a dollar, fallback to $10 for legacy bets
     const betAmount = bet.betAmount || 10;
+    const sideName = side === 'A' ? (bet.odds.sideAName || 'Side A') : (bet.odds.sideBName || 'Side B');
 
     Alert.alert(
       'Join Bet',
-      `Join "${bet.title}" with $${betAmount} on ${side === 'A' ? bet.odds.sideAName || 'Side A' : bet.odds.sideBName || 'Side B'}?`,
+      `Join "${bet.title}" with $${betAmount} on ${sideName}?`,
       [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Join', onPress: () => confirmJoinBet(side, betAmount) },
@@ -101,15 +137,14 @@ export const BetCard: React.FC<BetCardProps> = ({
     try {
       const user = await getCurrentUser();
 
-      // Check user balance first
+      // Check user balance
       const { data: userData } = await client.models.User.get({ id: user.userId });
       const currentBalance = userData?.balance || 0;
 
       if (currentBalance < amount) {
         Alert.alert(
           'Insufficient Balance',
-          `You need $${amount} to join this bet, but your current balance is $${currentBalance.toFixed(2)}. Please add funds to your account.`,
-          [{ text: 'OK' }]
+          `You need $${amount} to join this bet, but your current balance is $${currentBalance.toFixed(2)}.`
         );
         return;
       }
@@ -120,22 +155,21 @@ export const BetCard: React.FC<BetCardProps> = ({
         userId: user.userId,
         side: side,
         amount: amount,
-        status: 'PENDING',
-        payout: 0, // Will be calculated when bet is resolved
+        status: 'ACCEPTED',
+        payout: 0,
       });
 
       if (result.data) {
-        // Record transaction for bet placement (this handles balance deduction automatically)
+        const participantId = result.data.id || '';
         const transaction = await TransactionService.recordBetPlacement(
           user.userId,
           amount,
           bet.id,
-          result.data.id
+          participantId
         );
 
         if (!transaction) {
-          // Rollback participant creation if transaction fails
-          await client.models.Participant.delete({ id: result.data.id });
+          await client.models.Participant.delete({ id: participantId });
           throw new Error('Failed to record transaction');
         }
 
@@ -146,13 +180,11 @@ export const BetCard: React.FC<BetCardProps> = ({
           updatedAt: new Date().toISOString()
         });
 
-        // Notify bet creator that someone joined their bet
+        // Notify bet creator
         if (bet.creatorId !== user.userId) {
           try {
-            const { data: creatorData } = await client.models.User.get({ id: bet.creatorId });
             const { data: joinedUserData } = await client.models.User.get({ id: user.userId });
-
-            if (creatorData && joinedUserData) {
+            if (joinedUserData) {
               await NotificationService.createNotification({
                 userId: bet.creatorId,
                 type: 'BET_JOINED',
@@ -173,14 +205,12 @@ export const BetCard: React.FC<BetCardProps> = ({
 
         Alert.alert(
           'Joined Successfully!',
-          `You've joined the bet with $${amount} on ${side === 'A' ? bet.odds.sideAName || 'Side A' : bet.odds.sideBName || 'Side B'}. Your new balance is $${(currentBalance - amount).toFixed(2)}.`,
-          [{ text: 'OK' }]
+          `You've joined the bet with $${amount}. Your new balance is $${(currentBalance - amount).toFixed(2)}.`
         );
 
-        // Call optional callback
         onJoinBet?.(bet.id, side, amount);
 
-        // Update local participation state immediately
+        // Update local participation state
         setUserParticipation({
           hasJoined: true,
           side: side,
@@ -191,51 +221,55 @@ export const BetCard: React.FC<BetCardProps> = ({
       }
     } catch (error) {
       console.error('Error joining bet:', error);
-      Alert.alert(
-        'Error',
-        'Failed to join bet. Please try again.',
-        [{ text: 'OK' }]
-      );
+      Alert.alert('Error', 'Failed to join bet. Please try again.');
     } finally {
       setIsJoining(false);
       setSelectedSide(null);
     }
   };
 
+  const handleEndBet = () => {
+    if (onEndBet) {
+      Alert.alert(
+        'End Bet',
+        'Are you sure you want to end this bet early? It will move to pending resolution.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'End Bet', style: 'destructive', onPress: () => onEndBet(bet) },
+        ]
+      );
+    }
+  };
 
   const getStatusColor = (status: BetStatus): string => {
     switch (status) {
-      case 'LIVE':
-        return colors.live;
       case 'ACTIVE':
-        return colors.success;
+        return colors.active;
       case 'PENDING_RESOLUTION':
-        return colors.warning;
+        return colors.pending;
       case 'RESOLVED':
-        // Blue if user won, red if lost, default green if user didn't participate
+        // Show win/loss color if user participated
         if (userParticipation.hasJoined && bet.winningSide) {
-          if (userParticipation.side === bet.winningSide) {
-            return colors.info; // Blue for win
-          } else {
-            return colors.error; // Red for loss
-          }
+          return userParticipation.side === bet.winningSide ? colors.success : colors.error;
         }
-        return colors.success; // Default green if not participated
+        return colors.resolved;
       case 'CANCELLED':
-        return colors.error;
+        return colors.cancelled;
       default:
         return colors.textMuted;
     }
   };
 
   const getStatusText = (status: BetStatus): string => {
+    if (status === 'RESOLVED' && userParticipation.hasJoined && bet.winningSide) {
+      return userParticipation.side === bet.winningSide ? 'WON' : 'LOST';
+    }
+    
     switch (status) {
-      case 'LIVE':
-        return 'LIVE';
       case 'ACTIVE':
         return 'ACTIVE';
       case 'PENDING_RESOLUTION':
-        return 'PENDING RESOLUTION';
+        return 'PENDING';
       case 'RESOLVED':
         return 'RESOLVED';
       case 'CANCELLED':
@@ -245,36 +279,21 @@ export const BetCard: React.FC<BetCardProps> = ({
     }
   };
 
+  // Calculate participant counts
   const participantCount = bet.participants?.length || 0;
   const totalPot = bet.participants?.reduce((sum, p) => sum + p.amount, 0) || bet.totalPot || 0;
   const sideACount = bet.participants?.filter(p => p.side === 'A').length || 0;
   const sideBCount = bet.participants?.filter(p => p.side === 'B').length || 0;
   const statusColor = getStatusColor(bet.status);
+  const statusText = getStatusText(bet.status);
 
-  let timeLeftLabel: string | null = null;
-  if (bet.deadline && bet.status === 'ACTIVE') {
-    const remainingMs = new Date(bet.deadline).getTime() - now;
-    if (remainingMs <= 0) {
-      timeLeftLabel = 'Closed';
-    } else {
-      const totalSecs = Math.floor(remainingMs / 1000);
-      if (totalSecs < 3600) {
-        const mins = Math.floor(totalSecs / 60);
-        const secs = totalSecs % 60;
-        timeLeftLabel = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-      } else {
-        timeLeftLabel = dateFormatting.formatDeadline(new Date(Date.now() + remainingMs));
-      }
-    }
-  }
+  // Determine if user is creator
+  const isCreator = user && bet.creatorId === user.userId;
+  const creatorName = bet.creator?.displayName || bet.creator?.username || 'Unknown';
 
+  // Check if bet is active
   const isActive = bet.status === 'ACTIVE';
   const canJoin = isActive && !userParticipation.hasJoined;
-  const showInvite = isActive && onInviteFriends;
-
-  // Get creator name if available
-  const creatorName = bet.creator?.displayName || bet.creator?.username || 'Unknown';
-  const isCreator = user && bet.creatorId === user.userId;
 
   return (
     <TouchableOpacity
@@ -286,119 +305,187 @@ export const BetCard: React.FC<BetCardProps> = ({
       disabled={!onPress}
       activeOpacity={0.8}
     >
-      {/* Header Row: Status Badge + Pot Amount */}
-      <View style={styles.headerRow}>
-        <View style={[styles.statusBadge, { backgroundColor: statusColor }]}>
-          <Text style={styles.statusText}>{getStatusText(bet.status)}</Text>
+      {/* Header Row: Status Badge + Title + Pot */}
+      <View style={styles.header}>
+        <View style={styles.headerLeft}>
+          <View style={[styles.statusBadge, { backgroundColor: statusColor }]}>
+            <Text style={styles.statusText}>{statusText}</Text>
+          </View>
+          <Text style={styles.title} numberOfLines={1}>
+            {bet.title}
+          </Text>
         </View>
-
-        <Text style={styles.potAmount}>
-          {formatCurrency(totalPot, 'USD', false)}
-        </Text>
+        <View style={styles.potContainer}>
+          <Text style={styles.potAmount}>
+            {formatCurrency(totalPot, 'USD', false)}
+          </Text>
+          <Text style={styles.potLabel}>POT</Text>
+        </View>
       </View>
-
-      {/* Title */}
-      <Text style={styles.title} numberOfLines={1}>
-        {bet.title}
-      </Text>
 
       {/* Description */}
       {bet.description && (
-        <Text style={styles.description} numberOfLines={1}>
+        <Text style={styles.description} numberOfLines={2}>
           {bet.description}
         </Text>
       )}
 
       {/* Metadata Row: Time + Participants + Creator */}
       <View style={styles.metadataRow}>
-        {timeLeftLabel && (
+        {timeRemaining && isActive && (
           <View style={styles.metadataItem}>
-            <Text style={styles.metadataIcon}>⏱</Text>
-            <Text style={styles.metadataText}>{timeLeftLabel}</Text>
+            <Ionicons name="time-outline" size={14} color={colors.textMuted} />
+            <Text style={styles.metadataText}>{timeRemaining}</Text>
           </View>
         )}
         <View style={styles.metadataItem}>
-          <Text style={styles.metadataIcon}>👥</Text>
-          <Text style={styles.metadataText}>{participantCount}</Text>
+          <Ionicons name="people-outline" size={14} color={colors.textMuted} />
+          <Text style={styles.metadataText}>{participantCount} player{participantCount !== 1 ? 's' : ''}</Text>
         </View>
         <View style={styles.metadataItem}>
-          <Text style={styles.metadataIcon}>👤</Text>
-          <Text style={styles.metadataText}>{isCreator ? 'You' : creatorName}</Text>
+          <Ionicons name="person-outline" size={14} color={colors.textMuted} />
+          <Text style={styles.metadataText} numberOfLines={1}>
+            {isCreator ? 'You' : creatorName}
+          </Text>
         </View>
       </View>
 
-      {/* Sides Layout - Horizontal */}
-      {showJoinOptions && isActive && (
-        <View style={styles.sidesRow}>
-          <TouchableOpacity
-            style={[
-              styles.sideBox,
-              (userParticipation.hasJoined && userParticipation.side === 'A') && styles.sideBoxSelected,
-              isJoining && selectedSide === 'A' && styles.sideBoxLoading
-            ]}
-            onPress={() => handleJoinBet('A')}
-            disabled={isJoining || userParticipation.hasJoined}
-            activeOpacity={canJoin ? 0.7 : 1}
-          >
-            {isJoining && selectedSide === 'A' ? (
-              <ActivityIndicator size="small" color={colors.primary} />
-            ) : (
-              <>
+      {/* Sides Display - Horizontal */}
+      <View style={styles.sidesContainer}>
+        {/* Side A */}
+        <TouchableOpacity
+          style={[
+            styles.sideBox,
+            userParticipation.hasJoined && userParticipation.side === 'A' && styles.sideBoxSelected,
+            isJoining && selectedSide === 'A' && styles.sideBoxLoading,
+          ]}
+          onPress={() => canJoin && handleJoinBet('A')}
+          disabled={!canJoin || isJoining}
+          activeOpacity={canJoin ? 0.7 : 1}
+        >
+          {isJoining && selectedSide === 'A' ? (
+            <ActivityIndicator size="small" color={colors.primary} />
+          ) : (
+            <>
+              <View style={styles.sideHeader}>
                 <Text style={styles.sideName} numberOfLines={1}>
                   {bet.odds.sideAName || 'Side A'}
                 </Text>
-                <Text style={styles.sideCount}>{sideACount} players</Text>
-              </>
-            )}
-          </TouchableOpacity>
+                <View style={styles.sideParticipants}>
+                  <Ionicons name="people" size={12} color={colors.textSecondary} />
+                  <Text style={styles.sideCount}>{sideACount}</Text>
+                </View>
+              </View>
+              {userParticipation.hasJoined && userParticipation.side === 'A' && (
+                <View style={styles.userBadge}>
+                  <Text style={styles.userBadgeText}>You • ${userParticipation.amount}</Text>
+                </View>
+              )}
+            </>
+          )}
+        </TouchableOpacity>
 
-          <View style={styles.vsDivider}>
-            <Text style={styles.vsText}>VS</Text>
-          </View>
+        {/* VS Divider */}
+        <View style={styles.vsDivider}>
+          <Text style={styles.vsText}>vs</Text>
+        </View>
 
-          <TouchableOpacity
-            style={[
-              styles.sideBox,
-              (userParticipation.hasJoined && userParticipation.side === 'B') && styles.sideBoxSelected,
-              isJoining && selectedSide === 'B' && styles.sideBoxLoading
-            ]}
-            onPress={() => handleJoinBet('B')}
-            disabled={isJoining || userParticipation.hasJoined}
-            activeOpacity={canJoin ? 0.7 : 1}
-          >
-            {isJoining && selectedSide === 'B' ? (
-              <ActivityIndicator size="small" color={colors.primary} />
-            ) : (
-              <>
+        {/* Side B */}
+        <TouchableOpacity
+          style={[
+            styles.sideBox,
+            userParticipation.hasJoined && userParticipation.side === 'B' && styles.sideBoxSelected,
+            isJoining && selectedSide === 'B' && styles.sideBoxLoading,
+          ]}
+          onPress={() => canJoin && handleJoinBet('B')}
+          disabled={!canJoin || isJoining}
+          activeOpacity={canJoin ? 0.7 : 1}
+        >
+          {isJoining && selectedSide === 'B' ? (
+            <ActivityIndicator size="small" color={colors.primary} />
+          ) : (
+            <>
+              <View style={styles.sideHeader}>
                 <Text style={styles.sideName} numberOfLines={1}>
                   {bet.odds.sideBName || 'Side B'}
                 </Text>
-                <Text style={styles.sideCount}>{sideBCount} players</Text>
-              </>
+                <View style={styles.sideParticipants}>
+                  <Ionicons name="people" size={12} color={colors.textSecondary} />
+                  <Text style={styles.sideCount}>{sideBCount}</Text>
+                </View>
+              </View>
+              {userParticipation.hasJoined && userParticipation.side === 'B' && (
+                <View style={styles.userBadge}>
+                  <Text style={styles.userBadgeText}>You • ${userParticipation.amount}</Text>
+                </View>
+              )}
+            </>
+          )}
+        </TouchableOpacity>
+      </View>
+
+      {/* Action Buttons - Only for ACTIVE bets */}
+      {isActive && (
+        <View style={styles.actionRow}>
+          {/* Join Button - Only for non-participants */}
+          {canJoin && (
+            <TouchableOpacity
+              style={[styles.actionButton, styles.primaryAction]}
+              onPress={() => handleJoinBet('A')} // Will show alert for side selection
+              activeOpacity={0.7}
+              disabled={isJoining}
+            >
+              <Ionicons name="add-circle-outline" size={18} color={colors.background} />
+              <Text style={styles.primaryActionText}>Join ${bet.betAmount || 10}</Text>
+            </TouchableOpacity>
+          )}
+
+          {/* Invite Friends - Always show for ACTIVE bets */}
+          {onInviteFriends && (
+            <TouchableOpacity
+              style={[
+                styles.actionButton,
+                canJoin ? styles.secondaryAction : styles.primaryAction,
+              ]}
+              onPress={() => onInviteFriends(bet)}
+              activeOpacity={0.7}
+            >
+              <Ionicons 
+                name="person-add-outline" 
+                size={18} 
+                color={canJoin ? colors.primary : colors.background}
+              />
+              <Text style={canJoin ? styles.secondaryActionText : styles.primaryActionText}>
+                Invite Friends
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          {/* End Bet - Only for creators */}
+          {isCreator && onEndBet && (
+            <TouchableOpacity
+              style={[styles.actionButton, styles.endBetAction]}
+              onPress={handleEndBet}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="stop-circle-outline" size={18} color={colors.error} />
+              <Text style={styles.endBetActionText}>End Bet</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+
+      {/* Show payout for resolved bets where user won */}
+      {bet.status === 'RESOLVED' && userParticipation.hasJoined && bet.winningSide === userParticipation.side && (
+        <View style={styles.payoutContainer}>
+          <Ionicons name="trophy" size={16} color={colors.success} />
+          <Text style={styles.payoutText}>
+            Won {formatCurrency(
+              bet.participants?.find(p => p.userId === user?.userId)?.payout || 0,
+              'USD',
+              false
             )}
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* User Participation Indicator */}
-      {userParticipation.hasJoined && (
-        <View style={styles.participationIndicator}>
-          <Text style={styles.participationText}>
-            You bet ${userParticipation.amount} on {userParticipation.side === 'A' ? bet.odds.sideAName || 'Side A' : bet.odds.sideBName || 'Side B'}
           </Text>
-        </View>
-      )}
-
-      {/* Action Buttons Row */}
-      {showInvite && (
-        <View style={styles.actionsRow}>
-          <TouchableOpacity
-            style={styles.inviteButton}
-            onPress={() => onInviteFriends(bet)}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.inviteButtonText}>Invite Friends</Text>
-          </TouchableOpacity>
         </View>
       )}
     </TouchableOpacity>
@@ -409,51 +496,68 @@ const styles = StyleSheet.create({
   card: {
     backgroundColor: colors.surface,
     borderRadius: spacing.radius.lg,
-    marginHorizontal: spacing.md,
-    marginVertical: spacing.xs,
+    marginHorizontal: spacing.sm,
+    marginVertical: spacing.sm,
     padding: spacing.md,
     ...shadows.card,
   },
   cardParticipating: {
-    borderLeftWidth: 4,
-    borderLeftColor: colors.success,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.primary,
   },
 
-  // Header Row
-  headerRow: {
+  // Header Section
+  header: {
     flexDirection: 'row',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
-    alignItems: 'center',
     marginBottom: spacing.xs,
+  },
+  headerLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: spacing.sm,
   },
   statusBadge: {
     paddingHorizontal: spacing.xs,
-    paddingVertical: 2,
-    borderRadius: spacing.radius.xs,
+    paddingVertical: spacing.xs / 2,
+    borderRadius: spacing.radius.sm,
+    marginRight: spacing.xs,
   },
   statusText: {
-    ...textStyles.caption,
+    ...textStyles.status,
     color: colors.background,
     fontSize: 10,
-    fontWeight: typography.fontWeight.bold,
   },
-  potAmount: {
-    ...textStyles.pot,
-    color: colors.primary,
-    fontSize: typography.fontSize.xl,
-    fontWeight: typography.fontWeight.bold,
-  },
-
-  // Title & Description
   title: {
     ...textStyles.h4,
     color: colors.textPrimary,
-    marginBottom: spacing.xs / 2,
+    flex: 1,
+    fontSize: typography.fontSize.base,
   },
+  potContainer: {
+    alignItems: 'flex-end',
+  },
+  potAmount: {
+    ...textStyles.amount,
+    color: colors.primary,
+    fontSize: typography.fontSize.lg,
+    lineHeight: typography.fontSize.lg * 1.2,
+  },
+  potLabel: {
+    ...textStyles.caption,
+    color: colors.textMuted,
+    fontSize: 9,
+    marginTop: -2,
+  },
+
+  // Description
   description: {
     ...textStyles.bodySmall,
     color: colors.textSecondary,
     marginBottom: spacing.xs,
+    lineHeight: typography.fontSize.sm * 1.3,
   },
 
   // Metadata Row
@@ -461,108 +565,167 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: spacing.sm,
+    flexWrap: 'wrap',
   },
   metadataItem: {
     flexDirection: 'row',
     alignItems: 'center',
     marginRight: spacing.md,
-  },
-  metadataIcon: {
-    fontSize: 12,
-    marginRight: 4,
+    marginBottom: spacing.xs / 2,
   },
   metadataText: {
     ...textStyles.caption,
     color: colors.textMuted,
+    marginLeft: spacing.xs / 2,
     fontSize: 11,
   },
 
-  // Sides Row
-  sidesRow: {
+  // Sides Container
+  sidesContainer: {
     flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: spacing.xs,
+    alignItems: 'stretch',
+    marginBottom: spacing.sm,
   },
   sideBox: {
     flex: 1,
     backgroundColor: colors.background,
-    borderRadius: spacing.radius.sm,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.xs,
-    alignItems: 'center',
-    borderWidth: 1,
+    borderRadius: spacing.radius.md,
+    padding: spacing.sm,
+    borderWidth: 1.5,
     borderColor: colors.border,
-    minHeight: 48,
+    minHeight: 60,
     justifyContent: 'center',
   },
   sideBoxSelected: {
-    backgroundColor: colors.success + '15',
-    borderColor: colors.success,
+    borderColor: colors.primary,
     borderWidth: 2,
+    backgroundColor: colors.primary + '10',
   },
   sideBoxLoading: {
     backgroundColor: colors.primary + '15',
     borderColor: colors.primary,
   },
+  sideHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.xs / 2,
+  },
   sideName: {
     ...textStyles.button,
     color: colors.textPrimary,
-    fontSize: 13,
-    fontWeight: typography.fontWeight.semibold,
-    marginBottom: 2,
-    textAlign: 'center',
+    fontSize: typography.fontSize.sm,
+    flex: 1,
+    marginRight: spacing.xs,
+  },
+  sideParticipants: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   sideCount: {
     ...textStyles.caption,
-    color: colors.textMuted,
+    color: colors.textSecondary,
+    fontSize: 11,
+    marginLeft: 2,
+  },
+  userBadge: {
+    backgroundColor: colors.primary + '20',
+    paddingHorizontal: spacing.xs,
+    paddingVertical: 2,
+    borderRadius: spacing.radius.xs,
+    alignSelf: 'flex-start',
+  },
+  userBadgeText: {
+    ...textStyles.caption,
+    color: colors.primary,
     fontSize: 10,
-    textAlign: 'center',
+    fontWeight: typography.fontWeight.semibold,
   },
   vsDivider: {
-    paddingHorizontal: spacing.xs,
+    width: spacing.lg,
     alignItems: 'center',
     justifyContent: 'center',
   },
   vsText: {
-    ...textStyles.caption,
+    ...textStyles.label,
     color: colors.textMuted,
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: typography.fontWeight.bold,
   },
 
-  // Participation Indicator
-  participationIndicator: {
-    backgroundColor: colors.success + '20',
-    borderRadius: spacing.radius.sm,
-    paddingVertical: spacing.xs / 2,
-    paddingHorizontal: spacing.sm,
-    marginBottom: spacing.xs,
-    alignItems: 'center',
-  },
-  participationText: {
-    ...textStyles.caption,
-    color: colors.success,
-    fontSize: 11,
-    fontWeight: typography.fontWeight.medium,
-  },
-
-  // Actions Row
-  actionsRow: {
+  // Action Row
+  actionRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    marginTop: spacing.xs,
   },
-  inviteButton: {
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: spacing.radius.md,
+    marginRight: spacing.xs,
+    marginBottom: spacing.xs,
+  },
+  primaryAction: {
     flex: 1,
     backgroundColor: colors.primary,
-    borderRadius: spacing.radius.sm,
-    paddingVertical: spacing.xs,
-    paddingHorizontal: spacing.sm,
-    alignItems: 'center',
+    minWidth: 100,
   },
-  inviteButtonText: {
+  primaryActionText: {
     ...textStyles.button,
     color: colors.background,
-    fontSize: 12,
-    fontWeight: typography.fontWeight.semibold,
+    fontSize: typography.fontSize.sm,
+    marginLeft: spacing.xs / 2,
+    fontWeight: typography.fontWeight.bold,
+  },
+  secondaryAction: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderWidth: 1.5,
+    borderColor: colors.primary,
+    minWidth: 100,
+  },
+  secondaryActionText: {
+    ...textStyles.button,
+    color: colors.primary,
+    fontSize: typography.fontSize.sm,
+    marginLeft: spacing.xs / 2,
+    fontWeight: typography.fontWeight.bold,
+  },
+  endBetAction: {
+    backgroundColor: colors.surface,
+    borderWidth: 1.5,
+    borderColor: colors.error,
+    paddingHorizontal: spacing.sm,
+  },
+  endBetActionText: {
+    ...textStyles.button,
+    color: colors.error,
+    fontSize: typography.fontSize.sm,
+    marginLeft: spacing.xs / 2,
+    fontWeight: typography.fontWeight.bold,
+  },
+
+  // Payout Display
+  payoutContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    backgroundColor: colors.success + '15',
+    borderRadius: spacing.radius.sm,
+    marginTop: spacing.xs,
+  },
+  payoutText: {
+    ...textStyles.button,
+    color: colors.success,
+    fontSize: typography.fontSize.sm,
+    marginLeft: spacing.xs / 2,
+    fontWeight: typography.fontWeight.bold,
   },
 });
