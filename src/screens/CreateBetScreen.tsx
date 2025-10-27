@@ -27,6 +27,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { User } from '../types/betting';
 import { Ionicons } from '@expo/vector-icons';
 import { NotificationService } from '../services/notificationService';
+import { TransactionService } from '../services/transactionService';
 import { getProfilePictureUrl } from '../services/imageUploadService';
 import { useEventCheckIn } from '../hooks/useEventCheckIn';
 
@@ -171,12 +172,10 @@ export const CreateBetScreen: React.FC = () => {
       displayName: 'Player Prop',
       category: 'SPORTS',
       icon: '⭐',
-      defaultTitle: 'Player Prop',
-      defaultDescription: 'Player performance bet',
-      titlePlaceholder: 'e.g., LeBron 30+ points',
-      descriptionPlaceholder: 'Will the player achieve this stat line?',
-      sideAPlaceholder: 'Over',
-      sideBPlaceholder: 'Under',
+      titlePlaceholder: 'e.g., Mahomes throws 3+ TDs',
+      descriptionPlaceholder: 'Define the player achievement or stat line',
+      sideAPlaceholder: 'Achieves',
+      sideBPlaceholder: 'Falls Short',
     },
     {
       id: 'over-under',
@@ -229,7 +228,11 @@ export const CreateBetScreen: React.FC = () => {
   useEffect(() => {
     if (selectedTemplate && checkedInEvent) {
       const currentTemplate = betTemplates.find(t => t.id === selectedTemplate);
-      if (currentTemplate && currentTemplate.category === 'SPORTS' && !currentTemplate.lockSides) {
+      // Only apply team names for sports bets that aren't locked and aren't player props
+      if (currentTemplate &&
+          currentTemplate.category === 'SPORTS' &&
+          !currentTemplate.lockSides &&
+          currentTemplate.id !== 'player-prop') {
         // Update side names with checked-in event team names
         setSideAName(checkedInEvent.homeTeam);
         setSideBName(checkedInEvent.awayTeam);
@@ -255,8 +258,8 @@ export const CreateBetScreen: React.FC = () => {
       // Locked sides (over/under, yes/no) - always use locked values
       setSideAName(template.lockedSideA || '');
       setSideBName(template.lockedSideB || '');
-    } else if (checkedInEvent && template.category === 'SPORTS') {
-      // Event check-in: use team names for sports bets
+    } else if (checkedInEvent && template.category === 'SPORTS' && template.id !== 'player-prop') {
+      // Event check-in: use team names for sports bets (except player props)
       setSideAName(checkedInEvent.homeTeam);
       setSideBName(checkedInEvent.awayTeam);
     } else {
@@ -355,7 +358,7 @@ export const CreateBetScreen: React.FC = () => {
       if (result.data) {
         // Immediately join the bet as the creator on the selected side
         try {
-          await client.models.Participant.create({
+          const participantResult = await client.models.Participant.create({
             betId: result.data.id!,
             userId: user.userId,
             side: selectedSide,
@@ -364,9 +367,28 @@ export const CreateBetScreen: React.FC = () => {
             payout: 0,
             joinedAt: new Date().toISOString(),
           });
+
+          if (participantResult.data) {
+            // Record transaction for bet placement (this handles balance deduction automatically)
+            const transaction = await TransactionService.recordBetPlacement(
+              user.userId,
+              amount,
+              result.data.id!,
+              participantResult.data.id
+            );
+
+            if (!transaction) {
+              console.error('Failed to record transaction for creator joining bet');
+              // Rollback participant creation if transaction fails
+              await client.models.Participant.delete({ id: participantResult.data.id });
+              throw new Error('Failed to record transaction for bet creation');
+            }
+          }
         } catch (joinErr) {
           console.error('Error creating participant for new bet:', joinErr);
-          // Continue; the bet is created even if auto-join failed
+          // Rollback bet creation if participant/transaction creation fails
+          await client.models.Bet.delete({ id: result.data.id! });
+          throw joinErr;
         }
 
         // Send invitations to selected friends

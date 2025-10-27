@@ -26,6 +26,7 @@ import { BetInviteModal } from '../components/ui/BetInviteModal';
 import { Bet, BetInvitation, BetInvitationStatus, User, ParticipantStatus } from '../types/betting';
 import { useAuth } from '../contexts/AuthContext';
 import { NotificationService } from '../services/notificationService';
+import { TransactionService } from '../services/transactionService';
 import { bulkLoadUserBetsWithParticipants, clearBulkLoadingCache } from '../services/bulkLoadingService';
 
 // Initialize GraphQL client
@@ -346,7 +347,7 @@ export const BetsScreen: React.FC = () => {
       }
 
       // Create participant entry for the bet
-      await client.models.Participant.create({
+      const participantResult = await client.models.Participant.create({
         betId: invitation.betId,
         userId: user.userId,
         side: selectedSide,
@@ -356,11 +357,23 @@ export const BetsScreen: React.FC = () => {
         joinedAt: new Date().toISOString(),
       });
 
-      // Deduct bet amount from user's balance
-      await client.models.User.update({
-        id: user.userId,
-        balance: currentBalance - betAmount,
-      });
+      if (!participantResult.data) {
+        throw new Error('Failed to create participant record');
+      }
+
+      // Record transaction for bet placement (this handles balance deduction automatically)
+      const transaction = await TransactionService.recordBetPlacement(
+        user.userId,
+        betAmount,
+        invitation.betId,
+        participantResult.data.id
+      );
+
+      if (!transaction) {
+        // Rollback participant creation if transaction fails
+        await client.models.Participant.delete({ id: participantResult.data.id });
+        throw new Error('Failed to record transaction');
+      }
 
       // Update bet's total pot
       const currentTotalPot = invitation.bet.totalPot || 0;
