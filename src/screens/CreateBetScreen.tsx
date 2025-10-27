@@ -55,7 +55,7 @@ const client = generateClient<Schema>();
 
 export const CreateBetScreen: React.FC = () => {
   const { user } = useAuth();
-  const { checkedInEvent } = useEventCheckIn();
+  const { checkedInEvent, refreshCheckInState } = useEventCheckIn();
   const scrollRef = React.useRef<ScrollView | null>(null);
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [betTitle, setBetTitle] = useState('');
@@ -73,6 +73,8 @@ export const CreateBetScreen: React.FC = () => {
   // Track if fields have been manually edited (for clear-on-focus behavior)
   const [titleEdited, setTitleEdited] = useState(false);
   const [descriptionEdited, setDescriptionEdited] = useState(false);
+  const [sideAEdited, setSideAEdited] = useState(false);
+  const [sideBEdited, setSideBEdited] = useState(false);
 
   // Friend selection state
   const [friends, setFriends] = useState<User[]>([]);
@@ -154,6 +156,15 @@ export const CreateBetScreen: React.FC = () => {
     }, [fetchFriends])
   );
 
+  // Refresh check-in state every time screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      if (user?.userId) {
+        refreshCheckInState();
+      }
+    }, [user?.userId, refreshCheckInState])
+  );
+
   const betTemplates: BetTemplate[] = [
     {
       id: 'next-score',
@@ -226,20 +237,27 @@ export const CreateBetScreen: React.FC = () => {
 
   // Update side names when checked-in event changes
   useEffect(() => {
-    if (selectedTemplate && checkedInEvent) {
+    if (selectedTemplate) {
       const currentTemplate = betTemplates.find(t => t.id === selectedTemplate);
-      // Only apply team names for sports bets that aren't locked and aren't player props
-      if (currentTemplate &&
-          currentTemplate.category === 'SPORTS' &&
-          !currentTemplate.lockSides &&
-          currentTemplate.id !== 'player-prop') {
-        // Update side names with checked-in event team names
-        setSideAName(checkedInEvent.homeTeam);
-        setSideBName(checkedInEvent.awayTeam);
+
+      if (currentTemplate) {
+        if (checkedInEvent && currentTemplate.category === 'SPORTS' && !currentTemplate.lockSides && currentTemplate.id !== 'player-prop') {
+          // Update side names with checked-in event team names
+          setSideAName(checkedInEvent.homeTeam);
+          setSideBName(checkedInEvent.awayTeam);
+          setSideAEdited(true);
+          setSideBEdited(true);
+        } else if (!checkedInEvent && !currentTemplate.lockSides) {
+          // Reset to default placeholders when checked out (but not for locked sides)
+          setSideAName(currentTemplate.sideAPlaceholder || 'Yes');
+          setSideBName(currentTemplate.sideBPlaceholder || 'No');
+          setSideAEdited(false);
+          setSideBEdited(false);
+        }
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [checkedInEvent]);
+  }, [checkedInEvent, selectedTemplate]);
 
   const handleTemplateSelect = (template: BetTemplate) => {
     setSelectedTemplate(template.id);
@@ -252,20 +270,26 @@ export const CreateBetScreen: React.FC = () => {
     // Reset edited flags when template changes
     setTitleEdited(false);
     setDescriptionEdited(false);
+    setSideAEdited(false);
+    setSideBEdited(false);
 
     // Handle side names with smart defaults
     if (template.lockSides) {
-      // Locked sides (over/under, yes/no) - always use locked values
+      // Locked sides (over/under, yes/no) - always use locked values, mark as edited so they don't clear
       setSideAName(template.lockedSideA || '');
       setSideBName(template.lockedSideB || '');
+      setSideAEdited(true);
+      setSideBEdited(true);
     } else if (checkedInEvent && template.category === 'SPORTS' && template.id !== 'player-prop') {
-      // Event check-in: use team names for sports bets (except player props)
+      // Event check-in: use team names for sports bets (except player props), mark as edited so they don't clear
       setSideAName(checkedInEvent.homeTeam);
       setSideBName(checkedInEvent.awayTeam);
+      setSideAEdited(true);
+      setSideBEdited(true);
     } else {
-      // Empty fields - use placeholders
-      setSideAName('');
-      setSideBName('');
+      // Default values that will clear on first focus
+      setSideAName(template.sideAPlaceholder || 'Yes');
+      setSideBName(template.sideBPlaceholder || 'No');
     }
   };
 
@@ -693,6 +717,13 @@ export const CreateBetScreen: React.FC = () => {
                 placeholderTextColor={colors.textMuted}
                 value={sideAName}
                 onChangeText={setSideAName}
+                onFocus={() => {
+                  // Clear default value on first focus (but not team names or locked sides)
+                  if (!sideAEdited && sideAName === (currentTemplate.sideAPlaceholder || 'Yes')) {
+                    setSideAName('');
+                  }
+                  setSideAEdited(true);
+                }}
                 editable={!currentTemplate.lockSides}
               />
             </TouchableOpacity>
@@ -724,6 +755,13 @@ export const CreateBetScreen: React.FC = () => {
                 placeholderTextColor={colors.textMuted}
                 value={sideBName}
                 onChangeText={setSideBName}
+                onFocus={() => {
+                  // Clear default value on first focus (but not team names or locked sides)
+                  if (!sideBEdited && sideBName === (currentTemplate.sideBPlaceholder || 'No')) {
+                    setSideBName('');
+                  }
+                  setSideBEdited(true);
+                }}
                 editable={!currentTemplate.lockSides}
               />
             </TouchableOpacity>
