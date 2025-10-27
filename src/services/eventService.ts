@@ -9,6 +9,10 @@ import type { Schema } from '../../amplify/data/resource';
 
 const client = generateClient<Schema>();
 
+// Cache for recommended events (24 hour TTL)
+const recommendationCache = new Map<string, { events: LiveEventData[]; timestamp: number }>();
+const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+
 export interface LiveEventData {
   id: string;
   externalId: string;
@@ -519,5 +523,192 @@ export async function getEventById(eventId: string): Promise<LiveEventData | nul
   } catch (error) {
     console.error('[EventService] Error fetching event by ID:', error);
     return null;
+  }
+}
+
+/**
+ * Get user's recent event check-in history
+ *
+ * @param userId - User ID
+ * @param daysBack - Number of days to look back (default: 30)
+ * @returns Array of check-ins with event data
+ */
+export async function getUserEventCheckInHistory(
+  userId: string,
+  daysBack: number = 30
+): Promise<Array<{ checkIn: EventCheckInData; event: LiveEventData }>> {
+  try {
+    console.log(`[EventService] Fetching check-in history for user ${userId} (${daysBack} days)`);
+
+    const cutoffDate = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000).toISOString();
+
+    // Get user's check-ins from the last N days
+    const { data: checkIns, errors } = await client.models.EventCheckIn.list({
+      filter: {
+        and: [
+          { userId: { eq: userId } },
+          { checkInTime: { ge: cutoffDate } }
+        ]
+      },
+      limit: 100 // Reasonable limit
+    });
+
+    if (errors || !checkIns || checkIns.length === 0) {
+      console.log('[EventService] No recent check-ins found');
+      return [];
+    }
+
+    // Fetch all unique events
+    const eventIds = [...new Set(checkIns.map(c => c.eventId))];
+    const eventPromises = eventIds.map(id => client.models.LiveEvent.get({ id }));
+    const eventResults = await Promise.all(eventPromises);
+
+    // Build event map
+    const eventMap = new Map<string, LiveEventData>();
+    eventResults.forEach(result => {
+      if (result.data) {
+        const event = result.data;
+        eventMap.set(event.id, {
+          id: event.id,
+          externalId: event.externalId,
+          sport: event.sport || 'OTHER',
+          league: event.league || '',
+          homeTeam: event.homeTeam,
+          awayTeam: event.awayTeam,
+          homeTeamCode: event.homeTeamCode || undefined,
+          awayTeamCode: event.awayTeamCode || undefined,
+          venue: event.venue || undefined,
+          city: event.city || undefined,
+          country: event.country || undefined,
+          homeScore: event.homeScore || 0,
+          awayScore: event.awayScore || 0,
+          status: event.status || 'UPCOMING',
+          quarter: event.quarter || undefined,
+          timeLeft: event.timeLeft || undefined,
+          scheduledTime: event.scheduledTime,
+          startTime: event.startTime || undefined,
+          endTime: event.endTime || undefined,
+          season: event.season || undefined,
+          round: event.round || undefined,
+          checkInCount: event.checkInCount || 0,
+          betCount: event.betCount || 0,
+          createdAt: event.createdAt,
+          updatedAt: event.updatedAt
+        });
+      }
+    });
+
+    // Combine check-ins with events
+    const history = checkIns
+      .filter(checkIn => eventMap.has(checkIn.eventId))
+      .map(checkIn => ({
+        checkIn: {
+          id: checkIn.id,
+          userId: checkIn.userId,
+          eventId: checkIn.eventId,
+          checkInTime: checkIn.checkInTime,
+          checkOutTime: checkIn.checkOutTime || undefined,
+          isActive: checkIn.isActive || false,
+          location: checkIn.location as any
+        },
+        event: eventMap.get(checkIn.eventId)!
+      }))
+      .sort((a, b) => {
+        // Sort by check-in time descending (most recent first)
+        return new Date(b.checkIn.checkInTime).getTime() - new Date(a.checkIn.checkInTime).getTime();
+      });
+
+    console.log(`[EventService] Found ${history.length} check-ins in last ${daysBack} days`);
+    return history;
+
+  } catch (error) {
+    console.error('[EventService] Error fetching check-in history:', error);
+    return [];
+  }
+}
+
+/**
+ * Get recommended upcoming events based on user's check-in history
+ * Results are cached for 24 hours
+ *
+ * @param userId - User ID
+ * @param limit - Maximum number of events to return (default: 10)
+ * @returns Array of recommended upcoming events
+ */
+export async function getRecommendedUpcomingEvents(
+  userId: string,
+  limit: number = 10
+): Promise<LiveEventData[]> {
+  try {
+    // Check cache first
+    const cacheKey = `recommendations_${userId}`;
+    const cached = recommendationCache.get(cacheKey);
+    const now = Date.now();
+
+    if (cached && (now - cached.timestamp) < CACHE_TTL) {
+      console.log('[EventService] Returning cached recommendations');
+      return cached.events;
+    }
+
+    console.log('[EventService] Generating fresh recommendations');
+
+    // Get user's recent check-in history
+    const history = await getUserEventCheckInHistory(userId, 30);
+
+    if (history.length === 0) {
+      console.log('[EventService] No check-in history, returning empty recommendations');
+      return [];
+    }
+
+    // Extract sports from check-in history
+    const sportCounts = new Map<string, number>();
+    history.forEach(({ event }) => {
+      const count = sportCounts.get(event.sport) || 0;
+      sportCounts.set(event.sport, count + 1);
+    });
+
+    // Get sports sorted by frequency
+    const topSports = Array.from(sportCounts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(([sport]) => sport);
+
+    console.log(`[EventService] User's top sports:`, topSports);
+
+    // Get upcoming events for those sports
+    const upcomingPromises = topSports.slice(0, 3).map(sport =>
+      getUpcomingEvents(sport as any, 20)
+    );
+    const upcomingResults = await Promise.all(upcomingPromises);
+
+    // Flatten and deduplicate
+    const allUpcoming = upcomingResults.flat();
+    const uniqueEvents = new Map<string, LiveEventData>();
+    allUpcoming.forEach(event => {
+      if (!uniqueEvents.has(event.id)) {
+        uniqueEvents.set(event.id, event);
+      }
+    });
+
+    // Sort by scheduled time (soonest first) and limit
+    const recommendations = Array.from(uniqueEvents.values())
+      .sort((a, b) => {
+        const dateA = new Date(a.scheduledTime).getTime();
+        const dateB = new Date(b.scheduledTime).getTime();
+        return dateA - dateB;
+      })
+      .slice(0, limit);
+
+    // Cache the results
+    recommendationCache.set(cacheKey, {
+      events: recommendations,
+      timestamp: now
+    });
+
+    console.log(`[EventService] Returning ${recommendations.length} recommended events`);
+    return recommendations;
+
+  } catch (error) {
+    console.error('[EventService] Error generating recommendations:', error);
+    return [];
   }
 }
