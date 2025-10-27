@@ -627,6 +627,14 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.border,
   },
+  sectionTitle: {
+    ...textStyles.label,
+    color: colors.textPrimary,
+    fontWeight: typography.fontWeight.bold,
+    fontSize: typography.fontSize.sm,
+    marginBottom: spacing.xs,
+    letterSpacing: typography.letterSpacing.wider,
+  },
   statsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
