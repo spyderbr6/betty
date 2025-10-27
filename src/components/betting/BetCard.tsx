@@ -63,6 +63,27 @@ const formatTimeRemaining = (deadline: string): string => {
   }
 };
 
+// Format the end date for completed bets
+const formatEndDate = (dateString: string): string => {
+  const date = new Date(dateString);
+  const now = new Date();
+  const isToday = date.toDateString() === now.toDateString();
+
+  if (isToday) {
+    // Today: show "Ended 2:30 PM"
+    return `Ended ${date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}`;
+  }
+
+  const isThisYear = date.getFullYear() === now.getFullYear();
+  if (isThisYear) {
+    // This year: show "Ended Oct 27"
+    return `Ended ${date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+  }
+
+  // Other year: show "Ended Oct 27, 2024"
+  return `Ended ${date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+};
+
 export const BetCard: React.FC<BetCardProps> = ({
   bet,
   onPress,
@@ -332,10 +353,16 @@ export const BetCard: React.FC<BetCardProps> = ({
 
       {/* Metadata Row: Time + Participants + Creator */}
       <View style={styles.metadataRow}>
-        {timeRemaining && isActive && (
+        {isActive && timeRemaining && (
           <View style={styles.metadataItem}>
             <Ionicons name="time-outline" size={14} color={colors.textMuted} />
             <Text style={styles.metadataText}>{timeRemaining}</Text>
+          </View>
+        )}
+        {!isActive && bet.updatedAt && (
+          <View style={styles.metadataItem}>
+            <Ionicons name="calendar-outline" size={14} color={colors.textMuted} />
+            <Text style={styles.metadataText}>{formatEndDate(bet.updatedAt)}</Text>
           </View>
         )}
         <View style={styles.metadataItem}>
