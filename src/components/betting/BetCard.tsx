@@ -15,7 +15,7 @@ import {
 import { generateClient } from 'aws-amplify/data';
 import { getCurrentUser } from 'aws-amplify/auth';
 import type { Schema } from '../../../amplify/data/resource';
-import { colors, typography, spacing, textStyles } from '../../styles';
+import { colors, typography, spacing, textStyles, shadows } from '../../styles';
 import { Bet, BetStatus } from '../../types/betting';
 import { formatCurrency, dateFormatting } from '../../utils/formatting';
 import { useAuth } from '../../contexts/AuthContext';
