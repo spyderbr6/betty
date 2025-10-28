@@ -55,7 +55,7 @@ const client = generateClient<Schema>();
 
 export const CreateBetScreen: React.FC = () => {
   const { user } = useAuth();
-  const { checkedInEvent, refreshCheckInState } = useEventCheckIn();
+  const { checkedInEvent } = useEventCheckIn();
   const scrollRef = React.useRef<ScrollView | null>(null);
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [betTitle, setBetTitle] = useState('');
@@ -154,15 +154,6 @@ export const CreateBetScreen: React.FC = () => {
     useCallback(() => {
       fetchFriends();
     }, [fetchFriends])
-  );
-
-  // Refresh check-in state every time screen comes into focus
-  useFocusEffect(
-    useCallback(() => {
-      if (user?.userId) {
-        refreshCheckInState();
-      }
-    }, [user?.userId, refreshCheckInState])
   );
 
   const betTemplates: BetTemplate[] = [

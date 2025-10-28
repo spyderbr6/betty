@@ -19,6 +19,7 @@ import { useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { StyleSheet, View, ActivityIndicator } from 'react-native';
 import { AuthProvider, useAuth } from './src/contexts/AuthContext';
+import { EventCheckInProvider } from './src/contexts/EventCheckInContext';
 import { Login } from './src/components/Login';
 import { SignUp } from './src/components/SignUp';
 import { AppNavigator } from './src/navigation/AppNavigator';
@@ -74,11 +75,13 @@ function MainApp() {
 export default function App() {
   return (
     <AuthProvider>
-      <View style={styles.container}>
-        <MainApp />
-        <StatusBar style="light" backgroundColor={colors.background} />
-        <Toast config={toastConfig} />
-      </View>
+      <EventCheckInProvider>
+        <View style={styles.container}>
+          <MainApp />
+          <StatusBar style="light" backgroundColor={colors.background} />
+          <Toast config={toastConfig} />
+        </View>
+      </EventCheckInProvider>
     </AuthProvider>
   );
 }
