@@ -394,20 +394,21 @@ export const BetCard: React.FC<BetCardProps> = ({
             <ActivityIndicator size="small" color={colors.primary} />
           ) : (
             <>
-              <View style={styles.sideHeader}>
-                <Text style={styles.sideName} numberOfLines={1}>
-                  {bet.odds.sideAName || 'Side A'}
-                </Text>
-                <View style={styles.sideParticipants}>
-                  <Ionicons name="people" size={12} color={colors.textSecondary} />
-                  <Text style={styles.sideCount}>{sideACount}</Text>
-                </View>
+              <Text style={styles.sideName} numberOfLines={1}>
+                {bet.odds.sideAName || 'Side A'}
+              </Text>
+              <View style={styles.sideInfo}>
+                {userParticipation.hasJoined && userParticipation.side === 'A' ? (
+                  <Text style={styles.sideInfoText}>
+                    You • ${userParticipation.amount} • {sideACount}
+                  </Text>
+                ) : (
+                  <View style={styles.sideParticipants}>
+                    <Ionicons name="people" size={12} color={colors.textSecondary} />
+                    <Text style={styles.sideCount}>{sideACount}</Text>
+                  </View>
+                )}
               </View>
-              {userParticipation.hasJoined && userParticipation.side === 'A' && (
-                <View style={styles.userBadge}>
-                  <Text style={styles.userBadgeText}>You • ${userParticipation.amount}</Text>
-                </View>
-              )}
             </>
           )}
         </TouchableOpacity>
@@ -432,20 +433,21 @@ export const BetCard: React.FC<BetCardProps> = ({
             <ActivityIndicator size="small" color={colors.primary} />
           ) : (
             <>
-              <View style={styles.sideHeader}>
-                <Text style={styles.sideName} numberOfLines={1}>
-                  {bet.odds.sideBName || 'Side B'}
-                </Text>
-                <View style={styles.sideParticipants}>
-                  <Ionicons name="people" size={12} color={colors.textSecondary} />
-                  <Text style={styles.sideCount}>{sideBCount}</Text>
-                </View>
+              <Text style={styles.sideName} numberOfLines={1}>
+                {bet.odds.sideBName || 'Side B'}
+              </Text>
+              <View style={styles.sideInfo}>
+                {userParticipation.hasJoined && userParticipation.side === 'B' ? (
+                  <Text style={styles.sideInfoText}>
+                    You • ${userParticipation.amount} • {sideBCount}
+                  </Text>
+                ) : (
+                  <View style={styles.sideParticipants}>
+                    <Ionicons name="people" size={12} color={colors.textSecondary} />
+                    <Text style={styles.sideCount}>{sideBCount}</Text>
+                  </View>
+                )}
               </View>
-              {userParticipation.hasJoined && userParticipation.side === 'B' && (
-                <View style={styles.userBadge}>
-                  <Text style={styles.userBadgeText}>You • ${userParticipation.amount}</Text>
-                </View>
-              )}
             </>
           )}
         </TouchableOpacity>
@@ -622,6 +624,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     minHeight: 60,
     justifyContent: 'center',
+    alignItems: 'center',
   },
   sideBoxSelected: {
     borderColor: colors.primary,
@@ -632,18 +635,22 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary + '15',
     borderColor: colors.primary,
   },
-  sideHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: spacing.xs / 2,
-  },
   sideName: {
     ...textStyles.button,
     color: colors.textPrimary,
     fontSize: typography.fontSize.sm,
-    flex: 1,
-    marginRight: spacing.xs,
+    textAlign: 'center',
+    marginBottom: spacing.xs / 2,
+  },
+  sideInfo: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sideInfoText: {
+    ...textStyles.caption,
+    color: colors.primary,
+    fontSize: 11,
+    fontWeight: typography.fontWeight.semibold,
   },
   sideParticipants: {
     flexDirection: 'row',
@@ -654,19 +661,6 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 11,
     marginLeft: 2,
-  },
-  userBadge: {
-    backgroundColor: colors.primary + '20',
-    paddingHorizontal: spacing.xs,
-    paddingVertical: 2,
-    borderRadius: spacing.radius.xs,
-    alignSelf: 'flex-start',
-  },
-  userBadgeText: {
-    ...textStyles.caption,
-    color: colors.primary,
-    fontSize: 10,
-    fontWeight: typography.fontWeight.semibold,
   },
   vsDivider: {
     width: spacing.lg,
