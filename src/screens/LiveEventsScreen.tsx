@@ -26,6 +26,7 @@ import { Bet } from '../types/betting';
 import { useAuth } from '../contexts/AuthContext';
 import { bulkLoadJoinableBetsWithParticipants, bulkLoadFriendsBetsWithParticipants, clearBulkLoadingCache } from '../services/bulkLoadingService';
 import { QRScannerModal } from '../components/ui/QRScannerModal';
+import { getRecommendedUpcomingEvents, type LiveEventData } from '../services/eventService';
 
 // Initialize GraphQL client
 const client = generateClient<Schema>();
@@ -126,6 +127,9 @@ export const LiveEventsScreen: React.FC = () => {
   // QR Scanner modal state
   const [showQRScanner, setShowQRScanner] = useState(false);
 
+  // Recommended events state
+  const [recommendedEvents, setRecommendedEvents] = useState<LiveEventData[]>([]);
+
   useEffect(() => {
     if (!user) return;
 
@@ -156,7 +160,19 @@ export const LiveEventsScreen: React.FC = () => {
       }
     };
 
+    const fetchRecommendedEvents = async () => {
+      try {
+        console.log('🎯 Fetching recommended events for user:', user.userId);
+        const events = await getRecommendedUpcomingEvents(user.userId, 5);
+        console.log(`✅ Loaded ${events.length} recommended events`);
+        setRecommendedEvents(events);
+      } catch (error) {
+        console.error('❌ Error fetching recommended events:', error);
+      }
+    };
+
     fetchJoinableBets();
+    fetchRecommendedEvents();
 
     // Set up real-time subscription for bet changes
     const betSubscription = client.models.Bet.observeQuery({
@@ -215,6 +231,9 @@ export const LiveEventsScreen: React.FC = () => {
 
       console.log(`✅ Refreshed ${joinableBets.length} ${viewMode} bets`);
       setLiveBets(joinableBets);
+
+      // Note: Recommended events use 24h cache and won't refresh on pull-to-refresh
+      // This is intentional to avoid excessive API calls
     } catch (error) {
       console.error(`❌ Error refreshing ${viewMode} bets:`, error);
     } finally {
@@ -466,27 +485,56 @@ export const LiveEventsScreen: React.FC = () => {
           </View>
         </View>
 
-        {/* Upcoming Events */}
-        <View style={styles.upcomingSection}>
-          <Text style={styles.sectionTitle}>NEXT LIVE EVENTS</Text>
-          <View style={styles.upcomingEvent}>
-            <View style={styles.upcomingHeader}>
-              <Text style={styles.upcomingTitle}>Clippers vs Suns</Text>
-              <Text style={styles.upcomingStatus}>PREGAME</Text>
-            </View>
-            <Text style={styles.upcomingTime}>Tomorrow 7:30 PM PST</Text>
-            <Text style={styles.upcomingLocation}>📍 Footprint Center • Phoenix, AZ</Text>
+        {/* Recommended Upcoming Events based on check-in history */}
+        {recommendedEvents.length > 0 && (
+          <View style={styles.upcomingSection}>
+            <Text style={styles.sectionTitle}>RECOMMENDED FOR YOU</Text>
+            <Text style={styles.sectionSubtitle}>
+              Based on your recent check-ins
+            </Text>
+            {recommendedEvents.map((event) => {
+              const eventDate = new Date(event.scheduledTime);
+              const now = new Date();
+              const hoursUntil = Math.floor((eventDate.getTime() - now.getTime()) / (1000 * 60 * 60));
+              const daysUntil = Math.floor(hoursUntil / 24);
+
+              let timeText = '';
+              if (daysUntil > 1) {
+                timeText = `${daysUntil} days • ${eventDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
+              } else if (daysUntil === 1) {
+                timeText = `Tomorrow • ${eventDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
+              } else if (hoursUntil > 2) {
+                timeText = `Today • ${eventDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
+              } else if (hoursUntil > 0) {
+                timeText = `In ${hoursUntil}h`;
+              } else {
+                timeText = 'Starting soon';
+              }
+
+              return (
+                <View key={event.id} style={styles.upcomingEvent}>
+                  <View style={styles.upcomingHeader}>
+                    <Text style={styles.upcomingTitle}>
+                      {event.awayTeam} @ {event.homeTeam}
+                    </Text>
+                    <Text style={styles.upcomingStatus}>{event.sport}</Text>
+                  </View>
+                  <Text style={styles.upcomingTime}>{timeText}</Text>
+                  {event.venue && (
+                    <Text style={styles.upcomingLocation}>
+                      📍 {event.venue}{event.city ? ` • ${event.city}` : ''}
+                    </Text>
+                  )}
+                  {event.checkInCount > 0 && (
+                    <Text style={styles.upcomingCheckins}>
+                      👥 {event.checkInCount} {event.checkInCount === 1 ? 'person' : 'people'} checked in
+                    </Text>
+                  )}
+                </View>
+              );
+            })}
           </View>
-          
-          <View style={styles.upcomingEvent}>
-            <View style={styles.upcomingHeader}>
-              <Text style={styles.upcomingTitle}>Dodgers vs Giants</Text>
-              <Text style={styles.upcomingStatus}>SCHEDULED</Text>
-            </View>
-            <Text style={styles.upcomingTime}>Friday 7:10 PM PST</Text>
-            <Text style={styles.upcomingLocation}>📍 Dodger Stadium • Los Angeles, CA</Text>
-          </View>
-        </View>
+        )}
       </ScrollView>
 
       {/* Bet Invite Modal */}
@@ -733,5 +781,11 @@ const styles = StyleSheet.create({
     ...textStyles.caption,
     color: colors.textMuted,
     fontSize: 12,
+  },
+  upcomingCheckins: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    fontSize: 11,
+    marginTop: 4,
   },
 });
