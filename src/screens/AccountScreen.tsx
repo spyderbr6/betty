@@ -3,7 +3,7 @@
  * User profile and account management
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -17,7 +17,6 @@ import {
   Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { generateClient } from 'aws-amplify/data';
 import { fetchUserAttributes } from 'aws-amplify/auth';
@@ -39,7 +38,6 @@ import { formatCurrency, formatPercentage } from '../utils/formatting';
 import { useAuth } from '../contexts/AuthContext';
 import { ProfileEditForm, User } from '../types/betting';
 import { getProfilePictureUrl } from '../services/imageUploadService';
-import { useEventCheckIn } from '../hooks/useEventCheckIn';
 
 // Initialize GraphQL client
 const client = generateClient<Schema>();
@@ -51,7 +49,6 @@ interface UserProfile extends User {
 
 export const AccountScreen: React.FC = () => {
   const { user, signOut } = useAuth();
-  const { refreshCheckInState } = useEventCheckIn();
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -67,15 +64,6 @@ export const AccountScreen: React.FC = () => {
   const [showAdminDashboard, setShowAdminDashboard] = useState(false);
   const [showAdminTesting, setShowAdminTesting] = useState(false);
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
-
-  // Refresh check-in state every time screen comes into focus
-  useFocusEffect(
-    useCallback(() => {
-      if (user?.userId) {
-        refreshCheckInState();
-      }
-    }, [user?.userId, refreshCheckInState])
-  );
 
   useEffect(() => {
     if (user) {

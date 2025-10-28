@@ -3,7 +3,7 @@
  * Professional live betting interface with real-time prop bets
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   ScrollView,
@@ -16,7 +16,6 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect } from '@react-navigation/native';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
 import { colors, commonStyles, textStyles, spacing, typography } from '../styles';
@@ -27,7 +26,6 @@ import { Bet } from '../types/betting';
 import { useAuth } from '../contexts/AuthContext';
 import { bulkLoadJoinableBetsWithParticipants, bulkLoadFriendsBetsWithParticipants, clearBulkLoadingCache } from '../services/bulkLoadingService';
 import { QRScannerModal } from '../components/ui/QRScannerModal';
-import { useEventCheckIn } from '../hooks/useEventCheckIn';
 
 // Initialize GraphQL client
 const client = generateClient<Schema>();
@@ -114,7 +112,6 @@ const mockLiveBets: Bet[] = [
 
 export const LiveEventsScreen: React.FC = () => {
   const { user } = useAuth();
-  const { refreshCheckInState } = useEventCheckIn();
   const [liveBets, setLiveBets] = useState<Bet[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -128,15 +125,6 @@ export const LiveEventsScreen: React.FC = () => {
 
   // QR Scanner modal state
   const [showQRScanner, setShowQRScanner] = useState(false);
-
-  // Refresh check-in state every time screen comes into focus
-  useFocusEffect(
-    useCallback(() => {
-      if (user?.userId) {
-        refreshCheckInState();
-      }
-    }, [user?.userId, refreshCheckInState])
-  );
 
   useEffect(() => {
     if (!user) return;
