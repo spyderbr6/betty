@@ -3,7 +3,7 @@
  * Main betting screen showing active bets list
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
 import {
@@ -19,6 +19,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { commonStyles, colors, spacing, typography, textStyles } from '../styles';
 import { Header } from '../components/ui/Header';
 import { BetCard } from '../components/betting/BetCard';
@@ -28,6 +29,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { NotificationService } from '../services/notificationService';
 import { TransactionService } from '../services/transactionService';
 import { bulkLoadUserBetsWithParticipants, clearBulkLoadingCache } from '../services/bulkLoadingService';
+import { useEventCheckIn } from '../hooks/useEventCheckIn';
 
 // Initialize GraphQL client
 const client = generateClient<Schema>();
@@ -75,6 +77,7 @@ const transformAmplifyBet = (bet: any): Bet | null => {
 
 export const BetsScreen: React.FC = () => {
   const { user } = useAuth();
+  const { refreshCheckInState } = useEventCheckIn();
   const [bets, setBets] = useState<Bet[]>([]);
   const [betInvitations, setBetInvitations] = useState<BetInvitation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -91,6 +94,15 @@ export const BetsScreen: React.FC = () => {
   // Invite modal state
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [selectedBetForInvite, setSelectedBetForInvite] = useState<Bet | null>(null);
+
+  // Refresh check-in state every time screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      if (user?.userId) {
+        refreshCheckInState();
+      }
+    }, [user?.userId, refreshCheckInState])
+  );
 
   useEffect(() => {
     // Fetch initial bet data, bet invitations, and set up real-time subscriptions

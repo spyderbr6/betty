@@ -3,7 +3,7 @@
  * Screen for resolving pending bets
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -15,6 +15,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
 import { colors, commonStyles, textStyles, spacing, typography } from '../styles';
@@ -25,6 +26,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { formatCurrency } from '../utils/formatting';
 import { NotificationService } from '../services/notificationService';
 import { TransactionService } from '../services/transactionService';
+import { useEventCheckIn } from '../hooks/useEventCheckIn';
 
 // Initialize GraphQL client
 const client = generateClient<Schema>();
@@ -71,11 +73,21 @@ const transformAmplifyBet = (bet: any): Bet | null => {
 
 export const ResolveScreen: React.FC = () => {
   const { user } = useAuth();
+  const { refreshCheckInState } = useEventCheckIn();
   const [pendingBets, setPendingBets] = useState<Bet[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isResolving, setIsResolving] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedSides, setSelectedSides] = useState<Record<string, 'A' | 'B' | null>>({});
+
+  // Refresh check-in state every time screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      if (user?.userId) {
+        refreshCheckInState();
+      }
+    }, [user?.userId, refreshCheckInState])
+  );
 
   useEffect(() => {
     if (!user) return;
