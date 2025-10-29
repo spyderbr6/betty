@@ -320,13 +320,29 @@ export class TransactionService {
     processedBy?: string
   ): Promise<boolean> {
     try {
+      console.log('[Transaction] updateTransactionStatus called:', {
+        transactionId,
+        status,
+        failureReason,
+        processedBy
+      });
+
       // Admin role validation - check if processedBy user has admin privileges
       if (processedBy) {
-        const { data: adminUser } = await client.models.User.get({ id: processedBy });
+        console.log('[Transaction] Checking admin privileges for:', processedBy);
+        const { data: adminUser, errors: userErrors } = await client.models.User.get({ id: processedBy });
+        console.log('[Transaction] Admin user data:', adminUser);
+        console.log('[Transaction] Admin user errors:', userErrors);
+
         if (!adminUser || (adminUser.role !== 'ADMIN' && adminUser.role !== 'SUPER_ADMIN')) {
-          console.error('[Transaction] Unauthorized: User is not an admin', processedBy);
+          console.error('[Transaction] Unauthorized: User is not an admin', {
+            processedBy,
+            userFound: !!adminUser,
+            role: adminUser?.role
+          });
           return false;
         }
+        console.log('[Transaction] Admin verified:', adminUser.role);
       }
 
       const updateData: any = {
@@ -351,9 +367,13 @@ export class TransactionService {
       }
 
       // Get transaction to update user balance if completing a deposit/withdrawal
-      const { data: transaction } = await client.models.Transaction.get({
+      console.log('[Transaction] Fetching transaction:', transactionId);
+      const { data: transaction, errors: txErrors } = await client.models.Transaction.get({
         id: transactionId
       });
+
+      console.log('[Transaction] Transaction data:', transaction);
+      console.log('[Transaction] Transaction errors:', txErrors);
 
       if (!transaction) {
         console.error('[Transaction] Transaction not found:', transactionId);
@@ -361,14 +381,25 @@ export class TransactionService {
       }
 
       // Update transaction status
-      await client.models.Transaction.update(updateData);
+      console.log('[Transaction] Updating transaction with:', updateData);
+      const { data: updatedTx, errors: updateErrors } = await client.models.Transaction.update(updateData);
+      console.log('[Transaction] Update result:', updatedTx);
+      console.log('[Transaction] Update errors:', updateErrors);
+
+      if (updateErrors) {
+        console.error('[Transaction] Failed to update transaction:', updateErrors);
+        return false;
+      }
 
       // If completing a deposit, update user balance
       if (status === 'COMPLETED' && transaction.type === 'DEPOSIT') {
-        await client.models.User.update({
+        console.log('[Transaction] Updating user balance for deposit');
+        const { data: updatedUser, errors: userUpdateErrors } = await client.models.User.update({
           id: transaction.userId!,
           balance: transaction.balanceAfter!,
         });
+        console.log('[Transaction] User balance updated:', updatedUser);
+        console.log('[Transaction] User update errors:', userUpdateErrors);
 
         // Send notification
         await NotificationService.createNotification({
@@ -382,10 +413,13 @@ export class TransactionService {
 
       // If completing a withdrawal, update user balance
       if (status === 'COMPLETED' && transaction.type === 'WITHDRAWAL') {
-        await client.models.User.update({
+        console.log('[Transaction] Updating user balance for withdrawal');
+        const { data: updatedUser, errors: userUpdateErrors } = await client.models.User.update({
           id: transaction.userId!,
           balance: transaction.balanceAfter!,
         });
+        console.log('[Transaction] User balance updated:', updatedUser);
+        console.log('[Transaction] User update errors:', userUpdateErrors);
 
         // Send notification
         await NotificationService.createNotification({
@@ -399,6 +433,7 @@ export class TransactionService {
 
       // If deposit/withdrawal failed, send notification
       if (status === 'FAILED' && (transaction.type === 'DEPOSIT' || transaction.type === 'WITHDRAWAL')) {
+        console.log('[Transaction] Sending failure notification');
         const notificationType = transaction.type === 'DEPOSIT'
           ? 'DEPOSIT_FAILED'
           : 'WITHDRAWAL_FAILED';
@@ -412,7 +447,7 @@ export class TransactionService {
         });
       }
 
-      console.log('[Transaction] Status updated:', { transactionId, status });
+      console.log('[Transaction] Status updated successfully:', { transactionId, status });
       return true;
     } catch (error) {
       console.error('[Transaction] Error updating transaction status:', error);

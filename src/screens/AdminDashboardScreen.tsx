@@ -80,7 +80,11 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
   };
 
   const handleApprove = async (transaction: Transaction) => {
-    if (!user?.userId) return;
+    console.log('[AdminDashboard] handleApprove called:', transaction.id);
+    if (!user?.userId) {
+      console.log('[AdminDashboard] No user ID, returning');
+      return;
+    }
 
     Alert.alert(
       'Approve Transaction',
@@ -91,21 +95,33 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
           text: 'Approve',
           style: 'default',
           onPress: async () => {
+            console.log('[AdminDashboard] Approving transaction:', transaction.id);
+            console.log('[AdminDashboard] Admin user ID:', user.userId);
+            console.log('[AdminDashboard] Admin role:', user.role);
             setProcessingId(transaction.id);
-            const success = await TransactionService.updateTransactionStatus(
-              transaction.id,
-              'COMPLETED',
-              undefined,
-              user.userId
-            );
 
-            if (success) {
-              Alert.alert('Success', 'Transaction approved successfully');
-              await loadPendingTransactions();
-            } else {
-              Alert.alert('Error', 'Failed to approve transaction');
+            try {
+              const success = await TransactionService.updateTransactionStatus(
+                transaction.id,
+                'COMPLETED',
+                undefined,
+                user.userId
+              );
+
+              console.log('[AdminDashboard] Update result:', success);
+
+              if (success) {
+                Alert.alert('Success', 'Transaction approved successfully');
+                await loadPendingTransactions();
+              } else {
+                Alert.alert('Error', 'Failed to approve transaction. Check console for details.');
+              }
+            } catch (error) {
+              console.error('[AdminDashboard] Error approving transaction:', error);
+              Alert.alert('Error', 'Exception occurred while approving transaction');
+            } finally {
+              setProcessingId(null);
             }
-            setProcessingId(null);
           },
         },
       ]
@@ -119,7 +135,11 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
   };
 
   const handleConfirmReject = async () => {
-    if (!user?.userId || !rejectTransaction) return;
+    console.log('[AdminDashboard] handleConfirmReject called');
+    if (!user?.userId || !rejectTransaction) {
+      console.log('[AdminDashboard] Missing user or transaction');
+      return;
+    }
 
     if (!rejectReason.trim()) {
       Alert.alert('Reason Required', 'Please enter a reason for rejecting this transaction');
@@ -127,6 +147,11 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
     }
 
     try {
+      console.log('[AdminDashboard] Rejecting transaction:', rejectTransaction.id);
+      console.log('[AdminDashboard] Admin user ID:', user.userId);
+      console.log('[AdminDashboard] Admin role:', user.role);
+      console.log('[AdminDashboard] Reject reason:', rejectReason.trim());
+
       setRejectModalVisible(false);
       setProcessingId(rejectTransaction.id);
 
@@ -137,15 +162,17 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
         user.userId
       );
 
+      console.log('[AdminDashboard] Reject result:', success);
+
       if (success) {
         Alert.alert('Success', 'Transaction rejected successfully');
         await loadPendingTransactions();
       } else {
-        Alert.alert('Error', 'Failed to reject transaction');
+        Alert.alert('Error', 'Failed to reject transaction. Check console for details.');
       }
     } catch (error) {
-      console.error('Error rejecting transaction:', error);
-      Alert.alert('Error', 'Failed to reject transaction');
+      console.error('[AdminDashboard] Error rejecting transaction:', error);
+      Alert.alert('Error', 'Exception occurred while rejecting transaction');
     } finally {
       setProcessingId(null);
       setRejectTransaction(null);
