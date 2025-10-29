@@ -3,20 +3,24 @@
  * Help center and contact support
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, textStyles, typography } from '../styles';
 import { ModalHeader } from '../components/ui/ModalHeader';
+import { FeedbackModal, FeedbackData } from '../components/ui/FeedbackModal';
+import { submitFeedbackToGitHub } from '../utils/github';
 
 interface SupportScreenProps {
   onClose: () => void;
 }
 
 export const SupportScreen: React.FC<SupportScreenProps> = ({ onClose }) => {
-  const handleGitHubIssue = () => {
-    Linking.openURL('https://github.com/anthropics/claude-code/issues');
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+
+  const handleSubmitFeedback = async (feedback: FeedbackData) => {
+    await submitFeedbackToGitHub(feedback);
   };
 
   return (
@@ -27,15 +31,15 @@ export const SupportScreen: React.FC<SupportScreenProps> = ({ onClose }) => {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>CONTACT US</Text>
 
-          <TouchableOpacity style={styles.contactCard} onPress={handleGitHubIssue} activeOpacity={0.7}>
+          <TouchableOpacity style={styles.contactCard} onPress={() => setShowFeedbackModal(true)} activeOpacity={0.7}>
             <View style={[styles.contactIcon, { backgroundColor: colors.primary + '20' }]}>
-              <Ionicons name="logo-github" size={28} color={colors.primary} />
+              <Ionicons name="chatbubble-ellipses-outline" size={28} color={colors.primary} />
             </View>
             <View style={styles.contactContent}>
-              <Text style={styles.contactTitle}>Report an Issue</Text>
-              <Text style={styles.contactSubtitle}>Submit bugs or feature requests on GitHub</Text>
+              <Text style={styles.contactTitle}>Send Feedback</Text>
+              <Text style={styles.contactSubtitle}>Report bugs, request features, or ask questions</Text>
             </View>
-            <Ionicons name="open-outline" size={20} color={colors.textMuted} />
+            <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
           </TouchableOpacity>
         </View>
 
@@ -73,6 +77,13 @@ export const SupportScreen: React.FC<SupportScreenProps> = ({ onClose }) => {
           </View>
         </View>
       </ScrollView>
+
+      {/* Feedback Modal */}
+      <FeedbackModal
+        visible={showFeedbackModal}
+        onClose={() => setShowFeedbackModal(false)}
+        onSubmit={handleSubmitFeedback}
+      />
     </SafeAreaView>
   );
 };
