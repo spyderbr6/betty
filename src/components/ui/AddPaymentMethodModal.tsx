@@ -123,8 +123,8 @@ export const AddPaymentMethodModal: React.FC<AddPaymentMethodModalProps> = ({
       // Show success alert after modal is closed
       setTimeout(() => {
         Alert.alert(
-          'Payment Method Added',
-          'Your Venmo account has been added successfully! It will need to be verified before you can withdraw funds.'
+          'Venmo Account Added',
+          'Your Venmo account has been added successfully! You can now add funds, which will be verified by our team before you can use them for betting.'
         );
       }, 300);
     } catch (error) {
@@ -257,9 +257,9 @@ export const AddPaymentMethodModal: React.FC<AddPaymentMethodModalProps> = ({
             <View style={styles.infoBanner}>
               <Ionicons name="information-circle-outline" size={24} color={colors.info} />
               <View style={styles.infoBannerContent}>
-                <Text style={styles.infoBannerTitle}>Verification Required</Text>
+                <Text style={styles.infoBannerTitle}>How Verification Works</Text>
                 <Text style={styles.infoBannerText}>
-                  Your Venmo account will need to be verified before you can withdraw funds. You can deposit funds immediately after adding your account.
+                  You can add funds immediately after adding your Venmo account. All deposits are manually verified by our team for security. Once verified, you can place bets and withdraw your winnings.
                 </Text>
               </View>
             </View>
