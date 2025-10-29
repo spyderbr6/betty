@@ -15,6 +15,9 @@ import {
   Alert,
   RefreshControl,
   TextInput,
+  Modal,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -40,6 +43,9 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
   const [refreshing, setRefreshing] = useState(false);
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [filter, setFilter] = useState<'ALL' | 'DEPOSITS' | 'WITHDRAWALS'>('ALL');
+  const [rejectModalVisible, setRejectModalVisible] = useState(false);
+  const [rejectTransaction, setRejectTransaction] = useState<Transaction | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
 
   // Check admin role on mount
   useEffect(() => {
@@ -106,38 +112,45 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
     );
   };
 
-  const handleReject = async (transaction: Transaction) => {
-    if (!user?.userId) return;
+  const handleReject = (transaction: Transaction) => {
+    setRejectTransaction(transaction);
+    setRejectReason('');
+    setRejectModalVisible(true);
+  };
 
-    Alert.prompt(
-      'Reject Transaction',
-      'Enter reason for rejection:',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Reject',
-          style: 'destructive',
-          onPress: async (reason) => {
-            setProcessingId(transaction.id);
-            const success = await TransactionService.updateTransactionStatus(
-              transaction.id,
-              'FAILED',
-              reason || 'Rejected by admin',
-              user.userId
-            );
+  const handleConfirmReject = async () => {
+    if (!user?.userId || !rejectTransaction) return;
 
-            if (success) {
-              Alert.alert('Success', 'Transaction rejected');
-              await loadPendingTransactions();
-            } else {
-              Alert.alert('Error', 'Failed to reject transaction');
-            }
-            setProcessingId(null);
-          },
-        },
-      ],
-      'plain-text'
-    );
+    if (!rejectReason.trim()) {
+      Alert.alert('Reason Required', 'Please enter a reason for rejecting this transaction');
+      return;
+    }
+
+    try {
+      setRejectModalVisible(false);
+      setProcessingId(rejectTransaction.id);
+
+      const success = await TransactionService.updateTransactionStatus(
+        rejectTransaction.id,
+        'FAILED',
+        rejectReason.trim(),
+        user.userId
+      );
+
+      if (success) {
+        Alert.alert('Success', 'Transaction rejected successfully');
+        await loadPendingTransactions();
+      } else {
+        Alert.alert('Error', 'Failed to reject transaction');
+      }
+    } catch (error) {
+      console.error('Error rejecting transaction:', error);
+      Alert.alert('Error', 'Failed to reject transaction');
+    } finally {
+      setProcessingId(null);
+      setRejectTransaction(null);
+      setRejectReason('');
+    }
   };
 
   const getFilteredTransactions = () => {
@@ -340,6 +353,82 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
           filteredTransactions.map(renderTransaction)
         )}
       </ScrollView>
+
+      {/* Reject Reason Modal */}
+      <Modal
+        visible={rejectModalVisible}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setRejectModalVisible(false)}
+      >
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <TouchableOpacity
+            style={styles.modalBackdrop}
+            activeOpacity={1}
+            onPress={() => setRejectModalVisible(false)}
+          >
+            <TouchableOpacity activeOpacity={1} onPress={(e) => e.stopPropagation()}>
+              <View style={styles.rejectModal}>
+                <View style={styles.rejectModalHeader}>
+                  <Ionicons name="close-circle" size={32} color={colors.error} />
+                  <Text style={styles.rejectModalTitle}>Reject Transaction</Text>
+                </View>
+
+                {rejectTransaction && (
+                  <View style={styles.rejectModalInfo}>
+                    <Text style={styles.rejectModalInfoText}>
+                      {rejectTransaction.type === 'DEPOSIT' ? 'Deposit' : 'Withdrawal'} of{' '}
+                      {formatCurrency(rejectTransaction.amount)}
+                    </Text>
+                    <Text style={styles.rejectModalInfoSubtext}>
+                      User: {rejectTransaction.userId.substring(0, 12)}...
+                    </Text>
+                  </View>
+                )}
+
+                <Text style={styles.rejectModalLabel}>Reason for Rejection</Text>
+                <TextInput
+                  style={styles.rejectModalInput}
+                  placeholder="Enter reason (e.g., Invalid transaction ID, Payment not received)"
+                  placeholderTextColor={colors.textMuted}
+                  value={rejectReason}
+                  onChangeText={setRejectReason}
+                  multiline
+                  numberOfLines={3}
+                  textAlignVertical="top"
+                  autoFocus
+                />
+
+                <View style={styles.rejectModalActions}>
+                  <TouchableOpacity
+                    style={styles.rejectModalCancelButton}
+                    onPress={() => setRejectModalVisible(false)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.rejectModalCancelText}>Cancel</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.rejectModalConfirmButton,
+                      !rejectReason.trim() && styles.rejectModalConfirmButtonDisabled
+                    ]}
+                    onPress={handleConfirmReject}
+                    disabled={!rejectReason.trim()}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="close" size={20} color={colors.background} />
+                    <Text style={styles.rejectModalConfirmText}>Reject Transaction</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </KeyboardAvoidingView>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -545,5 +634,113 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     textAlign: 'center',
     marginTop: spacing.xs,
+  },
+
+  // Reject Modal
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalBackdrop: {
+    flex: 1,
+    width: '100%',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.lg,
+  },
+  rejectModal: {
+    backgroundColor: colors.background,
+    borderRadius: spacing.radius.lg,
+    padding: spacing.lg,
+    width: '100%',
+    maxWidth: 400,
+  },
+  rejectModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  rejectModalTitle: {
+    ...textStyles.h3,
+    color: colors.textPrimary,
+    marginLeft: spacing.sm,
+    flex: 1,
+  },
+  rejectModalInfo: {
+    backgroundColor: colors.surface,
+    borderRadius: spacing.radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.lg,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.error,
+  },
+  rejectModalInfoText: {
+    ...textStyles.button,
+    color: colors.textPrimary,
+    fontWeight: typography.fontWeight.semibold,
+    marginBottom: spacing.xs / 2,
+  },
+  rejectModalInfoSubtext: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    fontFamily: typography.fontFamily.mono,
+  },
+  rejectModalLabel: {
+    ...textStyles.button,
+    color: colors.textPrimary,
+    fontWeight: typography.fontWeight.semibold,
+    marginBottom: spacing.sm,
+  },
+  rejectModalInput: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: spacing.radius.md,
+    padding: spacing.md,
+    fontSize: typography.fontSize.base,
+    color: colors.textPrimary,
+    fontFamily: typography.fontFamily.regular,
+    minHeight: 80,
+    marginBottom: spacing.lg,
+  },
+  rejectModalActions: {
+    flexDirection: 'row',
+  },
+  rejectModalCancelButton: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    paddingVertical: spacing.sm,
+    borderRadius: spacing.radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  rejectModalCancelText: {
+    ...textStyles.button,
+    color: colors.textPrimary,
+    fontWeight: typography.fontWeight.semibold,
+  },
+  rejectModalConfirmButton: {
+    flex: 1,
+    flexDirection: 'row',
+    backgroundColor: colors.error,
+    paddingVertical: spacing.sm,
+    borderRadius: spacing.radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: spacing.sm,
+  },
+  rejectModalConfirmButtonDisabled: {
+    backgroundColor: colors.disabled,
+  },
+  rejectModalConfirmText: {
+    ...textStyles.button,
+    color: colors.background,
+    fontWeight: typography.fontWeight.semibold,
+    marginLeft: spacing.xs,
   },
 });

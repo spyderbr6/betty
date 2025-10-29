@@ -142,6 +142,7 @@ export const AddFundsModal: React.FC<AddFundsModalProps> = ({
       );
 
       if (!transaction) {
+        setIsSubmitting(false);
         Alert.alert('Error', 'Failed to create deposit request. Please try again.');
         return;
       }
@@ -149,24 +150,24 @@ export const AddFundsModal: React.FC<AddFundsModalProps> = ({
       // Update last used timestamp
       await PaymentMethodService.updateLastUsed(selectedPaymentMethod.id);
 
-      Alert.alert(
-        'Deposit Pending',
-        'Your deposit request has been submitted! We\'ll verify your Venmo payment and credit your account shortly. You\'ll receive a notification when it\'s complete.',
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              onSuccess?.();
-              onClose();
-            },
-          },
-        ]
-      );
+      // Close modal immediately
+      onClose();
+
+      // Show success message after modal is closed
+      setTimeout(() => {
+        Alert.alert(
+          'Deposit Request Submitted',
+          'Your deposit request has been submitted! We\'ll verify your Venmo payment and credit your account shortly. You\'ll receive a notification when it\'s complete.',
+          [{ text: 'OK' }]
+        );
+      }, 300);
+
+      // Trigger success callback (refreshes parent data)
+      onSuccess?.();
     } catch (error) {
       console.error('Error submitting deposit:', error);
-      Alert.alert('Error', 'Failed to submit deposit request. Please try again.');
-    } finally {
       setIsSubmitting(false);
+      Alert.alert('Error', 'Failed to submit deposit request. Please try again.');
     }
   };
 
@@ -277,7 +278,8 @@ export const AddFundsModal: React.FC<AddFundsModalProps> = ({
             1. Open Venmo and send ${amount || '0.00'} to {APP_VENMO_USERNAME}
             {'\n'}2. Add note: "SideBet Deposit"
             {'\n'}3. Copy the transaction ID from Venmo
-            {'\n'}4. Paste it below
+            {'\n'}4. Paste it below for verification
+            {'\n'}5. Our team will verify and approve within 1-2 hours
           </Text>
         </View>
       </View>
@@ -350,9 +352,9 @@ export const AddFundsModal: React.FC<AddFundsModalProps> = ({
       <View style={styles.warningBanner}>
         <Ionicons name="alert-circle-outline" size={24} color={colors.warning} />
         <View style={styles.warningContent}>
-          <Text style={styles.warningTitle}>Verification Required</Text>
+          <Text style={styles.warningTitle}>Manual Verification Required</Text>
           <Text style={styles.warningText}>
-            Your deposit will be reviewed and credited to your account within 1-2 hours. You'll receive a notification when it's complete.
+            Our team will manually verify your Venmo payment and credit your account within 1-2 hours. You'll receive a notification when your deposit is approved and available for betting.
           </Text>
         </View>
       </View>
