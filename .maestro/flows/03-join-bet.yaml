@@ -1,0 +1,55 @@
+# Join Bet Flow Test
+# Tests joining an existing bet
+
+appId: com.sidebet.app
+---
+
+# Start from logged in state
+- runFlow: 01-login.yaml
+
+# Navigate to Home tab
+- tapOn: "Home"
+
+# Wait for bets to load
+- assertVisible:
+    text: "LIVE BETS"
+    timeout: 5000
+
+# Find and tap on a bet card (adjust selector based on your UI)
+- tapOn:
+    text: "Lakers vs Warriors"
+    optional: true
+
+# If no specific bet, tap on first bet card
+- tapOn:
+    id: "bet-card-0"
+    optional: true
+
+# Wait for bet details screen
+- assertVisible:
+    text: "Bet Details"
+    timeout: 3000
+
+# Choose a side (Team A)
+- tapOn: "Join Team A"
+
+# Confirm join
+- assertVisible: "Confirm Join Bet"
+- tapOn: "Confirm"
+
+# Wait for success
+- assertVisible:
+    text: "Successfully joined bet"
+    timeout: 5000
+
+# Verify bet appears in My Bets
+- tapOn: "My Bets"
+- assertVisible:
+    text: "Active Bets"
+    timeout: 3000
+
+# Success message
+- runScript:
+    file: ../scripts/log.js
+    env:
+      MESSAGE: "✅ Join bet test passed"

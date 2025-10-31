@@ -1,0 +1,51 @@
+# Create Bet Flow Test
+# Tests bet creation workflow
+
+appId: com.sidebet.app
+---
+
+# Start from logged in state
+- runFlow: 01-login.yaml
+
+# Navigate to Create tab
+- tapOn: "Create"
+
+# Wait for create bet screen
+- assertVisible: "Create a Bet"
+
+# Fill in bet details
+- tapOn: "Bet Title"
+- inputText: "E2E Test Bet"
+
+- tapOn: "Description"
+- inputText: "This is an automated test bet"
+
+- tapOn: "Bet Amount"
+- inputText: "50"
+
+- tapOn: "Side A Name"
+- inputText: "Team A"
+
+- tapOn: "Side B Name"
+- inputText: "Team B"
+
+# Set expiration (if needed, adjust based on your UI)
+# - tapOn: "Expiration"
+# - tapOn: "24 hours"
+
+# Create the bet
+- tapOn: "Create Bet"
+
+# Wait for success
+- assertVisible:
+    text: "Bet created successfully"
+    timeout: 5000
+
+# Verify we're back on home screen with new bet
+- assertVisible: "E2E Test Bet"
+
+# Success message
+- runScript:
+    file: ../scripts/log.js
+    env:
+      MESSAGE: "✅ Create bet test passed"

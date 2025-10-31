@@ -1,0 +1,38 @@
+# Login Flow Test
+# Tests user authentication
+
+appId: com.sidebet.app
+---
+
+# Launch app
+- launchApp
+
+# Wait for login screen
+- assertVisible: "Welcome to SideBet"
+- assertVisible: "Email"
+- assertVisible: "Password"
+
+# Enter credentials
+- tapOn: "Email"
+- inputText: "${TEST_USER_EMAIL}"
+- tapOn: "Password"
+- inputText: "${TEST_USER_PASSWORD}"
+
+# Tap login button
+- tapOn: "Log In"
+
+# Wait for home screen (verify successful login)
+- assertVisible:
+    text: "Home"
+    timeout: 10000
+
+# Verify balance is visible
+- assertVisible:
+    id: "user-balance"
+    timeout: 5000
+
+# Success message
+- runScript:
+    file: ../scripts/log.js
+    env:
+      MESSAGE: "✅ Login test passed"
