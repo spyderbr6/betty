@@ -11,6 +11,7 @@ import { colors } from '../styles';
 import { AppTabParamList, BetsStackParamList } from '../types/navigation';
 import { TabBar } from '../components/ui/TabBar';
 import ToastNotificationService from '../services/toastNotificationService';
+import { setPushNavigationCallback } from '../services/pushNotificationConfig';
 import { getNotificationNavigationAction } from '../utils/notificationNavigationHandler';
 import { NotificationType } from '../types/betting';
 
@@ -103,9 +104,9 @@ export const AppNavigator: React.FC = () => {
   const navigationRef = useRef<NavigationContainerRef<any>>(null);
 
   useEffect(() => {
-    // Set up toast notification navigation callback
-    const handleToastNavigation = (type: NotificationType, data?: any) => {
-      console.log('[Navigation] Handling toast tap:', type, data);
+    // Unified navigation handler for both toast and push notifications
+    const handleNotificationNavigation = (type: NotificationType, data?: any) => {
+      console.log('[Navigation] Handling notification tap:', type, data);
 
       const navigationAction = getNotificationNavigationAction(type, data);
 
@@ -149,11 +150,16 @@ export const AppNavigator: React.FC = () => {
       }
     };
 
-    ToastNotificationService.setNavigationCallback(handleToastNavigation);
+    // Register navigation callback for toast notifications
+    ToastNotificationService.setNavigationCallback(handleNotificationNavigation);
+
+    // Register navigation callback for push notifications
+    setPushNavigationCallback(handleNotificationNavigation);
 
     return () => {
       // Cleanup on unmount
       ToastNotificationService.setNavigationCallback(() => {});
+      setPushNavigationCallback(() => {});
     };
   }, []);
 
