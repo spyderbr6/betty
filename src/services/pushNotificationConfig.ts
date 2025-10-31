@@ -5,6 +5,7 @@
 
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
+import { NotificationType } from '../types/betting';
 
 // Configure how notifications are handled when the app is running
 Notifications.setNotificationHandler({
@@ -14,6 +15,21 @@ Notifications.setNotificationHandler({
     shouldSetBadge: true,
   }),
 });
+
+// Navigation callback type
+type NavigationCallback = (type: NotificationType, data?: any) => void;
+
+// Global navigation callback
+let navigationCallback: NavigationCallback | null = null;
+
+/**
+ * Set navigation callback for handling push notification taps
+ * This should be called from AppNavigator when navigation is ready
+ */
+export const setPushNavigationCallback = (callback: NavigationCallback) => {
+  navigationCallback = callback;
+  console.log('[Push] Navigation callback registered');
+};
 
 /**
  * Initialize push notification configuration
@@ -48,34 +64,33 @@ export const initializePushNotifications = async () => {
 
 /**
  * Handle notification taps and deep linking
+ * Uses the navigation callback to actually navigate to the appropriate screen
  */
 export const handleNotificationResponse = (response: Notifications.NotificationResponse) => {
   const data = response.notification.request.content.data;
 
-  console.log('Notification tapped:', data);
+  console.log('[Push] Notification tapped:', data);
 
-  // Handle deep linking based on notification data
-  if (data?.actionType) {
-    switch (data.actionType) {
-      case 'view_bet':
-        // Navigate to bet details
-        console.log('Navigate to bet:', data.relatedBetId);
-        break;
-      case 'view_friend_requests':
-        // Navigate to friend requests
-        console.log('Navigate to friend requests');
-        break;
-      case 'view_bet_invitation':
-        // Navigate to bet invitation
-        console.log('Navigate to bet invitation:', data.actionData);
-        break;
-      case 'view_friends':
-        // Navigate to friends screen
-        console.log('Navigate to friends');
-        break;
-      default:
-        console.log('Unknown notification action:', data.actionType);
-    }
+  if (!navigationCallback) {
+    console.warn('[Push] Navigation callback not set - cannot navigate');
+    return;
+  }
+
+  // Extract notification type and data from the push notification payload
+  const notificationType = data?.type as NotificationType;
+  const navigationData = {
+    notificationId: data?.notificationId,
+    actionType: data?.actionType,
+    actionData: data?.actionData,
+    relatedBetId: data?.relatedBetId,
+    relatedUserId: data?.relatedUserId,
+  };
+
+  if (notificationType) {
+    console.log('[Push] Triggering navigation for type:', notificationType);
+    navigationCallback(notificationType, navigationData);
+  } else {
+    console.warn('[Push] No notification type in push data - cannot determine navigation');
   }
 };
 

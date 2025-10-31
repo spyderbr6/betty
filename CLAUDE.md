@@ -46,6 +46,7 @@ src/
 ### Key Documentation Files
 - **CLAUDE.md** (this file): Main development guide and architecture overview
 - **[MODAL_STANDARDS.md](./MODAL_STANDARDS.md)**: **REQUIRED** reading before creating/modifying modals
+- **[PUSH_NOTIFICATION_GUIDE.md](./PUSH_NOTIFICATION_GUIDE.md)**: Complete guide to push notification setup, testing, and troubleshooting
 - **todo.md**: Current tasks and project roadmap
 
 ### Backend Integration
@@ -211,8 +212,18 @@ async function yourMainFunction() {
 ### User Experience
 - **Authentication**: AWS Cognito with native UI components
 - **Navigation**: Bottom tab navigation (Home, Create, My Bets, Friends, Account)
-- **Notifications**: Real-time event tracking and user feedback
+- **Notifications**: Multi-channel notification system with in-app toasts, push notifications, and notification center
 - **Profile Pictures**: S3 upload with automatic cleanup
+
+### Push Notification System
+- **Provider**: Expo Push Notification Service (no Firebase setup required)
+- **Backend**: AWS Lambda function sends via Expo Push API
+- **Platforms**: iOS (APNS) and Android (FCM) - fully managed by Expo
+- **Token Management**: Automatic registration on login, stored in DynamoDB
+- **Deep Linking**: Push notification taps navigate to relevant screens (bets, friend requests, transactions)
+- **User Preferences**: Configurable notification types, Do Not Disturb mode
+- **Testing**: Requires EAS development build on physical device
+- **Documentation**: See [PUSH_NOTIFICATION_GUIDE.md](./PUSH_NOTIFICATION_GUIDE.md) for complete setup and testing guide
 
 ### Technical Integrations
 - **GitHub Feedback**: Automatic issue creation from in-app feedback

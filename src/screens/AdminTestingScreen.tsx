@@ -24,6 +24,11 @@ import {
   testSportsAPI,
   runFullDiagnostics
 } from '../utils/testEventFetcher';
+import { NotificationService } from '../services/notificationService';
+import { generateClient } from 'aws-amplify/data';
+import type { Schema } from '../../amplify/data/resource';
+
+const client = generateClient<Schema>();
 
 interface TestModule {
   id: string;
@@ -77,7 +82,7 @@ export const AdminTestingScreen: React.FC<{ onClose: () => void }> = ({ onClose 
     }
   };
 
-  const testModules: TestModule[] = [
+  const eventTestModules: TestModule[] = [
     {
       id: 'test-api',
       title: 'Test TheSportsDB API',
@@ -118,6 +123,256 @@ export const AdminTestingScreen: React.FC<{ onClose: () => void }> = ({ onClose 
     },
   ];
 
+  const pushNotificationTestModules: TestModule[] = [
+    {
+      id: 'check-push-token',
+      title: 'Check Push Token Status',
+      description: 'Verifies your push token is registered and active',
+      action: async () => {
+        if (!user) {
+          addLog('❌ No user logged in');
+          return;
+        }
+
+        addLog('Checking push token status...');
+        const { data: tokens } = await client.models.PushToken.list({
+          filter: {
+            userId: { eq: user.userId },
+            isActive: { eq: true }
+          }
+        });
+
+        if (!tokens || tokens.length === 0) {
+          addLog('❌ No active push tokens found');
+          addLog('💡 Try logging out and back in to register a token');
+        } else {
+          addLog(`✅ Found ${tokens.length} active push token(s)`);
+          tokens.forEach((token, idx) => {
+            addLog(`Token ${idx + 1}:`);
+            addLog(`  Platform: ${token.platform}`);
+            addLog(`  Token: ${token.token?.substring(0, 30)}...`);
+            addLog(`  Last used: ${token.lastUsed || 'Never'}`);
+          });
+        }
+      }
+    },
+    {
+      id: 'send-test-push-high',
+      title: 'Send Test Push (HIGH Priority)',
+      description: 'Sends a high-priority push notification to yourself',
+      action: async () => {
+        if (!user) {
+          addLog('❌ No user logged in');
+          return;
+        }
+
+        addLog('Sending HIGH priority test push notification...');
+        const notification = await NotificationService.createNotification({
+          userId: user.userId,
+          type: 'SYSTEM_ANNOUNCEMENT',
+          title: '🔔 Test Push Notification',
+          message: 'This is a HIGH priority test notification. If you see this, push notifications are working!',
+          priority: 'HIGH',
+          sendPush: true,
+          actionType: 'view_notifications',
+        });
+
+        if (notification) {
+          addLog('✅ Test notification sent successfully');
+          addLog(`Notification ID: ${notification.id}`);
+          addLog('📱 Check your device for the push notification');
+          addLog('💡 Tap it to test deep linking');
+        } else {
+          addLog('❌ Failed to create notification');
+        }
+      }
+    },
+    {
+      id: 'send-test-push-urgent',
+      title: 'Send Test Push (URGENT Priority)',
+      description: 'Sends an urgent priority push notification to yourself',
+      action: async () => {
+        if (!user) {
+          addLog('❌ No user logged in');
+          return;
+        }
+
+        addLog('Sending URGENT priority test push notification...');
+        const notification = await NotificationService.createNotification({
+          userId: user.userId,
+          type: 'BET_RESOLVED',
+          title: '🎉 You Won!',
+          message: 'Test bet resolved - You won $100! (This is just a test)',
+          priority: 'URGENT',
+          sendPush: true,
+          actionType: 'view_bet',
+          actionData: { betId: 'test-bet-123' },
+        });
+
+        if (notification) {
+          addLog('✅ URGENT test notification sent successfully');
+          addLog(`Notification ID: ${notification.id}`);
+          addLog('📱 Check your device for the push notification');
+          addLog('💡 Tap it to test navigation to Resolve screen');
+        } else {
+          addLog('❌ Failed to create notification');
+        }
+      }
+    },
+    {
+      id: 'test-bet-invitation-push',
+      title: 'Send Bet Invitation Push',
+      description: 'Simulates receiving a bet invitation notification',
+      action: async () => {
+        if (!user) {
+          addLog('❌ No user logged in');
+          return;
+        }
+
+        addLog('Sending bet invitation test push...');
+        const notification = await NotificationService.createNotification({
+          userId: user.userId,
+          type: 'BET_INVITATION_RECEIVED',
+          title: '🎲 Bet Invitation',
+          message: 'Test User invited you to bet on "Lakers vs Celtics"',
+          priority: 'HIGH',
+          sendPush: true,
+          actionType: 'view_bet_invitation',
+          actionData: { betId: 'test-bet-456', invitationId: 'test-inv-789' },
+          relatedBetId: 'test-bet-456',
+        });
+
+        if (notification) {
+          addLog('✅ Bet invitation push sent successfully');
+          addLog('📱 Tap the notification to test navigation');
+        } else {
+          addLog('❌ Failed to create notification');
+        }
+      }
+    },
+    {
+      id: 'test-friend-request-push',
+      title: 'Send Friend Request Push',
+      description: 'Simulates receiving a friend request notification',
+      action: async () => {
+        if (!user) {
+          addLog('❌ No user logged in');
+          return;
+        }
+
+        addLog('Sending friend request test push...');
+        const notification = await NotificationService.createNotification({
+          userId: user.userId,
+          type: 'FRIEND_REQUEST_RECEIVED',
+          title: '👋 New Friend Request',
+          message: 'Test User sent you a friend request',
+          priority: 'MEDIUM',
+          sendPush: true,
+          actionType: 'view_friend_requests',
+          relatedUserId: 'test-user-123',
+        });
+
+        if (notification) {
+          addLog('✅ Friend request push sent successfully');
+          addLog('📱 Tap the notification to test navigation to Account screen');
+        } else {
+          addLog('❌ Failed to create notification');
+        }
+      }
+    },
+    {
+      id: 'view-recent-notifications',
+      title: 'View Recent Notifications',
+      description: 'Shows your last 10 notifications from the database',
+      action: async () => {
+        if (!user) {
+          addLog('❌ No user logged in');
+          return;
+        }
+
+        addLog('Fetching recent notifications...');
+        const notifications = await NotificationService.getUserNotifications(user.userId, {
+          limit: 10
+        });
+
+        if (notifications.length === 0) {
+          addLog('No notifications found');
+        } else {
+          addLog(`Found ${notifications.length} recent notifications:`);
+          notifications.forEach((notif, idx) => {
+            addLog(`${idx + 1}. [${notif.priority}] ${notif.title}`);
+            addLog(`   Type: ${notif.type}`);
+            addLog(`   Read: ${notif.isRead ? 'Yes' : 'No'}`);
+            addLog(`   Created: ${new Date(notif.createdAt).toLocaleString()}`);
+          });
+        }
+      }
+    },
+    {
+      id: 'test-all-push-types',
+      title: 'Send All Notification Types',
+      description: 'Sends one of each notification type for comprehensive testing',
+      action: async () => {
+        if (!user) {
+          addLog('❌ No user logged in');
+          return;
+        }
+
+        addLog('Sending all notification types...');
+
+        const notificationTypes = [
+          {
+            type: 'BET_RESOLVED' as const,
+            title: '🎉 You Won!',
+            message: 'Test: You won $50 on Lakers bet',
+            priority: 'HIGH' as const,
+          },
+          {
+            type: 'BET_INVITATION_RECEIVED' as const,
+            title: '🎲 Bet Invitation',
+            message: 'Test: Friend invited you to a bet',
+            priority: 'HIGH' as const,
+          },
+          {
+            type: 'FRIEND_REQUEST_RECEIVED' as const,
+            title: '👋 Friend Request',
+            message: 'Test: New friend request',
+            priority: 'MEDIUM' as const,
+          },
+          {
+            type: 'DEPOSIT_COMPLETED' as const,
+            title: '💰 Deposit Complete',
+            message: 'Test: $100 deposit successful',
+            priority: 'HIGH' as const,
+          },
+          {
+            type: 'BET_DEADLINE_APPROACHING' as const,
+            title: '⏰ Bet Closing Soon',
+            message: 'Test: Bet closes in 1 hour',
+            priority: 'MEDIUM' as const,
+          },
+        ];
+
+        for (const notif of notificationTypes) {
+          await NotificationService.createNotification({
+            userId: user.userId,
+            type: notif.type,
+            title: notif.title,
+            message: notif.message,
+            priority: notif.priority,
+            sendPush: true,
+          });
+          addLog(`✅ Sent: ${notif.title}`);
+          // Small delay between notifications
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+
+        addLog('✅ All notification types sent!');
+        addLog('📱 Check your device for 5 push notifications');
+      }
+    },
+  ];
+
   if (!user || (user.role !== 'ADMIN' && user.role !== 'SUPER_ADMIN')) {
     return null;
   }
@@ -142,10 +397,37 @@ export const AdminTestingScreen: React.FC<{ onClose: () => void }> = ({ onClose 
           <Text style={styles.adminBadgeText}>🔧 ADMIN MODE</Text>
         </View>
 
-        {/* Test Modules */}
+        {/* Push Notification Tests */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Event System Tests</Text>
-          {testModules.map((module) => (
+          <Text style={styles.sectionTitle}>📱 Push Notification Tests</Text>
+          <Text style={styles.sectionDescription}>
+            Test push notifications on your device. Make sure you're using an EAS development build on a physical device.
+          </Text>
+          {pushNotificationTestModules.map((module) => (
+            <TouchableOpacity
+              key={module.id}
+              style={[
+                styles.testCard,
+                activeTest === module.id && styles.testCardActive
+              ]}
+              onPress={() => runTest(module.id, module.action)}
+              disabled={loading}
+            >
+              <View style={styles.testCardHeader}>
+                <Text style={styles.testCardTitle}>{module.title}</Text>
+                {activeTest === module.id && (
+                  <ActivityIndicator size="small" color={colors.primary} />
+                )}
+              </View>
+              <Text style={styles.testCardDescription}>{module.description}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {/* Event System Tests */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>🏀 Event System Tests</Text>
+          {eventTestModules.map((module) => (
             <TouchableOpacity
               key={module.id}
               style={[
@@ -183,7 +465,13 @@ export const AdminTestingScreen: React.FC<{ onClose: () => void }> = ({ onClose 
         {/* Info Section */}
         <View style={styles.infoSection}>
           <Text style={styles.infoText}>
-            💡 These tools are for testing and debugging only. Use them to verify the event system is working correctly.
+            💡 These tools are for testing and debugging only.
+          </Text>
+          <Text style={[styles.infoText, { marginTop: spacing.sm }]}>
+            📱 Push notifications require an EAS development build on a physical device. They won't work in Expo Go or emulators.
+          </Text>
+          <Text style={[styles.infoText, { marginTop: spacing.sm }]}>
+            📖 See PUSH_NOTIFICATION_GUIDE.md for detailed setup instructions.
           </Text>
         </View>
       </ScrollView>
@@ -230,7 +518,13 @@ const styles = StyleSheet.create({
   sectionTitle: {
     ...textStyles.h4,
     color: colors.textPrimary,
+    marginBottom: spacing.xs,
+  },
+  sectionDescription: {
+    fontSize: typography.fontSize.sm,
+    color: colors.textSecondary,
     marginBottom: spacing.sm,
+    lineHeight: 20,
   },
   testCard: {
     backgroundColor: colors.surface,
