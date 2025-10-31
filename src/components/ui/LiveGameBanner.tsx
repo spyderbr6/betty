@@ -91,9 +91,7 @@ export const LiveGameBanner: React.FC<LiveGameBannerProps> = ({
     >
       <View style={styles.checkedInContent}>
         <View style={styles.checkedInLeft}>
-          <View style={styles.checkmarkCircle}>
-            <Ionicons name="checkmark" size={14} color={colors.background} />
-          </View>
+          <Ionicons name="location" size={20} color={colors.primary} />
           <View style={styles.eventInfo}>
             <Text style={styles.eventName} numberOfLines={1}>
               {checkedInEvent.homeTeam} vs {checkedInEvent.awayTeam}
@@ -171,17 +169,9 @@ const styles = StyleSheet.create({
     flex: 1,
     marginRight: spacing.sm,
   },
-  checkmarkCircle: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: colors.success,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: spacing.sm,
-  },
   eventInfo: {
     flex: 1,
+    marginLeft: spacing.sm,
   },
   eventName: {
     ...textStyles.body,
