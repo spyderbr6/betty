@@ -251,11 +251,10 @@ export async function checkOutOfEvent(
 /**
  * Get upcoming events (next 48 hours)
  *
- * IMPORTANT: DynamoDB applies limit BEFORE filters, so we need pagination
- * to ensure we get all upcoming events even if older events exist.
+ * Uses GSI (status + scheduledTime) for efficient querying.
  *
  * @param sport - Optional sport filter
- * @param limit - Maximum number of events to return (after filtering)
+ * @param limit - Maximum number of events to return
  * @returns Array of upcoming events
  */
 export async function getUpcomingEvents(
@@ -263,63 +262,30 @@ export async function getUpcomingEvents(
   limit: number = 200
 ): Promise<LiveEventData[]> {
   try {
-    console.log('[EventService] Fetching upcoming events with pagination');
+    console.log('[EventService] Fetching upcoming events using GSI');
 
     const now = new Date().toISOString();
     const next48Hours = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
 
-    const filter: any = {
-      and: [
-        { scheduledTime: { ge: now } },
-        { scheduledTime: { le: next48Hours } },
-        { status: { ne: 'CANCELLED' } }
-      ]
-    };
+    // Query using the GSI for efficient filtering by status and scheduledTime
+    const { data: events, errors } = await (client.models.LiveEvent as any).listEventsByStatusAndTime({
+      status: 'UPCOMING',
+      scheduledTime: {
+        between: [now, next48Hours]
+      },
+      limit,
+      filter: sport ? { sport: { eq: sport } } : undefined
+    });
 
-    if (sport) {
-      filter.and.push({ sport: { eq: sport } });
+    if (errors || !events) {
+      console.error('[EventService] Error fetching upcoming events:', errors);
+      return [];
     }
 
-    // Fetch all matching events using pagination
-    let allEvents: any[] = [];
-    let nextToken: string | null | undefined = undefined;
-    let pageCount = 0;
-    const maxPages = 10; // Safety limit to prevent infinite loops
+    console.log(`[EventService] Found ${events.length} upcoming events`);
 
-    do {
-      pageCount++;
-      const response = await client.models.LiveEvent.list({
-        filter,
-        limit: 100, // Fetch 100 at a time
-        nextToken: nextToken as any
-      });
-
-      if (response.errors) {
-        console.error('[EventService] Error fetching page', pageCount, ':', response.errors);
-        break;
-      }
-
-      if (response.data && response.data.length > 0) {
-        allEvents = allEvents.concat(response.data);
-        console.log(`[EventService] Page ${pageCount}: Found ${response.data.length} events (total: ${allEvents.length})`);
-      }
-
-      nextToken = (response as any).nextToken;
-
-      // Stop if we have enough events or hit safety limit
-      if (allEvents.length >= limit || pageCount >= maxPages) {
-        break;
-      }
-    } while (nextToken);
-
-    console.log(`[EventService] Pagination complete: ${allEvents.length} total events across ${pageCount} pages`);
-
-    // Sort by scheduled time
-    const sortedEvents = allEvents.sort((a, b) => {
-      const dateA = new Date(a.scheduledTime).getTime();
-      const dateB = new Date(b.scheduledTime).getTime();
-      return dateA - dateB;
-    });
+    // Events are already sorted by scheduledTime (GSI sort key)
+    const sortedEvents = events;
 
     return sortedEvents.map(event => ({
       id: event.id,
@@ -424,12 +390,8 @@ export async function getTrendingEvents(limit: number = 20): Promise<LiveEventDa
 /**
  * Get live events (currently in progress based on scheduled time)
  *
- * A game is considered "live" if:
- * - Scheduled time is within 90 minutes in the future OR has already started
- * - Less than 4 hours have passed since scheduled time (game duration)
- * - Status is not FINISHED or CANCELLED
- *
- * IMPORTANT: Uses pagination to ensure all live events are returned.
+ * A game is considered "live" if it has status LIVE, HALFTIME, or UPCOMING (starting soon).
+ * Uses GSI to efficiently query each status.
  *
  * @param sport - Optional sport filter
  * @returns Array of live events
@@ -438,61 +400,53 @@ export async function getLiveEvents(
   sport?: 'NBA' | 'NFL' | 'MLB' | 'NHL' | 'SOCCER' | 'COLLEGE_FOOTBALL' | 'COLLEGE_BASKETBALL' | 'OTHER'
 ): Promise<LiveEventData[]> {
   try {
-    console.log('[EventService] Fetching live events (time-based) with pagination');
+    console.log('[EventService] Fetching live events using GSI');
 
     const now = new Date();
     const ninetyMinutesFromNow = new Date(now.getTime() + 90 * 60 * 1000);
     const fourHoursAgo = new Date(now.getTime() - 4 * 60 * 60 * 1000);
 
-    // Get events that:
-    // 1. Start within 90 minutes OR started within last 4 hours
-    // 2. Are not finished or cancelled
-    const filter: any = {
-      and: [
-        { scheduledTime: { le: ninetyMinutesFromNow.toISOString() } },
-        { scheduledTime: { ge: fourHoursAgo.toISOString() } },
-        { status: { ne: 'FINISHED' } },
-        { status: { ne: 'CANCELLED' } }
-      ]
-    };
+    const sportFilter = sport ? { sport: { eq: sport } } : undefined;
 
-    if (sport) {
-      filter.and.push({ sport: { eq: sport } });
-    }
-
-    // Fetch all matching events using pagination
-    let allEvents: any[] = [];
-    let nextToken: string | null | undefined = undefined;
-    let pageCount = 0;
-    const maxPages = 5; // Lower limit for live events (fewer expected)
-
-    do {
-      pageCount++;
-      const response = await client.models.LiveEvent.list({
-        filter,
+    // Query each relevant status using the GSI
+    const [liveEvents, halftimeEvents, upcomingEvents] = await Promise.all([
+      // LIVE status events
+      (client.models.LiveEvent as any).listEventsByStatusAndTime({
+        status: 'LIVE',
+        scheduledTime: {
+          between: [fourHoursAgo.toISOString(), ninetyMinutesFromNow.toISOString()]
+        },
         limit: 100,
-        nextToken: nextToken as any
-      });
+        filter: sportFilter
+      }),
+      // HALFTIME status events
+      (client.models.LiveEvent as any).listEventsByStatusAndTime({
+        status: 'HALFTIME',
+        scheduledTime: {
+          between: [fourHoursAgo.toISOString(), ninetyMinutesFromNow.toISOString()]
+        },
+        limit: 100,
+        filter: sportFilter
+      }),
+      // UPCOMING events starting within 90 minutes
+      (client.models.LiveEvent as any).listEventsByStatusAndTime({
+        status: 'UPCOMING',
+        scheduledTime: {
+          between: [now.toISOString(), ninetyMinutesFromNow.toISOString()]
+        },
+        limit: 100,
+        filter: sportFilter
+      })
+    ]);
 
-      if (response.errors) {
-        console.error('[EventService] Error fetching live events page', pageCount, ':', response.errors);
-        break;
-      }
+    // Combine all results
+    const allEvents = [
+      ...(liveEvents.data || []),
+      ...(halftimeEvents.data || []),
+      ...(upcomingEvents.data || [])
+    ];
 
-      if (response.data && response.data.length > 0) {
-        allEvents = allEvents.concat(response.data);
-        console.log(`[EventService] Live events page ${pageCount}: Found ${response.data.length} events (total: ${allEvents.length})`);
-      }
-
-      nextToken = (response as any).nextToken;
-
-      // Stop if we hit safety limit or no more data
-      if (pageCount >= maxPages) {
-        break;
-      }
-    } while (nextToken);
-
-    console.log(`[EventService] Found ${allEvents.length} live events based on time across ${pageCount} pages`);
+    console.log(`[EventService] Found ${allEvents.length} live events (LIVE: ${liveEvents.data?.length || 0}, HALFTIME: ${halftimeEvents.data?.length || 0}, UPCOMING: ${upcomingEvents.data?.length || 0})`);
 
     return allEvents.map(event => ({
       id: event.id,

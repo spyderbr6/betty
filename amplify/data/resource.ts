@@ -406,6 +406,9 @@ const schema = a.schema({
       // Relations
       checkIns: a.hasMany('EventCheckIn', 'eventId')
     })
+    .secondaryIndexes((index) => [
+      index('status').sortKeys(['scheduledTime']).queryField('listEventsByStatusAndTime'),
+    ])
     .authorization((allow) => [
       allow.authenticated().to(['read', 'create', 'update']) // All authenticated users can read, Lambda functions can create/update
     ]),
