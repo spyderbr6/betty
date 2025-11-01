@@ -251,8 +251,11 @@ export async function checkOutOfEvent(
 /**
  * Get upcoming events (next 48 hours)
  *
+ * IMPORTANT: DynamoDB applies limit BEFORE filters, so we need pagination
+ * to ensure we get all upcoming events even if older events exist.
+ *
  * @param sport - Optional sport filter
- * @param limit - Maximum number of events to return
+ * @param limit - Maximum number of events to return (after filtering)
  * @returns Array of upcoming events
  */
 export async function getUpcomingEvents(
@@ -260,7 +263,7 @@ export async function getUpcomingEvents(
   limit: number = 200
 ): Promise<LiveEventData[]> {
   try {
-    console.log('[EventService] Fetching upcoming events');
+    console.log('[EventService] Fetching upcoming events with pagination');
 
     const now = new Date().toISOString();
     const next48Hours = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
@@ -277,18 +280,42 @@ export async function getUpcomingEvents(
       filter.and.push({ sport: { eq: sport } });
     }
 
-    const { data: events, errors } = await client.models.LiveEvent.list({
-      filter,
-      limit
-    });
+    // Fetch all matching events using pagination
+    let allEvents: any[] = [];
+    let nextToken: string | null | undefined = undefined;
+    let pageCount = 0;
+    const maxPages = 10; // Safety limit to prevent infinite loops
 
-    if (errors || !events) {
-      console.error('[EventService] Error fetching upcoming events:', errors);
-      return [];
-    }
+    do {
+      pageCount++;
+      const response = await client.models.LiveEvent.list({
+        filter,
+        limit: 100, // Fetch 100 at a time
+        nextToken: nextToken as any
+      });
+
+      if (response.errors) {
+        console.error('[EventService] Error fetching page', pageCount, ':', response.errors);
+        break;
+      }
+
+      if (response.data && response.data.length > 0) {
+        allEvents = allEvents.concat(response.data);
+        console.log(`[EventService] Page ${pageCount}: Found ${response.data.length} events (total: ${allEvents.length})`);
+      }
+
+      nextToken = (response as any).nextToken;
+
+      // Stop if we have enough events or hit safety limit
+      if (allEvents.length >= limit || pageCount >= maxPages) {
+        break;
+      }
+    } while (nextToken);
+
+    console.log(`[EventService] Pagination complete: ${allEvents.length} total events across ${pageCount} pages`);
 
     // Sort by scheduled time
-    const sortedEvents = events.sort((a, b) => {
+    const sortedEvents = allEvents.sort((a, b) => {
       const dateA = new Date(a.scheduledTime).getTime();
       const dateB = new Date(b.scheduledTime).getTime();
       return dateA - dateB;
@@ -402,6 +429,8 @@ export async function getTrendingEvents(limit: number = 20): Promise<LiveEventDa
  * - Less than 4 hours have passed since scheduled time (game duration)
  * - Status is not FINISHED or CANCELLED
  *
+ * IMPORTANT: Uses pagination to ensure all live events are returned.
+ *
  * @param sport - Optional sport filter
  * @returns Array of live events
  */
@@ -409,7 +438,7 @@ export async function getLiveEvents(
   sport?: 'NBA' | 'NFL' | 'MLB' | 'NHL' | 'SOCCER' | 'COLLEGE_FOOTBALL' | 'COLLEGE_BASKETBALL' | 'OTHER'
 ): Promise<LiveEventData[]> {
   try {
-    console.log('[EventService] Fetching live events (time-based)');
+    console.log('[EventService] Fetching live events (time-based) with pagination');
 
     const now = new Date();
     const ninetyMinutesFromNow = new Date(now.getTime() + 90 * 60 * 1000);
@@ -431,20 +460,41 @@ export async function getLiveEvents(
       filter.and.push({ sport: { eq: sport } });
     }
 
-    const { data: events, errors } = await client.models.LiveEvent.list({
-      filter,
-      limit: 100
-    });
+    // Fetch all matching events using pagination
+    let allEvents: any[] = [];
+    let nextToken: string | null | undefined = undefined;
+    let pageCount = 0;
+    const maxPages = 5; // Lower limit for live events (fewer expected)
 
-    if (errors || !events) {
-      console.error('[EventService] Error fetching live events:', errors);
-      return [];
-    }
+    do {
+      pageCount++;
+      const response = await client.models.LiveEvent.list({
+        filter,
+        limit: 100,
+        nextToken: nextToken as any
+      });
 
-    console.log(`[EventService] Found ${events.length} live events based on time`);
+      if (response.errors) {
+        console.error('[EventService] Error fetching live events page', pageCount, ':', response.errors);
+        break;
+      }
 
+      if (response.data && response.data.length > 0) {
+        allEvents = allEvents.concat(response.data);
+        console.log(`[EventService] Live events page ${pageCount}: Found ${response.data.length} events (total: ${allEvents.length})`);
+      }
 
-    return events.map(event => ({
+      nextToken = (response as any).nextToken;
+
+      // Stop if we hit safety limit or no more data
+      if (pageCount >= maxPages) {
+        break;
+      }
+    } while (nextToken);
+
+    console.log(`[EventService] Found ${allEvents.length} live events based on time across ${pageCount} pages`);
+
+    return allEvents.map(event => ({
       id: event.id,
       externalId: event.externalId,
       sport: event.sport || 'OTHER',
