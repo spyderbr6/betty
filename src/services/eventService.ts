@@ -257,7 +257,7 @@ export async function checkOutOfEvent(
  */
 export async function getUpcomingEvents(
   sport?: 'NBA' | 'NFL' | 'MLB' | 'NHL' | 'SOCCER' | 'COLLEGE_FOOTBALL' | 'COLLEGE_BASKETBALL' | 'OTHER',
-  limit: number = 50
+  limit: number = 200
 ): Promise<LiveEventData[]> {
   try {
     console.log('[EventService] Fetching upcoming events');
