@@ -1034,7 +1034,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: spacing.radius.sm,
-    paddingHorizontal: spacing.sm,
+    paddingHorizontal: spacing.xs,
     paddingVertical: spacing.xs,
     color: colors.textPrimary,
     textAlign: 'center',
@@ -1061,9 +1061,9 @@ const styles = StyleSheet.create({
     textAlignVertical: 'center',
   },
   vsContainer: {
-    width: 40,
+    width: 32,
     alignItems: 'center',
-    marginHorizontal: spacing.sm,
+    marginHorizontal: spacing.xs,
   },
   vsText: {
     ...textStyles.h4,
