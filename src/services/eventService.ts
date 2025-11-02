@@ -390,8 +390,12 @@ export async function getTrendingEvents(limit: number = 20): Promise<LiveEventDa
 /**
  * Get live events (currently in progress based on scheduled time)
  *
- * A game is considered "live" if it has status LIVE, HALFTIME, or UPCOMING (starting soon).
- * Uses GSI to efficiently query each status.
+ * A game is considered "live" if:
+ * - Scheduled time is within 90 minutes in the future OR has already started
+ * - Less than 4 hours have passed since scheduled time (game duration)
+ * - Status is not FINISHED or CANCELLED
+ *
+ * Uses simple filtering since the time window is small (~5.5 hours).
  *
  * @param sport - Optional sport filter
  * @returns Array of live events
@@ -400,55 +404,38 @@ export async function getLiveEvents(
   sport?: 'NBA' | 'NFL' | 'MLB' | 'NHL' | 'SOCCER' | 'COLLEGE_FOOTBALL' | 'COLLEGE_BASKETBALL' | 'OTHER'
 ): Promise<LiveEventData[]> {
   try {
-    console.log('[EventService] Fetching live events using GSI');
+    console.log('[EventService] Fetching live events');
 
     const now = new Date();
     const ninetyMinutesFromNow = new Date(now.getTime() + 90 * 60 * 1000);
     const fourHoursAgo = new Date(now.getTime() - 4 * 60 * 60 * 1000);
 
-    const sportFilter = sport ? { sport: { eq: sport } } : undefined;
+    const filter: any = {
+      and: [
+        { scheduledTime: { ge: fourHoursAgo.toISOString() } },
+        { scheduledTime: { le: ninetyMinutesFromNow.toISOString() } },
+        { status: { ne: 'FINISHED' } },
+        { status: { ne: 'CANCELLED' } }
+      ]
+    };
 
-    // Query each relevant status using the GSI
-    const [liveEvents, halftimeEvents, upcomingEvents] = await Promise.all([
-      // LIVE status events
-      (client.models.LiveEvent as any).listEventsByStatusAndTime({
-        status: 'LIVE',
-        scheduledTime: {
-          between: [fourHoursAgo.toISOString(), ninetyMinutesFromNow.toISOString()]
-        },
-        limit: 100,
-        filter: sportFilter
-      }),
-      // HALFTIME status events
-      (client.models.LiveEvent as any).listEventsByStatusAndTime({
-        status: 'HALFTIME',
-        scheduledTime: {
-          between: [fourHoursAgo.toISOString(), ninetyMinutesFromNow.toISOString()]
-        },
-        limit: 100,
-        filter: sportFilter
-      }),
-      // UPCOMING events starting within 90 minutes
-      (client.models.LiveEvent as any).listEventsByStatusAndTime({
-        status: 'UPCOMING',
-        scheduledTime: {
-          between: [now.toISOString(), ninetyMinutesFromNow.toISOString()]
-        },
-        limit: 100,
-        filter: sportFilter
-      })
-    ]);
+    if (sport) {
+      filter.and.push({ sport: { eq: sport } });
+    }
 
-    // Combine all results
-    const allEvents = [
-      ...(liveEvents.data || []),
-      ...(halftimeEvents.data || []),
-      ...(upcomingEvents.data || [])
-    ];
+    const { data: events, errors } = await client.models.LiveEvent.list({
+      filter,
+      limit: 100
+    });
 
-    console.log(`[EventService] Found ${allEvents.length} live events (LIVE: ${liveEvents.data?.length || 0}, HALFTIME: ${halftimeEvents.data?.length || 0}, UPCOMING: ${upcomingEvents.data?.length || 0})`);
+    if (errors || !events) {
+      console.error('[EventService] Error fetching live events:', errors);
+      return [];
+    }
 
-    return allEvents.map(event => ({
+    console.log(`[EventService] Found ${events.length} live events`);
+
+    return events.map(event => ({
       id: event.id,
       externalId: event.externalId,
       sport: event.sport || 'OTHER',
