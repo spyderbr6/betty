@@ -251,35 +251,30 @@ export async function checkOutOfEvent(
 /**
  * Get upcoming events (next 48 hours)
  *
+ * Uses GSI (status + scheduledTime) for efficient querying.
+ *
  * @param sport - Optional sport filter
  * @param limit - Maximum number of events to return
  * @returns Array of upcoming events
  */
 export async function getUpcomingEvents(
   sport?: 'NBA' | 'NFL' | 'MLB' | 'NHL' | 'SOCCER' | 'COLLEGE_FOOTBALL' | 'COLLEGE_BASKETBALL' | 'OTHER',
-  limit: number = 50
+  limit: number = 200
 ): Promise<LiveEventData[]> {
   try {
-    console.log('[EventService] Fetching upcoming events');
+    console.log('[EventService] Fetching upcoming events using GSI');
 
     const now = new Date().toISOString();
     const next48Hours = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
 
-    const filter: any = {
-      and: [
-        { scheduledTime: { ge: now } },
-        { scheduledTime: { le: next48Hours } },
-        { status: { ne: 'CANCELLED' } }
-      ]
-    };
-
-    if (sport) {
-      filter.and.push({ sport: { eq: sport } });
-    }
-
-    const { data: events, errors } = await client.models.LiveEvent.list({
-      filter,
-      limit
+    // Query using the GSI for efficient filtering by status and scheduledTime
+    const { data: events, errors } = await (client.models.LiveEvent as any).listEventsByStatusAndTime({
+      status: 'UPCOMING',
+      scheduledTime: {
+        between: [now, next48Hours]
+      },
+      limit,
+      filter: sport ? { sport: { eq: sport } } : undefined
     });
 
     if (errors || !events) {
@@ -287,12 +282,10 @@ export async function getUpcomingEvents(
       return [];
     }
 
-    // Sort by scheduled time
-    const sortedEvents = events.sort((a, b) => {
-      const dateA = new Date(a.scheduledTime).getTime();
-      const dateB = new Date(b.scheduledTime).getTime();
-      return dateA - dateB;
-    });
+    console.log(`[EventService] Found ${events.length} upcoming events`);
+
+    // Events are already sorted by scheduledTime (GSI sort key)
+    const sortedEvents = events;
 
     return sortedEvents.map(event => ({
       id: event.id,
@@ -402,6 +395,8 @@ export async function getTrendingEvents(limit: number = 20): Promise<LiveEventDa
  * - Less than 4 hours have passed since scheduled time (game duration)
  * - Status is not FINISHED or CANCELLED
  *
+ * Uses simple filtering since the time window is small (~5.5 hours).
+ *
  * @param sport - Optional sport filter
  * @returns Array of live events
  */
@@ -409,19 +404,16 @@ export async function getLiveEvents(
   sport?: 'NBA' | 'NFL' | 'MLB' | 'NHL' | 'SOCCER' | 'COLLEGE_FOOTBALL' | 'COLLEGE_BASKETBALL' | 'OTHER'
 ): Promise<LiveEventData[]> {
   try {
-    console.log('[EventService] Fetching live events (time-based)');
+    console.log('[EventService] Fetching live events');
 
     const now = new Date();
     const ninetyMinutesFromNow = new Date(now.getTime() + 90 * 60 * 1000);
     const fourHoursAgo = new Date(now.getTime() - 4 * 60 * 60 * 1000);
 
-    // Get events that:
-    // 1. Start within 90 minutes OR started within last 4 hours
-    // 2. Are not finished or cancelled
     const filter: any = {
       and: [
-        { scheduledTime: { le: ninetyMinutesFromNow.toISOString() } },
         { scheduledTime: { ge: fourHoursAgo.toISOString() } },
+        { scheduledTime: { le: ninetyMinutesFromNow.toISOString() } },
         { status: { ne: 'FINISHED' } },
         { status: { ne: 'CANCELLED' } }
       ]
@@ -441,8 +433,7 @@ export async function getLiveEvents(
       return [];
     }
 
-    console.log(`[EventService] Found ${events.length} live events based on time`);
-
+    console.log(`[EventService] Found ${events.length} live events`);
 
     return events.map(event => ({
       id: event.id,
