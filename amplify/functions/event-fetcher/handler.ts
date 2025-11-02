@@ -12,49 +12,96 @@ Amplify.configure(resourceConfig, libraryOptions);
 // Use non-generic client to avoid complex union type inference
 const client = generateClient<Schema>() as any;
 
-// TheSportsDB API configuration (API key "123" is the correct endpoint)
-const SPORTSDB_API_BASE = 'https://www.thesportsdb.com/api/v1/json/123';
+// ESPN API configuration (unofficial public API)
+const ESPN_API_BASE = 'https://site.api.espn.com/apis/site/v2/sports';
 
-interface SportsDBEvent {
-  idEvent: string;
-  strEvent: string;
-  strHomeTeam: string;
-  strAwayTeam: string;
-  intHomeScore: string | null;
-  intAwayScore: string | null;
-  strStatus: string;
-  strProgress: string | null;
-  strVenue: string;
-  strCity: string | null;
-  strCountry: string;
-  dateEvent: string;
-  strTime: string;
-  strLeague: string;
-  strSeason: string;
-  intRound: string | null;
-  strSport: string;
+interface ESPNTeam {
+  id: string;
+  location: string;
+  name: string;
+  abbreviation: string;
+  displayName: string;
 }
 
-interface SportsDBResponse {
-  events: SportsDBEvent[] | null;
+interface ESPNCompetitor {
+  id: string;
+  homeAway: 'home' | 'away';
+  team: ESPNTeam;
+  score: string;
+  winner?: boolean;
 }
 
-const LEAGUE_IDS: Record<string, string> = {
-  NBA: '4387',
-  NFL: '4391',
-  MLB: '4424',
-  NHL: '4380',
+interface ESPNStatus {
+  type: {
+    id: string;
+    name: string;
+    state: string;
+    completed: boolean;
+    description: string;
+    detail: string;
+    shortDetail: string;
+  };
+  period?: number;
+  displayClock?: string;
+}
+
+interface ESPNVenue {
+  id: string;
+  fullName: string;
+  address?: {
+    city?: string;
+    state?: string;
+  };
+}
+
+interface ESPNCompetition {
+  id: string;
+  uid: string;
+  date: string;
+  attendance?: number;
+  status: ESPNStatus;
+  venue?: ESPNVenue;
+  competitors: ESPNCompetitor[];
+}
+
+interface ESPNEvent {
+  id: string;
+  uid: string;
+  date: string;
+  name: string;
+  shortName: string;
+  season: {
+    year: number;
+    type: number;
+  };
+  competitions: ESPNCompetition[];
+}
+
+interface ESPNResponse {
+  events: ESPNEvent[];
+}
+
+const LEAGUE_ENDPOINTS: Record<string, string> = {
+  NBA: 'basketball/nba',
+  NFL: 'football/nfl',
 };
 
 /**
- * Fetch events from TheSportsDB API
+ * Fetch events from ESPN API
  */
-async function fetchEventsFromAPI(league: string, date: string): Promise<SportsDBEvent[]> {
+async function fetchEventsFromAPI(league: string, date: string): Promise<ESPNEvent[]> {
   try {
-    const leagueId = LEAGUE_IDS[league];
-    const url = `${SPORTSDB_API_BASE}/eventsday.php?d=${date}&id=${leagueId}`;
+    const leagueEndpoint = LEAGUE_ENDPOINTS[league];
+    if (!leagueEndpoint) {
+      console.error(`❌ Unknown league: ${league}`);
+      return [];
+    }
 
-    console.log(`🔍 Fetching events for ${league} (League ID: ${leagueId}) on ${date}`);
+    // Format date as YYYYMMDD for ESPN API
+    const formattedDate = date.replace(/-/g, '');
+    const url = `${ESPN_API_BASE}/${leagueEndpoint}/scoreboard?dates=${formattedDate}`;
+
+    console.log(`🔍 Fetching events for ${league} on ${date}`);
     console.log(`🌐 Full URL: ${url}`);
 
     const response = await fetch(url);
@@ -68,54 +115,29 @@ async function fetchEventsFromAPI(league: string, date: string): Promise<SportsD
       return [];
     }
 
-    const rawText = await response.text();
-    console.log(`📦 Raw API response for ${league} on ${date}:`, rawText.substring(0, 500)); // Log first 500 chars
-
-    const data: SportsDBResponse = JSON.parse(rawText);
+    const data: ESPNResponse = await response.json();
 
     if (!data.events || data.events.length === 0) {
-      console.log(`⚠️  No events found for ${league} on ${date} (API returned null/empty - normal if no games)`);
+      console.log(`⚠️  No events found for ${league} on ${date} (ESPN returned empty - normal if no games)`);
       return [];
     }
 
-    console.log(`✅ Found ${data.events.length} total events for ${league} on ${date}`);
-
-    // Filter to only the specific league (API returns all games for the sport)
-    const filteredEvents = data.events.filter(event => {
-      // For NFL, only include events where league is exactly "NFL"
-      if (league === 'NFL') {
-        return event.strLeague === 'NFL';
-      }
-      // For NBA, only include events where league is exactly "NBA"
-      if (league === 'NBA') {
-        return event.strLeague === 'NBA';
-      }
-      // For MLB, only include events where league is exactly "American Major League Baseball"
-      if (league === 'MLB') {
-        return event.strLeague.includes('Major League Baseball');
-      }
-      // For NHL, only include events where league is exactly "NHL"
-      if (league === 'NHL') {
-        return event.strLeague === 'NHL';
-      }
-      return true;
-    });
-
-    console.log(`🔍 After filtering: ${filteredEvents.length} ${league} events (excluded ${data.events.length - filteredEvents.length} non-${league} games)`);
+    console.log(`✅ Found ${data.events.length} ${league} events on ${date}`);
 
     // Log first event for verification
-    if (filteredEvents.length > 0) {
+    if (data.events.length > 0) {
+      const firstEvent = data.events[0];
+      const competition = firstEvent.competitions[0];
       console.log(`📋 Sample event:`, {
-        id: filteredEvents[0].idEvent,
-        league: filteredEvents[0].strLeague,
-        name: filteredEvents[0].strEvent,
-        date: filteredEvents[0].dateEvent,
-        time: filteredEvents[0].strTime,
-        status: filteredEvents[0].strStatus
+        id: firstEvent.id,
+        name: firstEvent.name,
+        date: firstEvent.date,
+        status: competition?.status?.type?.name,
+        venue: competition?.venue?.fullName
       });
     }
 
-    return filteredEvents;
+    return data.events;
   } catch (error) {
     console.error(`❌ Error fetching events for ${league}:`, error);
     console.error(`❌ Error details:`, error instanceof Error ? error.message : String(error));
@@ -124,108 +146,110 @@ async function fetchEventsFromAPI(league: string, date: string): Promise<SportsD
 }
 
 /**
- * Parse event status from TheSportsDB
+ * Parse event status from ESPN API
  */
-function parseEventStatus(status: string): 'UPCOMING' | 'LIVE' | 'HALFTIME' | 'FINISHED' | 'POSTPONED' | 'CANCELLED' {
-  const statusLower = status.toLowerCase();
+function parseEventStatus(espnStatus: ESPNStatus): 'UPCOMING' | 'LIVE' | 'HALFTIME' | 'FINISHED' | 'POSTPONED' | 'CANCELLED' {
+  const state = espnStatus.type.state.toLowerCase();
+  const name = espnStatus.type.name.toLowerCase();
+  const detail = espnStatus.type.detail?.toLowerCase() || '';
 
-  if (statusLower.includes('not started') || statusLower.includes('upcoming')) {
+  // ESPN states: pre, in, post
+  if (state === 'pre') {
+    if (name.includes('postponed') || detail.includes('postponed')) {
+      return 'POSTPONED';
+    }
+    if (name.includes('cancel') || detail.includes('cancel')) {
+      return 'CANCELLED';
+    }
     return 'UPCOMING';
   }
-  if (statusLower.includes('in play') || statusLower.includes('live')) {
+
+  if (state === 'in') {
+    if (name.includes('halftime') || detail.includes('halftime')) {
+      return 'HALFTIME';
+    }
     return 'LIVE';
   }
-  if (statusLower.includes('halftime') || statusLower.includes('half time')) {
-    return 'HALFTIME';
-  }
-  if (statusLower.includes('finished') || statusLower.includes('final')) {
+
+  if (state === 'post') {
+    if (name.includes('postponed') || detail.includes('postponed')) {
+      return 'POSTPONED';
+    }
+    if (name.includes('cancel') || detail.includes('cancel')) {
+      return 'CANCELLED';
+    }
     return 'FINISHED';
   }
-  if (statusLower.includes('postponed')) {
-    return 'POSTPONED';
-  }
-  if (statusLower.includes('cancelled') || statusLower.includes('canceled')) {
-    return 'CANCELLED';
-  }
 
+  // Default to UPCOMING
   return 'UPCOMING';
 }
 
 /**
- * Generate team code (first 3 letters uppercase)
+ * Map league name to sport type
  */
-function generateTeamCode(teamName: string): string {
-  const cleaned = teamName
-    .replace(/^(Los Angeles|New York|San|Golden State)\s+/i, '')
-    .trim();
-
-  return cleaned.slice(0, 3).toUpperCase();
-}
-
-/**
- * Parse sport type
- */
-function parseSportType(sportName: string): 'NBA' | 'NFL' | 'MLB' | 'NHL' | 'SOCCER' | 'COLLEGE_FOOTBALL' | 'COLLEGE_BASKETBALL' | 'OTHER' {
-  const sportLower = sportName.toLowerCase();
-
-  if (sportLower.includes('basketball')) {
-    if (sportLower.includes('college') || sportLower.includes('ncaa')) {
-      return 'COLLEGE_BASKETBALL';
-    }
-    return 'NBA';
+function mapLeagueToSportType(league: string): 'NBA' | 'NFL' | 'MLB' | 'NHL' | 'SOCCER' | 'COLLEGE_FOOTBALL' | 'COLLEGE_BASKETBALL' | 'OTHER' {
+  switch (league) {
+    case 'NBA':
+      return 'NBA';
+    case 'NFL':
+      return 'NFL';
+    case 'MLB':
+      return 'MLB';
+    case 'NHL':
+      return 'NHL';
+    default:
+      return 'OTHER';
   }
-  if (sportLower.includes('american football') || sportLower.includes('nfl')) {
-    if (sportLower.includes('college') || sportLower.includes('ncaa')) {
-      return 'COLLEGE_FOOTBALL';
-    }
-    return 'NFL';
-  }
-  if (sportLower.includes('baseball')) {
-    return 'MLB';
-  }
-  if (sportLower.includes('ice hockey') || sportLower.includes('nhl')) {
-    return 'NHL';
-  }
-  if (sportLower.includes('soccer') || sportLower.includes('football')) {
-    return 'SOCCER';
-  }
-
-  return 'OTHER';
 }
 
 /**
  * Create or update event in database
  */
-async function upsertEvent(event: SportsDBEvent): Promise<void> {
+async function upsertEvent(event: ESPNEvent, league: string): Promise<void> {
   try {
-    // Check if event already exists
+    // Get the first competition (ESPN events can have multiple, but usually just 1)
+    const competition = event.competitions[0];
+    if (!competition) {
+      console.error(`No competition data for event ${event.id}`);
+      return;
+    }
+
+    // Find home and away teams from competitors
+    const homeCompetitor = competition.competitors.find(c => c.homeAway === 'home');
+    const awayCompetitor = competition.competitors.find(c => c.homeAway === 'away');
+
+    if (!homeCompetitor || !awayCompetitor) {
+      console.error(`Missing home/away competitors for event ${event.id}`);
+      return;
+    }
+
+    // Check if event already exists using ESPN event ID
     const { data: existingEvents } = await client.models.LiveEvent.list({
       filter: {
-        externalId: { eq: event.idEvent }
+        externalId: { eq: event.id }
       }
     });
 
-    const scheduledTime = new Date(`${event.dateEvent}T${event.strTime}`).toISOString();
-
     const eventData = {
-      externalId: event.idEvent,
-      sport: parseSportType(event.strSport),
-      league: event.strLeague,
-      homeTeam: event.strHomeTeam,
-      awayTeam: event.strAwayTeam,
-      homeTeamCode: generateTeamCode(event.strHomeTeam),
-      awayTeamCode: generateTeamCode(event.strAwayTeam),
-      venue: event.strVenue || undefined,
-      city: event.strCity || undefined,
-      country: event.strCountry || undefined,
-      homeScore: event.intHomeScore ? parseInt(event.intHomeScore) : 0,
-      awayScore: event.intAwayScore ? parseInt(event.intAwayScore) : 0,
-      status: parseEventStatus(event.strStatus),
-      quarter: event.strProgress || undefined,
-      timeLeft: undefined, // TheSportsDB doesn't provide time left
-      scheduledTime,
-      season: event.strSeason || undefined,
-      round: event.intRound || undefined,
+      externalId: event.id,
+      sport: mapLeagueToSportType(league),
+      league: league,
+      homeTeam: homeCompetitor.team.displayName || homeCompetitor.team.name,
+      awayTeam: awayCompetitor.team.displayName || awayCompetitor.team.name,
+      homeTeamCode: homeCompetitor.team.abbreviation,
+      awayTeamCode: awayCompetitor.team.abbreviation,
+      venue: competition.venue?.fullName || undefined,
+      city: competition.venue?.address?.city || undefined,
+      country: undefined, // ESPN doesn't provide country in this endpoint
+      homeScore: parseInt(homeCompetitor.score) || 0,
+      awayScore: parseInt(awayCompetitor.score) || 0,
+      status: parseEventStatus(competition.status),
+      quarter: competition.status.period ? `Period ${competition.status.period}` : undefined,
+      timeLeft: competition.status.displayClock || undefined,
+      scheduledTime: new Date(competition.date).toISOString(),
+      season: event.season?.year?.toString() || undefined,
+      round: undefined, // ESPN doesn't provide round in scoreboard endpoint
     };
 
     if (existingEvents && existingEvents.length > 0) {
@@ -235,14 +259,14 @@ async function upsertEvent(event: SportsDBEvent): Promise<void> {
         id: existingEvent.id,
         ...eventData,
       });
-      console.log(`Updated event: ${event.strHomeTeam} vs ${event.strAwayTeam}`);
+      console.log(`✅ Updated: ${awayCompetitor.team.abbreviation} @ ${homeCompetitor.team.abbreviation}`);
     } else {
       // Create new event
       await client.models.LiveEvent.create(eventData);
-      console.log(`Created event: ${event.strHomeTeam} vs ${event.strAwayTeam}`);
+      console.log(`✅ Created: ${awayCompetitor.team.abbreviation} @ ${homeCompetitor.team.abbreviation}`);
     }
   } catch (error) {
-    console.error(`Error upserting event ${event.idEvent}:`, error);
+    console.error(`❌ Error upserting event ${event.id}:`, error);
   }
 }
 
@@ -283,7 +307,7 @@ export const handler: EventBridgeHandler<"Scheduled Event", null, boolean> = asy
         console.log(`📊 ${league} on ${date}: Found ${events.length} events`);
 
         for (const eventData of events) {
-          await upsertEvent(eventData);
+          await upsertEvent(eventData, league);
           totalEventsProcessed++;
         }
       }
