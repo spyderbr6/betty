@@ -46,6 +46,9 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
   const [rejectModalVisible, setRejectModalVisible] = useState(false);
   const [rejectTransaction, setRejectTransaction] = useState<Transaction | null>(null);
   const [rejectReason, setRejectReason] = useState('');
+  const [approvalModalVisible, setApprovalModalVisible] = useState(false);
+  const [approvalTransaction, setApprovalTransaction] = useState<Transaction | null>(null);
+  const [verificationCode, setVerificationCode] = useState('');
 
   // Check admin role on mount
   useEffect(() => {
@@ -81,41 +84,72 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
     setRefreshing(false);
   };
 
-  const handleApprove = async (transaction: Transaction) => {
-    if (!user?.userId) return;
+  const handleApprove = (transaction: Transaction) => {
+    setApprovalTransaction(transaction);
+    setVerificationCode('');
+    setApprovalModalVisible(true);
+  };
 
-    Alert.alert(
-      'Approve Transaction',
-      `Approve ${transaction.type === 'DEPOSIT' ? 'deposit' : 'withdrawal'} of ${formatCurrency(transaction.amount)} for user ${transaction.userId}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Approve',
-          style: 'default',
-          onPress: async () => {
-            console.log('[AdminDashboard] Approving transaction:', transaction.id);
-            setProcessingId(transaction.id);
-            const success = await TransactionService.updateTransactionStatus(
-              transaction.id,
-              'COMPLETED',
-              undefined,
-              user.userId
-            );
+  const getVerificationId = (transaction: Transaction): string => {
+    // For deposits, use Venmo transaction ID
+    // For withdrawals, use transaction ID
+    if (transaction.type === 'DEPOSIT' && transaction.venmoTransactionId) {
+      return transaction.venmoTransactionId;
+    }
+    return transaction.id;
+  };
 
-            console.log('[AdminDashboard] Approval result:', success);
+  const getVerificationLabel = (transaction: Transaction): string => {
+    if (transaction.type === 'DEPOSIT' && transaction.venmoTransactionId) {
+      return 'Venmo Transaction ID';
+    }
+    return 'Transaction ID';
+  };
 
-            if (success) {
-              Alert.alert('Success', 'Transaction approved successfully');
-              console.log('[AdminDashboard] Reloading transactions after approval...');
-              await loadPendingTransactions();
-            } else {
-              Alert.alert('Error', 'Failed to approve transaction');
-            }
-            setProcessingId(null);
-          },
-        },
-      ]
-    );
+  const handleConfirmApprove = async () => {
+    if (!user?.userId || !approvalTransaction) return;
+
+    // Validate verification code
+    const verificationId = getVerificationId(approvalTransaction);
+    const last4 = verificationId.slice(-4).toLowerCase();
+
+    if (verificationCode.toLowerCase() !== last4) {
+      Alert.alert(
+        'Verification Failed',
+        `The code you entered does not match the last 4 digits of the ${getVerificationLabel(approvalTransaction).toLowerCase()}.`
+      );
+      return;
+    }
+
+    try {
+      setApprovalModalVisible(false);
+      setProcessingId(approvalTransaction.id);
+
+      console.log('[AdminDashboard] Approving transaction:', approvalTransaction.id);
+      const success = await TransactionService.updateTransactionStatus(
+        approvalTransaction.id,
+        'COMPLETED',
+        undefined,
+        user.userId
+      );
+
+      console.log('[AdminDashboard] Approval result:', success);
+
+      if (success) {
+        Alert.alert('Success', 'Transaction approved successfully');
+        console.log('[AdminDashboard] Reloading transactions after approval...');
+        await loadPendingTransactions();
+      } else {
+        Alert.alert('Error', 'Failed to approve transaction');
+      }
+    } catch (error) {
+      console.error('[AdminDashboard] Error approving transaction:', error);
+      Alert.alert('Error', 'Failed to approve transaction');
+    } finally {
+      setProcessingId(null);
+      setApprovalTransaction(null);
+      setVerificationCode('');
+    }
   };
 
   const handleReject = (transaction: Transaction) => {
@@ -363,6 +397,100 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
           filteredTransactions.map(renderTransaction)
         )}
       </ScrollView>
+
+      {/* Approval Verification Modal */}
+      <Modal
+        visible={approvalModalVisible}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setApprovalModalVisible(false)}
+      >
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <TouchableOpacity
+            style={styles.modalBackdrop}
+            activeOpacity={1}
+            onPress={() => setApprovalModalVisible(false)}
+          >
+            <TouchableOpacity activeOpacity={1} onPress={(e) => e.stopPropagation()}>
+              <View style={styles.approvalModal}>
+                <View style={styles.approvalModalHeader}>
+                  <Ionicons name="shield-checkmark" size={32} color={colors.success} />
+                  <Text style={styles.approvalModalTitle}>Verify & Approve</Text>
+                </View>
+
+                {approvalTransaction && (
+                  <>
+                    <View style={styles.approvalModalInfo}>
+                      <Text style={styles.approvalModalInfoText}>
+                        {approvalTransaction.type === 'DEPOSIT' ? 'Deposit' : 'Withdrawal'} of{' '}
+                        {formatCurrency(approvalTransaction.amount)}
+                      </Text>
+                      <Text style={styles.approvalModalInfoSubtext}>
+                        User: {approvalTransaction.userId.substring(0, 12)}...
+                      </Text>
+                      {approvalTransaction.venmoUsername && (
+                        <Text style={styles.approvalModalInfoSubtext}>
+                          Venmo: {approvalTransaction.venmoUsername}
+                        </Text>
+                      )}
+                    </View>
+
+                    <View style={styles.verificationIdBox}>
+                      <Text style={styles.verificationIdLabel}>
+                        {getVerificationLabel(approvalTransaction)}:
+                      </Text>
+                      <Text style={styles.verificationIdText}>
+                        {getVerificationId(approvalTransaction)}
+                      </Text>
+                    </View>
+                  </>
+                )}
+
+                <Text style={styles.approvalModalLabel}>
+                  Enter Last 4 Digits to Verify
+                </Text>
+                <TextInput
+                  style={styles.verificationInput}
+                  placeholder="Last 4 digits"
+                  placeholderTextColor={colors.textMuted}
+                  value={verificationCode}
+                  onChangeText={setVerificationCode}
+                  maxLength={4}
+                  autoCapitalize="characters"
+                  autoFocus
+                  keyboardType="default"
+                />
+
+                <View style={styles.approvalModalActions}>
+                  <TouchableOpacity
+                    style={styles.approvalModalCancelButton}
+                    onPress={() => setApprovalModalVisible(false)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.approvalModalCancelText}>Cancel</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.approvalModalConfirmButton,
+                      verificationCode.length !== 4 && styles.approvalModalConfirmButtonDisabled
+                    ]}
+                    onPress={handleConfirmApprove}
+                    disabled={verificationCode.length !== 4}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="checkmark" size={20} color={colors.background} />
+                    <Text style={styles.approvalModalConfirmText}>Approve Transaction</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </KeyboardAvoidingView>
+      </Modal>
 
       {/* Reject Reason Modal */}
       <Modal
@@ -644,6 +772,123 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     textAlign: 'center',
     marginTop: spacing.xs,
+  },
+
+  // Approval Modal
+  approvalModal: {
+    backgroundColor: colors.background,
+    borderRadius: spacing.radius.lg,
+    padding: spacing.lg,
+    width: '100%',
+    maxWidth: 400,
+  },
+  approvalModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  approvalModalTitle: {
+    ...textStyles.h3,
+    color: colors.textPrimary,
+    marginLeft: spacing.sm,
+    flex: 1,
+  },
+  approvalModalInfo: {
+    backgroundColor: colors.surface,
+    borderRadius: spacing.radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.success,
+  },
+  approvalModalInfoText: {
+    ...textStyles.button,
+    color: colors.textPrimary,
+    fontWeight: typography.fontWeight.semibold,
+    marginBottom: spacing.xs / 2,
+  },
+  approvalModalInfoSubtext: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    fontFamily: typography.fontFamily.mono,
+    marginTop: spacing.xs / 4,
+  },
+  verificationIdBox: {
+    backgroundColor: colors.surface,
+    borderRadius: spacing.radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  verificationIdLabel: {
+    ...textStyles.caption,
+    color: colors.textMuted,
+    marginBottom: spacing.xs / 2,
+  },
+  verificationIdText: {
+    ...textStyles.button,
+    color: colors.textPrimary,
+    fontFamily: typography.fontFamily.mono,
+    fontWeight: typography.fontWeight.semibold,
+  },
+  approvalModalLabel: {
+    ...textStyles.button,
+    color: colors.textPrimary,
+    fontWeight: typography.fontWeight.semibold,
+    marginBottom: spacing.sm,
+  },
+  verificationInput: {
+    backgroundColor: colors.surface,
+    borderWidth: 2,
+    borderColor: colors.success,
+    borderRadius: spacing.radius.md,
+    padding: spacing.md,
+    fontSize: typography.fontSize['2xl'],
+    color: colors.textPrimary,
+    fontFamily: typography.fontFamily.mono,
+    fontWeight: typography.fontWeight.bold,
+    textAlign: 'center',
+    letterSpacing: 8,
+    marginBottom: spacing.lg,
+  },
+  approvalModalActions: {
+    flexDirection: 'row',
+  },
+  approvalModalCancelButton: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    paddingVertical: spacing.sm,
+    borderRadius: spacing.radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  approvalModalCancelText: {
+    ...textStyles.button,
+    color: colors.textPrimary,
+    fontWeight: typography.fontWeight.semibold,
+  },
+  approvalModalConfirmButton: {
+    flex: 1,
+    flexDirection: 'row',
+    backgroundColor: colors.success,
+    paddingVertical: spacing.sm,
+    borderRadius: spacing.radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: spacing.sm,
+  },
+  approvalModalConfirmButtonDisabled: {
+    backgroundColor: colors.disabled,
+  },
+  approvalModalConfirmText: {
+    ...textStyles.button,
+    color: colors.background,
+    fontWeight: typography.fontWeight.semibold,
+    marginLeft: spacing.xs,
   },
 
   // Reject Modal
