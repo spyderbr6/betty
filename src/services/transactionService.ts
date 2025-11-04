@@ -361,14 +361,35 @@ export class TransactionService {
       }
 
       // Update transaction status
-      await client.models.Transaction.update(updateData);
+      const { errors: updateErrors } = await client.models.Transaction.update(updateData);
+
+      if (updateErrors) {
+        console.error('[Transaction] Error updating transaction:', updateErrors);
+        return false;
+      }
 
       // If completing a deposit, update user balance
       if (status === 'COMPLETED' && transaction.type === 'DEPOSIT') {
-        await client.models.User.update({
-          id: transaction.userId!,
-          balance: transaction.balanceAfter!,
+        // Get current user balance (not the old balanceAfter from the transaction)
+        const currentBalance = await this.getUserBalance(transaction.userId!);
+        const newBalance = currentBalance + transaction.amount!;
+
+        console.log('[Transaction] Approving deposit:', {
+          transactionId,
+          amount: transaction.amount,
+          currentBalance,
+          newBalance
         });
+
+        const { errors: balanceErrors } = await client.models.User.update({
+          id: transaction.userId!,
+          balance: newBalance,
+        });
+
+        if (balanceErrors) {
+          console.error('[Transaction] Error updating user balance:', balanceErrors);
+          return false;
+        }
 
         // Send notification
         await NotificationService.createNotification({
@@ -382,10 +403,55 @@ export class TransactionService {
 
       // If completing a withdrawal, update user balance
       if (status === 'COMPLETED' && transaction.type === 'WITHDRAWAL') {
-        await client.models.User.update({
-          id: transaction.userId!,
-          balance: transaction.balanceAfter!,
+        // Get current user balance (not the old balanceAfter from the transaction)
+        const currentBalance = await this.getUserBalance(transaction.userId!);
+        const newBalance = currentBalance - transaction.amount!;
+
+        // Validate sufficient balance for withdrawal
+        if (newBalance < 0) {
+          console.error('[Transaction] Insufficient balance for withdrawal:', {
+            transactionId,
+            amount: transaction.amount,
+            currentBalance,
+            shortfall: Math.abs(newBalance)
+          });
+
+          // Update transaction to FAILED with reason
+          await client.models.Transaction.update({
+            id: transactionId,
+            status: 'FAILED',
+            failureReason: `Insufficient balance. Current balance: $${currentBalance.toFixed(2)}, Withdrawal amount: $${transaction.amount!.toFixed(2)}`,
+            completedAt: new Date().toISOString(),
+          });
+
+          // Send notification about failure
+          await NotificationService.createNotification({
+            userId: transaction.userId!,
+            type: 'WITHDRAWAL_FAILED' as any,
+            title: 'Withdrawal Failed',
+            message: `Insufficient balance for withdrawal of $${transaction.amount}`,
+            priority: 'HIGH',
+          });
+
+          return false;
+        }
+
+        console.log('[Transaction] Approving withdrawal:', {
+          transactionId,
+          amount: transaction.amount,
+          currentBalance,
+          newBalance
         });
+
+        const { errors: balanceErrors } = await client.models.User.update({
+          id: transaction.userId!,
+          balance: newBalance,
+        });
+
+        if (balanceErrors) {
+          console.error('[Transaction] Error updating user balance:', balanceErrors);
+          return false;
+        }
 
         // Send notification
         await NotificationService.createNotification({
@@ -412,7 +478,12 @@ export class TransactionService {
         });
       }
 
-      console.log('[Transaction] Status updated:', { transactionId, status });
+      console.log('[Transaction] Status updated successfully:', {
+        transactionId,
+        status,
+        type: transaction.type,
+        userId: transaction.userId
+      });
       return true;
     } catch (error) {
       console.error('[Transaction] Error updating transaction status:', error);

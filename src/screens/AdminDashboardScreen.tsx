@@ -63,10 +63,12 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
   const loadPendingTransactions = async () => {
     try {
       setIsLoading(true);
+      console.log('[AdminDashboard] Loading pending transactions...');
       const transactions = await TransactionService.getPendingTransactions();
+      console.log('[AdminDashboard] Loaded transactions:', transactions.length);
       setPendingTransactions(transactions);
     } catch (error) {
-      console.error('Error loading pending transactions:', error);
+      console.error('[AdminDashboard] Error loading pending transactions:', error);
       Alert.alert('Error', 'Failed to load pending transactions');
     } finally {
       setIsLoading(false);
@@ -91,6 +93,7 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
           text: 'Approve',
           style: 'default',
           onPress: async () => {
+            console.log('[AdminDashboard] Approving transaction:', transaction.id);
             setProcessingId(transaction.id);
             const success = await TransactionService.updateTransactionStatus(
               transaction.id,
@@ -99,8 +102,11 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
               user.userId
             );
 
+            console.log('[AdminDashboard] Approval result:', success);
+
             if (success) {
               Alert.alert('Success', 'Transaction approved successfully');
+              console.log('[AdminDashboard] Reloading transactions after approval...');
               await loadPendingTransactions();
             } else {
               Alert.alert('Error', 'Failed to approve transaction');
@@ -127,6 +133,7 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
     }
 
     try {
+      console.log('[AdminDashboard] Rejecting transaction:', rejectTransaction.id);
       setRejectModalVisible(false);
       setProcessingId(rejectTransaction.id);
 
@@ -137,14 +144,17 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
         user.userId
       );
 
+      console.log('[AdminDashboard] Rejection result:', success);
+
       if (success) {
         Alert.alert('Success', 'Transaction rejected successfully');
+        console.log('[AdminDashboard] Reloading transactions after rejection...');
         await loadPendingTransactions();
       } else {
         Alert.alert('Error', 'Failed to reject transaction');
       }
     } catch (error) {
-      console.error('Error rejecting transaction:', error);
+      console.error('[AdminDashboard] Error rejecting transaction:', error);
       Alert.alert('Error', 'Failed to reject transaction');
     } finally {
       setProcessingId(null);
