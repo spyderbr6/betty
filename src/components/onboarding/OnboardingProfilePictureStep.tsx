@@ -39,6 +39,11 @@ export const OnboardingProfilePictureStep: React.FC<OnboardingProfilePictureStep
   const [imageError, setImageError] = useState(false);
   const [imageLoading, setImageLoading] = useState(false);
 
+  // Reset error state when profilePictureUrl changes
+  React.useEffect(() => {
+    setImageError(false);
+  }, [profilePictureUrl]);
+
   const handleSelectImage = async () => {
     if (!user) return;
 
@@ -80,7 +85,7 @@ export const OnboardingProfilePictureStep: React.FC<OnboardingProfilePictureStep
       <View style={styles.content}>
         {/* Icon/Illustration */}
         <View style={styles.iconContainer}>
-          {profilePictureUrl ? (
+          {profilePictureUrl && !imageError ? (
             <>
               <Image
                 source={{ uri: profilePictureUrl }}
@@ -98,15 +103,13 @@ export const OnboardingProfilePictureStep: React.FC<OnboardingProfilePictureStep
                   <ActivityIndicator color={colors.primary} size="large" />
                 </View>
               )}
-              {imageError && (
-                <View style={styles.imageErrorOverlay}>
-                  <Text style={styles.imageErrorText}>Failed to load</Text>
-                </View>
-              )}
             </>
           ) : (
             <View style={styles.placeholderImage}>
               <Text style={styles.placeholderText}>📷</Text>
+              {imageError && (
+                <Text style={styles.errorHintText}>Image failed to load</Text>
+              )}
             </View>
           )}
         </View>
@@ -197,26 +200,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  imageErrorOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: 'rgba(255, 0, 0, 0.2)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: colors.error,
-  },
-  imageErrorText: {
+  errorHintText: {
     ...textStyles.caption,
     color: colors.error,
     textAlign: 'center',
-    fontWeight: typography.fontWeight.bold,
+    marginTop: spacing.xs,
+    fontSize: typography.fontSize.xs,
   },
   placeholderImage: {
     width: 120,

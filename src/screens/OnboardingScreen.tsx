@@ -6,7 +6,7 @@
  * - Step 3: Add friends
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -49,6 +49,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({
   const [currentStep, setCurrentStep] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
   const progressAnim = useState(new Animated.Value(1 / TOTAL_STEPS))[0];
+  const hasInitializedRef = useRef(false);
 
   // Lifted state for all onboarding steps
   const [onboardingState, setOnboardingState] = useState<OnboardingState>({
@@ -57,9 +58,10 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({
     friendsAdded: 0,
   });
 
-  // Initialize profile picture from user data on mount
+  // Initialize profile picture from user data ONLY ONCE on mount
   useEffect(() => {
-    if (user?.profilePictureUrl && !onboardingState.profilePictureUrl) {
+    if (!hasInitializedRef.current && user?.profilePictureUrl) {
+      hasInitializedRef.current = true;
       setOnboardingState((prev) => ({
         ...prev,
         profilePictureUrl: user.profilePictureUrl || null,

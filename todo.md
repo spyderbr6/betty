@@ -55,9 +55,7 @@
 ## 🔄 IMMEDIATE NEXT STEPS (Current Development Cycle)
 
 ### **Priority 1: Critical Bug Fixes & UI Polish** ✅ COMPLETED
-- [ ] on the onboardingscreen, once you add a profile picture, it doesnt load the picture even though its trying. 
-- [ ] on the onboarding screen, once you add a profile picture, go to the next page and go back the picture isnt retained. 
-- [ ] skip for now doesnt appear to be working at all. 
+- [ ] the signout button on settings page i want to replace the system prompt with a prompt that we create. "Are you sure?", this will help me test on the web and apps. 
 
 
 
