@@ -146,7 +146,7 @@ export const AccountScreen: React.FC = () => {
           username: user.username,
           email: realEmail,
           displayName: displayNameFromCognito || undefined,
-          balance: 1000, // Starting balance
+          balance: 0, // Starting balance
           trustScore: 5.0,
           totalBets: 0,
           totalWinnings: 0,
@@ -167,7 +167,7 @@ export const AccountScreen: React.FC = () => {
             email: newUser.data.email!,
             displayName: newUser.data.displayName || undefined,
             profilePictureUrl: profilePictureUrl,
-            balance: newUser.data.balance || 1000,
+            balance: newUser.data.balance ?? 0,
             trustScore: newUser.data.trustScore || 5.0,
             totalBets: newUser.data.totalBets || 0,
             totalWinnings: newUser.data.totalWinnings || 0,
