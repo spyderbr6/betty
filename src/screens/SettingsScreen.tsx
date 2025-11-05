@@ -7,7 +7,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, ScrollView, StyleSheet, Switch, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, spacing, textStyles, typography } from '../styles';
+import { colors, spacing, textStyles } from '../styles';
 import { ModalHeader } from '../components/ui/ModalHeader';
 import { useAuth } from '../contexts/AuthContext';
 import { NotificationPreferencesService } from '../services/notificationPreferencesService';

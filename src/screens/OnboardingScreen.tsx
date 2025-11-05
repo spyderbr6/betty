@@ -12,12 +12,11 @@ import {
   Text,
   StyleSheet,
   Modal,
-  TouchableOpacity,
   Alert,
   Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { colors, spacing, textStyles, commonStyles } from '../styles';
+import { colors, spacing, textStyles } from '../styles';
 import { useAuth } from '../contexts/AuthContext';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
@@ -218,7 +217,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   header: {
-    paddingHorizontal: spacing.padding.screen,
+    paddingHorizontal: spacing.container.padding,
     paddingVertical: spacing.lg,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,

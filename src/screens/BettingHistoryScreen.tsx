@@ -252,25 +252,25 @@ const TransactionCard: React.FC<TransactionCardProps> = ({ transaction }) => {
   const getStatusBadge = () => {
     if (transaction.status === 'COMPLETED') return null;
 
-    let statusColor = colors.textMuted;
-    let statusText = transaction.status;
+    let statusColor: string = colors.textMuted;
+    let statusText: string = transaction.status;
 
     switch (transaction.status) {
       case 'PENDING':
         statusColor = colors.warning;
-        statusText = 'Pending';
+        statusText = 'PENDING';
         break;
       case 'PROCESSING':
         statusColor = colors.info;
-        statusText = 'Processing';
+        statusText = 'PROCESSING';
         break;
       case 'FAILED':
         statusColor = colors.error;
-        statusText = 'Failed';
+        statusText = 'FAILED';
         break;
       case 'CANCELLED':
         statusColor = colors.textMuted;
-        statusText = 'Cancelled';
+        statusText = 'CANCELLED';
         break;
     }
 

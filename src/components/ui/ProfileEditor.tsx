@@ -82,7 +82,7 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({
         // Automatically save the profile picture to the database
         try {
           const profileData: ProfileEditForm = {
-            displayName: displayName.trim() || user.displayName,
+            displayName: displayName.trim() || user.displayName || '',
             profilePicture: result.url,
           };
           await onSave(profileData);

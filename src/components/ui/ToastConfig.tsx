@@ -3,8 +3,7 @@
  * Snackbar-style toast notifications for in-app notifications
  */
 
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import { BaseToast, ErrorToast, InfoToast } from 'react-native-toast-message';
 import { colors, spacing, textStyles, typography, shadows } from '../../styles';
 

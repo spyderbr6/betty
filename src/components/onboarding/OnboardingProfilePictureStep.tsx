@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import { colors, spacing, textStyles, typography } from '../../styles';
 import { useAuth } from '../../contexts/AuthContext';
-import { ImageUploadService } from '../../services/imageUploadService';
+import { updateProfilePicture } from '../../services/imageUploadService';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../../amplify/data/resource';
 
@@ -39,52 +39,32 @@ export const OnboardingProfilePictureStep: React.FC<OnboardingProfilePictureStep
 
     setIsUploading(true);
     try {
-      const newUrl = await ImageUploadService.updateProfilePicture(
+      const result = await updateProfilePicture(
         user.userId,
         profilePictureUrl || undefined
       );
 
-      if (newUrl) {
-        setProfilePictureUrl(newUrl);
+      if (result.success && result.url) {
+        setProfilePictureUrl(result.url);
 
         // Update user profile in database
         await client.models.User.update({
           id: user.userId,
-          profilePictureUrl: newUrl,
+          profilePictureUrl: result.url,
         });
 
         // Refresh auth context to update profile picture
         await refreshAuth({ silent: true });
 
         Alert.alert('Success', 'Profile picture updated!');
+      } else {
+        Alert.alert('Error', result.error || 'Failed to upload profile picture.');
       }
     } catch (error) {
       console.error('[Onboarding] Failed to upload profile picture:', error);
       Alert.alert('Error', 'Failed to upload profile picture. Please try again.');
     } finally {
       setIsUploading(false);
-    }
-  };
-
-  const handleNext = () => {
-    if (profilePictureUrl) {
-      onNext();
-    } else {
-      Alert.alert(
-        'Add Profile Picture?',
-        'Adding a profile picture helps your friends recognize you.',
-        [
-          {
-            text: 'Skip for now',
-            style: 'cancel',
-            onPress: onSkip,
-          },
-          {
-            text: 'Add Picture',
-            onPress: handleSelectImage,
-          },
-        ]
-      );
     }
   };
 
@@ -144,7 +124,7 @@ export const OnboardingProfilePictureStep: React.FC<OnboardingProfilePictureStep
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    paddingHorizontal: spacing.padding.screen,
+    paddingHorizontal: spacing.container.padding,
   },
   content: {
     flex: 1,

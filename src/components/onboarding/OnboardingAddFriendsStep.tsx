@@ -141,7 +141,7 @@ export const OnboardingAddFriendsStep: React.FC<OnboardingAddFriendsStepProps> =
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    paddingHorizontal: spacing.padding.screen,
+    paddingHorizontal: spacing.container.padding,
   },
   content: {
     flex: 1,
