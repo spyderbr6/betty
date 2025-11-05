@@ -18,6 +18,7 @@ Amplify.configure(amplifyconfig);
 import { useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { StyleSheet, View, ActivityIndicator } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from './src/contexts/AuthContext';
 import { EventCheckInProvider } from './src/contexts/EventCheckInContext';
 import { Login } from './src/components/Login';
@@ -74,15 +75,17 @@ function MainApp() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <EventCheckInProvider>
-        <View style={styles.container}>
-          <MainApp />
-          <StatusBar style="light" backgroundColor={colors.background} />
-          <Toast config={toastConfig} />
-        </View>
-      </EventCheckInProvider>
-    </AuthProvider>
+    <SafeAreaProvider>
+      <AuthProvider>
+        <EventCheckInProvider>
+          <View style={styles.container}>
+            <MainApp />
+            <StatusBar style="light" backgroundColor={colors.background} />
+            <Toast config={toastConfig} />
+          </View>
+        </EventCheckInProvider>
+      </AuthProvider>
+    </SafeAreaProvider>
   );
 }
 
