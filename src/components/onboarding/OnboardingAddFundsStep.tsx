@@ -24,7 +24,7 @@ interface OnboardingAddFundsStepProps {
 }
 
 export const OnboardingAddFundsStep: React.FC<OnboardingAddFundsStepProps> = ({
-  fundsAdded,
+  fundsAdded: _fundsAdded, // Underscore prefix to indicate intentionally unused
   onFundsAdded,
   onNext,
   onSkip,

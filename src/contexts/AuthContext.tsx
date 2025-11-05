@@ -18,6 +18,7 @@ interface User {
   role: UserRole;
   onboardingCompleted: boolean;
   onboardingStep: number;
+  profilePictureUrl?: string;
 }
 
 interface RefreshOptions {
@@ -82,6 +83,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           role: (userData?.role as UserRole) || 'USER', // Default to USER if role not set
           onboardingCompleted: userData?.onboardingCompleted ?? false,
           onboardingStep: userData?.onboardingStep ?? 0,
+          profilePictureUrl: userData?.profilePictureUrl ?? undefined,
         };
         setUser(newUser);
 
