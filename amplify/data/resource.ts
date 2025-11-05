@@ -21,6 +21,9 @@ const schema = a.schema({
       totalBets: a.integer().default(0),
       totalWinnings: a.float().default(0),
       winRate: a.float().default(0),
+      // Onboarding tracking
+      onboardingCompleted: a.boolean().default(false), // Whether user has completed onboarding
+      onboardingStep: a.integer().default(0), // Current step in onboarding (0 = not started, 1-3 = in progress, 4 = completed)
       createdAt: a.datetime(),
       updatedAt: a.datetime(),
       // Relations

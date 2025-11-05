@@ -3,7 +3,7 @@
  * Main navigation structure for the SideBet app
  */
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { NavigationContainer, NavigationContainerRef } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
@@ -14,6 +14,7 @@ import ToastNotificationService from '../services/toastNotificationService';
 import { setPushNavigationCallback } from '../services/pushNotificationConfig';
 import { getNotificationNavigationAction } from '../utils/notificationNavigationHandler';
 import { NotificationType } from '../types/betting';
+import { useAuth } from '../contexts/AuthContext';
 
 // Import screens (placeholders for now)
 import { BetsScreen } from '../screens/BetsScreen';
@@ -21,6 +22,7 @@ import { LiveEventsScreen } from '../screens/LiveEventsScreen';
 import { CreateBetScreen } from '../screens/CreateBetScreen';
 import { ResolveScreen } from '../screens/ResolveScreen';
 import { AccountScreen } from '../screens/AccountScreen';
+import { OnboardingScreen } from '../screens/OnboardingScreen';
 
 // Create navigators
 const Tab = createBottomTabNavigator<AppTabParamList>();
@@ -102,6 +104,21 @@ const TabNavigator = () => {
 // Root App Navigator
 export const AppNavigator: React.FC = () => {
   const navigationRef = useRef<NavigationContainerRef<any>>(null);
+  const { user, isLoading } = useAuth();
+  const [showOnboarding, setShowOnboarding] = useState(false);
+
+  // Check if onboarding should be shown
+  useEffect(() => {
+    if (!isLoading && user && !user.onboardingCompleted) {
+      setShowOnboarding(true);
+    } else {
+      setShowOnboarding(false);
+    }
+  }, [user, isLoading]);
+
+  const handleOnboardingComplete = () => {
+    setShowOnboarding(false);
+  };
 
   useEffect(() => {
     // Unified navigation handler for both toast and push notifications
@@ -164,39 +181,44 @@ export const AppNavigator: React.FC = () => {
   }, []);
 
   return (
-    <NavigationContainer
-      ref={navigationRef}
-      theme={{
-        dark: true,
-        colors: {
-          primary: colors.primary,
-          background: colors.background,
-          card: colors.surface,
-          text: colors.textPrimary,
-          border: colors.border,
-          notification: colors.error,
-        },
-        fonts: {
-          regular: {
-            fontFamily: 'System',
-            fontWeight: '400',
+    <>
+      <NavigationContainer
+        ref={navigationRef}
+        theme={{
+          dark: true,
+          colors: {
+            primary: colors.primary,
+            background: colors.background,
+            card: colors.surface,
+            text: colors.textPrimary,
+            border: colors.border,
+            notification: colors.error,
           },
-          medium: {
-            fontFamily: 'System',
-            fontWeight: '500',
+          fonts: {
+            regular: {
+              fontFamily: 'System',
+              fontWeight: '400',
+            },
+            medium: {
+              fontFamily: 'System',
+              fontWeight: '500',
+            },
+            bold: {
+              fontFamily: 'System',
+              fontWeight: '600',
+            },
+            heavy: {
+              fontFamily: 'System',
+              fontWeight: '700',
+            },
           },
-          bold: {
-            fontFamily: 'System',
-            fontWeight: '600',
-          },
-          heavy: {
-            fontFamily: 'System',
-            fontWeight: '700',
-          },
-        },
-      }}
-    >
-      <TabNavigator />
-    </NavigationContainer>
+        }}
+      >
+        <TabNavigator />
+      </NavigationContainer>
+
+      {/* Onboarding Overlay */}
+      <OnboardingScreen visible={showOnboarding} onComplete={handleOnboardingComplete} />
+    </>
   );
 };

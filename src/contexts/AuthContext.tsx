@@ -16,6 +16,8 @@ interface User {
   userId: string;
   username: string;
   role: UserRole;
+  onboardingCompleted: boolean;
+  onboardingStep: number;
 }
 
 interface RefreshOptions {
@@ -70,7 +72,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const currentUser = await getCurrentUser();
 
-      // Fetch user data from database to get role
+      // Fetch user data from database to get role and onboarding status
       const { data: userData } = await client.models.User.get({ id: currentUser.userId });
 
       if (isMountedRef.current) {
@@ -78,6 +80,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           userId: currentUser.userId,
           username: currentUser.username,
           role: (userData?.role as UserRole) || 'USER', // Default to USER if role not set
+          onboardingCompleted: userData?.onboardingCompleted ?? false,
+          onboardingStep: userData?.onboardingStep ?? 0,
         };
         setUser(newUser);
 
