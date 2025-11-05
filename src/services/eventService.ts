@@ -435,32 +435,32 @@ export async function getLiveEvents(
 
     console.log(`[EventService] Found ${events.length} live events`);
 
-    return events.map(event => ({
-      id: event.id,
+    return events.map((event): LiveEventData => ({
+      id: event.id!,
       externalId: event.externalId,
       sport: event.sport || 'OTHER',
       league: event.league || '',
       homeTeam: event.homeTeam,
       awayTeam: event.awayTeam,
-      homeTeamCode: event.homeTeamCode || undefined,
-      awayTeamCode: event.awayTeamCode || undefined,
-      venue: event.venue || undefined,
-      city: event.city || undefined,
-      country: event.country || undefined,
+      homeTeamCode: event.homeTeamCode ?? undefined,
+      awayTeamCode: event.awayTeamCode ?? undefined,
+      venue: event.venue ?? undefined,
+      city: event.city ?? undefined,
+      country: event.country ?? undefined,
       homeScore: event.homeScore || 0,
       awayScore: event.awayScore || 0,
       status: event.status || 'UPCOMING',
-      quarter: event.quarter || undefined,
-      timeLeft: event.timeLeft || undefined,
+      quarter: event.quarter ?? undefined,
+      timeLeft: event.timeLeft ?? undefined,
       scheduledTime: event.scheduledTime,
-      startTime: event.startTime || undefined,
-      endTime: event.endTime || undefined,
-      season: event.season || undefined,
-      round: event.round || undefined,
+      startTime: event.startTime ?? undefined,
+      endTime: event.endTime ?? undefined,
+      season: event.season ?? undefined,
+      round: event.round ?? undefined,
       checkInCount: event.checkInCount || 0,
       betCount: event.betCount || 0,
-      createdAt: event.createdAt,
-      updatedAt: event.updatedAt
+      createdAt: event.createdAt ?? undefined,
+      updatedAt: event.updatedAt ?? undefined
     }));
 
   } catch (error) {
