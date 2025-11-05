@@ -290,7 +290,7 @@ export const NotificationScreen: React.FC<NotificationScreenProps> = ({ onClose 
   if (isLoading) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
-        <ModalHeader title="Notifications" onClose={onClose} />
+        <ModalHeader title="Notifications" onClose={onClose || (() => {})} />
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={[textStyles.body, styles.loadingText]}>
@@ -303,7 +303,7 @@ export const NotificationScreen: React.FC<NotificationScreenProps> = ({ onClose 
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <ModalHeader title="Notifications" onClose={onClose} />
+      <ModalHeader title="Notifications" onClose={onClose || (() => {})} />
 
       {unreadCount > 0 && (
         <View style={styles.markAllContainer}>
