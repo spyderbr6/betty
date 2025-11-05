@@ -16,6 +16,8 @@ import { colors, spacing, textStyles, typography } from '../../styles';
 import { AddFriendModal } from '../ui/AddFriendModal';
 
 interface OnboardingAddFriendsStepProps {
+  friendsAdded: number;
+  onFriendsAddedChange: (count: number) => void;
   onComplete: () => void;
   onSkip: () => void;
   onBack: () => void;
@@ -23,20 +25,21 @@ interface OnboardingAddFriendsStepProps {
 }
 
 export const OnboardingAddFriendsStep: React.FC<OnboardingAddFriendsStepProps> = ({
+  friendsAdded,
+  onFriendsAddedChange,
   onComplete,
   onSkip,
   onBack,
   isLoading = false,
 }) => {
   const [showAddFriendModal, setShowAddFriendModal] = useState(false);
-  const [friendsAdded, setFriendsAdded] = useState(0);
 
   const handleAddFriend = () => {
     setShowAddFriendModal(true);
   };
 
   const handleFriendRequestSent = () => {
-    setFriendsAdded(prev => prev + 1);
+    onFriendsAddedChange(friendsAdded + 1);
   };
 
   const handleFinish = () => {
@@ -86,7 +89,12 @@ export const OnboardingAddFriendsStep: React.FC<OnboardingAddFriendsStepProps> =
           </View>
 
           {/* Add Friend Button */}
-          <TouchableOpacity style={styles.primaryButton} onPress={handleAddFriend}>
+          <TouchableOpacity
+            style={styles.primaryButton}
+            onPress={handleAddFriend}
+            accessibilityLabel={friendsAdded > 0 ? 'Add more friends' : 'Find friends to add'}
+            accessibilityRole="button"
+          >
             <Ionicons name="person-add" size={20} color={colors.textInverse} />
             <Text style={styles.primaryButtonText}>
               {friendsAdded > 0 ? 'Add More Friends' : 'Find Friends'}
@@ -96,14 +104,24 @@ export const OnboardingAddFriendsStep: React.FC<OnboardingAddFriendsStepProps> =
 
         {/* Bottom Actions */}
         <View style={styles.bottomActions}>
-          <TouchableOpacity style={styles.backButton} onPress={onBack}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={onBack}
+            accessibilityLabel="Go back to previous step"
+            accessibilityRole="button"
+          >
             <Ionicons name="arrow-back" size={20} color={colors.textSecondary} />
             <Text style={styles.backButtonText}>Back</Text>
           </TouchableOpacity>
 
           <View style={styles.rightActions}>
             {friendsAdded === 0 && (
-              <TouchableOpacity style={styles.skipButton} onPress={onSkip}>
+              <TouchableOpacity
+                style={styles.skipButton}
+                onPress={onSkip}
+                accessibilityLabel="Skip adding friends"
+                accessibilityRole="button"
+              >
                 <Text style={styles.skipButtonText}>Skip for now</Text>
               </TouchableOpacity>
             )}
@@ -113,6 +131,8 @@ export const OnboardingAddFriendsStep: React.FC<OnboardingAddFriendsStepProps> =
                 style={styles.finishButton}
                 onPress={handleFinish}
                 disabled={isLoading}
+                accessibilityLabel="Finish onboarding setup"
+                accessibilityRole="button"
               >
                 {isLoading ? (
                   <ActivityIndicator color={colors.textInverse} />

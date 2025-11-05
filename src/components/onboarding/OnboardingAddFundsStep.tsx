@@ -16,12 +16,16 @@ import { AddFundsModal } from '../ui/AddFundsModal';
 import { AddPaymentMethodModal } from '../ui/AddPaymentMethodModal';
 
 interface OnboardingAddFundsStepProps {
+  fundsAdded: boolean;
+  onFundsAdded: (added: boolean) => void;
   onNext: () => void;
   onSkip: () => void;
   onBack: () => void;
 }
 
 export const OnboardingAddFundsStep: React.FC<OnboardingAddFundsStepProps> = ({
+  fundsAdded,
+  onFundsAdded,
   onNext,
   onSkip,
   onBack,
@@ -41,7 +45,8 @@ export const OnboardingAddFundsStep: React.FC<OnboardingAddFundsStepProps> = ({
   };
 
   const handleFundsAdded = () => {
-    // Funds were successfully added, close modal and continue
+    // Funds were successfully added, update state and close modal
+    onFundsAdded(true);
     setShowAddFundsModal(false);
     setTimeout(() => {
       onNext();
@@ -91,7 +96,12 @@ export const OnboardingAddFundsStep: React.FC<OnboardingAddFundsStepProps> = ({
           </View>
 
           {/* Add Funds Button */}
-          <TouchableOpacity style={styles.primaryButton} onPress={handleAddFunds}>
+          <TouchableOpacity
+            style={styles.primaryButton}
+            onPress={handleAddFunds}
+            accessibilityLabel="Add funds to your account"
+            accessibilityRole="button"
+          >
             <Ionicons name="add-circle" size={20} color={colors.textInverse} />
             <Text style={styles.primaryButtonText}>Add Funds Now</Text>
           </TouchableOpacity>
@@ -99,12 +109,22 @@ export const OnboardingAddFundsStep: React.FC<OnboardingAddFundsStepProps> = ({
 
         {/* Bottom Actions */}
         <View style={styles.bottomActions}>
-          <TouchableOpacity style={styles.backButton} onPress={onBack}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={onBack}
+            accessibilityLabel="Go back to previous step"
+            accessibilityRole="button"
+          >
             <Ionicons name="arrow-back" size={20} color={colors.textSecondary} />
             <Text style={styles.backButtonText}>Back</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.skipButton} onPress={onSkip}>
+          <TouchableOpacity
+            style={styles.skipButton}
+            onPress={onSkip}
+            accessibilityLabel="Skip adding funds"
+            accessibilityRole="button"
+          >
             <Text style={styles.skipButtonText}>Skip for now</Text>
           </TouchableOpacity>
         </View>

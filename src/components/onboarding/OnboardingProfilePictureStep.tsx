@@ -22,22 +22,28 @@ import type { Schema } from '../../../amplify/data/resource';
 const client = generateClient<Schema>();
 
 interface OnboardingProfilePictureStepProps {
+  profilePictureUrl: string | null;
+  onProfilePictureChange: (url: string | null) => void;
   onNext: () => void;
   onSkip: () => void;
 }
 
 export const OnboardingProfilePictureStep: React.FC<OnboardingProfilePictureStepProps> = ({
+  profilePictureUrl,
+  onProfilePictureChange,
   onNext,
   onSkip,
 }) => {
   const { user, refreshAuth } = useAuth();
-  const [profilePictureUrl, setProfilePictureUrl] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [imageError, setImageError] = useState(false);
+  const [imageLoading, setImageLoading] = useState(false);
 
   const handleSelectImage = async () => {
     if (!user) return;
 
     setIsUploading(true);
+    setImageError(false);
     try {
       const result = await updateProfilePicture(
         user.userId,
@@ -45,8 +51,6 @@ export const OnboardingProfilePictureStep: React.FC<OnboardingProfilePictureStep
       );
 
       if (result.success && result.url) {
-        setProfilePictureUrl(result.url);
-
         // Update user profile in database
         await client.models.User.update({
           id: user.userId,
@@ -56,12 +60,15 @@ export const OnboardingProfilePictureStep: React.FC<OnboardingProfilePictureStep
         // Refresh auth context to update profile picture
         await refreshAuth({ silent: true });
 
-        Alert.alert('Success', 'Profile picture updated!');
+        // Update parent state (no blocking alert - visual feedback is sufficient)
+        onProfilePictureChange(result.url);
       } else {
+        setImageError(true);
         Alert.alert('Error', result.error || 'Failed to upload profile picture.');
       }
     } catch (error) {
       console.error('[Onboarding] Failed to upload profile picture:', error);
+      setImageError(true);
       Alert.alert('Error', 'Failed to upload profile picture. Please try again.');
     } finally {
       setIsUploading(false);
@@ -74,7 +81,29 @@ export const OnboardingProfilePictureStep: React.FC<OnboardingProfilePictureStep
         {/* Icon/Illustration */}
         <View style={styles.iconContainer}>
           {profilePictureUrl ? (
-            <Image source={{ uri: profilePictureUrl }} style={styles.profileImage} />
+            <>
+              <Image
+                source={{ uri: profilePictureUrl }}
+                style={styles.profileImage}
+                onLoadStart={() => setImageLoading(true)}
+                onLoadEnd={() => setImageLoading(false)}
+                onError={() => {
+                  setImageError(true);
+                  setImageLoading(false);
+                }}
+                accessibilityLabel="Profile picture"
+              />
+              {imageLoading && (
+                <View style={styles.imageLoadingOverlay}>
+                  <ActivityIndicator color={colors.primary} size="large" />
+                </View>
+              )}
+              {imageError && (
+                <View style={styles.imageErrorOverlay}>
+                  <Text style={styles.imageErrorText}>Failed to load</Text>
+                </View>
+              )}
+            </>
           ) : (
             <View style={styles.placeholderImage}>
               <Text style={styles.placeholderText}>📷</Text>
@@ -94,6 +123,8 @@ export const OnboardingProfilePictureStep: React.FC<OnboardingProfilePictureStep
           style={styles.primaryButton}
           onPress={handleSelectImage}
           disabled={isUploading}
+          accessibilityLabel={profilePictureUrl ? 'Change profile picture' : 'Choose profile picture'}
+          accessibilityRole="button"
         >
           {isUploading ? (
             <ActivityIndicator color={colors.textInverse} />
@@ -107,12 +138,22 @@ export const OnboardingProfilePictureStep: React.FC<OnboardingProfilePictureStep
 
       {/* Bottom Actions */}
       <View style={styles.bottomActions}>
-        <TouchableOpacity style={styles.skipButton} onPress={onSkip}>
+        <TouchableOpacity
+          style={styles.skipButton}
+          onPress={onSkip}
+          accessibilityLabel="Skip adding profile picture"
+          accessibilityRole="button"
+        >
           <Text style={styles.skipButtonText}>Skip for now</Text>
         </TouchableOpacity>
 
         {profilePictureUrl && (
-          <TouchableOpacity style={styles.nextButton} onPress={onNext}>
+          <TouchableOpacity
+            style={styles.nextButton}
+            onPress={onNext}
+            accessibilityLabel="Continue to next step"
+            accessibilityRole="button"
+          >
             <Text style={styles.nextButtonText}>Next</Text>
           </TouchableOpacity>
         )}
@@ -134,6 +175,7 @@ const styles = StyleSheet.create({
   },
   iconContainer: {
     marginBottom: spacing.xl,
+    position: 'relative',
   },
   profileImage: {
     width: 120,
@@ -141,6 +183,40 @@ const styles = StyleSheet.create({
     borderRadius: 60,
     borderWidth: 3,
     borderColor: colors.primary,
+  },
+  imageLoadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  imageErrorOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: 'rgba(255, 0, 0, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: colors.error,
+  },
+  imageErrorText: {
+    ...textStyles.caption,
+    color: colors.error,
+    textAlign: 'center',
+    fontWeight: typography.fontWeight.bold,
   },
   placeholderImage: {
     width: 120,

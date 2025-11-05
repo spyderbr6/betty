@@ -33,6 +33,12 @@ interface OnboardingScreenProps {
   onComplete: () => void;
 }
 
+interface OnboardingState {
+  profilePictureUrl: string | null;
+  fundsAdded: boolean;
+  friendsAdded: number;
+}
+
 const TOTAL_STEPS = 3;
 
 export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({
@@ -43,6 +49,23 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({
   const [currentStep, setCurrentStep] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
   const progressAnim = useState(new Animated.Value(1 / TOTAL_STEPS))[0];
+
+  // Lifted state for all onboarding steps
+  const [onboardingState, setOnboardingState] = useState<OnboardingState>({
+    profilePictureUrl: null,
+    fundsAdded: false,
+    friendsAdded: 0,
+  });
+
+  // Initialize profile picture from user data on mount
+  useEffect(() => {
+    if (user?.profilePictureUrl && !onboardingState.profilePictureUrl) {
+      setOnboardingState((prev) => ({
+        ...prev,
+        profilePictureUrl: user.profilePictureUrl || null,
+      }));
+    }
+  }, [user?.profilePictureUrl]);
 
   useEffect(() => {
     // Animate progress bar when step changes
@@ -64,22 +87,9 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({
     }
   };
 
-  const handleSkipStep = () => {
-    Alert.alert(
-      'Skip this step?',
-      'You can always complete this later in your account settings.',
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
-        {
-          text: 'Skip',
-          style: 'destructive',
-          onPress: handleNextStep,
-        },
-      ]
-    );
+  const handleSkipStep = async () => {
+    // Skip to next step without confirmation (consistent UX)
+    await handleNextStep();
   };
 
   const handlePreviousStep = async () => {
@@ -140,6 +150,12 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({
       case 1:
         return (
           <OnboardingProfilePictureStep
+            profilePictureUrl={onboardingState.profilePictureUrl}
+            onProfilePictureChange={(url) => {
+              setOnboardingState((prev) => ({ ...prev, profilePictureUrl: url }));
+              // Save progress immediately after action
+              saveOnboardingProgress(1);
+            }}
             onNext={handleNextStep}
             onSkip={handleSkipStep}
           />
@@ -147,6 +163,12 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({
       case 2:
         return (
           <OnboardingAddFundsStep
+            fundsAdded={onboardingState.fundsAdded}
+            onFundsAdded={(added) => {
+              setOnboardingState((prev) => ({ ...prev, fundsAdded: added }));
+              // Save progress immediately after action
+              saveOnboardingProgress(2);
+            }}
             onNext={handleNextStep}
             onSkip={handleSkipStep}
             onBack={handlePreviousStep}
@@ -155,6 +177,12 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({
       case 3:
         return (
           <OnboardingAddFriendsStep
+            friendsAdded={onboardingState.friendsAdded}
+            onFriendsAddedChange={(count) => {
+              setOnboardingState((prev) => ({ ...prev, friendsAdded: count }));
+              // Save progress immediately after action
+              saveOnboardingProgress(3);
+            }}
             onComplete={completeOnboarding}
             onSkip={completeOnboarding}
             onBack={handlePreviousStep}
