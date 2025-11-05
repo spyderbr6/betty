@@ -98,40 +98,40 @@ export async function getUserCheckedInEvent(userId: string): Promise<{
 
     return {
       checkIn: {
-        id: checkIn.id,
+        id: checkIn.id!,
         userId: checkIn.userId,
         eventId: checkIn.eventId,
         checkInTime: checkIn.checkInTime,
-        checkOutTime: checkIn.checkOutTime || undefined,
+        checkOutTime: checkIn.checkOutTime ?? undefined,
         isActive: checkIn.isActive || true,
         location: checkIn.location as any
       },
       event: {
-        id: event.id,
+        id: event.id!,
         externalId: event.externalId,
         sport: event.sport || 'OTHER',
         league: event.league || '',
         homeTeam: event.homeTeam,
         awayTeam: event.awayTeam,
-        homeTeamCode: event.homeTeamCode || undefined,
-        awayTeamCode: event.awayTeamCode || undefined,
-        venue: event.venue || undefined,
-        city: event.city || undefined,
-        country: event.country || undefined,
+        homeTeamCode: event.homeTeamCode ?? undefined,
+        awayTeamCode: event.awayTeamCode ?? undefined,
+        venue: event.venue ?? undefined,
+        city: event.city ?? undefined,
+        country: event.country ?? undefined,
         homeScore: event.homeScore || 0,
         awayScore: event.awayScore || 0,
         status: event.status || 'UPCOMING',
-        quarter: event.quarter || undefined,
-        timeLeft: event.timeLeft || undefined,
+        quarter: event.quarter ?? undefined,
+        timeLeft: event.timeLeft ?? undefined,
         scheduledTime: event.scheduledTime,
-        startTime: event.startTime || undefined,
-        endTime: event.endTime || undefined,
-        season: event.season || undefined,
-        round: event.round || undefined,
+        startTime: event.startTime ?? undefined,
+        endTime: event.endTime ?? undefined,
+        season: event.season ?? undefined,
+        round: event.round ?? undefined,
         checkInCount: event.checkInCount || 0,
         betCount: event.betCount || 0,
-        createdAt: event.createdAt,
-        updatedAt: event.updatedAt
+        createdAt: event.createdAt ?? undefined,
+        updatedAt: event.updatedAt ?? undefined
       }
     };
 
@@ -190,11 +190,11 @@ export async function checkIntoEvent(
     console.log('[EventService] Check-in successful');
 
     return {
-      id: checkIn.id,
+      id: checkIn.id!,
       userId: checkIn.userId,
       eventId: checkIn.eventId,
       checkInTime: checkIn.checkInTime,
-      checkOutTime: checkIn.checkOutTime || undefined,
+      checkOutTime: checkIn.checkOutTime ?? undefined,
       isActive: checkIn.isActive || true,
       location: checkIn.location as any
     };
@@ -287,32 +287,32 @@ export async function getUpcomingEvents(
     // Events are already sorted by scheduledTime (GSI sort key)
     const sortedEvents = events;
 
-    return sortedEvents.map(event => ({
-      id: event.id,
+    return sortedEvents.map((event): LiveEventData => ({
+      id: event.id!,
       externalId: event.externalId,
       sport: event.sport || 'OTHER',
       league: event.league || '',
       homeTeam: event.homeTeam,
       awayTeam: event.awayTeam,
-      homeTeamCode: event.homeTeamCode || undefined,
-      awayTeamCode: event.awayTeamCode || undefined,
-      venue: event.venue || undefined,
-      city: event.city || undefined,
-      country: event.country || undefined,
+      homeTeamCode: event.homeTeamCode ?? undefined,
+      awayTeamCode: event.awayTeamCode ?? undefined,
+      venue: event.venue ?? undefined,
+      city: event.city ?? undefined,
+      country: event.country ?? undefined,
       homeScore: event.homeScore || 0,
       awayScore: event.awayScore || 0,
       status: event.status || 'UPCOMING',
-      quarter: event.quarter || undefined,
-      timeLeft: event.timeLeft || undefined,
+      quarter: event.quarter ?? undefined,
+      timeLeft: event.timeLeft ?? undefined,
       scheduledTime: event.scheduledTime,
-      startTime: event.startTime || undefined,
-      endTime: event.endTime || undefined,
-      season: event.season || undefined,
-      round: event.round || undefined,
+      startTime: event.startTime ?? undefined,
+      endTime: event.endTime ?? undefined,
+      season: event.season ?? undefined,
+      round: event.round ?? undefined,
       checkInCount: event.checkInCount || 0,
       betCount: event.betCount || 0,
-      createdAt: event.createdAt,
-      updatedAt: event.updatedAt
+      createdAt: event.createdAt ?? undefined,
+      updatedAt: event.updatedAt ?? undefined
     }));
 
   } catch (error) {
@@ -353,32 +353,32 @@ export async function getTrendingEvents(limit: number = 20): Promise<LiveEventDa
       .sort((a, b) => (b.checkInCount || 0) - (a.checkInCount || 0))
       .slice(0, limit);
 
-    return sortedEvents.map(event => ({
-      id: event.id,
+    return sortedEvents.map((event): LiveEventData => ({
+      id: event.id!,
       externalId: event.externalId,
       sport: event.sport || 'OTHER',
       league: event.league || '',
       homeTeam: event.homeTeam,
       awayTeam: event.awayTeam,
-      homeTeamCode: event.homeTeamCode || undefined,
-      awayTeamCode: event.awayTeamCode || undefined,
-      venue: event.venue || undefined,
-      city: event.city || undefined,
-      country: event.country || undefined,
+      homeTeamCode: event.homeTeamCode ?? undefined,
+      awayTeamCode: event.awayTeamCode ?? undefined,
+      venue: event.venue ?? undefined,
+      city: event.city ?? undefined,
+      country: event.country ?? undefined,
       homeScore: event.homeScore || 0,
       awayScore: event.awayScore || 0,
       status: event.status || 'UPCOMING',
-      quarter: event.quarter || undefined,
-      timeLeft: event.timeLeft || undefined,
+      quarter: event.quarter ?? undefined,
+      timeLeft: event.timeLeft ?? undefined,
       scheduledTime: event.scheduledTime,
-      startTime: event.startTime || undefined,
-      endTime: event.endTime || undefined,
-      season: event.season || undefined,
-      round: event.round || undefined,
+      startTime: event.startTime ?? undefined,
+      endTime: event.endTime ?? undefined,
+      season: event.season ?? undefined,
+      round: event.round ?? undefined,
       checkInCount: event.checkInCount || 0,
       betCount: event.betCount || 0,
-      createdAt: event.createdAt,
-      updatedAt: event.updatedAt
+      createdAt: event.createdAt ?? undefined,
+      updatedAt: event.updatedAt ?? undefined
     }));
 
   } catch (error) {
@@ -484,31 +484,31 @@ export async function getEventById(eventId: string): Promise<LiveEventData | nul
     }
 
     return {
-      id: event.id,
+      id: event.id!,
       externalId: event.externalId,
       sport: event.sport || 'OTHER',
       league: event.league || '',
       homeTeam: event.homeTeam,
       awayTeam: event.awayTeam,
-      homeTeamCode: event.homeTeamCode || undefined,
-      awayTeamCode: event.awayTeamCode || undefined,
-      venue: event.venue || undefined,
-      city: event.city || undefined,
-      country: event.country || undefined,
+      homeTeamCode: event.homeTeamCode ?? undefined,
+      awayTeamCode: event.awayTeamCode ?? undefined,
+      venue: event.venue ?? undefined,
+      city: event.city ?? undefined,
+      country: event.country ?? undefined,
       homeScore: event.homeScore || 0,
       awayScore: event.awayScore || 0,
       status: event.status || 'UPCOMING',
-      quarter: event.quarter || undefined,
-      timeLeft: event.timeLeft || undefined,
+      quarter: event.quarter ?? undefined,
+      timeLeft: event.timeLeft ?? undefined,
       scheduledTime: event.scheduledTime,
-      startTime: event.startTime || undefined,
-      endTime: event.endTime || undefined,
-      season: event.season || undefined,
-      round: event.round || undefined,
+      startTime: event.startTime ?? undefined,
+      endTime: event.endTime ?? undefined,
+      season: event.season ?? undefined,
+      round: event.round ?? undefined,
       checkInCount: event.checkInCount || 0,
       betCount: event.betCount || 0,
-      createdAt: event.createdAt,
-      updatedAt: event.updatedAt
+      createdAt: event.createdAt ?? undefined,
+      updatedAt: event.updatedAt ?? undefined
     };
 
   } catch (error) {
@@ -559,32 +559,32 @@ export async function getUserEventCheckInHistory(
     eventResults.forEach(result => {
       if (result.data) {
         const event = result.data;
-        eventMap.set(event.id, {
-          id: event.id,
+        eventMap.set(event.id!, {
+          id: event.id!,
           externalId: event.externalId,
           sport: event.sport || 'OTHER',
           league: event.league || '',
           homeTeam: event.homeTeam,
           awayTeam: event.awayTeam,
-          homeTeamCode: event.homeTeamCode || undefined,
-          awayTeamCode: event.awayTeamCode || undefined,
-          venue: event.venue || undefined,
-          city: event.city || undefined,
-          country: event.country || undefined,
+          homeTeamCode: event.homeTeamCode ?? undefined,
+          awayTeamCode: event.awayTeamCode ?? undefined,
+          venue: event.venue ?? undefined,
+          city: event.city ?? undefined,
+          country: event.country ?? undefined,
           homeScore: event.homeScore || 0,
           awayScore: event.awayScore || 0,
           status: event.status || 'UPCOMING',
-          quarter: event.quarter || undefined,
-          timeLeft: event.timeLeft || undefined,
+          quarter: event.quarter ?? undefined,
+          timeLeft: event.timeLeft ?? undefined,
           scheduledTime: event.scheduledTime,
-          startTime: event.startTime || undefined,
-          endTime: event.endTime || undefined,
-          season: event.season || undefined,
-          round: event.round || undefined,
+          startTime: event.startTime ?? undefined,
+          endTime: event.endTime ?? undefined,
+          season: event.season ?? undefined,
+          round: event.round ?? undefined,
           checkInCount: event.checkInCount || 0,
           betCount: event.betCount || 0,
-          createdAt: event.createdAt,
-          updatedAt: event.updatedAt
+          createdAt: event.createdAt ?? undefined,
+          updatedAt: event.updatedAt ?? undefined
         });
       }
     });
@@ -594,11 +594,11 @@ export async function getUserEventCheckInHistory(
       .filter(checkIn => eventMap.has(checkIn.eventId))
       .map(checkIn => ({
         checkIn: {
-          id: checkIn.id,
+          id: checkIn.id!,
           userId: checkIn.userId,
           eventId: checkIn.eventId,
           checkInTime: checkIn.checkInTime,
-          checkOutTime: checkIn.checkOutTime || undefined,
+          checkOutTime: checkIn.checkOutTime ?? undefined,
           isActive: checkIn.isActive || false,
           location: checkIn.location as any
         },

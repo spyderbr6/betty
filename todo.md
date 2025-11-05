@@ -55,9 +55,9 @@
 ## 🔄 IMMEDIATE NEXT STEPS (Current Development Cycle)
 
 ### **Priority 1: Critical Bug Fixes & UI Polish** ✅ COMPLETED
-- [ ] Amplify build warning: Check @auth directive warning on root type fields - Static group authorization concern
-- [ ] Amplify build warning: Check ownership reassignment warning for models - Field-level authorization recommendation
-- [ ] live now events should be live an hour before the game starts. 
+- [ ] on the onboardingscreen, once you add a profile picture, it doesnt load the picture even though its trying. 
+- [ ] on the onboarding screen, once you add a profile picture, go to the next page and go back the picture isnt retained. 
+- [ ] skip for now doesnt appear to be working at all. 
 
 
 
