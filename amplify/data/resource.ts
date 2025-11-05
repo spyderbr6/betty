@@ -362,10 +362,9 @@ const schema = a.schema({
     })
     .authorization((allow) => [
       allow.owner().to(['create', 'read']), // Users can create their own transactions and read them
-      allow.authenticated().to(['read', 'create']), // All authenticated users can read/create transactions (for bet operations)
+      allow.authenticated().to(['read', 'create', 'update']), // All authenticated users can read/create/update transactions
       // NOTE: Admin-only update permissions enforced in app logic by checking user.role
-      // DynamoDB authorization rules don't support custom field-based permissions
-      // TransactionService validates admin role before allowing status updates
+      // TransactionService validates admin role before allowing status updates on PENDING transactions
     ]),
 
   // Live Event Models
