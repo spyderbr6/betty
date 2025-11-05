@@ -36,9 +36,15 @@ interface AdminDashboardScreenProps {
   onClose: () => void;
 }
 
+interface UserDetails {
+  displayName?: string;
+  username: string;
+}
+
 export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onClose }) => {
   const { user } = useAuth();
   const [pendingTransactions, setPendingTransactions] = useState<Transaction[]>([]);
+  const [userDetails, setUserDetails] = useState<Map<string, UserDetails>>(new Map());
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [processingId, setProcessingId] = useState<string | null>(null);
@@ -70,6 +76,31 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
       const transactions = await TransactionService.getPendingTransactions();
       console.log('[AdminDashboard] Loaded transactions:', transactions.length);
       setPendingTransactions(transactions);
+
+      // Fetch user details for all unique user IDs
+      const uniqueUserIds = [...new Set(transactions.map(t => t.userId))];
+      console.log('[AdminDashboard] Fetching details for', uniqueUserIds.length, 'users...');
+
+      const userDetailsMap = new Map<string, UserDetails>();
+      await Promise.all(
+        uniqueUserIds.map(async (userId) => {
+          try {
+            const { data: userData } = await client.models.User.get({ id: userId });
+            if (userData) {
+              userDetailsMap.set(userId, {
+                displayName: userData.displayName || undefined,
+                username: userData.username || 'Unknown User'
+              });
+            }
+          } catch (error) {
+            console.error('[AdminDashboard] Error fetching user details for', userId, error);
+            userDetailsMap.set(userId, { username: 'Unknown User' });
+          }
+        })
+      );
+
+      setUserDetails(userDetailsMap);
+      console.log('[AdminDashboard] User details loaded for', userDetailsMap.size, 'users');
     } catch (error) {
       console.error('[AdminDashboard] Error loading pending transactions:', error);
       Alert.alert('Error', 'Failed to load pending transactions');
@@ -104,6 +135,16 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
       return 'Venmo Transaction ID';
     }
     return 'Transaction ID';
+  };
+
+  const getUserDisplayName = (userId: string): string => {
+    const details = userDetails.get(userId);
+    if (!details) {
+      // Fallback to truncated ID if user details not loaded yet
+      return userId.substring(0, 12) + '...';
+    }
+    // Priority: displayName > username
+    return details.displayName || details.username;
   };
 
   const handleConfirmApprove = async () => {
@@ -261,8 +302,8 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
 
         <View style={styles.transactionDetails}>
           <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>User ID:</Text>
-            <Text style={styles.detailValue}>{transaction.userId.substring(0, 12)}...</Text>
+            <Text style={styles.detailLabel}>User:</Text>
+            <Text style={styles.detailValue}>{getUserDisplayName(transaction.userId)}</Text>
           </View>
 
           {transaction.venmoUsername && (
@@ -429,7 +470,7 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
                         {formatCurrency(approvalTransaction.amount)}
                       </Text>
                       <Text style={styles.approvalModalInfoSubtext}>
-                        User: {approvalTransaction.userId.substring(0, 12)}...
+                        User: {getUserDisplayName(approvalTransaction.userId)}
                       </Text>
                       {approvalTransaction.venmoUsername && (
                         <Text style={styles.approvalModalInfoSubtext}>
@@ -522,7 +563,7 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
                       {formatCurrency(rejectTransaction.amount)}
                     </Text>
                     <Text style={styles.rejectModalInfoSubtext}>
-                      User: {rejectTransaction.userId.substring(0, 12)}...
+                      User: {getUserDisplayName(rejectTransaction.userId)}
                     </Text>
                   </View>
                 )}
