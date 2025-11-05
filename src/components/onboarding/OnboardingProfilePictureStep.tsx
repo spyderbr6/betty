@@ -17,7 +17,7 @@ import { colors, spacing, textStyles, typography } from '../../styles';
 import { useAuth } from '../../contexts/AuthContext';
 import { updateProfilePicture } from '../../services/imageUploadService';
 import { generateClient } from 'aws-amplify/data';
-import type { Schema } from '../../../amplify/data/resource';
+import type { Schema} from '../../../amplify/data/resource';
 
 const client = generateClient<Schema>();
 
@@ -38,10 +38,22 @@ export const OnboardingProfilePictureStep: React.FC<OnboardingProfilePictureStep
   const [isUploading, setIsUploading] = useState(false);
   const [imageError, setImageError] = useState(false);
   const [imageLoading, setImageLoading] = useState(false);
+  const loadedUrlRef = React.useRef<string | null>(null);
 
-  // Reset error state when profilePictureUrl changes
+  // Reset error state and loading state when profilePictureUrl changes
   React.useEffect(() => {
-    setImageError(false);
+    console.log('[OnboardingProfilePicture] profilePictureUrl prop changed:', {
+      hasUrl: !!profilePictureUrl,
+      urlPreview: profilePictureUrl?.substring(0, 100),
+      isDifferentFromLoaded: loadedUrlRef.current !== profilePictureUrl,
+    });
+
+    // Only reset if URL actually changed
+    if (loadedUrlRef.current !== profilePictureUrl) {
+      setImageError(false);
+      setImageLoading(!!profilePictureUrl); // Set loading if we have a URL
+      loadedUrlRef.current = null; // Clear loaded URL
+    }
   }, [profilePictureUrl]);
 
   const handleSelectImage = async () => {
@@ -55,19 +67,33 @@ export const OnboardingProfilePictureStep: React.FC<OnboardingProfilePictureStep
         profilePictureUrl || undefined
       );
 
+      console.log('[OnboardingProfilePicture] Upload result:', {
+        success: result.success,
+        hasUrl: !!result.url,
+        s3Key: result.url,
+        error: result.error,
+      });
+
       if (result.success && result.url) {
-        // Update user profile in database
+        // result.url is the S3 KEY, not a signed URL
+        const s3Key = result.url;
+
+        console.log('[OnboardingProfilePicture] Upload successful, S3 key:', s3Key);
+
+        // Update user profile in database with S3 key
         await client.models.User.update({
           id: user.userId,
-          profilePictureUrl: result.url,
+          profilePictureUrl: s3Key,
         });
 
         // Refresh auth context to update profile picture
         await refreshAuth({ silent: true });
 
-        // Update parent state (no blocking alert - visual feedback is sufficient)
-        onProfilePictureChange(result.url);
+        // Update parent state with S3 KEY (not signed URL!)
+        // The useEffect will convert it to signed URL for display
+        onProfilePictureChange(s3Key);
       } else {
+        console.error('[OnboardingProfilePicture] Upload failed:', result.error);
         setImageError(true);
         Alert.alert('Error', result.error || 'Failed to upload profile picture.');
       }
@@ -88,13 +114,26 @@ export const OnboardingProfilePictureStep: React.FC<OnboardingProfilePictureStep
           {profilePictureUrl && !imageError ? (
             <>
               <Image
+                key={profilePictureUrl}
                 source={{ uri: profilePictureUrl }}
                 style={styles.profileImage}
-                onLoadStart={() => setImageLoading(true)}
-                onLoadEnd={() => setImageLoading(false)}
-                onError={() => {
+                onLoadStart={() => {
+                  // Only set loading if this is actually a new URL
+                  if (loadedUrlRef.current !== profilePictureUrl) {
+                    console.log('[OnboardingProfilePicture] Image load started for new URL');
+                    setImageLoading(true);
+                  }
+                }}
+                onLoadEnd={() => {
+                  console.log('[OnboardingProfilePicture] Image load ended successfully');
+                  setImageLoading(false);
+                  loadedUrlRef.current = profilePictureUrl; // Mark as loaded
+                }}
+                onError={(error) => {
+                  console.error('[OnboardingProfilePicture] Image load error:', error.nativeEvent);
                   setImageError(true);
                   setImageLoading(false);
+                  loadedUrlRef.current = profilePictureUrl; // Mark as attempted
                 }}
                 accessibilityLabel="Profile picture"
               />

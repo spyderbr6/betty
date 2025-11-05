@@ -6,7 +6,7 @@
  * - Step 3: Add friends
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -20,6 +20,7 @@ import { colors, spacing, textStyles } from '../styles';
 import { useAuth } from '../contexts/AuthContext';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
+import { getProfilePictureUrl } from '../services/imageUploadService';
 
 // Import step components
 import { OnboardingProfilePictureStep } from '../components/onboarding/OnboardingProfilePictureStep';
@@ -57,16 +58,38 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({
     fundsAdded: false,
     friendsAdded: 0,
   });
+  const [displayProfilePictureUrl, setDisplayProfilePictureUrl] = useState<string | null>(null);
 
   // Initialize profile picture from user data ONLY ONCE on mount
+  // AND convert S3 key to signed URL here in parent
   useEffect(() => {
-    if (!hasInitializedRef.current && user?.profilePictureUrl) {
-      hasInitializedRef.current = true;
-      setOnboardingState((prev) => ({
-        ...prev,
-        profilePictureUrl: user.profilePictureUrl || null,
-      }));
-    }
+    const initializeProfilePicture = async () => {
+      if (!hasInitializedRef.current && user?.profilePictureUrl) {
+        hasInitializedRef.current = true;
+
+        const s3KeyOrUrl = user.profilePictureUrl;
+        console.log('[OnboardingScreen] Initializing profile picture:', s3KeyOrUrl);
+
+        // Store the S3 key in state
+        setOnboardingState((prev) => ({
+          ...prev,
+          profilePictureUrl: s3KeyOrUrl,
+        }));
+
+        // Convert to signed URL for display
+        if (s3KeyOrUrl.startsWith('https://')) {
+          setDisplayProfilePictureUrl(s3KeyOrUrl);
+        } else {
+          const signedUrl = await getProfilePictureUrl(s3KeyOrUrl);
+          if (signedUrl) {
+            console.log('[OnboardingScreen] Converted to signed URL');
+            setDisplayProfilePictureUrl(signedUrl);
+          }
+        }
+      }
+    };
+
+    initializeProfilePicture();
   }, [user?.profilePictureUrl]);
 
   useEffect(() => {
@@ -147,17 +170,35 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({
     }
   };
 
+  const handleProfilePictureChange = useCallback(async (s3Key: string | null) => {
+    console.log('[OnboardingScreen] handleProfilePictureChange called with:', s3Key);
+    setOnboardingState((prev) => ({ ...prev, profilePictureUrl: s3Key }));
+
+    // Convert S3 key to signed URL for display
+    if (s3Key) {
+      if (s3Key.startsWith('https://')) {
+        setDisplayProfilePictureUrl(s3Key);
+      } else {
+        const signedUrl = await getProfilePictureUrl(s3Key);
+        if (signedUrl) {
+          setDisplayProfilePictureUrl(signedUrl);
+        }
+      }
+    } else {
+      setDisplayProfilePictureUrl(null);
+    }
+
+    // Save progress immediately after action
+    saveOnboardingProgress(1);
+  }, []);
+
   const renderStep = () => {
     switch (currentStep) {
       case 1:
         return (
           <OnboardingProfilePictureStep
-            profilePictureUrl={onboardingState.profilePictureUrl}
-            onProfilePictureChange={(url) => {
-              setOnboardingState((prev) => ({ ...prev, profilePictureUrl: url }));
-              // Save progress immediately after action
-              saveOnboardingProgress(1);
-            }}
+            profilePictureUrl={displayProfilePictureUrl}
+            onProfilePictureChange={handleProfilePictureChange}
             onNext={handleNextStep}
             onSkip={handleSkipStep}
           />
