@@ -164,8 +164,22 @@ export const LiveEventsScreen: React.FC = () => {
       try {
         console.log('🎯 Fetching recommended events for user:', user.userId);
         const events = await getRecommendedUpcomingEvents(user.userId, 5);
-        console.log(`✅ Loaded ${events.length} recommended events`);
-        setRecommendedEvents(events);
+
+        // Deduplicate events by ID as a safety measure
+        const uniqueEventsMap = new Map();
+        events.forEach(event => {
+          if (event.id && !uniqueEventsMap.has(event.id)) {
+            uniqueEventsMap.set(event.id, event);
+          }
+        });
+        const uniqueEvents = Array.from(uniqueEventsMap.values());
+
+        if (uniqueEvents.length !== events.length) {
+          console.warn(`⚠️ Deduplicated ${events.length - uniqueEvents.length} duplicate recommended events`);
+        }
+
+        console.log(`✅ Loaded ${uniqueEvents.length} unique recommended events`);
+        setRecommendedEvents(uniqueEvents);
       } catch (error) {
         console.error('❌ Error fetching recommended events:', error);
       }
