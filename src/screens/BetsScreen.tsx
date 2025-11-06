@@ -506,11 +506,28 @@ export const BetsScreen: React.FC = () => {
     }
   };
 
-  // Set up real-time subscriptions (moved inside useEffect)
+  // Set up real-time subscriptions with debouncing
   useEffect(() => {
     if (!user?.userId) return;
 
+    let debounceTimer: NodeJS.Timeout | null = null;
+
+    // Debounced refetch function to prevent rapid successive queries
+    const debouncedRefetch = () => {
+      if (debounceTimer) {
+        clearTimeout(debounceTimer);
+      }
+
+      debounceTimer = setTimeout(async () => {
+        console.log('📡 Real-time update triggered, refetching bets...');
+        // Only clear cache and refetch on debounced update
+        clearBulkLoadingCache();
+        await fetchBets();
+      }, 1000); // 1 second debounce
+    };
+
     // Set up real-time subscription for bet changes
+    // This will catch bet status changes, new bets, etc.
     const betSubscription = client.models.Bet.observeQuery({
       filter: {
         or: [
@@ -521,34 +538,27 @@ export const BetsScreen: React.FC = () => {
         ]
       }
     }).subscribe({
-      next: async (_data) => {
-        // Clear cache and refetch to get latest data
-        clearBulkLoadingCache();
-        await fetchBets();
+      next: (_data) => {
+        // Use debounced refetch to avoid excessive queries
+        debouncedRefetch();
       },
       error: (error) => {
         console.error('❌ Real-time bet subscription error:', error);
       }
     });
 
-    // Set up real-time subscription for participant changes
-    const participantSubscription = client.models.Participant.observeQuery().subscribe({
-      next: async (_participantData) => {
-        // Clear cache and refetch to get latest data
-        clearBulkLoadingCache();
-        await fetchBets();
-      },
-      error: (error) => {
-        console.error('❌ Real-time participant subscription error:', error);
-      }
-    });
+    // Note: Removed global participant subscription to reduce query load
+    // Bet subscription is sufficient to catch participant changes since
+    // bet updates (totalPot, etc.) are triggered when participants join
 
     // Cleanup subscriptions on unmount
     return () => {
+      if (debounceTimer) {
+        clearTimeout(debounceTimer);
+      }
       betSubscription.unsubscribe();
-      participantSubscription.unsubscribe();
     };
-  }, []);
+  }, [user?.userId]);
 
   const handleJoinBet = (betId: string, side: string, amount: number) => {
     console.log(`User joined bet ${betId} on side ${side} with $${amount}`);

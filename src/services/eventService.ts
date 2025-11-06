@@ -71,10 +71,8 @@ export async function getUserCheckedInEvent(userId: string): Promise<{
     // Get user's active check-ins
     const { data: checkIns, errors } = await client.models.EventCheckIn.list({
       filter: {
-        and: [
-          { userId: { eq: userId } },
-          { isActive: { eq: true } }
-        ]
+        userId: { eq: userId },
+        isActive: { eq: true }
       }
     });
 
@@ -91,8 +89,13 @@ export async function getUserCheckedInEvent(userId: string): Promise<{
       id: checkIn.eventId
     });
 
-    if (eventErrors || !event) {
+    if (eventErrors) {
       console.error('[EventService] Error fetching event:', eventErrors);
+      return null;
+    }
+
+    if (!event) {
+      console.log('[EventService] Event not found for check-in:', checkIn.eventId);
       return null;
     }
 
