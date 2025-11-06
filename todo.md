@@ -60,6 +60,8 @@
 - [ ] lets remove the stats from the my bets page and the profile's main page. those are needless.
 - [ ] payment methods, its unclear how they get verified. there doesnt appear to be a way to do it. should it just be when the first payment is authorized?
 - [ ] i feel like the resolved bets should be loaded in separately or we should remove them from my bets completely. 
+- [ ] notification unread count keeps firing every few seconds. [Notification] Unread count for user 813b8550-c071-70ac-8f25-224c08ac177b: 0, idling here its loaded 12 times. shouldnt this be like a subscription event or something rather than keep loading graphql every 4-5 seconds? 
+- [ ] profile pictures should be resized before we store them. right now we're trying to load like 4mb profile picture images, thats nuts. 
 
 
 
