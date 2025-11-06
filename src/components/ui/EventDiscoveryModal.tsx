@@ -43,6 +43,7 @@ export const EventDiscoveryModal: React.FC<EventDiscoveryModalProps> = ({
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<FilterTab>('live');
   const [checkingIn, setCheckingIn] = useState<string | null>(null);
+  const [isLoadingRef, setIsLoadingRef] = useState(false); // Prevent concurrent loads
 
   useEffect(() => {
     if (visible) {
@@ -51,10 +52,17 @@ export const EventDiscoveryModal: React.FC<EventDiscoveryModalProps> = ({
       // Reset checking-in state when modal closes
       setCheckingIn(null);
     }
-  }, [visible, activeTab]);
+  }, [visible, activeTab]); // Re-added activeTab dependency
 
   const loadEvents = async () => {
+    // Prevent concurrent loads to avoid race conditions and duplicate events
+    if (isLoadingRef) {
+      console.log('[EventDiscoveryModal] Load already in progress, skipping duplicate call');
+      return;
+    }
+
     try {
+      setIsLoadingRef(true);
       setLoading(true);
 
       let fetchedEvents: LiveEvent[];
@@ -64,18 +72,36 @@ export const EventDiscoveryModal: React.FC<EventDiscoveryModalProps> = ({
         // If no live events found, automatically switch to upcoming tab
         if (fetchedEvents.length === 0) {
           console.log('[EventDiscoveryModal] No live events found, switching to upcoming tab');
+          // Use a flag to prevent the setActiveTab from triggering another load
+          setIsLoadingRef(false); // Reset flag BEFORE changing tab
           setActiveTab('upcoming');
-          fetchedEvents = await getUpcomingEvents();
+          return; // Exit early - the useEffect will handle the reload with new tab
         }
       } else {
         fetchedEvents = await getUpcomingEvents();
       }
 
-      setEvents(fetchedEvents);
+      // Deduplicate events by ID as a safety measure (in case API returns duplicates)
+      const uniqueEventsMap = new Map<string, LiveEvent>();
+      fetchedEvents.forEach(event => {
+        if (event.id && !uniqueEventsMap.has(event.id)) {
+          uniqueEventsMap.set(event.id, event);
+        }
+      });
+      const uniqueEvents = Array.from(uniqueEventsMap.values());
+
+      if (uniqueEvents.length !== fetchedEvents.length) {
+        console.warn(
+          `[EventDiscoveryModal] Deduplicated ${fetchedEvents.length - uniqueEvents.length} duplicate events`
+        );
+      }
+
+      setEvents(uniqueEvents);
     } catch (error) {
       console.error('Error loading events:', error);
       Alert.alert('Error', 'Failed to load events. Please try again.');
     } finally {
+      setIsLoadingRef(false);
       setLoading(false);
     }
   };
