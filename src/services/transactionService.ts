@@ -210,6 +210,21 @@ export class TransactionService {
     paymentMethodId: string,
     venmoUsername: string
   ): Promise<Transaction | null> {
+    // Import PaymentMethodService at runtime to avoid circular dependency
+    const { PaymentMethodService } = await import('./paymentMethodService');
+
+    // Check if payment method exists and is verified
+    const paymentMethod = await PaymentMethodService.getPaymentMethod(paymentMethodId);
+    if (!paymentMethod) {
+      console.error('[Transaction] Payment method not found:', paymentMethodId);
+      return null;
+    }
+
+    if (!paymentMethod.isVerified) {
+      console.error('[Transaction] Cannot withdraw to unverified payment method:', paymentMethodId);
+      return null;
+    }
+
     // Check if user has sufficient balance
     const currentBalance = await this.getUserBalance(userId);
     if (currentBalance < amount) {
@@ -389,6 +404,29 @@ export class TransactionService {
         if (balanceErrors) {
           console.error('[Transaction] Error updating user balance:', balanceErrors);
           return false;
+        }
+
+        // Auto-verify payment method on first successful deposit
+        if (transaction.paymentMethodId) {
+          const { PaymentMethodService } = await import('./paymentMethodService');
+          const paymentMethod = await PaymentMethodService.getPaymentMethod(transaction.paymentMethodId);
+
+          if (paymentMethod && !paymentMethod.isVerified) {
+            console.log('[Transaction] Auto-verifying payment method:', transaction.paymentMethodId);
+            await PaymentMethodService.verifyPaymentMethod(
+              transaction.paymentMethodId,
+              'TRANSACTION_ID'
+            );
+
+            // Send notification about payment method verification
+            await NotificationService.createNotification({
+              userId: transaction.userId!,
+              type: 'PAYMENT_METHOD_VERIFIED',
+              title: 'Payment Method Verified',
+              message: `Your Venmo account ${paymentMethod.venmoUsername} is now verified and can be used for withdrawals`,
+              priority: 'MEDIUM',
+            });
+          }
         }
 
         // Send notification
