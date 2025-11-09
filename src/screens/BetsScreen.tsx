@@ -80,7 +80,7 @@ export const BetsScreen: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearch, setShowSearch] = useState(false);
-  const [selectedFilter, setSelectedFilter] = useState<'ACTIVE' | 'PENDING_RESOLUTION' | 'RESOLVED'>('ACTIVE');
+  const [selectedFilter, setSelectedFilter] = useState<'ACTIVE' | 'PENDING_RESOLUTION'>('ACTIVE');
   const [refreshing, setRefreshing] = useState(false);
   const [processingInvitations, setProcessingInvitations] = useState<Set<string>>(new Set());
 
@@ -526,15 +526,13 @@ export const BetsScreen: React.FC = () => {
       }, 1000); // 1 second debounce
     };
 
-    // Set up real-time subscription for bet changes
+    // Set up real-time subscription for bet changes (only actionable bets)
     // This will catch bet status changes, new bets, etc.
     const betSubscription = client.models.Bet.observeQuery({
       filter: {
         or: [
           { status: { eq: 'ACTIVE' } },
-          { status: { eq: 'LIVE' } },
-          { status: { eq: 'PENDING_RESOLUTION' } },
-          { status: { eq: 'RESOLVED' } }
+          { status: { eq: 'PENDING_RESOLUTION' } }
         ]
       }
     }).subscribe({
@@ -654,27 +652,17 @@ export const BetsScreen: React.FC = () => {
   });
 
 
-  // Status filter options (removed 'ALL' filter, commented out LIVE filter)
+  // Status filter options (only showing actionable bets - ACTIVE and PENDING_RESOLUTION)
   const statusFilters = [
     { id: 'ACTIVE', label: 'Active', count: bets.filter(bet => {
       const isCreator = bet.creatorId === user?.userId;
       const isParticipant = bet.participants?.some(p => p.userId === user?.userId);
       return (isCreator || isParticipant) && bet.status === 'ACTIVE';
     }).length },
-    // { id: 'LIVE', label: 'Live', count: bets.filter(bet => {
-    //   const isCreator = bet.creatorId === user?.userId;
-    //   const isParticipant = bet.participants?.some(p => p.userId === user?.userId);
-    //   return (isCreator || isParticipant) && bet.status === 'LIVE';
-    // }).length },
     { id: 'PENDING_RESOLUTION', label: 'Pending', count: bets.filter(bet => {
       const isCreator = bet.creatorId === user?.userId;
       const isParticipant = bet.participants?.some(p => p.userId === user?.userId);
       return (isCreator || isParticipant) && bet.status === 'PENDING_RESOLUTION';
-    }).length },
-    { id: 'RESOLVED', label: 'Resolved', count: bets.filter(bet => {
-      const isCreator = bet.creatorId === user?.userId;
-      const isParticipant = bet.participants?.some(p => p.userId === user?.userId);
-      return (isCreator || isParticipant) && bet.status === 'RESOLVED';
     }).length },
   ];
 
