@@ -73,8 +73,8 @@ export const AddFriendModal: React.FC<AddFriendModalProps> = ({
       setIsSearching(true);
       setHasSearched(true);
 
-      // Search users by email or display name
-      const [emailResults, nameResults] = await Promise.all([
+      // Search users by email, display name, or phone number (if discovery enabled)
+      const [emailResults, nameResults, phoneResults] = await Promise.all([
         client.models.User.list({
           filter: {
             email: { contains: searchQuery.trim().toLowerCase() }
@@ -86,11 +86,21 @@ export const AddFriendModal: React.FC<AddFriendModalProps> = ({
             displayName: { contains: searchQuery.trim() }
           },
           limit: 10,
+        }),
+        // Search by phone number (only if user has enabled phone discovery)
+        client.models.User.list({
+          filter: {
+            and: [
+              { phoneNumber: { contains: searchQuery.trim() } },
+              { allowPhoneDiscovery: { eq: true } }
+            ]
+          },
+          limit: 10,
         })
       ]);
 
       // Combine and deduplicate results
-      const allUsers = [...(emailResults.data || []), ...(nameResults.data || [])];
+      const allUsers = [...(emailResults.data || []), ...(nameResults.data || []), ...(phoneResults.data || [])];
       const uniqueUsers = allUsers.filter((user, index, array) =>
         array.findIndex(u => u.id === user.id) === index
       );

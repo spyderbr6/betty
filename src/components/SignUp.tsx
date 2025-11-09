@@ -13,6 +13,9 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { signUp, confirmSignUp } from 'aws-amplify/auth';
 import { colors, spacing, textStyles, typography, commonStyles, shadows } from '../styles';
+import { PhoneInput } from './ui/PhoneInput';
+import { formatPhoneNumber, validatePhoneNumber } from '../utils/phoneValidation';
+import type { CountryCode } from 'libphonenumber-js';
 
 interface SignUpProps {
   onLoginPress: () => void;
@@ -23,6 +26,9 @@ export const SignUp: React.FC<SignUpProps> = ({ onLoginPress, onSignUpSuccess })
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [formattedPhoneNumber, setFormattedPhoneNumber] = useState('');
+  const [countryCode, setCountryCode] = useState<CountryCode>('US');
   const [confirmationCode, setConfirmationCode] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [step, setStep] = useState<'signUp' | 'confirm'>('signUp');
@@ -33,7 +39,8 @@ export const SignUp: React.FC<SignUpProps> = ({ onLoginPress, onSignUpSuccess })
     // Clear previous errors
     setErrorMessage('');
 
-    if (!email.trim() || !password.trim() || !displayName.trim()) {
+    // Validate all fields
+    if (!email.trim() || !password.trim() || !displayName.trim() || !phoneNumber.trim()) {
       setErrorMessage('Please fill in all fields');
       return;
     }
@@ -48,6 +55,23 @@ export const SignUp: React.FC<SignUpProps> = ({ onLoginPress, onSignUpSuccess })
       return;
     }
 
+    // Validate phone number
+    if (!validatePhoneNumber(phoneNumber, countryCode)) {
+      setErrorMessage('Please enter a valid phone number');
+      return;
+    }
+
+    // Format phone number to E.164
+    const formatted = formatPhoneNumber(phoneNumber, countryCode);
+    if (!formatted) {
+      setErrorMessage('Failed to format phone number');
+      return;
+    }
+
+    setFormattedPhoneNumber(formatted);
+
+    // Create Cognito account with phone number (unverified initially)
+    // Phone verification will happen after login
     setIsLoading(true);
     try {
       await signUp({
@@ -57,12 +81,13 @@ export const SignUp: React.FC<SignUpProps> = ({ onLoginPress, onSignUpSuccess })
           userAttributes: {
             email: email.trim(),
             preferred_username: email.trim(),
-            name: displayName.trim(), // Store display name in Cognito
+            name: displayName.trim(),
+            phone_number: formatted, // Add phone number (will be unverified)
           },
         },
       });
       setStep('confirm');
-      setErrorMessage(''); // Clear any errors on success
+      setErrorMessage('');
     } catch (error) {
       const err = error as Error;
       setErrorMessage(err.message || 'An error occurred during sign up');
@@ -298,9 +323,22 @@ export const SignUp: React.FC<SignUpProps> = ({ onLoginPress, onSignUpSuccess })
                 />
               </View>
 
+              {/* Phone Number Input */}
+              <PhoneInput
+                value={phoneNumber}
+                onChangeText={setPhoneNumber}
+                onChangeFormattedText={setFormattedPhoneNumber}
+                onChangeCountryCode={setCountryCode}
+                label="Phone Number"
+                placeholder="Enter your phone number"
+                required
+                disabled={isLoading}
+                defaultCountryCode={countryCode}
+              />
+
               {/* Helper Text */}
               <Text style={styles.helperText}>
-                Your display name is how you'll appear to friends
+                Phone number is required for account security and friend discovery
               </Text>
 
               {/* Sign Up Button */}

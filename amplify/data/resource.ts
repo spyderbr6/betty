@@ -15,6 +15,11 @@ const schema = a.schema({
       email: a.string().required(),
       displayName: a.string(), // Friendly/display name for friends
       profilePictureUrl: a.string(), // S3 URL for profile picture
+      // Phone verification fields
+      phoneNumber: a.string(), // E.164 format: +1234567890
+      phoneNumberVerified: a.boolean().default(false),
+      phoneNumberVerifiedAt: a.datetime(),
+      allowPhoneDiscovery: a.boolean().default(false), // Opt-in for friend discovery by phone
       role: a.enum(['USER', 'ADMIN', 'SUPER_ADMIN']), // User role for access control
       balance: a.float().default(0),
       trustScore: a.float().default(5.0),

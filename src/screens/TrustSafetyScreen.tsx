@@ -9,8 +9,17 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, textStyles, typography, commonStyles } from '../styles';
 import { ModalHeader } from '../components/ui/ModalHeader';
+import { VerifyPhoneModal } from '../components/ui/VerifyPhoneModal';
+import { PhoneInput } from '../components/ui/PhoneInput';
 import { useAuth } from '../contexts/AuthContext';
-import { updatePassword, setUpTOTP, verifyTOTPSetup, updateMFAPreference, fetchMFAPreference } from 'aws-amplify/auth';
+import { updatePassword, setUpTOTP, verifyTOTPSetup, updateMFAPreference, fetchMFAPreference, fetchUserAttributes } from 'aws-amplify/auth';
+import { generateClient } from 'aws-amplify/data';
+import type { Schema } from '../../amplify/data/resource';
+import { sendVerificationCode, completePhoneVerification, changePhoneNumber } from '../services/phoneVerificationService';
+import { formatDisplayPhone, formatPhoneNumber, validatePhoneNumber } from '../utils/phoneValidation';
+import type { CountryCode } from 'libphonenumber-js';
+
+const client = generateClient<Schema>();
 
 interface TrustSafetyScreenProps {
   onClose: () => void;
@@ -22,11 +31,19 @@ export const TrustSafetyScreen: React.FC<TrustSafetyScreenProps> = ({ onClose })
   // Modal states
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [show2FAModal, setShow2FAModal] = useState(false);
+  const [showPhoneModal, setShowPhoneModal] = useState(false);
+  const [showPhoneVerifyModal, setShowPhoneVerifyModal] = useState(false);
   const [mfaEnabled, setMfaEnabled] = useState(false);
+
+  // Phone states
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [phoneVerified, setPhoneVerified] = useState(false);
+  const [isLoadingPhone, setIsLoadingPhone] = useState(false);
 
   // Check MFA status on mount
   useEffect(() => {
     checkMFAStatus();
+    loadPhoneNumber();
   }, []);
 
   const checkMFAStatus = async () => {
@@ -35,6 +52,39 @@ export const TrustSafetyScreen: React.FC<TrustSafetyScreenProps> = ({ onClose })
       setMfaEnabled(mfaPreference?.preferred === 'TOTP' || mfaPreference?.enabled?.includes('TOTP'));
     } catch (error) {
       console.error('Error checking MFA status:', error);
+    }
+  };
+
+  const loadPhoneNumber = async () => {
+    try {
+      // First try to get phone from Cognito (authoritative source)
+      const userAttributes = await fetchUserAttributes();
+      const cognitoPhone = userAttributes.phone_number;
+      const cognitoPhoneVerified = userAttributes.phone_number_verified === 'true';
+
+      if (cognitoPhone) {
+        setPhoneNumber(cognitoPhone);
+        setPhoneVerified(cognitoPhoneVerified);
+
+        // Update database to match Cognito
+        if (user?.userId) {
+          await client.models.User.update({
+            id: user.userId,
+            phoneNumber: cognitoPhone,
+            phoneNumberVerified: cognitoPhoneVerified,
+            phoneNumberVerifiedAt: cognitoPhoneVerified ? new Date().toISOString() : undefined,
+          });
+        }
+      } else if (user?.userId) {
+        // Fallback to database if Cognito doesn't have phone
+        const { data: userData } = await client.models.User.get({ id: user.userId });
+        if (userData?.phoneNumber) {
+          setPhoneNumber(userData.phoneNumber);
+          setPhoneVerified(userData.phoneNumberVerified || false);
+        }
+      }
+    } catch (error) {
+      console.error('Error loading phone number:', error);
     }
   };
 
@@ -94,6 +144,39 @@ export const TrustSafetyScreen: React.FC<TrustSafetyScreenProps> = ({ onClose })
             </View>
             <Text style={styles.verificationEmail}>{user?.username}</Text>
           </View>
+
+          {/* Phone Verification Card */}
+          <TouchableOpacity
+            style={[
+              styles.verificationCard,
+              !phoneVerified && { backgroundColor: colors.warning + '10', borderColor: colors.warning + '30' }
+            ]}
+            activeOpacity={0.7}
+            onPress={() => setShowPhoneModal(true)}
+          >
+            <View style={styles.verificationHeader}>
+              <Ionicons
+                name="phone-portrait"
+                size={24}
+                color={phoneVerified ? colors.success : colors.warning}
+              />
+              <Text style={[
+                styles.verificationTitle,
+                { color: phoneVerified ? colors.success : colors.warning }
+              ]}>
+                {phoneVerified ? 'Phone Verified' : 'Phone Not Verified'}
+              </Text>
+              <Ionicons name="chevron-forward" size={20} color={colors.textMuted} style={{ marginLeft: 'auto' }} />
+            </View>
+            {phoneNumber && (
+              <Text style={styles.verificationEmail}>
+                {formatDisplayPhone(phoneNumber, 'national')}
+              </Text>
+            )}
+            {!phoneVerified && (
+              <Text style={styles.verificationSubtext}>Tap to verify your phone number</Text>
+            )}
+          </TouchableOpacity>
         </View>
 
         {/* Privacy */}
@@ -160,7 +243,251 @@ export const TrustSafetyScreen: React.FC<TrustSafetyScreenProps> = ({ onClose })
         }}
         mfaEnabled={mfaEnabled}
       />
+
+      {/* Phone Management Modal */}
+      <PhoneManagementModal
+        visible={showPhoneModal}
+        onClose={() => setShowPhoneModal(false)}
+        phoneNumber={phoneNumber}
+        phoneVerified={phoneVerified}
+        onVerifyPress={() => {
+          setShowPhoneModal(false);
+          setShowPhoneVerifyModal(true);
+        }}
+        onVerifySuccess={async () => {
+          await loadPhoneNumber();
+        }}
+      />
+
+      {/* Verify Phone Modal */}
+      <VerifyPhoneModal
+        visible={showPhoneVerifyModal}
+        onClose={() => setShowPhoneVerifyModal(false)}
+        onSuccess={async () => {
+          setShowPhoneVerifyModal(false);
+          await loadPhoneNumber();
+          Alert.alert('Success', 'Your phone number has been verified successfully!');
+        }}
+        phoneNumber={phoneNumber}
+      />
     </SafeAreaView>
+  );
+};
+
+// Phone Management Modal Component
+interface PhoneManagementModalProps {
+  visible: boolean;
+  onClose: () => void;
+  phoneNumber: string;
+  phoneVerified: boolean;
+  onVerifyPress: () => void;
+  onVerifySuccess: () => void;
+}
+
+const PhoneManagementModal: React.FC<PhoneManagementModalProps> = ({
+  visible,
+  onClose,
+  phoneNumber,
+  phoneVerified,
+  onVerifyPress,
+  onVerifySuccess,
+}) => {
+  const [isChanging, setIsChanging] = useState(false);
+  const [newPhoneNumber, setNewPhoneNumber] = useState('');
+  const [formattedNewPhone, setFormattedNewPhone] = useState('');
+  const [countryCode, setCountryCode] = useState<CountryCode>('US');
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const resetModal = () => {
+    setIsChanging(false);
+    setNewPhoneNumber('');
+    setFormattedNewPhone('');
+    setError('');
+  };
+
+  const handleClose = () => {
+    resetModal();
+    onClose();
+  };
+
+  const handleVerifyExisting = async () => {
+    if (!phoneNumber) {
+      setError('No phone number to verify');
+      return;
+    }
+
+    setIsLoading(true);
+    setError('');
+
+    try {
+      const result = await sendVerificationCode(phoneNumber);
+
+      if (result.success) {
+        onVerifyPress();
+      } else {
+        setError(result.error || 'Failed to send verification code');
+      }
+    } catch (err: any) {
+      console.error('Error sending verification code:', err);
+      setError(err.message || 'Failed to send verification code');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleChangePhone = async () => {
+    setError('');
+
+    // Validate phone number
+    if (!validatePhoneNumber(newPhoneNumber, countryCode)) {
+      setError('Please enter a valid phone number');
+      return;
+    }
+
+    // Format phone number to E.164
+    const formatted = formatPhoneNumber(newPhoneNumber, countryCode);
+    if (!formatted) {
+      setError('Failed to format phone number');
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
+      const result = await changePhoneNumber(formatted, countryCode);
+
+      if (result.success) {
+        setFormattedNewPhone(formatted);
+        onVerifyPress();
+        resetModal();
+      } else {
+        setError(result.error || 'Failed to change phone number');
+      }
+    } catch (err: any) {
+      console.error('Error changing phone number:', err);
+      setError(err.message || 'Failed to change phone number');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={handleClose}>
+      <SafeAreaView style={modalStyles.container} edges={['top']}>
+        <ModalHeader title="Phone Number" onClose={handleClose} />
+
+        <ScrollView style={modalStyles.content} showsVerticalScrollIndicator={false}>
+          <View style={modalStyles.formSection}>
+            {/* Current Phone Status */}
+            {!isChanging && (
+              <>
+                <View style={modalStyles.infoCard}>
+                  <Ionicons
+                    name="phone-portrait"
+                    size={48}
+                    color={phoneVerified ? colors.success : colors.warning}
+                  />
+                  <Text style={modalStyles.infoTitle}>
+                    {phoneVerified ? 'Phone Verified' : 'Phone Not Verified'}
+                  </Text>
+                  {phoneNumber ? (
+                    <Text style={modalStyles.infoDescription}>
+                      {formatDisplayPhone(phoneNumber, 'international')}
+                    </Text>
+                  ) : (
+                    <Text style={modalStyles.infoDescription}>
+                      No phone number on file
+                    </Text>
+                  )}
+                </View>
+
+                {/* Verify Button (if not verified) */}
+                {!phoneVerified && phoneNumber && (
+                  <>
+                    <View style={modalStyles.benefitsSection}>
+                      <Text style={modalStyles.benefitsTitle}>Why verify your phone?</Text>
+                      <BenefitItem icon="shield-checkmark" text="Enhanced account security" />
+                      <BenefitItem icon="people" text="Let friends find you by phone number" />
+                      <BenefitItem icon="notifications" text="Enable SMS two-factor authentication" />
+                    </View>
+
+                    <TouchableOpacity
+                      style={[modalStyles.primaryButton, isLoading && modalStyles.buttonDisabled]}
+                      onPress={handleVerifyExisting}
+                      disabled={isLoading}
+                    >
+                      {isLoading ? (
+                        <ActivityIndicator color={colors.textInverse} />
+                      ) : (
+                        <>
+                          <Ionicons name="shield-checkmark" size={20} color={colors.textInverse} />
+                          <Text style={modalStyles.primaryButtonText}>Verify Phone Number</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  </>
+                )}
+
+                {/* Change Phone Button */}
+                <TouchableOpacity
+                  style={[modalStyles.secondaryButton, { marginTop: spacing.lg }]}
+                  onPress={() => setIsChanging(true)}
+                >
+                  <Ionicons name="create-outline" size={20} color={colors.primary} />
+                  <Text style={modalStyles.secondaryButtonText}>Change Phone Number</Text>
+                </TouchableOpacity>
+              </>
+            )}
+
+            {/* Change Phone Form */}
+            {isChanging && (
+              <>
+                <Text style={modalStyles.description}>
+                  Enter your new phone number. You'll need to verify it before it becomes active.
+                </Text>
+
+                <PhoneInput
+                  value={newPhoneNumber}
+                  onChangeText={setNewPhoneNumber}
+                  onChangeFormattedText={setFormattedNewPhone}
+                  onChangeCountryCode={setCountryCode}
+                  label="New Phone Number"
+                  placeholder="Enter new phone number"
+                  required
+                  disabled={isLoading}
+                  defaultCountryCode={countryCode}
+                  error={error}
+                />
+
+                <TouchableOpacity
+                  style={[modalStyles.primaryButton, isLoading && modalStyles.buttonDisabled]}
+                  onPress={handleChangePhone}
+                  disabled={isLoading || !newPhoneNumber}
+                >
+                  {isLoading ? (
+                    <ActivityIndicator color={colors.textInverse} />
+                  ) : (
+                    <Text style={modalStyles.primaryButtonText}>Send Verification Code</Text>
+                  )}
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={modalStyles.secondaryButton}
+                  onPress={() => {
+                    setIsChanging(false);
+                    setNewPhoneNumber('');
+                    setError('');
+                  }}
+                >
+                  <Text style={modalStyles.secondaryButtonText}>Cancel</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    </Modal>
   );
 };
 
@@ -768,6 +1095,11 @@ const styles = StyleSheet.create({
   verificationEmail: {
     ...textStyles.body,
     color: colors.textSecondary,
+  },
+  verificationSubtext: {
+    ...textStyles.caption,
+    color: colors.textMuted,
+    marginTop: spacing.xs,
   },
   tipsSection: {
     paddingHorizontal: spacing.lg,
