@@ -34,7 +34,6 @@ import { SupportScreen } from './SupportScreen';
 import { AboutScreen } from './AboutScreen';
 import { AdminDashboardScreen } from './AdminDashboardScreen';
 import { AdminTestingScreen } from './AdminTestingScreen';
-import { formatCurrency, formatPercentage } from '../utils/formatting';
 import { useAuth } from '../contexts/AuthContext';
 import { ProfileEditForm, User } from '../types/betting';
 import { getProfilePictureUrl } from '../services/imageUploadService';
@@ -402,29 +401,6 @@ export const AccountScreen: React.FC = () => {
                 <Text style={styles.trustLabel}>Trust Score</Text>
                 <Text style={styles.trustScore}>{userProfile.trustScore.toFixed(1)}/10</Text>
               </View>
-            </View>
-          </View>
-        </View>
-
-        {/* Stats Grid */}
-        <View style={styles.statsSection}>
-          <Text style={styles.sectionTitle}>BETTING STATS</Text>
-          <View style={styles.statsGrid}>
-            <View style={styles.statCard}>
-              <Text style={styles.statValue}>{formatPercentage(userProfile.winRate)}</Text>
-              <Text style={styles.statLabel}>Win Rate</Text>
-            </View>
-            <View style={styles.statCard}>
-              <Text style={styles.statValue}>{userProfile.totalBets}</Text>
-              <Text style={styles.statLabel}>Total Bets</Text>
-            </View>
-            <View style={styles.statCard}>
-              <Text style={styles.statValue}>{formatCurrency(userProfile.totalWinnings)}</Text>
-              <Text style={styles.statLabel}>Total Winnings</Text>
-            </View>
-            <View style={styles.statCard}>
-              <Text style={styles.statValue}>{userProfile.balance > 1000 ? '📈' : '💰'}</Text>
-              <Text style={styles.statLabel}>Status</Text>
             </View>
           </View>
         </View>
@@ -811,44 +787,7 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontWeight: '600',
   },
-  
-  // Stats section
-  statsSection: {
-    padding: spacing.lg,
-    backgroundColor: colors.surface,
-    marginTop: spacing.md,
-  },
-  sectionTitle: {
-    ...textStyles.label,
-    color: colors.textMuted,
-    marginBottom: spacing.md,
-  },
-  statsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    // gap is not supported on native; use margins on cards
-  },
-  statCard: {
-    flex: 1,
-    minWidth: '48%',
-    backgroundColor: colors.background,
-    padding: spacing.md,
-    borderRadius: spacing.radius.lg,
-    alignItems: 'center',
-    marginRight: spacing.sm,
-    marginBottom: spacing.sm,
-  },
-  statValue: {
-    ...textStyles.h3,
-    color: colors.textPrimary,
-    marginBottom: spacing.xs / 2,
-  },
-  statLabel: {
-    ...textStyles.caption,
-    color: colors.textMuted,
-    textAlign: 'center',
-  },
-  
+
   // Menu section
   menuSection: {
     backgroundColor: colors.surface,
