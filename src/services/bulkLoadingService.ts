@@ -360,6 +360,8 @@ export const bulkLoadActiveBetsWithParticipants = async (
 
 /**
  * Bulk load user's bets (created by user OR user is participant)
+ * Only loads actionable bets (ACTIVE and PENDING_RESOLUTION) to improve performance
+ * Resolved bets are available in Betting History screen
  * @param userId - Current user's ID
  * @param options - Loading options
  * @returns Promise<Bet[]> - User's bets with participants
@@ -380,9 +382,10 @@ export const bulkLoadUserBetsWithParticipants = async (
       }
     }
 
-    // Get all bets first
+    // Get only actionable bets (ACTIVE and PENDING_RESOLUTION)
+    // RESOLVED bets are available in Betting History screen
     const allBets = await bulkLoadBetsWithParticipants(
-      ['ACTIVE', 'LIVE', 'PENDING_RESOLUTION', 'RESOLVED'],
+      ['ACTIVE', 'PENDING_RESOLUTION'],
       options
     );
 
