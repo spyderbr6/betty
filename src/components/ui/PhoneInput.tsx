@@ -1,16 +1,20 @@
 /**
  * Phone Input Component
- * Reusable phone number input with international formatting and country selection
+ * Simple US phone number input with formatting
+ *
+ * Note: Currently US-only. Stores phone numbers in E.164 format (+1XXXXXXXXXX)
+ * for future international expansion. Country selector can be added later.
  */
 
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
+  TextInput,
   StyleSheet,
   Platform,
 } from 'react-native';
-import PhoneNumberInput from 'react-native-phone-number-input';
+import { parsePhoneNumber, AsYouType } from 'libphonenumber-js';
 import { colors, spacing, typography, textStyles } from '../../styles';
 import { validatePhoneNumberWithError } from '../../utils/phoneValidation';
 import type { CountryCode } from 'libphonenumber-js';
@@ -36,37 +40,57 @@ export const PhoneInput: React.FC<PhoneInputProps> = ({
   onChangeCountryCode,
   label,
   error,
-  placeholder = 'Phone number',
+  placeholder = '(555) 555-1234',
   disabled = false,
   required = false,
   autoFocus = false,
   defaultCountryCode = 'US',
 }) => {
-  const phoneInput = useRef<PhoneNumberInput>(null);
   const [isFocused, setIsFocused] = useState(false);
   const [internalError, setInternalError] = useState<string>('');
+  const [displayValue, setDisplayValue] = useState<string>('');
 
   // Display error from props or internal validation
   const displayError = error || internalError;
 
+  // Format phone number as user types
+  const formatPhoneNumber = (text: string): string => {
+    // Remove all non-digit characters
+    const digits = text.replace(/\D/g, '');
+
+    // Use libphonenumber-js formatter for US numbers
+    const formatter = new AsYouType('US');
+    const formatted = formatter.input(digits);
+
+    return formatted;
+  };
+
+  // Convert display format to E.164 format for storage
+  const toE164Format = (text: string): string => {
+    const digits = text.replace(/\D/g, '');
+    if (!digits) return '';
+
+    // Add +1 prefix for US numbers
+    return `+1${digits}`;
+  };
+
   const handleChangeText = (text: string) => {
-    onChangeText(text);
+    // Format for display
+    const formatted = formatPhoneNumber(text);
+    setDisplayValue(formatted);
+
+    // Convert to E.164 for storage
+    const e164 = toE164Format(text);
+    onChangeText(e164);
+
+    // Optional: call formatted text callback
+    if (onChangeFormattedText) {
+      onChangeFormattedText(formatted);
+    }
 
     // Clear error when user starts typing
     if (internalError) {
       setInternalError('');
-    }
-  };
-
-  const handleChangeFormattedText = (formatted: string) => {
-    if (onChangeFormattedText) {
-      onChangeFormattedText(formatted);
-    }
-  };
-
-  const handleCountryChange = (countryCode: CountryCode) => {
-    if (onChangeCountryCode) {
-      onChangeCountryCode(countryCode);
     }
   };
 
@@ -84,6 +108,35 @@ export const PhoneInput: React.FC<PhoneInputProps> = ({
     }
   };
 
+  // Check if phone number is valid
+  const isValid = (): boolean => {
+    if (!value) return false;
+    try {
+      const phoneNumber = parsePhoneNumber(value, defaultCountryCode);
+      return phoneNumber?.isValid() || false;
+    } catch {
+      return false;
+    }
+  };
+
+  // Update display value when value prop changes (e.g., from parent)
+  React.useEffect(() => {
+    if (value) {
+      try {
+        const phoneNumber = parsePhoneNumber(value, defaultCountryCode);
+        if (phoneNumber) {
+          setDisplayValue(phoneNumber.formatNational());
+        } else {
+          setDisplayValue(value);
+        }
+      } catch {
+        setDisplayValue(value);
+      }
+    } else {
+      setDisplayValue('');
+    }
+  }, [value, defaultCountryCode]);
+
   return (
     <View style={styles.container}>
       {label && (
@@ -99,40 +152,28 @@ export const PhoneInput: React.FC<PhoneInputProps> = ({
         displayError && styles.inputContainerError,
         disabled && styles.inputContainerDisabled,
       ]}>
-        <PhoneNumberInput
-          ref={phoneInput}
-          defaultValue={value}
-          defaultCode={defaultCountryCode}
-          layout="first"
+        <View style={styles.prefixContainer}>
+          <Text style={styles.prefixText}>🇺🇸 +1</Text>
+        </View>
+        <TextInput
+          style={[
+            styles.textInput,
+            disabled && styles.textInputDisabled,
+          ]}
+          value={displayValue}
           onChangeText={handleChangeText}
-          onChangeFormattedText={handleChangeFormattedText}
-          onChangeCountry={(country) => {
-            handleCountryChange(country.cca2 as CountryCode);
+          onFocus={() => setIsFocused(true)}
+          onBlur={() => {
+            setIsFocused(false);
+            validateInput();
           }}
           placeholder={placeholder}
-          containerStyle={styles.phoneContainer}
-          textContainerStyle={styles.textContainer}
-          textInputStyle={styles.textInput}
-          codeTextStyle={styles.codeText}
-          countryPickerButtonStyle={styles.countryPicker}
-          flagButtonStyle={styles.flagButton}
-          disabled={disabled}
+          placeholderTextColor={colors.textMuted}
+          keyboardType="phone-pad"
+          editable={!disabled}
           autoFocus={autoFocus}
-          withDarkTheme={false}
-          withShadow={false}
-          textInputProps={{
-            onFocus: () => setIsFocused(true),
-            onBlur: () => {
-              setIsFocused(false);
-              validateInput();
-            },
-            placeholderTextColor: colors.textMuted,
-            keyboardType: 'phone-pad',
-            editable: !disabled,
-            style: {
-              color: disabled ? colors.textMuted : colors.textPrimary,
-            },
-          }}
+          maxLength={14} // (XXX) XXX-XXXX format
+          textAlignVertical="center"
         />
       </View>
 
@@ -142,7 +183,7 @@ export const PhoneInput: React.FC<PhoneInputProps> = ({
         </View>
       )}
 
-      {!displayError && value && phoneInput.current?.isValidNumber(value) && (
+      {!displayError && value && isValid() && (
         <View style={styles.successContainer}>
           <Text style={styles.successText}>✓ Valid phone number</Text>
         </View>
@@ -165,11 +206,13 @@ const styles = StyleSheet.create({
     color: colors.error,
   },
   inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: spacing.radius.md,
     backgroundColor: colors.surface,
-    overflow: 'hidden',
+    paddingHorizontal: spacing.sm,
   },
   inputContainerFocused: {
     borderColor: colors.primary,
@@ -183,36 +226,27 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceLight,
     opacity: 0.6,
   },
-  phoneContainer: {
-    width: '100%',
-    backgroundColor: 'transparent',
-    paddingVertical: Platform.OS === 'android' ? spacing.xs : spacing.sm,
-    paddingHorizontal: spacing.sm,
+  prefixContainer: {
+    paddingRight: spacing.xs,
+    borderRightWidth: 1,
+    borderRightColor: colors.border,
+    marginRight: spacing.sm,
   },
-  textContainer: {
-    backgroundColor: 'transparent',
-    paddingVertical: 0,
-  },
-  textInput: {
-    ...textStyles.body,
-    color: colors.textPrimary,
-    height: Platform.OS === 'android' ? 40 : 36,
-    paddingVertical: 0,
-    includeFontPadding: false, // Android-specific
-  },
-  codeText: {
+  prefixText: {
     ...textStyles.body,
     color: colors.textPrimary,
     fontWeight: typography.fontWeight.semibold,
-    height: Platform.OS === 'android' ? 40 : 36,
-    paddingTop: Platform.OS === 'android' ? 8 : 0,
   },
-  countryPicker: {
-    backgroundColor: 'transparent',
-    paddingRight: spacing.xs,
+  textInput: {
+    ...textStyles.body,
+    flex: 1,
+    color: colors.textPrimary,
+    height: Platform.OS === 'android' ? 48 : 44,
+    paddingVertical: spacing.sm,
+    includeFontPadding: false,
   },
-  flagButton: {
-    backgroundColor: 'transparent',
+  textInputDisabled: {
+    color: colors.textMuted,
   },
   errorContainer: {
     marginTop: spacing.xs,
