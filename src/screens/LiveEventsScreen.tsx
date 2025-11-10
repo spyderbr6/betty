@@ -26,7 +26,8 @@ import { Bet } from '../types/betting';
 import { useAuth } from '../contexts/AuthContext';
 import { bulkLoadJoinableBetsWithParticipants, bulkLoadFriendsBetsWithParticipants, clearBulkLoadingCache } from '../services/bulkLoadingService';
 import { QRScannerModal } from '../components/ui/QRScannerModal';
-import { getRecommendedUpcomingEvents, type LiveEventData } from '../services/eventService';
+import { getUpcomingEventsFromCache } from '../services/eventCacheService';
+import type { LiveEventData } from '../services/eventService';
 
 // Initialize GraphQL client
 const client = generateClient<Schema>();
@@ -162,26 +163,15 @@ export const LiveEventsScreen: React.FC = () => {
 
     const fetchRecommendedEvents = async () => {
       try {
-        console.log('🎯 Fetching recommended events for user:', user.userId);
-        const events = await getRecommendedUpcomingEvents(user.userId, 5);
+        console.log('🎯 Fetching upcoming events from cache');
+        // Get first 5 upcoming events from cache (already deduplicated by cache service)
+        const events = await getUpcomingEventsFromCache();
+        const topEvents = events.slice(0, 5);
 
-        // Deduplicate events by ID as a safety measure
-        const uniqueEventsMap = new Map();
-        events.forEach(event => {
-          if (event.id && !uniqueEventsMap.has(event.id)) {
-            uniqueEventsMap.set(event.id, event);
-          }
-        });
-        const uniqueEvents = Array.from(uniqueEventsMap.values());
-
-        if (uniqueEvents.length !== events.length) {
-          console.warn(`⚠️ Deduplicated ${events.length - uniqueEvents.length} duplicate recommended events`);
-        }
-
-        console.log(`✅ Loaded ${uniqueEvents.length} unique recommended events`);
-        setRecommendedEvents(uniqueEvents);
+        console.log(`✅ Loaded ${topEvents.length} upcoming events`);
+        setRecommendedEvents(topEvents);
       } catch (error) {
-        console.error('❌ Error fetching recommended events:', error);
+        console.error('❌ Error fetching upcoming events:', error);
       }
     };
 
