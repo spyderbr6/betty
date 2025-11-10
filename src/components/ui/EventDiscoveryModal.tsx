@@ -2,6 +2,7 @@
  * EventDiscoveryModal Component
  *
  * Modal for browsing and checking into live sporting events
+ * Uses centralized event cache for better performance
  */
 
 import React, { useState, useEffect } from 'react';
@@ -20,7 +21,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ModalHeader } from './ModalHeader';
 import { EventBadge } from './EventBadge';
 import { colors, typography, spacing, textStyles } from '../../styles';
-import { getUpcomingEvents, getLiveEvents, checkIntoEvent } from '../../services/eventService';
+import { checkIntoEvent } from '../../services/eventService';
+import { getAllEventsFromCache } from '../../services/eventCacheService';
 import type { LiveEvent, SportType } from '../../types/events';
 
 export interface EventDiscoveryModalProps {
@@ -38,79 +40,57 @@ export const EventDiscoveryModal: React.FC<EventDiscoveryModalProps> = ({
   currentUserId,
   onCheckInSuccess,
 }) => {
-  const [events, setEvents] = useState<LiveEvent[]>([]);
+  const [liveEvents, setLiveEvents] = useState<LiveEvent[]>([]);
+  const [upcomingEvents, setUpcomingEvents] = useState<LiveEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<FilterTab>('live');
   const [checkingIn, setCheckingIn] = useState<string | null>(null);
-  const [isLoadingRef, setIsLoadingRef] = useState(false); // Prevent concurrent loads
 
+  // Load events once when modal opens
   useEffect(() => {
     if (visible) {
-      loadEvents();
+      loadEvents(false);
     } else {
-      // Reset checking-in state when modal closes
+      // Reset state when modal closes
       setCheckingIn(null);
     }
-  }, [visible, activeTab]); // Re-added activeTab dependency
+  }, [visible]);
 
-  const loadEvents = async () => {
-    // Prevent concurrent loads to avoid race conditions and duplicate events
-    if (isLoadingRef) {
-      console.log('[EventDiscoveryModal] Load already in progress, skipping duplicate call');
-      return;
-    }
-
+  const loadEvents = async (forceRefresh: boolean) => {
     try {
-      setIsLoadingRef(true);
       setLoading(true);
+      console.log(`[EventDiscoveryModal] Loading events (forceRefresh: ${forceRefresh})`);
 
-      let fetchedEvents: LiveEvent[];
-      if (activeTab === 'live') {
-        fetchedEvents = await getLiveEvents();
+      // Fetch from cache (will use cached data unless expired or forceRefresh=true)
+      const { liveEvents: live, upcomingEvents: upcoming } = await getAllEventsFromCache(forceRefresh);
 
-        // If no live events found, automatically switch to upcoming tab
-        if (fetchedEvents.length === 0) {
-          console.log('[EventDiscoveryModal] No live events found, switching to upcoming tab');
-          // Use a flag to prevent the setActiveTab from triggering another load
-          setIsLoadingRef(false); // Reset flag BEFORE changing tab
-          setActiveTab('upcoming');
-          return; // Exit early - the useEffect will handle the reload with new tab
-        }
-      } else {
-        fetchedEvents = await getUpcomingEvents();
+      setLiveEvents(live);
+      setUpcomingEvents(upcoming);
+
+      // Auto-switch to upcoming tab if no live events
+      if (live.length === 0 && upcoming.length > 0 && activeTab === 'live') {
+        console.log('[EventDiscoveryModal] No live events, switching to upcoming tab');
+        setActiveTab('upcoming');
       }
 
-      // Deduplicate events by ID as a safety measure (in case API returns duplicates)
-      const uniqueEventsMap = new Map<string, LiveEvent>();
-      fetchedEvents.forEach(event => {
-        if (event.id && !uniqueEventsMap.has(event.id)) {
-          uniqueEventsMap.set(event.id, event);
-        }
-      });
-      const uniqueEvents = Array.from(uniqueEventsMap.values());
-
-      if (uniqueEvents.length !== fetchedEvents.length) {
-        console.warn(
-          `[EventDiscoveryModal] Deduplicated ${fetchedEvents.length - uniqueEvents.length} duplicate events`
-        );
-      }
-
-      setEvents(uniqueEvents);
+      console.log(`[EventDiscoveryModal] Loaded ${live.length} live, ${upcoming.length} upcoming events`);
     } catch (error) {
-      console.error('Error loading events:', error);
+      console.error('[EventDiscoveryModal] Error loading events:', error);
       Alert.alert('Error', 'Failed to load events. Please try again.');
     } finally {
-      setIsLoadingRef(false);
       setLoading(false);
     }
   };
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await loadEvents();
+    await loadEvents(true); // Force refresh on pull-to-refresh
     setRefreshing(false);
   };
+
+  // Get current tab's events
+  const currentEvents = activeTab === 'live' ? liveEvents : upcomingEvents;
 
   const handleCheckIn = async (event: LiveEvent) => {
     try {
@@ -314,7 +294,7 @@ export const EventDiscoveryModal: React.FC<EventDiscoveryModalProps> = ({
           </View>
         ) : (
           <FlatList
-            data={events}
+            data={currentEvents}
             renderItem={renderEventItem}
             keyExtractor={(item) => item.id}
             contentContainerStyle={styles.listContent}
