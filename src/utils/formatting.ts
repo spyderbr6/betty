@@ -233,13 +233,18 @@ export const formatErrorMessage = (error: any): string => {
 };
 
 // Team name formatting - extracts short name for display
-export const formatTeamName = (fullTeamName: string, teamCode?: string): string => {
-  // Use team code if available (e.g., "LAL", "GSW")
+export const formatTeamName = (fullTeamName: string, shortName?: string, teamCode?: string): string => {
+  // Prefer short name from ESPN if available (e.g., "Steelers", "Browns")
+  if (shortName && shortName.trim()) {
+    return shortName.trim();
+  }
+
+  // Fallback to team code if available (e.g., "LAL", "GSW")
   if (teamCode && teamCode.trim()) {
     return teamCode.trim();
   }
 
-  // Extract last word from full team name (e.g., "Pittsburgh Steelers" -> "Steelers")
+  // Last resort: extract last word from full team name (e.g., "Pittsburgh Steelers" -> "Steelers")
   const words = fullTeamName.trim().split(/\s+/);
   return words[words.length - 1];
 };

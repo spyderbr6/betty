@@ -241,6 +241,8 @@ async function upsertEvent(event: ESPNEvent, league: string): Promise<void> {
       league: league,
       homeTeam: homeCompetitor.team.displayName || homeCompetitor.team.name,
       awayTeam: awayCompetitor.team.displayName || awayCompetitor.team.name,
+      homeTeamShortName: homeCompetitor.team.name, // Short name (e.g., "Steelers")
+      awayTeamShortName: awayCompetitor.team.name, // Short name (e.g., "Browns")
       homeTeamCode: homeCompetitor.team.abbreviation,
       awayTeamCode: awayCompetitor.team.abbreviation,
       venue: competition.venue?.fullName || undefined,

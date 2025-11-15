@@ -15,6 +15,8 @@ export interface LiveEvent {
   league: string;
   homeTeam: string;
   awayTeam: string;
+  homeTeamShortName?: string; // e.g., "Steelers", "Browns"
+  awayTeamShortName?: string;
   homeTeamCode?: string; // e.g., "LAL", "GSW"
   awayTeamCode?: string;
   venue?: string;
