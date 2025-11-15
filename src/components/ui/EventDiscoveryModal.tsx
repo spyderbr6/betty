@@ -5,7 +5,7 @@
  * Uses centralized event cache for better performance
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Modal,
   View,
@@ -16,6 +16,7 @@ import {
   ActivityIndicator,
   RefreshControl,
   Alert,
+  TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ModalHeader } from './ModalHeader';
@@ -46,6 +47,7 @@ export const EventDiscoveryModal: React.FC<EventDiscoveryModalProps> = ({
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<FilterTab>('live');
   const [checkingIn, setCheckingIn] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Load events once when modal opens
   useEffect(() => {
@@ -54,6 +56,7 @@ export const EventDiscoveryModal: React.FC<EventDiscoveryModalProps> = ({
     } else {
       // Reset state when modal closes
       setCheckingIn(null);
+      setSearchQuery('');
     }
   }, [visible]);
 
@@ -91,6 +94,25 @@ export const EventDiscoveryModal: React.FC<EventDiscoveryModalProps> = ({
 
   // Get current tab's events
   const currentEvents = activeTab === 'live' ? liveEvents : upcomingEvents;
+
+  // Filter events based on search query
+  const filteredEvents = useMemo(() => {
+    if (!searchQuery.trim()) {
+      return currentEvents;
+    }
+
+    const query = searchQuery.toLowerCase();
+    return currentEvents.filter(
+      (event) =>
+        event.homeTeam.toLowerCase().includes(query) ||
+        event.awayTeam.toLowerCase().includes(query) ||
+        event.homeTeamCode?.toLowerCase().includes(query) ||
+        event.awayTeamCode?.toLowerCase().includes(query) ||
+        event.venue?.toLowerCase().includes(query) ||
+        event.sport.toLowerCase().includes(query) ||
+        event.league?.toLowerCase().includes(query)
+    );
+  }, [currentEvents, searchQuery]);
 
   const handleCheckIn = async (event: LiveEvent) => {
     try {
@@ -253,13 +275,21 @@ export const EventDiscoveryModal: React.FC<EventDiscoveryModalProps> = ({
   const renderEmptyState = () => (
     <View style={styles.emptyContainer}>
       <Text style={styles.emptyText}>
-        {activeTab === 'live'
+        {searchQuery.trim()
+          ? 'No events match your search'
+          : activeTab === 'live'
           ? 'No live events right now'
           : 'No upcoming events in the next 24 hours'}
       </Text>
-      <TouchableOpacity onPress={handleRefresh} style={styles.refreshButton}>
-        <Text style={styles.refreshButtonText}>Refresh</Text>
-      </TouchableOpacity>
+      {searchQuery.trim() ? (
+        <TouchableOpacity onPress={() => setSearchQuery('')} style={styles.refreshButton}>
+          <Text style={styles.refreshButtonText}>Clear Search</Text>
+        </TouchableOpacity>
+      ) : (
+        <TouchableOpacity onPress={handleRefresh} style={styles.refreshButton}>
+          <Text style={styles.refreshButtonText}>Refresh</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 
@@ -267,6 +297,28 @@ export const EventDiscoveryModal: React.FC<EventDiscoveryModalProps> = ({
     <Modal visible={visible} animationType="slide" presentationStyle="fullScreen">
       <SafeAreaView style={styles.container} edges={['top']}>
         <ModalHeader title="Live Events" onClose={onClose} />
+
+        <View style={styles.searchContainer}>
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search teams, venue, sport..."
+            placeholderTextColor={colors.textMuted}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            autoCapitalize="none"
+            autoCorrect={false}
+            returnKeyType="search"
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity
+              style={styles.clearButton}
+              onPress={() => setSearchQuery('')}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Text style={styles.clearButtonText}>✕</Text>
+            </TouchableOpacity>
+          )}
+        </View>
 
         <View style={styles.tabContainer}>
           <TouchableOpacity
@@ -294,7 +346,7 @@ export const EventDiscoveryModal: React.FC<EventDiscoveryModalProps> = ({
           </View>
         ) : (
           <FlatList
-            data={currentEvents}
+            data={filteredEvents}
             renderItem={renderEventItem}
             keyExtractor={(item) => item.id}
             contentContainerStyle={styles.listContent}
@@ -313,6 +365,41 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  searchInput: {
+    flex: 1,
+    height: 40,
+    backgroundColor: colors.background,
+    borderRadius: spacing.radius.sm,
+    paddingHorizontal: spacing.md,
+    fontSize: typography.fontSize.base,
+    color: colors.textPrimary,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  clearButton: {
+    position: 'absolute',
+    right: spacing.md + spacing.sm,
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.textMuted,
+    borderRadius: 12,
+  },
+  clearButtonText: {
+    color: colors.background,
+    fontSize: typography.fontSize.sm,
+    fontWeight: typography.fontWeight.bold,
   },
   tabContainer: {
     flexDirection: 'row',
