@@ -519,7 +519,11 @@ export const LiveEventsScreen: React.FC = () => {
                 <View key={event.id} style={styles.upcomingEvent}>
                   <View style={styles.upcomingHeader}>
                     <Text style={styles.upcomingTitle}>
-                      {event.awayTeam} @ {event.homeTeam}
+                      {event.awayTeam}{' '}
+                      <Text style={styles.teamBadge}>A</Text>
+                      {' @ '}
+                      {event.homeTeam}{' '}
+                      <Text style={styles.teamBadge}>H</Text>
                     </Text>
                     <Text style={styles.upcomingStatus}>{event.sport}</Text>
                   </View>
@@ -773,6 +777,18 @@ const styles = StyleSheet.create({
     ...textStyles.h4,
     color: colors.textPrimary,
     flex: 1,
+  },
+  teamBadge: {
+    fontSize: typography.fontSize.xs,
+    fontWeight: typography.fontWeight.semibold,
+    color: colors.textSecondary,
+    backgroundColor: colors.surface,
+    paddingHorizontal: spacing.xs / 2,
+    paddingVertical: 1,
+    borderRadius: spacing.radius.xs,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: 'hidden',
   },
   upcomingStatus: {
     ...textStyles.caption,
