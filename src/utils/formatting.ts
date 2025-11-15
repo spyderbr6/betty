@@ -239,12 +239,18 @@ export const formatTeamName = (fullTeamName: string, shortName?: string, teamCod
     return shortName.trim();
   }
 
-  // Fallback to team code if available (e.g., "LAL", "GSW")
+  // Fallback: extract last word from full team name (e.g., "Pittsburgh Steelers" -> "Steelers")
+  // This provides better readability than abbreviations while ESPN data is being populated
+  const words = fullTeamName.trim().split(/\s+/);
+  if (words.length > 0 && words[words.length - 1]) {
+    return words[words.length - 1];
+  }
+
+  // Last resort: use team code if extraction fails (e.g., "LAL", "GSW")
   if (teamCode && teamCode.trim()) {
     return teamCode.trim();
   }
 
-  // Last resort: extract last word from full team name (e.g., "Pittsburgh Steelers" -> "Steelers")
-  const words = fullTeamName.trim().split(/\s+/);
-  return words[words.length - 1];
+  // Ultimate fallback: return full name
+  return fullTeamName;
 };
