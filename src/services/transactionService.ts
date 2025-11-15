@@ -15,6 +15,7 @@ export type TransactionType =
   | 'WITHDRAWAL'
   | 'BET_PLACED'
   | 'BET_WON'
+  | 'BET_LOST'
   | 'BET_CANCELLED'
   | 'BET_REFUND'
   | 'ADMIN_ADJUSTMENT';
@@ -302,6 +303,25 @@ export class TransactionService {
     }
 
     return transaction;
+  }
+
+  /**
+   * Record a lost bet (zero amount, for tracking and dispute purposes)
+   */
+  static async recordBetLoss(
+    userId: string,
+    betId: string,
+    participantId?: string
+  ): Promise<Transaction | null> {
+    return await this.createTransaction({
+      userId,
+      type: 'BET_LOST',
+      amount: 0, // Zero amount - user already paid when joining bet
+      status: 'COMPLETED',
+      relatedBetId: betId,
+      relatedParticipantId: participantId,
+      notes: 'Bet lost',
+    });
   }
 
   /**

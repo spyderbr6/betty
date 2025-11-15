@@ -339,6 +339,7 @@ const schema = a.schema({
         'WITHDRAWAL',        // User withdraws funds
         'BET_PLACED',        // Balance deducted when joining bet
         'BET_WON',          // Winnings paid out
+        'BET_LOST',         // Lost bet (zero amount, for tracking only)
         'BET_CANCELLED',    // Refund when bet cancelled
         'BET_REFUND',       // Manual refund by admin
         'ADMIN_ADJUSTMENT'  // Admin balance correction

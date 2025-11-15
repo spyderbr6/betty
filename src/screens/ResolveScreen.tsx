@@ -309,11 +309,18 @@ export const ResolveScreen: React.FC = () => {
               status: isWinner ? 'ACCEPTED' : 'DECLINED'
             });
 
-            // Record transaction for winners
+            // Record transaction for winners and losers
             if (isWinner && payout > 0) {
               await TransactionService.recordBetWinnings(
                 participant.userId,
                 payout,
+                bet.id,
+                participant.id
+              );
+            } else if (!isWinner) {
+              // Record lost bet transaction (zero amount, for tracking/dispute)
+              await TransactionService.recordBetLoss(
+                participant.userId,
                 bet.id,
                 participant.id
               );
