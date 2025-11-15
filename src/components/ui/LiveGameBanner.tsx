@@ -94,7 +94,11 @@ export const LiveGameBanner: React.FC<LiveGameBannerProps> = ({
           <Ionicons name="location" size={20} color={colors.primary} />
           <View style={styles.eventInfo}>
             <Text style={styles.eventName} numberOfLines={1}>
-              {checkedInEvent.homeTeam} vs {checkedInEvent.awayTeam}
+              {checkedInEvent.homeTeam}{' '}
+              <Text style={styles.teamBadge}>H</Text>
+              {' vs '}
+              {checkedInEvent.awayTeam}{' '}
+              <Text style={styles.teamBadge}>A</Text>
             </Text>
           </View>
         </View>
@@ -178,6 +182,18 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.medium,
+  },
+  teamBadge: {
+    fontSize: typography.fontSize.xs,
+    fontWeight: typography.fontWeight.semibold,
+    color: colors.textSecondary,
+    backgroundColor: colors.surface,
+    paddingHorizontal: spacing.xs / 2,
+    paddingVertical: 1,
+    borderRadius: spacing.radius.xs,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: 'hidden',
   },
   checkedInRight: {
     flexDirection: 'row',
