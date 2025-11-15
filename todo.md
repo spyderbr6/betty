@@ -55,11 +55,11 @@
 ## 🔄 IMMEDIATE NEXT STEPS (Current Development Cycle)
 
 ### **Priority 1: Critical Bug Fixes & UI Polish** ✅ COMPLETED
-- [ ] the signout button on settings page i want to replace the system prompt with a prompt that we create. "Are you sure?", this will help me test on the web and apps.
-- [ ] i need to capture phone numbers for sms verification and finding friends. 
-- [ ] lets remove the stats from the my bets page and the profile's main page. those are needless.
-- [ ] payment methods, its unclear how they get verified. there doesnt appear to be a way to do it. should it just be when the first payment is authorized?
-- [ ] i feel like the resolved bets should be loaded in separately or we should remove them from my bets completely. 
+- [x] the signout button on settings page i want to replace the system prompt with a prompt that we create. "Are you sure?", this will help me test on the web and apps. **✅ COMPLETED (2025-11-15)**
+- [x] i need to capture phone numbers for sms verification and finding friends. **✅ COMPLETED**
+- [x] lets remove the stats from the my bets page and the profile's main page. those are needless. **✅ COMPLETED**
+- [x] payment methods, its unclear how they get verified. there doesnt appear to be a way to do it. should it just be when the first payment is authorized? **✅ COMPLETED**
+- [x] i feel like the resolved bets should be loaded in separately or we should remove them from my bets completely. **✅ COMPLETED** 
 
 
 

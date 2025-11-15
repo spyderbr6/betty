@@ -63,6 +63,7 @@ export const AccountScreen: React.FC = () => {
   const [showAdminDashboard, setShowAdminDashboard] = useState(false);
   const [showAdminTesting, setShowAdminTesting] = useState(false);
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
+  const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -198,29 +199,25 @@ export const AccountScreen: React.FC = () => {
   };
 
   const handleSignOut = () => {
-    Alert.alert(
-      'Sign Out',
-      'Are you sure you want to sign out?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Sign Out',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await signOut();
-            } catch (error) {
-              console.error('Sign out error:', error);
-              Alert.alert(
-                'Error',
-                'Failed to sign out. Please try again.',
-                [{ text: 'OK' }]
-              );
-            }
-          }
-        },
-      ]
-    );
+    setShowSignOutConfirm(true);
+  };
+
+  const confirmSignOut = async () => {
+    setShowSignOutConfirm(false);
+    try {
+      await signOut();
+    } catch (error) {
+      console.error('Sign out error:', error);
+      Alert.alert(
+        'Error',
+        'Failed to sign out. Please try again.',
+        [{ text: 'OK' }]
+      );
+    }
+  };
+
+  const cancelSignOut = () => {
+    setShowSignOutConfirm(false);
   };
 
   const handleSettingsPress = () => {
@@ -632,6 +629,40 @@ export const AccountScreen: React.FC = () => {
       >
         <AdminTestingScreen onClose={() => setShowAdminTesting(false)} />
       </Modal>
+
+      {/* Sign Out Confirmation Modal */}
+      <Modal
+        visible={showSignOutConfirm}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={cancelSignOut}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.confirmModal}>
+            <View style={styles.confirmHeader}>
+              <Ionicons name="log-out-outline" size={32} color={colors.error} />
+              <Text style={styles.confirmTitle}>Sign Out</Text>
+            </View>
+            <Text style={styles.confirmMessage}>Are you sure?</Text>
+            <View style={styles.confirmButtons}>
+              <TouchableOpacity
+                style={[styles.confirmButton, styles.cancelButton]}
+                onPress={cancelSignOut}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.confirmButton, styles.signOutConfirmButton]}
+                onPress={confirmSignOut}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.signOutConfirmButtonText}>Sign Out</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -872,5 +903,69 @@ const styles = StyleSheet.create({
     ...textStyles.button,
     color: colors.error,
     marginLeft: spacing.xs,
+  },
+
+  // Sign Out Confirmation Modal
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.lg,
+  },
+  confirmModal: {
+    backgroundColor: colors.surface,
+    borderRadius: spacing.radius.lg,
+    padding: spacing.lg,
+    width: '100%',
+    maxWidth: 320,
+    alignItems: 'center',
+  },
+  confirmHeader: {
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  confirmTitle: {
+    ...textStyles.h3,
+    color: colors.textPrimary,
+    marginTop: spacing.sm,
+    fontWeight: '700',
+  },
+  confirmMessage: {
+    ...textStyles.body,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: spacing.lg,
+  },
+  confirmButtons: {
+    flexDirection: 'row',
+    width: '100%',
+  },
+  confirmButton: {
+    flex: 1,
+    paddingVertical: spacing.md,
+    borderRadius: spacing.radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelButton: {
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginRight: spacing.xs,
+  },
+  cancelButtonText: {
+    ...textStyles.button,
+    color: colors.textPrimary,
+    fontWeight: '600',
+  },
+  signOutConfirmButton: {
+    backgroundColor: colors.error,
+    marginLeft: spacing.xs,
+  },
+  signOutConfirmButtonText: {
+    ...textStyles.button,
+    color: colors.background,
+    fontWeight: '600',
   },
 });
