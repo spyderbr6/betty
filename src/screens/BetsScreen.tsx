@@ -717,7 +717,8 @@ export const BetsScreen: React.FC = () => {
 
         {/* Status Filters with Search Icon */}
         <View style={styles.filtersContainer}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filtersScrollView}>
+          <View style={styles.filtersRow}>
+            {/* Filter Buttons */}
             {statusFilters.map((filter) => (
               <TouchableOpacity
                 key={filter.id}
@@ -751,17 +752,17 @@ export const BetsScreen: React.FC = () => {
 
             {/* Search Icon Button */}
             <TouchableOpacity
-              style={styles.searchIconButtonInline}
+              style={styles.searchIconButton}
               onPress={handleSearchToggle}
               activeOpacity={0.7}
             >
               <Ionicons
                 name={showSearch ? "close" : "search"}
-                size={18}
-                color={colors.textSecondary}
+                size={20}
+                color={showSearch ? colors.primary : colors.textSecondary}
               />
             </TouchableOpacity>
-          </ScrollView>
+          </View>
         </View>
 
         {/* Search Input (conditionally shown) */}
@@ -1105,21 +1106,24 @@ const styles = StyleSheet.create({
   filtersContainer: {
     backgroundColor: colors.background,
     paddingVertical: spacing.md,
-  },
-  filtersScrollView: {
     paddingHorizontal: spacing.md,
   },
-  filterButton: {
+  filtersRow: {
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  filterButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: colors.background,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
+    paddingVertical: spacing.sm,
     borderRadius: spacing.radius.sm,
     marginRight: spacing.sm,
     borderWidth: 1,
     borderColor: colors.border,
-    minHeight: 36,
+    minHeight: 40,
   },
   filterButtonActive: {
     backgroundColor: colors.primary,
@@ -1128,8 +1132,8 @@ const styles = StyleSheet.create({
   filterButtonText: {
     ...textStyles.caption,
     color: colors.textSecondary,
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.medium,
+    fontSize: typography.fontSize.base,
+    fontWeight: typography.fontWeight.semibold,
   },
   filterButtonTextActive: {
     color: colors.background,
@@ -1140,7 +1144,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xs,
     paddingVertical: 2,
     marginLeft: spacing.xs,
-    minWidth: 18,
+    minWidth: 20,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1150,23 +1154,21 @@ const styles = StyleSheet.create({
   filterBadgeText: {
     ...textStyles.caption,
     color: colors.textMuted,
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: typography.fontWeight.bold,
   },
   filterBadgeTextActive: {
     color: colors.primary,
   },
-  searchIconButtonInline: {
+  searchIconButton: {
     backgroundColor: colors.surface,
     borderRadius: spacing.radius.sm,
     borderWidth: 1,
     borderColor: colors.border,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    marginRight: spacing.md,
+    width: 40,
+    height: 40,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 36,
   },
 
   // Section Header (for invitations)
