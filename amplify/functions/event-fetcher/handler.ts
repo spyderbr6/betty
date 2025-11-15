@@ -224,12 +224,16 @@ async function upsertEvent(event: ESPNEvent, league: string): Promise<void> {
       return;
     }
 
-    // Check if event already exists using ESPN event ID
-    const { data: existingEvents } = await client.models.LiveEvent.list({
-      filter: {
-        externalId: { eq: event.id }
-      }
+    // Check if event already exists using the externalId GSI
+    const { data: existingEvents, errors: queryErrors } = await client.models.LiveEvent.listEventsByExternalId({
+      externalId: event.id,
+      limit: 100 // Get all potential duplicates
     });
+
+    if (queryErrors) {
+      console.error(`❌ Error querying for existing event ${event.id}:`, queryErrors);
+      return;
+    }
 
     const eventData = {
       externalId: event.id,
@@ -253,17 +257,39 @@ async function upsertEvent(event: ESPNEvent, league: string): Promise<void> {
     };
 
     if (existingEvents && existingEvents.length > 0) {
-      // Update existing event
+      // Update the first existing event
       const existingEvent = existingEvents[0];
       await client.models.LiveEvent.update({
         id: existingEvent.id,
         ...eventData,
       });
-      console.log(`✅ Updated: ${awayCompetitor.team.abbreviation} @ ${homeCompetitor.team.abbreviation}`);
+      console.log(`✅ Updated: ${awayCompetitor.team.abbreviation} @ ${homeCompetitor.team.abbreviation} (id: ${existingEvent.id})`);
+
+      // If there are duplicates, delete them
+      if (existingEvents.length > 1) {
+        console.log(`⚠️  Found ${existingEvents.length} duplicate entries for externalId ${event.id}, cleaning up...`);
+        for (let i = 1; i < existingEvents.length; i++) {
+          const duplicate = existingEvents[i];
+          try {
+            await client.models.LiveEvent.delete({ id: duplicate.id });
+            console.log(`🗑️  Deleted duplicate entry: ${duplicate.id}`);
+          } catch (deleteError) {
+            console.error(`❌ Error deleting duplicate ${duplicate.id}:`, deleteError);
+          }
+        }
+      }
     } else {
       // Create new event
-      await client.models.LiveEvent.create(eventData);
-      console.log(`✅ Created: ${awayCompetitor.team.abbreviation} @ ${homeCompetitor.team.abbreviation}`);
+      try {
+        const result = await client.models.LiveEvent.create(eventData);
+        if (result.errors) {
+          console.error(`❌ Error creating event ${event.id}:`, result.errors);
+        } else {
+          console.log(`✅ Created: ${awayCompetitor.team.abbreviation} @ ${homeCompetitor.team.abbreviation} (id: ${result.data?.id})`);
+        }
+      } catch (createError) {
+        console.error(`❌ Exception creating event ${event.id}:`, createError);
+      }
     }
   } catch (error) {
     console.error(`❌ Error upserting event ${event.id}:`, error);

@@ -415,6 +415,7 @@ const schema = a.schema({
     })
     .secondaryIndexes((index) => [
       index('status').sortKeys(['scheduledTime']).queryField('listEventsByStatusAndTime'),
+      index('externalId').queryField('listEventsByExternalId'),
     ])
     .authorization((allow) => [
       allow.authenticated().to(['read', 'create', 'update']) // All authenticated users can read, Lambda functions can create/update
