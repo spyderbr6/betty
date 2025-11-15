@@ -28,6 +28,7 @@ import { bulkLoadJoinableBetsWithParticipants, bulkLoadFriendsBetsWithParticipan
 import { QRScannerModal } from '../components/ui/QRScannerModal';
 import { getUpcomingEventsFromCache } from '../services/eventCacheService';
 import type { LiveEventData } from '../services/eventService';
+import { formatTeamName } from '../utils/formatting';
 
 // Initialize GraphQL client
 const client = generateClient<Schema>();
@@ -515,15 +516,14 @@ export const LiveEventsScreen: React.FC = () => {
                 timeText = 'Starting soon';
               }
 
+              const awayShort = formatTeamName(event.awayTeam, event.awayTeamCode);
+              const homeShort = formatTeamName(event.homeTeam, event.homeTeamCode);
+
               return (
                 <View key={event.id} style={styles.upcomingEvent}>
                   <View style={styles.upcomingHeader}>
                     <Text style={styles.upcomingTitle}>
-                      {event.awayTeam}{' '}
-                      <Text style={styles.teamBadge}>A</Text>
-                      {' @ '}
-                      {event.homeTeam}{' '}
-                      <Text style={styles.teamBadge}>H</Text>
+                      {awayShort} @ {homeShort}
                     </Text>
                     <Text style={styles.upcomingStatus}>{event.sport}</Text>
                   </View>
@@ -777,18 +777,6 @@ const styles = StyleSheet.create({
     ...textStyles.h4,
     color: colors.textPrimary,
     flex: 1,
-  },
-  teamBadge: {
-    fontSize: typography.fontSize.xs,
-    fontWeight: typography.fontWeight.semibold,
-    color: colors.textSecondary,
-    backgroundColor: colors.surface,
-    paddingHorizontal: spacing.xs / 2,
-    paddingVertical: 1,
-    borderRadius: spacing.radius.xs,
-    borderWidth: 1,
-    borderColor: colors.border,
-    overflow: 'hidden',
   },
   upcomingStatus: {
     ...textStyles.caption,

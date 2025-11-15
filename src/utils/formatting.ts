@@ -231,3 +231,15 @@ export const formatErrorMessage = (error: any): string => {
   if (error?.code) return `Error: ${error.code}`;
   return 'An unexpected error occurred';
 };
+
+// Team name formatting - extracts short name for display
+export const formatTeamName = (fullTeamName: string, teamCode?: string): string => {
+  // Use team code if available (e.g., "LAL", "GSW")
+  if (teamCode && teamCode.trim()) {
+    return teamCode.trim();
+  }
+
+  // Extract last word from full team name (e.g., "Pittsburgh Steelers" -> "Steelers")
+  const words = fullTeamName.trim().split(/\s+/);
+  return words[words.length - 1];
+};
