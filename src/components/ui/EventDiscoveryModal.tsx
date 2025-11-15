@@ -65,6 +65,22 @@ export const EventDiscoveryModal: React.FC<EventDiscoveryModalProps> = ({
       // Fetch from cache (will use cached data unless expired or forceRefresh=true)
       const { liveEvents: live, upcomingEvents: upcoming } = await getAllEventsFromCache(forceRefresh);
 
+      // Check for duplicates before setting state
+      const liveIds = live.map(e => e.id);
+      const upcomingIds = upcoming.map(e => e.id);
+      const uniqueLiveIds = new Set(liveIds);
+      const uniqueUpcomingIds = new Set(upcomingIds);
+
+      if (liveIds.length !== uniqueLiveIds.size) {
+        console.error(`[EventDiscoveryModal] ⚠️ LIVE EVENTS HAVE ${liveIds.length - uniqueLiveIds.size} DUPLICATES BEFORE setState!`);
+        console.log('[EventDiscoveryModal] Live event IDs:', liveIds);
+      }
+
+      if (upcomingIds.length !== uniqueUpcomingIds.size) {
+        console.error(`[EventDiscoveryModal] ⚠️ UPCOMING EVENTS HAVE ${upcomingIds.length - uniqueUpcomingIds.size} DUPLICATES BEFORE setState!`);
+        console.log('[EventDiscoveryModal] Upcoming event IDs:', upcomingIds);
+      }
+
       setLiveEvents(live);
       setUpcomingEvents(upcoming);
 
@@ -91,6 +107,25 @@ export const EventDiscoveryModal: React.FC<EventDiscoveryModalProps> = ({
 
   // Get current tab's events
   const currentEvents = activeTab === 'live' ? liveEvents : upcomingEvents;
+
+  // Debug: Log what's being rendered
+  useEffect(() => {
+    const ids = currentEvents.map(e => e.id);
+    const uniqueIds = new Set(ids);
+    console.log(`[EventDiscoveryModal] Rendering ${currentEvents.length} events on ${activeTab} tab`);
+    console.log(`[EventDiscoveryModal] Current event IDs:`, ids);
+
+    if (ids.length !== uniqueIds.size) {
+      console.error(`[EventDiscoveryModal] ⚠️ RENDERING ${ids.length - uniqueIds.size} DUPLICATE EVENTS IN FLATLIST!`);
+      // Find which IDs are duplicated
+      const idCounts = new Map<string, number>();
+      ids.forEach(id => {
+        idCounts.set(id, (idCounts.get(id) || 0) + 1);
+      });
+      const duplicatedIds = Array.from(idCounts.entries()).filter(([_, count]) => count > 1);
+      console.error('[EventDiscoveryModal] Duplicated IDs and counts:', duplicatedIds);
+    }
+  }, [currentEvents, activeTab]);
 
   const handleCheckIn = async (event: LiveEvent) => {
     try {
