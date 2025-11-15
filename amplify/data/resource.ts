@@ -386,6 +386,8 @@ const schema = a.schema({
       // Event details
       homeTeam: a.string().required(),
       awayTeam: a.string().required(),
+      homeTeamShortName: a.string(), // e.g., "Steelers", "Browns" - from ESPN team.name
+      awayTeamShortName: a.string(),
       homeTeamCode: a.string(), // e.g., "LAL", "GSW"
       awayTeamCode: a.string(),
       // Venue

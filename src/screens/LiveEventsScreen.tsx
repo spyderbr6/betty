@@ -516,8 +516,8 @@ export const LiveEventsScreen: React.FC = () => {
                 timeText = 'Starting soon';
               }
 
-              const awayShort = formatTeamName(event.awayTeam, event.awayTeamCode);
-              const homeShort = formatTeamName(event.homeTeam, event.homeTeamCode);
+              const awayShort = formatTeamName(event.awayTeam, event.awayTeamShortName, event.awayTeamCode);
+              const homeShort = formatTeamName(event.homeTeam, event.homeTeamShortName, event.homeTeamCode);
 
               return (
                 <View key={event.id} style={styles.upcomingEvent}>

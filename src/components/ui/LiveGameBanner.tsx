@@ -84,8 +84,8 @@ export const LiveGameBanner: React.FC<LiveGameBannerProps> = ({
     }
   };
 
-  const homeShort = formatTeamName(checkedInEvent.homeTeam, checkedInEvent.homeTeamCode);
-  const awayShort = formatTeamName(checkedInEvent.awayTeam, checkedInEvent.awayTeamCode);
+  const homeShort = formatTeamName(checkedInEvent.homeTeam, checkedInEvent.homeTeamShortName, checkedInEvent.homeTeamCode);
+  const awayShort = formatTeamName(checkedInEvent.awayTeam, checkedInEvent.awayTeamShortName, checkedInEvent.awayTeamCode);
 
   return (
     <TouchableOpacity

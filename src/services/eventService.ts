@@ -20,6 +20,8 @@ export interface LiveEventData {
   league: string;
   homeTeam: string;
   awayTeam: string;
+  homeTeamShortName?: string;
+  awayTeamShortName?: string;
   homeTeamCode?: string;
   awayTeamCode?: string;
   venue?: string;
@@ -116,6 +118,8 @@ export async function getUserCheckedInEvent(userId: string): Promise<{
         league: event.league || '',
         homeTeam: event.homeTeam,
         awayTeam: event.awayTeam,
+        homeTeamShortName: event.homeTeamShortName ?? undefined,
+        awayTeamShortName: event.awayTeamShortName ?? undefined,
         homeTeamCode: event.homeTeamCode ?? undefined,
         awayTeamCode: event.awayTeamCode ?? undefined,
         venue: event.venue ?? undefined,
@@ -297,6 +301,8 @@ export async function getUpcomingEvents(
       league: event.league || '',
       homeTeam: event.homeTeam,
       awayTeam: event.awayTeam,
+      homeTeamShortName: event.homeTeamShortName ?? undefined,
+      awayTeamShortName: event.awayTeamShortName ?? undefined,
       homeTeamCode: event.homeTeamCode ?? undefined,
       awayTeamCode: event.awayTeamCode ?? undefined,
       venue: event.venue ?? undefined,
@@ -363,6 +369,8 @@ export async function getTrendingEvents(limit: number = 20): Promise<LiveEventDa
       league: event.league || '',
       homeTeam: event.homeTeam,
       awayTeam: event.awayTeam,
+      homeTeamShortName: event.homeTeamShortName ?? undefined,
+      awayTeamShortName: event.awayTeamShortName ?? undefined,
       homeTeamCode: event.homeTeamCode ?? undefined,
       awayTeamCode: event.awayTeamCode ?? undefined,
       venue: event.venue ?? undefined,
@@ -445,6 +453,8 @@ export async function getLiveEvents(
       league: event.league || '',
       homeTeam: event.homeTeam,
       awayTeam: event.awayTeam,
+      homeTeamShortName: event.homeTeamShortName ?? undefined,
+      awayTeamShortName: event.awayTeamShortName ?? undefined,
       homeTeamCode: event.homeTeamCode ?? undefined,
       awayTeamCode: event.awayTeamCode ?? undefined,
       venue: event.venue ?? undefined,
@@ -493,6 +503,8 @@ export async function getEventById(eventId: string): Promise<LiveEventData | nul
       league: event.league || '',
       homeTeam: event.homeTeam,
       awayTeam: event.awayTeam,
+      homeTeamShortName: event.homeTeamShortName ?? undefined,
+      awayTeamShortName: event.awayTeamShortName ?? undefined,
       homeTeamCode: event.homeTeamCode ?? undefined,
       awayTeamCode: event.awayTeamCode ?? undefined,
       venue: event.venue ?? undefined,
