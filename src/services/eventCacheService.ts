@@ -85,14 +85,6 @@ async function fetchAllEvents(): Promise<LiveEventData[]> {
 
     console.log(`[EventCache] Fetched ${events.length} events from database`);
 
-    // Check for duplicates in raw database response
-    const rawIds = events.map(e => e.id);
-    const uniqueRawIds = new Set(rawIds);
-    if (rawIds.length !== uniqueRawIds.size) {
-      console.error(`[EventCache] ⚠️ DATABASE RETURNED ${rawIds.length - uniqueRawIds.size} DUPLICATE IDs!`);
-      console.log('[EventCache] Raw IDs from DB:', rawIds);
-    }
-
     // Map to LiveEventData format
     const mappedEvents: LiveEventData[] = events.map(event => ({
       id: event.id!,
@@ -122,7 +114,7 @@ async function fetchAllEvents(): Promise<LiveEventData[]> {
       updatedAt: event.updatedAt ?? undefined
     }));
 
-    // Deduplicate by ID
+    // Deduplicate by ID (database may have duplicates)
     const uniqueEvents = new Map<string, LiveEventData>();
     mappedEvents.forEach(event => {
       if (!uniqueEvents.has(event.id)) {
@@ -132,7 +124,7 @@ async function fetchAllEvents(): Promise<LiveEventData[]> {
 
     const deduped = Array.from(uniqueEvents.values());
     if (deduped.length !== mappedEvents.length) {
-      console.warn(`[EventCache] Deduplicated ${mappedEvents.length - deduped.length} duplicate events from database`);
+      console.log(`[EventCache] Deduplicated ${mappedEvents.length - deduped.length} duplicate events from database (${deduped.length} unique events)`);
     }
 
     return deduped;
@@ -206,30 +198,12 @@ export async function getAllEventsFromCache(forceRefresh: boolean = false): Prom
   const liveEvents = allEvents.filter(isEventLive);
   const upcomingEvents = allEvents.filter(isEventUpcoming);
 
-  // Check for duplicates in filtered results
-  const liveIds = liveEvents.map(e => e.id);
-  const upcomingIds = upcomingEvents.map(e => e.id);
-  const uniqueLiveIds = new Set(liveIds);
-  const uniqueUpcomingIds = new Set(upcomingIds);
-
-  if (liveIds.length !== uniqueLiveIds.size) {
-    console.error(`[EventCache] ⚠️ DUPLICATE IDs IN LIVE EVENTS: ${liveIds.length - uniqueLiveIds.size} duplicates`);
-    console.log('[EventCache] Live IDs:', liveIds);
-  }
-
-  if (upcomingIds.length !== uniqueUpcomingIds.size) {
-    console.error(`[EventCache] ⚠️ DUPLICATE IDs IN UPCOMING EVENTS: ${upcomingIds.length - uniqueUpcomingIds.size} duplicates`);
-    console.log('[EventCache] Upcoming IDs:', upcomingIds);
-  }
-
   // Sort upcoming by scheduled time
   upcomingEvents.sort((a, b) => {
     return new Date(a.scheduledTime).getTime() - new Date(b.scheduledTime).getTime();
   });
 
   console.log(`[EventCache] Filtered ${liveEvents.length} live and ${upcomingEvents.length} upcoming from ${allEvents.length} cached events`);
-  console.log(`[EventCache] Live event IDs:`, liveIds.slice(0, 5), liveIds.length > 5 ? '...' : '');
-  console.log(`[EventCache] Upcoming event IDs:`, upcomingIds.slice(0, 5), upcomingIds.length > 5 ? '...' : '');
 
   return { liveEvents, upcomingEvents };
 }
