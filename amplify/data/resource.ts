@@ -177,6 +177,7 @@ const schema = a.schema({
       disputeWindowEndsAt: a.datetime(), // When the 48-hour dispute window closes
       eventId: a.id(), // Optional link to live event
       isPrivate: a.boolean().default(false), // Private bets only visible to invited users
+      isTestBet: a.boolean().default(false), // Flag for admin test bets (excludes from real bet lists)
       createdAt: a.datetime(),
       updatedAt: a.datetime(),
       // Relations
