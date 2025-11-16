@@ -63,11 +63,12 @@ export const TabBar: React.FC<BottomTabBarProps> = ({
             })
           );
 
-          // Count user's bets (creator or participant)
+          // Count user's bets (creator or participant) - exclude PENDING_RESOLUTION
           const myBetsCount = betsWithParticipants.filter(({ bet, participants }) => {
             const isCreator = bet.creatorId === user.userId;
             const isParticipant = participants.some(p => p.userId === user.userId);
-            return isCreator || isParticipant;
+            const isActiveBet = bet.status === 'ACTIVE' || bet.status === 'LIVE';
+            return (isCreator || isParticipant) && isActiveBet;
           }).length;
 
           // Count joinable bets (not creator, not participant)
