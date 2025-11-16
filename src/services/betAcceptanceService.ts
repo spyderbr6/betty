@@ -144,7 +144,7 @@ export class BetAcceptanceService {
       }
 
       // Filter out creator - they don't need to accept (their resolution IS their acceptance)
-      const nonCreatorParticipants = participants.filter(p => p.userId !== bet.creatorId);
+      const nonCreatorParticipants = participants.filter((p: any) => p.userId !== bet.creatorId);
 
       if (nonCreatorParticipants.length === 0) {
         console.log('[BetAcceptance] No non-creator participants found');
@@ -152,9 +152,9 @@ export class BetAcceptanceService {
       }
 
       // Check if all non-creator participants have accepted
-      const allAccepted = nonCreatorParticipants.every(p => p.hasAcceptedResult === true);
+      const allAccepted = nonCreatorParticipants.every((p: any) => p.hasAcceptedResult === true);
 
-      console.log(`[BetAcceptance] Bet ${betId}: ${nonCreatorParticipants.filter(p => p.hasAcceptedResult).length}/${nonCreatorParticipants.length} non-creator participants accepted`);
+      console.log(`[BetAcceptance] Bet ${betId}: ${nonCreatorParticipants.filter((p: any) => p.hasAcceptedResult).length}/${nonCreatorParticipants.length} non-creator participants accepted`);
 
       return allAccepted;
 
@@ -192,12 +192,12 @@ export class BetAcceptanceService {
       }
 
       // Filter out creator - they don't need to accept
-      const nonCreatorParticipants = participants.filter(p => p.userId !== bet.creatorId);
+      const nonCreatorParticipants = participants.filter((p: any) => p.userId !== bet.creatorId);
 
       const acceptedUserIds = nonCreatorParticipants
-        .filter(p => p.hasAcceptedResult === true)
-        .map(p => p.userId!)
-        .filter(id => id !== undefined);
+        .filter((p: any) => p.hasAcceptedResult === true)
+        .map((p: any) => p.userId!)
+        .filter((id: any) => id !== undefined);
 
       return {
         totalCount: nonCreatorParticipants.length,
