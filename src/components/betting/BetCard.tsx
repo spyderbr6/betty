@@ -269,6 +269,10 @@ export const BetCard: React.FC<BetCardProps> = ({
       case 'ACTIVE':
         return colors.active;
       case 'PENDING_RESOLUTION':
+        // Show win/loss color if user participated
+        if (userParticipation.hasJoined && bet.winningSide) {
+          return userParticipation.side === bet.winningSide ? colors.success : colors.error;
+        }
         return colors.pending;
       case 'RESOLVED':
         // Show win/loss color if user participated
@@ -284,10 +288,15 @@ export const BetCard: React.FC<BetCardProps> = ({
   };
 
   const getStatusText = (status: BetStatus): string => {
-    if (status === 'RESOLVED' && userParticipation.hasJoined && bet.winningSide) {
-      return userParticipation.side === bet.winningSide ? 'WON' : 'LOST';
+    // Show WON/LOST for both PENDING_RESOLUTION and RESOLVED if user participated
+    if ((status === 'RESOLVED' || status === 'PENDING_RESOLUTION') && userParticipation.hasJoined && bet.winningSide) {
+      const isWinner = userParticipation.side === bet.winningSide;
+      if (status === 'PENDING_RESOLUTION') {
+        return isWinner ? 'WON (PENDING)' : 'LOST';
+      }
+      return isWinner ? 'WON' : 'LOST';
     }
-    
+
     switch (status) {
       case 'ACTIVE':
         return 'ACTIVE';
@@ -458,11 +467,37 @@ export const BetCard: React.FC<BetCardProps> = ({
       {/* PENDING_RESOLUTION: Show dispute window countdown and File Dispute button */}
       {bet.status === 'PENDING_RESOLUTION' && bet.disputeWindowEndsAt && (
         <View style={styles.disputeWindowContainer}>
+          {/* Win/Loss Result - Prominent for participants */}
+          {userParticipation.hasJoined && bet.winningSide && (
+            <View style={[
+              styles.resultBanner,
+              userParticipation.side === bet.winningSide ? styles.resultBannerWin : styles.resultBannerLose
+            ]}>
+              <Ionicons
+                name={userParticipation.side === bet.winningSide ? "trophy" : "close-circle"}
+                size={20}
+                color={userParticipation.side === bet.winningSide ? colors.success : colors.error}
+              />
+              <Text style={[
+                styles.resultText,
+                userParticipation.side === bet.winningSide ? styles.resultTextWin : styles.resultTextLose
+              ]}>
+                {userParticipation.side === bet.winningSide
+                  ? `You Won - ${bet.winningSide === 'A' ? bet.odds.sideAName : bet.odds.sideBName}`
+                  : `You Lost - ${bet.winningSide === 'A' ? bet.odds.sideAName : bet.odds.sideBName} Won`
+                }
+              </Text>
+            </View>
+          )}
+
           {/* Dispute Window Countdown */}
           <View style={styles.disputeWindowHeader}>
             <Ionicons name="time-outline" size={16} color={colors.warning} />
             <Text style={styles.disputeWindowText}>
-              Payout in {formatTimeRemaining(bet.disputeWindowEndsAt)}
+              {userParticipation.hasJoined && userParticipation.side === bet.winningSide
+                ? `Payout in ${formatTimeRemaining(bet.disputeWindowEndsAt)}`
+                : `Dispute window ends in ${formatTimeRemaining(bet.disputeWindowEndsAt)}`
+              }
             </Text>
           </View>
 
@@ -728,6 +763,36 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
     borderWidth: 1,
     borderColor: colors.warning + '30',
+  },
+  resultBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: spacing.sm,
+    borderRadius: spacing.radius.sm,
+    marginBottom: spacing.sm,
+  },
+  resultBannerWin: {
+    backgroundColor: colors.success + '15',
+    borderWidth: 1,
+    borderColor: colors.success + '40',
+  },
+  resultBannerLose: {
+    backgroundColor: colors.error + '10',
+    borderWidth: 1,
+    borderColor: colors.error + '30',
+  },
+  resultText: {
+    ...textStyles.button,
+    fontSize: typography.fontSize.sm,
+    marginLeft: spacing.xs,
+    fontWeight: typography.fontWeight.bold,
+    flex: 1,
+  },
+  resultTextWin: {
+    color: colors.success,
+  },
+  resultTextLose: {
+    color: colors.error,
   },
   disputeWindowHeader: {
     flexDirection: 'row',
