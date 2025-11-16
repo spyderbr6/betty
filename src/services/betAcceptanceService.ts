@@ -12,9 +12,10 @@ const client = generateClient<Schema>();
 
 export class BetAcceptanceService {
   /**
-   * Accept the result of a bet (participant only)
+   * Accept the result of a bet (non-creator participants only)
+   * Note: Creator cannot accept - their resolution IS their implicit acceptance
    * @param betId - ID of the bet
-   * @param userId - ID of the participant accepting
+   * @param userId - ID of the participant accepting (must not be creator)
    * @returns true if acceptance was recorded successfully
    */
   static async acceptBetResult(betId: string, userId: string): Promise<boolean> {
@@ -25,6 +26,12 @@ export class BetAcceptanceService {
       const { data: bet } = await client.models.Bet.get({ id: betId });
       if (!bet) {
         console.error('[BetAcceptance] Bet not found');
+        return false;
+      }
+
+      // Verify user is NOT the creator (creator's resolution IS their acceptance)
+      if (bet.creatorId === userId) {
+        console.error('[BetAcceptance] Creator cannot accept - their resolution is implicit acceptance');
         return false;
       }
 
@@ -113,11 +120,19 @@ export class BetAcceptanceService {
 
   /**
    * Check if all participants have accepted the bet result
+   * Note: Creator is excluded - their resolution IS their acceptance
    * @param betId - ID of the bet
-   * @returns true if all participants have accepted
+   * @returns true if all non-creator participants have accepted
    */
   static async checkIfAllAccepted(betId: string): Promise<boolean> {
     try {
+      // Get bet to know who the creator is
+      const { data: bet } = await client.models.Bet.get({ id: betId });
+      if (!bet) {
+        console.error('[BetAcceptance] Bet not found');
+        return false;
+      }
+
       // Get all participants for this bet
       const { data: participants } = await client.models.Participant.list({
         filter: { betId: { eq: betId } }
@@ -128,10 +143,18 @@ export class BetAcceptanceService {
         return false;
       }
 
-      // Check if all have accepted
-      const allAccepted = participants.every(p => p.hasAcceptedResult === true);
+      // Filter out creator - they don't need to accept (their resolution IS their acceptance)
+      const nonCreatorParticipants = participants.filter(p => p.userId !== bet.creatorId);
 
-      console.log(`[BetAcceptance] Bet ${betId}: ${participants.filter(p => p.hasAcceptedResult).length}/${participants.length} accepted`);
+      if (nonCreatorParticipants.length === 0) {
+        console.log('[BetAcceptance] No non-creator participants found');
+        return false;
+      }
+
+      // Check if all non-creator participants have accepted
+      const allAccepted = nonCreatorParticipants.every(p => p.hasAcceptedResult === true);
+
+      console.log(`[BetAcceptance] Bet ${betId}: ${nonCreatorParticipants.filter(p => p.hasAcceptedResult).length}/${nonCreatorParticipants.length} non-creator participants accepted`);
 
       return allAccepted;
 
@@ -143,8 +166,9 @@ export class BetAcceptanceService {
 
   /**
    * Get acceptance progress for a bet
+   * Note: Creator is excluded from count - their resolution IS their acceptance
    * @param betId - ID of the bet
-   * @returns Object with total participants and how many have accepted
+   * @returns Object with total non-creator participants and how many have accepted
    */
   static async getAcceptanceProgress(betId: string): Promise<{
     totalCount: number;
@@ -152,6 +176,13 @@ export class BetAcceptanceService {
     acceptedUserIds: string[];
   }> {
     try {
+      // Get bet to know who the creator is
+      const { data: bet } = await client.models.Bet.get({ id: betId });
+      if (!bet) {
+        console.error('[BetAcceptance] Bet not found');
+        return { totalCount: 0, acceptedCount: 0, acceptedUserIds: [] };
+      }
+
       const { data: participants } = await client.models.Participant.list({
         filter: { betId: { eq: betId } }
       });
@@ -160,13 +191,16 @@ export class BetAcceptanceService {
         return { totalCount: 0, acceptedCount: 0, acceptedUserIds: [] };
       }
 
-      const acceptedUserIds = participants
+      // Filter out creator - they don't need to accept
+      const nonCreatorParticipants = participants.filter(p => p.userId !== bet.creatorId);
+
+      const acceptedUserIds = nonCreatorParticipants
         .filter(p => p.hasAcceptedResult === true)
         .map(p => p.userId!)
         .filter(id => id !== undefined);
 
       return {
-        totalCount: participants.length,
+        totalCount: nonCreatorParticipants.length,
         acceptedCount: acceptedUserIds.length,
         acceptedUserIds
       };

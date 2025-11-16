@@ -624,8 +624,8 @@ export const BetCard: React.FC<BetCardProps> = ({
                 </View>
               )}
 
-              {/* Accept Result Button - Only for participants who haven't accepted yet */}
-              {userParticipation.hasJoined && !acceptanceProgress.hasUserAccepted && (
+              {/* Accept Result Button - Only for NON-CREATOR participants who haven't accepted yet */}
+              {userParticipation.hasJoined && !acceptanceProgress.hasUserAccepted && bet.creatorId !== user?.userId && (
                 <TouchableOpacity
                   style={styles.acceptButton}
                   onPress={handleAcceptResult}
