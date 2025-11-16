@@ -74,7 +74,7 @@ async function processCompletedDisputeWindows(): Promise<{
         filter: { betId: { eq: bet.id } }
       });
 
-      const nonCreatorParticipants = participants?.filter(p => p.userId !== bet.creatorId) || [];
+      const nonCreatorParticipants = participants?.filter((p: any) => p.userId !== bet.creatorId) || [];
       const hasNonCreatorParticipants = nonCreatorParticipants.length > 0;
 
       // Process if:
