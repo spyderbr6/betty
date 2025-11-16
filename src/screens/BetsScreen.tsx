@@ -9,7 +9,6 @@ import type { Schema } from '../../amplify/data/resource';
 import {
   View,
   Text,
-  TextInput,
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
@@ -78,8 +77,6 @@ export const BetsScreen: React.FC = () => {
   const [bets, setBets] = useState<Bet[]>([]);
   const [betInvitations, setBetInvitations] = useState<BetInvitation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [showSearch, setShowSearch] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [processingInvitations, setProcessingInvitations] = useState<Set<string>>(new Set());
 
@@ -575,22 +572,6 @@ export const BetsScreen: React.FC = () => {
 
   // Removed - Header handles notifications internally now
 
-  const handleSearchChange = (query: string) => {
-    setSearchQuery(query);
-  };
-
-  const handleSearchToggle = () => {
-    setShowSearch(!showSearch);
-    if (showSearch) {
-      setSearchQuery(''); // Clear search when hiding
-    }
-  };
-
-  // const handleFilterPress = () => {
-  //   console.log('Filter pressed');
-  //   // Show filter modal
-  // };
-
 
   // Real user stats state
   const [userStats, setUserStats] = useState({
@@ -636,16 +617,6 @@ export const BetsScreen: React.FC = () => {
 
     // Only show ACTIVE bets (PENDING_RESOLUTION moved to Results tab)
     if (bet.status !== 'ACTIVE') return false;
-
-    // Finally filter by search query if one exists
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase().trim();
-      const titleMatch = bet.title.toLowerCase().includes(query);
-      const descriptionMatch = bet.description.toLowerCase().includes(query);
-      const sideAMatch = bet.odds.sideAName.toLowerCase().includes(query);
-      const sideBMatch = bet.odds.sideBName.toLowerCase().includes(query);
-      return titleMatch || descriptionMatch || sideAMatch || sideBMatch;
-    }
 
     return true;
   });
@@ -697,57 +668,6 @@ export const BetsScreen: React.FC = () => {
               />
             ))}
           </>
-        )}
-
-        {/* Search Icon */}
-        <View style={styles.filtersContainer}>
-          <View style={styles.filtersRow}>
-            <TouchableOpacity
-              style={styles.searchIconButton}
-              onPress={handleSearchToggle}
-              activeOpacity={0.7}
-            >
-              <Ionicons
-                name={showSearch ? "close" : "search"}
-                size={20}
-                color={showSearch ? colors.primary : colors.textSecondary}
-              />
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Search Input (conditionally shown) */}
-        {showSearch && (
-          <View style={styles.searchContainer}>
-            <View style={styles.searchInputContainer}>
-              <Ionicons
-                name="search"
-                size={16}
-                color={colors.textMuted}
-                style={styles.searchIcon}
-              />
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Search your bets..."
-                placeholderTextColor={colors.textMuted}
-                value={searchQuery}
-                onChangeText={handleSearchChange}
-                autoFocus={true}
-              />
-              {searchQuery.length > 0 && (
-                <TouchableOpacity
-                  onPress={() => setSearchQuery('')}
-                  style={styles.clearButton}
-                >
-                  <Ionicons
-                    name="close-circle"
-                    size={16}
-                    color={colors.textMuted}
-                  />
-                </TouchableOpacity>
-              )}
-            </View>
-          </View>
         )}
 
         {/* Loading State */}
@@ -1042,74 +962,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
-  // Status Filters
-  filtersContainer: {
-    backgroundColor: colors.background,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.md,
-  },
-  filtersRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  filterButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.background,
-    paddingVertical: spacing.sm,
-    borderRadius: spacing.radius.sm,
-    marginRight: spacing.sm,
-    borderWidth: 1,
-    borderColor: colors.border,
-    minHeight: 40,
-  },
-  filterButtonActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  filterButtonText: {
-    ...textStyles.caption,
-    color: colors.textSecondary,
-    fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.semibold,
-  },
-  filterButtonTextActive: {
-    color: colors.background,
-  },
-  filterBadge: {
-    backgroundColor: colors.surface,
-    borderRadius: spacing.radius.xs,
-    paddingHorizontal: spacing.xs,
-    paddingVertical: 2,
-    marginLeft: spacing.xs,
-    minWidth: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  filterBadgeActive: {
-    backgroundColor: colors.background,
-  },
-  filterBadgeText: {
-    ...textStyles.caption,
-    color: colors.textMuted,
-    fontSize: 11,
-    fontWeight: typography.fontWeight.bold,
-  },
-  filterBadgeTextActive: {
-    color: colors.primary,
-  },
-  searchIconButton: {
-    backgroundColor: colors.surface,
-    borderRadius: spacing.radius.sm,
-    borderWidth: 1,
-    borderColor: colors.border,
-    width: 40,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
 
   // Section Header (for invitations)
   sectionHeader: {
@@ -1125,37 +977,6 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontWeight: typography.fontWeight.bold,
     fontSize: typography.fontSize.lg,
-  },
-
-  // Search Input
-  searchContainer: {
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.sm,
-    backgroundColor: colors.background,
-  },
-  searchInputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: spacing.radius.sm,
-    paddingHorizontal: spacing.sm,
-  },
-  searchIcon: {
-    marginRight: spacing.xs,
-  },
-  searchInput: {
-    flex: 1,
-    paddingVertical: spacing.sm,
-    fontSize: typography.fontSize.sm,
-    color: colors.textPrimary,
-    fontFamily: typography.fontFamily.regular,
-    textAlignVertical: 'center',
-  },
-  clearButton: {
-    padding: spacing.xs / 2,
   },
 
   // Loading and Empty States
