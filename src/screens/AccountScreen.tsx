@@ -66,6 +66,7 @@ export const AccountScreen: React.FC = () => {
   const [showAdminTesting, setShowAdminTesting] = useState(false);
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
+  const [pendingPayouts, setPendingPayouts] = useState(0);
 
   useEffect(() => {
     if (user) {
@@ -179,6 +180,10 @@ export const AccountScreen: React.FC = () => {
           });
         }
       }
+
+      // Fetch pending payouts
+      await fetchPendingPayouts();
+
     } catch (error) {
       console.error('Error fetching user stats:', error);
       Alert.alert(
@@ -188,6 +193,35 @@ export const AccountScreen: React.FC = () => {
       );
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const fetchPendingPayouts = async () => {
+    if (!user) return;
+
+    try {
+      // Get all PENDING transactions of type BET_WON for this user
+      const { data: pendingTransactions } = await client.models.Transaction.list({
+        filter: {
+          and: [
+            { userId: { eq: user.userId } },
+            { type: { eq: 'BET_WON' } },
+            { status: { eq: 'PENDING' } }
+          ]
+        }
+      });
+
+      // Calculate total pending payouts
+      const total = pendingTransactions?.reduce((sum, transaction) => {
+        return sum + (transaction.amount || 0);
+      }, 0) || 0;
+
+      setPendingPayouts(total);
+
+    } catch (error) {
+      console.error('Error fetching pending payouts:', error);
+      // Don't show alert for this, it's not critical
+      setPendingPayouts(0);
     }
   };
 
@@ -400,6 +434,21 @@ export const AccountScreen: React.FC = () => {
                 </Text>
               </TouchableOpacity>
               <Text style={styles.email}>{userProfile.email}</Text>
+
+              {/* Balance Breakdown */}
+              <View style={styles.balanceBreakdown}>
+                <View style={styles.balanceRow}>
+                  <Text style={styles.balanceLabel}>Available:</Text>
+                  <Text style={styles.balanceValue}>${userProfile.balance.toFixed(2)}</Text>
+                </View>
+                {pendingPayouts > 0 && (
+                  <View style={styles.balanceRow}>
+                    <Text style={styles.balanceLabel}>Pending Payouts:</Text>
+                    <Text style={styles.pendingValue}>${pendingPayouts.toFixed(2)}</Text>
+                  </View>
+                )}
+              </View>
+
               <View style={styles.trustContainer}>
                 <Text style={styles.trustLabel}>Trust Score</Text>
                 <Text style={styles.trustScore}>{userProfile.trustScore.toFixed(1)}/10</Text>
@@ -836,6 +885,33 @@ const styles = StyleSheet.create({
     ...textStyles.body,
     color: colors.textSecondary,
     marginBottom: spacing.xs,
+  },
+  balanceBreakdown: {
+    marginVertical: spacing.xs,
+    paddingVertical: spacing.xs,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: colors.border + '40',
+  },
+  balanceRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginVertical: spacing.xs / 2,
+  },
+  balanceLabel: {
+    ...textStyles.caption,
+    color: colors.textMuted,
+  },
+  balanceValue: {
+    ...textStyles.button,
+    color: colors.textPrimary,
+    fontWeight: '600',
+  },
+  pendingValue: {
+    ...textStyles.button,
+    color: colors.warning,
+    fontWeight: '600',
   },
   trustContainer: {
     flexDirection: 'row',
