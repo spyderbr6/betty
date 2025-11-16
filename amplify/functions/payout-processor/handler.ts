@@ -42,27 +42,58 @@ async function processCompletedDisputeWindows(): Promise<{
   let totalPayouts = 0;
 
   try {
-    console.log('🕐 [Payout] Checking for bets with expired dispute windows...');
+    console.log('🕐 [Payout] Checking for bets ready for payout...');
 
     const now = new Date();
     const currentISOString = now.toISOString();
 
-    // Get all PENDING_RESOLUTION bets where dispute window has expired
-    const { data: betsReadyForPayout } = await client.models.Bet.list({
+    // Get all PENDING_RESOLUTION bets (we'll filter them below)
+    const { data: pendingBets } = await client.models.Bet.list({
       filter: {
-        and: [
-          { status: { eq: 'PENDING_RESOLUTION' } },
-          { disputeWindowEndsAt: { lt: currentISOString } }
-        ]
+        status: { eq: 'PENDING_RESOLUTION' }
       }
     });
 
-    if (!betsReadyForPayout || betsReadyForPayout.length === 0) {
-      console.log('✅ [Payout] No bets ready for payout');
+    if (!pendingBets || pendingBets.length === 0) {
+      console.log('✅ [Payout] No bets pending resolution');
       return { processed: 0, errors: 0, totalPayouts: 0 };
     }
 
-    console.log(`📊 [Payout] Found ${betsReadyForPayout.length} bets ready for payout`);
+    console.log(`📊 [Payout] Found ${pendingBets.length} bets pending resolution`);
+
+    // Filter to find bets ready for payout
+    const betsReadyForPayout = [];
+    for (const bet of pendingBets) {
+      if (!bet.id || !bet.creatorId) continue;
+
+      // Check if dispute window has expired
+      const disputeWindowExpired = bet.disputeWindowEndsAt && new Date(bet.disputeWindowEndsAt) < now;
+
+      // Check if there are any non-creator participants
+      const { data: participants } = await client.models.Participant.list({
+        filter: { betId: { eq: bet.id } }
+      });
+
+      const nonCreatorParticipants = participants?.filter(p => p.userId !== bet.creatorId) || [];
+      const hasNonCreatorParticipants = nonCreatorParticipants.length > 0;
+
+      // Process if:
+      // 1. Dispute window expired, OR
+      // 2. No non-creator participants (creator-only bet - no one to dispute)
+      if (disputeWindowExpired || !hasNonCreatorParticipants) {
+        if (!hasNonCreatorParticipants) {
+          console.log(`🎯 [Payout] Bet ${bet.id} has no non-creator participants - processing immediately`);
+        }
+        betsReadyForPayout.push(bet);
+      }
+    }
+
+    if (betsReadyForPayout.length === 0) {
+      console.log('✅ [Payout] No bets ready for payout yet');
+      return { processed: 0, errors: 0, totalPayouts: 0 };
+    }
+
+    console.log(`💰 [Payout] Processing ${betsReadyForPayout.length} bet(s) ready for payout`);
 
     // Process each bet
     for (const bet of betsReadyForPayout) {
