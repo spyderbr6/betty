@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, StyleSheet, Switch, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, Switch, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, textStyles } from '../styles';
@@ -43,7 +43,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
       setPreferences(prefs);
     } catch (error) {
       console.error('[SettingsScreen] Error loading preferences:', error);
-      Alert.alert('Error', 'Failed to load notification settings');
+      showAlert('Error', 'Failed to load notification settings');
     } finally {
       setIsLoading(false);
     }
@@ -78,7 +78,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
     if (!success) {
       // Revert on failure
       await loadPreferences();
-      Alert.alert('Error', 'Failed to update preference. Please try again.');
+      showAlert('Error', 'Failed to update preference. Please try again.');
     }
   };
 
@@ -99,13 +99,13 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
       if (!result.data) {
         // Revert on failure
         setAllowPhoneDiscovery(previousValue);
-        Alert.alert('Error', 'Failed to update privacy setting. Please try again.');
+        showAlert('Error', 'Failed to update privacy setting. Please try again.');
       }
     } catch (error) {
       console.error('[SettingsScreen] Error updating phone discovery:', error);
       // Revert on failure
       setAllowPhoneDiscovery(previousValue);
-      Alert.alert('Error', 'Failed to update privacy setting. Please try again.');
+      showAlert('Error', 'Failed to update privacy setting. Please try again.');
     }
   };
 

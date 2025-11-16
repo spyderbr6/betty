@@ -74,7 +74,7 @@ export const PaymentMethodsScreen: React.FC<PaymentMethodsScreenProps> = ({ onCl
   };
 
   const handleRemovePaymentMethod = async (paymentMethod: PaymentMethod) => {
-    Alert.alert(
+    showAlert(
       'Remove Payment Method',
       `Are you sure you want to remove ${paymentMethod.displayName}?`,
       [
@@ -87,7 +87,7 @@ export const PaymentMethodsScreen: React.FC<PaymentMethodsScreenProps> = ({ onCl
             if (success) {
               await refreshData();
             } else {
-              Alert.alert('Error', 'Failed to remove payment method');
+              showAlert('Error', 'Failed to remove payment method');
             }
           },
         },
@@ -102,7 +102,7 @@ export const PaymentMethodsScreen: React.FC<PaymentMethodsScreenProps> = ({ onCl
     if (success) {
       await refreshData();
     } else {
-      Alert.alert('Error', 'Failed to set default payment method');
+      showAlert('Error', 'Failed to set default payment method');
     }
   };
 

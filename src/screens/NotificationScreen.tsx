@@ -198,7 +198,7 @@ export const NotificationScreen: React.FC<NotificationScreenProps> = ({ onClose 
       setHasMore(userNotifications.length >= currentLimit);
     } catch (error) {
       console.error('Error loading notifications:', error);
-      Alert.alert('Error', 'Failed to load notifications. Please try again.');
+      showAlert('Error', 'Failed to load notifications. Please try again.');
     }
   }, [user, notifications.length, hasMore]);
 
@@ -279,7 +279,7 @@ export const NotificationScreen: React.FC<NotificationScreenProps> = ({ onClose 
       }
     } catch (error) {
       console.error('Error marking all notifications as read:', error);
-      Alert.alert('Error', 'Failed to mark all notifications as read.');
+      showAlert('Error', 'Failed to mark all notifications as read.');
     }
   }, [user, unreadCount]);
 

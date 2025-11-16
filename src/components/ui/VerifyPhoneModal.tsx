@@ -158,7 +158,7 @@ export const VerifyPhoneModal: React.FC<VerifyPhoneModalProps> = ({
       const result = await resendVerificationCode();
 
       if (result.success) {
-        Alert.alert(
+        showAlert(
           'Code Sent',
           `A new verification code has been sent to ${result.destination || 'your phone'}`,
           [{ text: 'OK' }]

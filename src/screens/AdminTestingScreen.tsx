@@ -46,7 +46,7 @@ export const AdminTestingScreen: React.FC<{ onClose: () => void }> = ({ onClose 
   // Check if user is admin
   React.useEffect(() => {
     if (!user || (user.role !== 'ADMIN' && user.role !== 'SUPER_ADMIN')) {
-      Alert.alert(
+      showAlert(
         'Access Denied',
         'You do not have permission to access admin testing tools.',
         [{ text: 'OK', onPress: onClose }]
@@ -72,10 +72,10 @@ export const AdminTestingScreen: React.FC<{ onClose: () => void }> = ({ onClose 
       addLog(`Starting test: ${testId}`);
       await testFn();
       addLog(`✅ Test completed: ${testId}`);
-      Alert.alert('Success', `Test "${testId}" completed successfully. Check logs for details.`);
+      showAlert('Success', `Test "${testId}" completed successfully. Check logs for details.`);
     } catch (error) {
       addLog(`❌ Test failed: ${error instanceof Error ? error.message : String(error)}`);
-      Alert.alert('Error', `Test "${testId}" failed. Check logs for details.`);
+      showAlert('Error', `Test "${testId}" failed. Check logs for details.`);
     } finally {
       setLoading(false);
       setActiveTest(null);

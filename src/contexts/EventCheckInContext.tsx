@@ -4,7 +4,7 @@
  */
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { Alert } from 'react-native';
+import { } from 'react-native';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
 import { getUserCheckedInEvent, checkOutOfEvent } from '../services/eventService';
@@ -145,7 +145,7 @@ export const EventCheckInProvider: React.FC<EventCheckInProviderProps> = ({ chil
           setCheckedInEvent(null);
 
           // Optional: Show notification
-          // Alert.alert('Event Ended', 'You have been automatically checked out.');
+          // showAlert('Event Ended', 'You have been automatically checked out.');
         }
       } catch (error) {
         console.error('[EventCheckIn] Error during auto-checkout:', error);
@@ -211,7 +211,7 @@ export const EventCheckInProvider: React.FC<EventCheckInProviderProps> = ({ chil
       }
     } catch (error) {
       console.error('[EventCheckIn] Error checking out:', error);
-      Alert.alert('Error', 'Failed to check out. Please try again.');
+      showAlert('Error', 'Failed to check out. Please try again.');
     } finally {
       setIsLoading(false);
     }

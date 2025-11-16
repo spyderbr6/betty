@@ -152,7 +152,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({
       await refreshAuth({ silent: true });
 
       // Show success and close
-      Alert.alert(
+      showAlert(
         'Welcome to SideBet!',
         "You're all set to start betting with friends.",
         [
@@ -164,7 +164,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({
       );
     } catch (error) {
       console.error('[Onboarding] Failed to complete:', error);
-      Alert.alert('Error', 'Failed to complete onboarding. Please try again.');
+      showAlert('Error', 'Failed to complete onboarding. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -244,7 +244,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({
       presentationStyle="fullScreen"
       onRequestClose={() => {
         // Prevent dismissing during onboarding
-        Alert.alert(
+        showAlert(
           'Complete Setup',
           'Please complete the onboarding process or skip the remaining steps.',
           [{ text: 'OK' }]

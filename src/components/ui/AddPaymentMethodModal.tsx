@@ -88,12 +88,12 @@ export const AddPaymentMethodModal: React.FC<AddPaymentMethodModalProps> = ({
     if (!validateUsername(venmoUsername)) return;
 
     if (venmoEmail && !validateEmail(venmoEmail)) {
-      Alert.alert('Invalid Email', 'Please enter a valid email address');
+      showAlert('Invalid Email', 'Please enter a valid email address');
       return;
     }
 
     if (venmoPhone && !validatePhone(venmoPhone)) {
-      Alert.alert('Invalid Phone', 'Please enter the last 4 digits of your phone number');
+      showAlert('Invalid Phone', 'Please enter the last 4 digits of your phone number');
       return;
     }
 
@@ -112,7 +112,7 @@ export const AddPaymentMethodModal: React.FC<AddPaymentMethodModalProps> = ({
       });
 
       if (!paymentMethod) {
-        Alert.alert('Error', 'Failed to add payment method. Please try again.');
+        showAlert('Error', 'Failed to add payment method. Please try again.');
         return;
       }
 
@@ -122,14 +122,14 @@ export const AddPaymentMethodModal: React.FC<AddPaymentMethodModalProps> = ({
 
       // Show success alert after modal is closed
       setTimeout(() => {
-        Alert.alert(
+        showAlert(
           'Venmo Account Added',
           'Your Venmo account has been added successfully! You can now add funds, which will be verified by our team before you can use them for betting.'
         );
       }, 300);
     } catch (error) {
       console.error('Error adding payment method:', error);
-      Alert.alert('Error', 'Failed to add payment method. Please try again.');
+      showAlert('Error', 'Failed to add payment method. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
