@@ -22,6 +22,7 @@ import { formatCurrency } from '../../utils/formatting';
 import { useAuth } from '../../contexts/AuthContext';
 import { NotificationService } from '../../services/notificationService';
 import { TransactionService } from '../../services/transactionService';
+import { FileDisputeModal } from '../ui/FileDisputeModal';
 
 // Initialize GraphQL client
 const client = generateClient<Schema>();
@@ -100,6 +101,7 @@ export const BetCard: React.FC<BetCardProps> = ({
     amount: number;
   }>({ hasJoined: false, side: null, amount: 0 });
   const [timeRemaining, setTimeRemaining] = useState<string>('');
+  const [showDisputeModal, setShowDisputeModal] = useState(false);
 
   // Check if current user has joined this bet
   useEffect(() => {
@@ -475,7 +477,7 @@ export const BetCard: React.FC<BetCardProps> = ({
           {userParticipation.hasJoined && !isCreator && (
             <TouchableOpacity
               style={styles.disputeButton}
-              onPress={() => Alert.alert('File Dispute', 'Dispute filing coming soon!')}
+              onPress={() => setShowDisputeModal(true)}
               activeOpacity={0.7}
             >
               <Ionicons name="alert-circle-outline" size={18} color={colors.error} />
@@ -549,6 +551,18 @@ export const BetCard: React.FC<BetCardProps> = ({
           </Text>
         </View>
       )}
+
+      {/* File Dispute Modal */}
+      <FileDisputeModal
+        visible={showDisputeModal}
+        onClose={() => setShowDisputeModal(false)}
+        bet={bet}
+        userId={user?.userId || ''}
+        onDisputeFiled={() => {
+          // Refresh bet data or show success message
+          setShowDisputeModal(false);
+        }}
+      />
     </TouchableOpacity>
   );
 };
