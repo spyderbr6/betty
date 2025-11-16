@@ -453,6 +453,38 @@ export const BetCard: React.FC<BetCardProps> = ({
         </TouchableOpacity>
       </View>
 
+      {/* PENDING_RESOLUTION: Show dispute window countdown and File Dispute button */}
+      {bet.status === 'PENDING_RESOLUTION' && bet.disputeWindowEndsAt && (
+        <View style={styles.disputeWindowContainer}>
+          {/* Dispute Window Countdown */}
+          <View style={styles.disputeWindowHeader}>
+            <Ionicons name="time-outline" size={16} color={colors.warning} />
+            <Text style={styles.disputeWindowText}>
+              Payout in {formatTimeRemaining(bet.disputeWindowEndsAt)}
+            </Text>
+          </View>
+
+          {/* Resolution Reason */}
+          {bet.resolutionReason && (
+            <Text style={styles.resolutionReason} numberOfLines={2}>
+              {bet.resolutionReason}
+            </Text>
+          )}
+
+          {/* File Dispute Button - Only for participants, not creator */}
+          {userParticipation.hasJoined && !isCreator && (
+            <TouchableOpacity
+              style={styles.disputeButton}
+              onPress={() => Alert.alert('File Dispute', 'Dispute filing coming soon!')}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="alert-circle-outline" size={18} color={colors.error} />
+              <Text style={styles.disputeButtonText}>File Dispute</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+
       {/* Action Buttons - Only for ACTIVE bets */}
       {isActive && (
         <View style={styles.actionRow}>
@@ -672,6 +704,53 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 11,
     fontWeight: typography.fontWeight.bold,
+  },
+
+  // Dispute Window (PENDING_RESOLUTION status)
+  disputeWindowContainer: {
+    backgroundColor: colors.warning + '10',
+    borderRadius: spacing.radius.sm,
+    padding: spacing.sm,
+    marginTop: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.warning + '30',
+  },
+  disputeWindowHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.xs,
+  },
+  disputeWindowText: {
+    ...textStyles.button,
+    color: colors.warning,
+    fontSize: typography.fontSize.sm,
+    marginLeft: spacing.xs / 2,
+    fontWeight: typography.fontWeight.semibold,
+  },
+  resolutionReason: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    fontSize: typography.fontSize.xs,
+    marginBottom: spacing.sm,
+    lineHeight: 16,
+  },
+  disputeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+    borderWidth: 1.5,
+    borderColor: colors.error,
+    borderRadius: spacing.radius.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+  },
+  disputeButtonText: {
+    ...textStyles.button,
+    color: colors.error,
+    fontSize: typography.fontSize.sm,
+    marginLeft: spacing.xs / 2,
+    fontWeight: typography.fontWeight.semibold,
   },
 
   // Action Row
