@@ -33,6 +33,7 @@ import { SettingsScreen } from './SettingsScreen';
 import { SupportScreen } from './SupportScreen';
 import { AboutScreen } from './AboutScreen';
 import { AdminDashboardScreen } from './AdminDashboardScreen';
+import { AdminDisputeScreen } from './AdminDisputeScreen';
 import { AdminTestingScreen } from './AdminTestingScreen';
 import { useAuth } from '../contexts/AuthContext';
 import { ProfileEditForm, User } from '../types/betting';
@@ -61,6 +62,7 @@ export const AccountScreen: React.FC = () => {
   const [showSupport, setShowSupport] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
   const [showAdminDashboard, setShowAdminDashboard] = useState(false);
+  const [showAdminDispute, setShowAdminDispute] = useState(false);
   const [showAdminTesting, setShowAdminTesting] = useState(false);
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
@@ -252,6 +254,10 @@ export const AccountScreen: React.FC = () => {
     setShowAdminDashboard(true);
   };
 
+  const handleAdminDisputePress = () => {
+    setShowAdminDispute(true);
+  };
+
   const handleAdminTestingPress = () => {
     setShowAdminTesting(true);
   };
@@ -424,6 +430,28 @@ export const AccountScreen: React.FC = () => {
                       </View>
                     </View>
                     <Text style={styles.menuOptionSubtitle}>Approve deposits and withdrawals</Text>
+                  </View>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.menuOption}
+                onPress={handleAdminDisputePress}
+                activeOpacity={0.7}
+              >
+                <View style={styles.menuOptionLeft}>
+                  <View style={[styles.menuIconContainer, styles.adminIconContainer]}>
+                    <Ionicons name="alert-circle" size={22} color={colors.warning} />
+                  </View>
+                  <View style={styles.menuOptionContent}>
+                    <View style={styles.adminTitleRow}>
+                      <Text style={styles.menuOptionTitle}>Dispute Dashboard</Text>
+                      <View style={styles.adminBadge}>
+                        <Text style={styles.adminBadgeText}>ADMIN</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.menuOptionSubtitle}>Review and resolve user disputes</Text>
                   </View>
                 </View>
                 <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
@@ -619,6 +647,11 @@ export const AccountScreen: React.FC = () => {
       >
         <AdminDashboardScreen onClose={() => setShowAdminDashboard(false)} />
       </Modal>
+
+      {/* Admin Dispute Modal */}
+      {showAdminDispute && (
+        <AdminDisputeScreen onClose={() => setShowAdminDispute(false)} />
+      )}
 
       {/* Admin Testing Modal */}
       <Modal
