@@ -9,7 +9,6 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
-  Alert,
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -22,7 +21,9 @@ import { formatCurrency } from '../../utils/formatting';
 import { useAuth } from '../../contexts/AuthContext';
 import { NotificationService } from '../../services/notificationService';
 import { TransactionService } from '../../services/transactionService';
+import { BetAcceptanceService } from '../../services/betAcceptanceService';
 import { FileDisputeModal } from '../ui/FileDisputeModal';
+import { showAlert } from '../ui/CustomAlert';
 
 // Initialize GraphQL client
 const client = generateClient<Schema>();
@@ -102,6 +103,12 @@ export const BetCard: React.FC<BetCardProps> = ({
   }>({ hasJoined: false, side: null, amount: 0 });
   const [timeRemaining, setTimeRemaining] = useState<string>('');
   const [showDisputeModal, setShowDisputeModal] = useState(false);
+  const [isAccepting, setIsAccepting] = useState(false);
+  const [acceptanceProgress, setAcceptanceProgress] = useState<{
+    totalCount: number;
+    acceptedCount: number;
+    hasUserAccepted: boolean;
+  }>({ totalCount: 0, acceptedCount: 0, hasUserAccepted: false });
 
   // Check if current user has joined this bet
   useEffect(() => {
@@ -133,8 +140,71 @@ export const BetCard: React.FC<BetCardProps> = ({
     return () => clearInterval(interval);
   }, [bet.status, bet.deadline]);
 
+  // Load acceptance progress for PENDING_RESOLUTION bets
+  useEffect(() => {
+    const loadAcceptanceProgress = async () => {
+      if (bet.status !== 'PENDING_RESOLUTION' || !bet.winningSide || !user) return;
+
+      try {
+        const progress = await BetAcceptanceService.getAcceptanceProgress(bet.id);
+        const hasUserAccepted = progress.acceptedUserIds.includes(user.userId);
+
+        setAcceptanceProgress({
+          totalCount: progress.totalCount,
+          acceptedCount: progress.acceptedCount,
+          hasUserAccepted
+        });
+      } catch (error) {
+        console.error('Error loading acceptance progress:', error);
+      }
+    };
+
+    loadAcceptanceProgress();
+  }, [bet.status, bet.winningSide, bet.id, user, bet.participants]);
+
   const handlePress = () => {
     onPress?.(bet);
+  };
+
+  const handleAcceptResult = async () => {
+    if (!user || isAccepting) return;
+
+    setIsAccepting(true);
+
+    try {
+      const success = await BetAcceptanceService.acceptBetResult(bet.id, user.userId);
+
+      if (success) {
+        // Update local state to show acceptance
+        setAcceptanceProgress(prev => ({
+          ...prev,
+          acceptedCount: prev.acceptedCount + 1,
+          hasUserAccepted: true
+        }));
+
+        // Show success message
+        showAlert(
+          'Result Accepted',
+          'You have accepted this bet result. If all participants accept, payout will be processed within 5 minutes.',
+          [{ text: 'OK' }]
+        );
+      } else {
+        showAlert(
+          'Error',
+          'Failed to accept bet result. Please try again.',
+          [{ text: 'OK' }]
+        );
+      }
+    } catch (error) {
+      console.error('Error accepting bet result:', error);
+      showAlert(
+        'Error',
+        'An error occurred. Please try again.',
+        [{ text: 'OK' }]
+      );
+    } finally {
+      setIsAccepting(false);
+    }
   };
 
   const handleJoinBet = async (side: 'A' | 'B') => {
@@ -529,6 +599,50 @@ export const BetCard: React.FC<BetCardProps> = ({
                 </Text>
               )}
 
+              {/* Acceptance Progress Bar - Show if at least one participant has accepted */}
+              {acceptanceProgress.totalCount > 0 && acceptanceProgress.acceptedCount > 0 && (
+                <View style={styles.acceptanceProgressContainer}>
+                  <View style={styles.acceptanceProgressHeader}>
+                    <Ionicons name="checkmark-circle" size={16} color={colors.success} />
+                    <Text style={styles.acceptanceProgressText}>
+                      {acceptanceProgress.acceptedCount} of {acceptanceProgress.totalCount} accepted
+                    </Text>
+                  </View>
+                  <View style={styles.acceptanceProgressBar}>
+                    <View
+                      style={[
+                        styles.acceptanceProgressFill,
+                        { width: `${(acceptanceProgress.acceptedCount / acceptanceProgress.totalCount) * 100}%` }
+                      ]}
+                    />
+                  </View>
+                  <Text style={styles.acceptanceProgressSubtext}>
+                    {acceptanceProgress.acceptedCount === acceptanceProgress.totalCount
+                      ? 'All participants accepted! Payout processing soon...'
+                      : 'Accept early to close this bet and receive payout faster'}
+                  </Text>
+                </View>
+              )}
+
+              {/* Accept Result Button - Only for participants who haven't accepted yet */}
+              {userParticipation.hasJoined && !acceptanceProgress.hasUserAccepted && (
+                <TouchableOpacity
+                  style={styles.acceptButton}
+                  onPress={handleAcceptResult}
+                  activeOpacity={0.7}
+                  disabled={isAccepting}
+                >
+                  {isAccepting ? (
+                    <ActivityIndicator size="small" color={colors.background} />
+                  ) : (
+                    <>
+                      <Ionicons name="checkmark-circle" size={18} color={colors.background} />
+                      <Text style={styles.acceptButtonText}>Accept Result</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              )}
+
               {/* File Dispute Button - Available for all participants including creator */}
               {userParticipation.hasJoined && (
                 <TouchableOpacity
@@ -868,6 +982,65 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
     lineHeight: 16,
   },
+  // Acceptance Progress
+  acceptanceProgressContainer: {
+    backgroundColor: colors.success + '10',
+    borderRadius: spacing.radius.sm,
+    padding: spacing.sm,
+    marginBottom: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.success + '30',
+  },
+  acceptanceProgressHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.xs,
+  },
+  acceptanceProgressText: {
+    ...textStyles.button,
+    color: colors.success,
+    fontSize: typography.fontSize.sm,
+    marginLeft: spacing.xs / 2,
+    fontWeight: typography.fontWeight.semibold,
+  },
+  acceptanceProgressBar: {
+    height: 6,
+    backgroundColor: colors.border,
+    borderRadius: spacing.radius.xs,
+    overflow: 'hidden',
+    marginBottom: spacing.xs,
+  },
+  acceptanceProgressFill: {
+    height: '100%',
+    backgroundColor: colors.success,
+    borderRadius: spacing.radius.xs,
+  },
+  acceptanceProgressSubtext: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    fontSize: typography.fontSize.xs,
+    lineHeight: 14,
+  },
+
+  // Accept Result Button
+  acceptButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.success,
+    borderRadius: spacing.radius.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    marginBottom: spacing.xs,
+  },
+  acceptButtonText: {
+    ...textStyles.button,
+    color: colors.background,
+    fontSize: typography.fontSize.sm,
+    marginLeft: spacing.xs / 2,
+    fontWeight: typography.fontWeight.semibold,
+  },
+
   disputeButton: {
     flexDirection: 'row',
     alignItems: 'center',

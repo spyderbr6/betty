@@ -202,6 +202,9 @@ const schema = a.schema({
       status: a.enum(['PENDING', 'ACCEPTED', 'DECLINED']),
       payout: a.float().default(0), // Calculated payout if they win
       joinedAt: a.datetime(),
+      // Bet result acceptance (allows early closure when all participants accept)
+      hasAcceptedResult: a.boolean().default(false), // Has participant accepted the bet outcome?
+      acceptedResultAt: a.datetime(), // When they accepted the result
       // Relations
       bet: a.belongsTo('Bet', 'betId'),
       user: a.belongsTo('User', 'userId'),

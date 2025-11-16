@@ -50,6 +50,9 @@ export interface Participant {
   status: ParticipantStatus;
   payout: number;
   joinedAt: string;
+  // Bet result acceptance (for early closure)
+  hasAcceptedResult?: boolean; // Has participant accepted the bet outcome?
+  acceptedResultAt?: string; // When they accepted the result
 }
 
 export interface Evidence {
