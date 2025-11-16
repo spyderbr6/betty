@@ -10,7 +10,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Alert,
   ActivityIndicator,
   RefreshControl,
 } from 'react-native';
@@ -25,6 +24,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { formatCurrency } from '../utils/formatting';
 import { NotificationService } from '../services/notificationService';
 import { TransactionService } from '../services/transactionService';
+import { showAlert } from '../components/ui/CustomAlert';
 
 // Initialize GraphQL client
 const client = generateClient<Schema>();
@@ -254,7 +254,7 @@ export const ResolveScreen: React.FC = () => {
 
     // Only allow creator to resolve bets
     if (bet.creatorId !== user?.userId) {
-      Alert.alert('Error', 'Only the bet creator can resolve this bet.');
+      showAlert('Error', 'Only the bet creator can resolve this bet.');
       return;
     }
 
@@ -373,7 +373,7 @@ export const ResolveScreen: React.FC = () => {
       }));
 
       // Show success message
-      Alert.alert(
+      showAlert(
         'Bet Resolved',
         `Winner: ${winningSide === 'A' ? bet.odds.sideAName || 'Side A' : bet.odds.sideBName || 'Side B'}\n\nPayouts are pending a 48-hour dispute window. If no disputes are filed, funds will be automatically distributed.`,
         [{ text: 'OK' }]
@@ -381,7 +381,7 @@ export const ResolveScreen: React.FC = () => {
 
     } catch (error) {
       console.error('Error resolving bet:', error);
-      Alert.alert(
+      showAlert(
         'Error',
         'Failed to resolve bet. Please try again.',
         [{ text: 'OK' }]

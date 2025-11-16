@@ -12,7 +12,6 @@ import {
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
-  Alert,
   RefreshControl,
   TextInput,
   Modal,
@@ -27,6 +26,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { DisputeService, Dispute } from '../services/disputeService';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
+import { showAlert } from '../components/ui/CustomAlert';
 
 const client = generateClient<Schema>();
 
@@ -62,7 +62,7 @@ export const AdminDisputeScreen: React.FC<AdminDisputeScreenProps> = ({ onClose 
   // Check admin role on mount
   useEffect(() => {
     if (!user || (user.role !== 'ADMIN' && user.role !== 'SUPER_ADMIN')) {
-      Alert.alert(
+      showAlert(
         'Access Denied',
         'You do not have permission to access the dispute dashboard.',
         [{ text: 'OK', onPress: onClose }]
@@ -127,7 +127,7 @@ export const AdminDisputeScreen: React.FC<AdminDisputeScreenProps> = ({ onClose 
 
     } catch (error) {
       console.error('[AdminDispute] Error loading disputes:', error);
-      Alert.alert('Error', 'Failed to load disputes. Please try again.');
+      showAlert('Error', 'Failed to load disputes. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -147,7 +147,7 @@ export const AdminDisputeScreen: React.FC<AdminDisputeScreenProps> = ({ onClose 
   };
 
   const handleDismissDispute = (dispute: Dispute) => {
-    Alert.alert(
+    showAlert(
       'Dismiss Dispute',
       'Are you sure you want to dismiss this dispute? The original bet resolution will stand.',
       [
@@ -179,7 +179,7 @@ export const AdminDisputeScreen: React.FC<AdminDisputeScreenProps> = ({ onClose 
       );
 
       if (success) {
-        Alert.alert(
+        showAlert(
           'Dispute Resolved',
           `The dispute has been ${status === 'DISMISSED' ? 'dismissed' : 'upheld'}.`,
           [{ text: 'OK' }]
@@ -196,7 +196,7 @@ export const AdminDisputeScreen: React.FC<AdminDisputeScreenProps> = ({ onClose 
       }
     } catch (error: any) {
       console.error('[AdminDispute] Error resolving dispute:', error);
-      Alert.alert('Error', error.message || 'Failed to resolve dispute. Please try again.');
+      showAlert('Error', error.message || 'Failed to resolve dispute. Please try again.');
     } finally {
       setProcessingId(null);
     }

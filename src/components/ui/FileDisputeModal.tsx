@@ -11,7 +11,6 @@ import {
   TouchableOpacity,
   StyleSheet,
   Modal,
-  Alert,
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
@@ -23,6 +22,7 @@ import { ModalHeader } from './ModalHeader';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Bet } from '../../types/betting';
 import { DisputeService, DisputeReason } from '../../services/disputeService';
+import { showAlert } from './CustomAlert';
 
 interface FileDisputeModalProps {
   visible: boolean;
@@ -78,12 +78,12 @@ export const FileDisputeModal: React.FC<FileDisputeModalProps> = ({
     if (!bet) return;
 
     if (!description.trim()) {
-      Alert.alert('Missing Information', 'Please provide a description of your dispute.');
+      showAlert('Missing Information', 'Please provide a description of your dispute.');
       return;
     }
 
     if (description.trim().length < 20) {
-      Alert.alert('Description Too Short', 'Please provide a detailed explanation (at least 20 characters).');
+      showAlert('Description Too Short', 'Please provide a detailed explanation (at least 20 characters).');
       return;
     }
 
@@ -104,7 +104,7 @@ export const FileDisputeModal: React.FC<FileDisputeModalProps> = ({
       setSelectedReason('INCORRECT_RESOLUTION');
       onClose();
 
-      Alert.alert(
+      showAlert(
         'Dispute Filed',
         'Your dispute has been submitted and will be reviewed by an administrator. The payout is now on hold.',
         [{ text: 'OK' }]
@@ -113,7 +113,7 @@ export const FileDisputeModal: React.FC<FileDisputeModalProps> = ({
       onDisputeFiled?.();
     } catch (error: any) {
       console.error('Error filing dispute:', error);
-      Alert.alert(
+      showAlert(
         'Failed to File Dispute',
         error.message || 'Please try again later.',
         [{ text: 'OK' }]
@@ -125,7 +125,7 @@ export const FileDisputeModal: React.FC<FileDisputeModalProps> = ({
 
   const handleClose = () => {
     if (description.trim()) {
-      Alert.alert(
+      showAlert(
         'Discard Dispute?',
         'You have unsaved changes. Are you sure you want to close?',
         [

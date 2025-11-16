@@ -12,7 +12,6 @@ import {
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
-  Alert,
   RefreshControl,
   TextInput,
   Modal,
@@ -29,6 +28,7 @@ import { TransactionService } from '../services/transactionService';
 import type { Transaction } from '../services/transactionService';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
+import { showAlert } from '../components/ui/CustomAlert';
 
 const client = generateClient<Schema>();
 
@@ -59,7 +59,7 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
   // Check admin role on mount
   useEffect(() => {
     if (!user || (user.role !== 'ADMIN' && user.role !== 'SUPER_ADMIN')) {
-      Alert.alert(
+      showAlert(
         'Access Denied',
         'You do not have permission to access the admin dashboard.',
         [{ text: 'OK', onPress: onClose }]
@@ -103,7 +103,7 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
       console.log('[AdminDashboard] User details loaded for', userDetailsMap.size, 'users');
     } catch (error) {
       console.error('[AdminDashboard] Error loading pending transactions:', error);
-      Alert.alert('Error', 'Failed to load pending transactions');
+      showAlert('Error', 'Failed to load pending transactions');
     } finally {
       setIsLoading(false);
     }
@@ -155,7 +155,7 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
     const last4 = verificationId.slice(-4).toLowerCase();
 
     if (verificationCode.toLowerCase() !== last4) {
-      Alert.alert(
+      showAlert(
         'Verification Failed',
         `The code you entered does not match the last 4 digits of the ${getVerificationLabel(approvalTransaction).toLowerCase()}.`
       );
@@ -177,15 +177,15 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
       console.log('[AdminDashboard] Approval result:', success);
 
       if (success) {
-        Alert.alert('Success', 'Transaction approved successfully');
+        showAlert('Success', 'Transaction approved successfully');
         console.log('[AdminDashboard] Reloading transactions after approval...');
         await loadPendingTransactions();
       } else {
-        Alert.alert('Error', 'Failed to approve transaction');
+        showAlert('Error', 'Failed to approve transaction');
       }
     } catch (error) {
       console.error('[AdminDashboard] Error approving transaction:', error);
-      Alert.alert('Error', 'Failed to approve transaction');
+      showAlert('Error', 'Failed to approve transaction');
     } finally {
       setProcessingId(null);
       setApprovalTransaction(null);
@@ -203,7 +203,7 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
     if (!user?.userId || !rejectTransaction) return;
 
     if (!rejectReason.trim()) {
-      Alert.alert('Reason Required', 'Please enter a reason for rejecting this transaction');
+      showAlert('Reason Required', 'Please enter a reason for rejecting this transaction');
       return;
     }
 
@@ -222,15 +222,15 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
       console.log('[AdminDashboard] Rejection result:', success);
 
       if (success) {
-        Alert.alert('Success', 'Transaction rejected successfully');
+        showAlert('Success', 'Transaction rejected successfully');
         console.log('[AdminDashboard] Reloading transactions after rejection...');
         await loadPendingTransactions();
       } else {
-        Alert.alert('Error', 'Failed to reject transaction');
+        showAlert('Error', 'Failed to reject transaction');
       }
     } catch (error) {
       console.error('[AdminDashboard] Error rejecting transaction:', error);
-      Alert.alert('Error', 'Failed to reject transaction');
+      showAlert('Error', 'Failed to reject transaction');
     } finally {
       setProcessingId(null);
       setRejectTransaction(null);
