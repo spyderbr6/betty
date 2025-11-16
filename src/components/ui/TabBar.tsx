@@ -211,7 +211,6 @@ export const TabBar: React.FC<BottomTabBarProps> = ({
 
         // Special styling for different tabs
         const isCreateTab = route.name === 'Create';
-        const isLiveTab = route.name === 'Live';
         const hasBadge = count !== null && count > 0;
 
         return (
@@ -233,11 +232,6 @@ export const TabBar: React.FC<BottomTabBarProps> = ({
             {/* Active tab indicator line */}
             {isFocused && !isCreateTab && (
               <View style={styles.activeIndicator} />
-            )}
-
-            {/* Pulsing indicator for Join tab (shows available bets) */}
-            {isLiveTab && (
-              <View style={styles.livePulseIndicator} />
             )}
             
             <View style={[
@@ -366,19 +360,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs / 2,
     fontSize: 9,
   },
-  
-  // Live pulsing indicator
-  livePulseIndicator: {
-    position: 'absolute',
-    top: 4,
-    left: '50%',
-    transform: [{ translateX: -3 }],
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: colors.live,
-  },
-  
+
   // Notification badges
   badge: {
     position: 'absolute',
