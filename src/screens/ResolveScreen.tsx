@@ -476,14 +476,6 @@ export const ResolveScreen: React.FC = () => {
           />
         }
       >
-        {/* Section Header */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>PENDING RESOLUTION</Text>
-          <Text style={styles.sectionSubtitle}>
-            {pendingBets.length} bets awaiting resolution
-          </Text>
-        </View>
-
         {/* Loading State */}
         {isLoading ? (
           <View style={styles.loadingContainer}>
@@ -609,27 +601,6 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-  },
-
-  // Section Header
-  sectionHeader: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-    backgroundColor: colors.background,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  sectionTitle: {
-    ...textStyles.h3,
-    color: colors.textPrimary,
-    fontWeight: typography.fontWeight.bold,
-    fontSize: typography.fontSize.lg,
-    marginBottom: spacing.xs,
-  },
-  sectionSubtitle: {
-    ...textStyles.body,
-    color: colors.textMuted,
-    fontSize: typography.fontSize.sm,
   },
 
   // Loading and Empty States
