@@ -499,52 +499,8 @@ export const ResolveScreen: React.FC = () => {
                 onPress={handleBetPress}
               />
 
-              {/* PENDING_RESOLUTION: Two states based on winningSide */}
-              {bet.status === 'PENDING_RESOLUTION' && (
-                <>
-                  {/* State 1: Awaiting creator's decision (no winningSide yet) */}
-                  {!bet.winningSide && (
-                    <View style={styles.awaitingResolutionInfo}>
-                      <View style={styles.awaitingResolutionHeader}>
-                        <Text style={styles.awaitingResolutionTitle}>⏳ Awaiting Resolution</Text>
-                      </View>
-                      <Text style={styles.awaitingResolutionMessage}>
-                        Please select the winning side below to complete the resolution. Participants will be notified once you declare the winner.
-                      </Text>
-                    </View>
-                  )}
-
-                  {/* State 2: Winner declared, dispute window active (winningSide is set) */}
-                  {bet.winningSide && bet.disputeWindowEndsAt && (
-                    <View style={styles.pendingResolutionInfo}>
-                      <View style={styles.pendingResolutionHeader}>
-                        <Text style={styles.pendingResolutionTitle}>✓ Bet Resolved</Text>
-                        <Text style={styles.pendingResolutionWinner}>
-                          Winner: {bet.winningSide === 'A' ? bet.odds.sideAName : bet.odds.sideBName}
-                        </Text>
-                      </View>
-                      <Text style={styles.pendingResolutionMessage}>
-                        Payouts will be distributed automatically in {' '}
-                        {(() => {
-                          const now = new Date();
-                          const endsAt = new Date(bet.disputeWindowEndsAt);
-                          const hoursRemaining = Math.max(0, Math.ceil((endsAt.getTime() - now.getTime()) / (1000 * 60 * 60)));
-                          return `${hoursRemaining} hours`;
-                        })()}
-                        {' '}if no disputes are filed.
-                      </Text>
-                      {bet.creatorId !== user?.userId && (
-                        <Text style={styles.pendingResolutionSubtext}>
-                          You can file a dispute if you believe this resolution is incorrect.
-                        </Text>
-                      )}
-                    </View>
-                  )}
-                </>
-              )}
-
-              {/* Resolution Actions - Only show if user is creator AND bet is ACTIVE (not already resolved) */}
-              {bet.creatorId === user?.userId && bet.status === 'ACTIVE' && (
+              {/* Resolution Actions - Only show if user is creator AND bet needs resolution */}
+              {bet.creatorId === user?.userId && (bet.status === 'ACTIVE' || (bet.status === 'PENDING_RESOLUTION' && !bet.winningSide)) && (
                 <View style={styles.resolutionActions}>
                   {/* Payout Preview */}
                   <View style={styles.payoutPreview}>
@@ -836,75 +792,5 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: typography.fontSize.xs,
     textAlign: 'center',
-  },
-
-  // Awaiting Resolution Info (PENDING_RESOLUTION without winningSide)
-  awaitingResolutionInfo: {
-    backgroundColor: colors.textMuted + '10',
-    marginHorizontal: spacing.md,
-    borderRadius: spacing.radius.sm,
-    padding: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.textMuted + '30',
-    borderTopWidth: 0,
-    borderTopLeftRadius: 0,
-    borderTopRightRadius: 0,
-  },
-  awaitingResolutionHeader: {
-    marginBottom: spacing.sm,
-    paddingBottom: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.textMuted + '30',
-  },
-  awaitingResolutionTitle: {
-    ...textStyles.h4,
-    color: colors.textSecondary,
-    fontWeight: typography.fontWeight.bold,
-  },
-  awaitingResolutionMessage: {
-    ...textStyles.body,
-    color: colors.textSecondary,
-    lineHeight: 20,
-  },
-
-  // Pending Resolution Info (PENDING_RESOLUTION with winningSide)
-  pendingResolutionInfo: {
-    backgroundColor: colors.warning + '15',
-    marginHorizontal: spacing.md,
-    borderRadius: spacing.radius.sm,
-    padding: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.warning + '40',
-    borderTopWidth: 0,
-    borderTopLeftRadius: 0,
-    borderTopRightRadius: 0,
-  },
-  pendingResolutionHeader: {
-    marginBottom: spacing.sm,
-    paddingBottom: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.warning + '30',
-  },
-  pendingResolutionTitle: {
-    ...textStyles.h4,
-    color: colors.success,
-    fontWeight: typography.fontWeight.bold,
-    marginBottom: spacing.xs / 2,
-  },
-  pendingResolutionWinner: {
-    ...textStyles.button,
-    color: colors.textPrimary,
-    fontWeight: typography.fontWeight.semibold,
-  },
-  pendingResolutionMessage: {
-    ...textStyles.body,
-    color: colors.textSecondary,
-    lineHeight: 20,
-    marginBottom: spacing.xs,
-  },
-  pendingResolutionSubtext: {
-    ...textStyles.caption,
-    color: colors.textMuted,
-    fontStyle: 'italic',
   },
 });

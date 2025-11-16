@@ -292,7 +292,8 @@ export const BetCard: React.FC<BetCardProps> = ({
     if ((status === 'RESOLVED' || status === 'PENDING_RESOLUTION') && userParticipation.hasJoined && bet.winningSide) {
       const isWinner = userParticipation.side === bet.winningSide;
       if (status === 'PENDING_RESOLUTION') {
-        return isWinner ? 'WON (PENDING)' : 'LOST';
+        // Both winners and losers show (PENDING) during dispute window
+        return isWinner ? 'WON (PENDING)' : 'LOST (PENDING)';
       }
       return isWinner ? 'WON' : 'LOST';
     }
@@ -524,8 +525,8 @@ export const BetCard: React.FC<BetCardProps> = ({
                 </Text>
               )}
 
-              {/* File Dispute Button - Only for participants, not creator */}
-              {userParticipation.hasJoined && !isCreator && (
+              {/* File Dispute Button - Available for all participants including creator */}
+              {userParticipation.hasJoined && (
                 <TouchableOpacity
                   style={styles.disputeButton}
                   onPress={() => setShowDisputeModal(true)}
