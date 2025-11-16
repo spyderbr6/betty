@@ -102,15 +102,19 @@ export const FileDisputeModal: React.FC<FileDisputeModalProps> = ({
       // Reset form
       setDescription('');
       setSelectedReason('INCORRECT_RESOLUTION');
-      onClose();
 
+      // Show success alert FIRST, then close modal when user clicks OK
       showAlert(
         'Dispute Filed',
         'Your dispute has been submitted and will be reviewed by an administrator. The payout is now on hold.',
-        [{ text: 'OK' }]
+        [{
+          text: 'OK',
+          onPress: () => {
+            onClose();
+            onDisputeFiled?.();
+          }
+        }]
       );
-
-      onDisputeFiled?.();
     } catch (error: any) {
       console.error('Error filing dispute:', error);
       showAlert(
