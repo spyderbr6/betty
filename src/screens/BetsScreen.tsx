@@ -569,6 +569,25 @@ export const BetsScreen: React.FC = () => {
     // Navigate to balance/wallet screen
   };
 
+  const handleEndBet = async (bet: Bet) => {
+    try {
+      // Update bet status to PENDING_RESOLUTION
+      await client.models.Bet.update({
+        id: bet.id,
+        status: 'PENDING_RESOLUTION',
+        updatedAt: new Date().toISOString(),
+      });
+
+      // Clear cache and refresh bets
+      clearBulkLoadingCache();
+      await fetchBets();
+
+      showAlert('Bet Ended', 'Your bet has been moved to pending resolution. You can now declare the winner.');
+    } catch (error) {
+      console.error('Error ending bet:', error);
+      showAlert('Error', 'Failed to end bet. Please try again.');
+    }
+  };
 
   // Removed - Header handles notifications internally now
 
@@ -687,6 +706,7 @@ export const BetsScreen: React.FC = () => {
                 setSelectedBetForInvite(bet);
                 setShowInviteModal(true);
               }}
+              onEndBet={handleEndBet}
             />
           ))
         ) : (

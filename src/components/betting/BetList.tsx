@@ -25,6 +25,9 @@ export interface BetListProps {
   onRefresh?: () => void;
   onLoadMore?: () => void;
   onBetPress?: (bet: Bet) => void;
+  onJoinBet?: (betId: string, side: string, amount: number) => void;
+  onInviteFriends?: (bet: Bet) => void;
+  onEndBet?: (bet: Bet) => void;
   emptyTitle?: string;
   emptyDescription?: string;
   showSearch?: boolean;
@@ -39,6 +42,9 @@ export const BetList: React.FC<BetListProps> = ({
   onRefresh,
   onLoadMore,
   onBetPress,
+  onJoinBet,
+  onInviteFriends,
+  onEndBet,
   emptyTitle = 'No bets found',
   emptyDescription = 'Check back later or create the first bet!',
   showSearch = true,
@@ -102,6 +108,9 @@ export const BetList: React.FC<BetListProps> = ({
     <BetCard
       bet={item}
       onPress={onBetPress}
+      onJoinBet={onJoinBet}
+      onInviteFriends={onInviteFriends}
+      onEndBet={onEndBet}
       variant={variant}
     />
   );
