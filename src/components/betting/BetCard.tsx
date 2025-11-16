@@ -9,7 +9,6 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
-  Alert,
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -23,6 +22,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { NotificationService } from '../../services/notificationService';
 import { TransactionService } from '../../services/transactionService';
 import { FileDisputeModal } from '../ui/FileDisputeModal';
+import { showAlert } from '../ui/CustomAlert';
 
 // Initialize GraphQL client
 const client = generateClient<Schema>();
