@@ -464,62 +464,80 @@ export const BetCard: React.FC<BetCardProps> = ({
         </TouchableOpacity>
       </View>
 
-      {/* PENDING_RESOLUTION: Show dispute window countdown and File Dispute button */}
-      {bet.status === 'PENDING_RESOLUTION' && bet.disputeWindowEndsAt && (
-        <View style={styles.disputeWindowContainer}>
-          {/* Win/Loss Result - Prominent for participants */}
-          {userParticipation.hasJoined && bet.winningSide && (
-            <View style={[
-              styles.resultBanner,
-              userParticipation.side === bet.winningSide ? styles.resultBannerWin : styles.resultBannerLose
-            ]}>
-              <Ionicons
-                name={userParticipation.side === bet.winningSide ? "trophy" : "close-circle"}
-                size={20}
-                color={userParticipation.side === bet.winningSide ? colors.success : colors.error}
-              />
-              <Text style={[
-                styles.resultText,
-                userParticipation.side === bet.winningSide ? styles.resultTextWin : styles.resultTextLose
-              ]}>
-                {userParticipation.side === bet.winningSide
-                  ? `You Won - ${bet.winningSide === 'A' ? bet.odds.sideAName : bet.odds.sideBName}`
-                  : `You Lost - ${bet.winningSide === 'A' ? bet.odds.sideAName : bet.odds.sideBName} Won`
-                }
+      {/* PENDING_RESOLUTION: Two states based on winningSide */}
+      {bet.status === 'PENDING_RESOLUTION' && (
+        <>
+          {/* State 1: Awaiting creator's decision (no winningSide yet) */}
+          {!bet.winningSide && (
+            <View style={styles.awaitingResolutionContainer}>
+              <View style={styles.awaitingResolutionHeader}>
+                <Ionicons name="hourglass-outline" size={18} color={colors.warning} />
+                <Text style={styles.awaitingResolutionTitle}>Awaiting Resolution</Text>
+              </View>
+              <Text style={styles.awaitingResolutionMessage}>
+                The bet creator has up to 24 hours to declare the winner. You'll be notified once resolved.
               </Text>
             </View>
           )}
 
-          {/* Dispute Window Countdown */}
-          <View style={styles.disputeWindowHeader}>
-            <Ionicons name="time-outline" size={16} color={colors.warning} />
-            <Text style={styles.disputeWindowText}>
-              {userParticipation.hasJoined && userParticipation.side === bet.winningSide
-                ? `Payout in ${formatTimeRemaining(bet.disputeWindowEndsAt)}`
-                : `Dispute window ends in ${formatTimeRemaining(bet.disputeWindowEndsAt)}`
-              }
-            </Text>
-          </View>
+          {/* State 2: Winner declared, dispute window active (winningSide is set) */}
+          {bet.winningSide && bet.disputeWindowEndsAt && (
+            <View style={styles.disputeWindowContainer}>
+              {/* Win/Loss Result - Prominent for participants */}
+              {userParticipation.hasJoined && (
+                <View style={[
+                  styles.resultBanner,
+                  userParticipation.side === bet.winningSide ? styles.resultBannerWin : styles.resultBannerLose
+                ]}>
+                  <Ionicons
+                    name={userParticipation.side === bet.winningSide ? "trophy" : "close-circle"}
+                    size={20}
+                    color={userParticipation.side === bet.winningSide ? colors.success : colors.error}
+                  />
+                  <Text style={[
+                    styles.resultText,
+                    userParticipation.side === bet.winningSide ? styles.resultTextWin : styles.resultTextLose
+                  ]}>
+                    {userParticipation.side === bet.winningSide
+                      ? `You Won - ${bet.winningSide === 'A' ? bet.odds.sideAName : bet.odds.sideBName}`
+                      : `You Lost - ${bet.winningSide === 'A' ? bet.odds.sideAName : bet.odds.sideBName} Won`
+                    }
+                  </Text>
+                </View>
+              )}
 
-          {/* Resolution Reason */}
-          {bet.resolutionReason && (
-            <Text style={styles.resolutionReason} numberOfLines={2}>
-              {bet.resolutionReason}
-            </Text>
-          )}
+              {/* Dispute Window Countdown */}
+              <View style={styles.disputeWindowHeader}>
+                <Ionicons name="time-outline" size={16} color={colors.warning} />
+                <Text style={styles.disputeWindowText}>
+                  {userParticipation.hasJoined && userParticipation.side === bet.winningSide
+                    ? `Payout in ${formatTimeRemaining(bet.disputeWindowEndsAt)}`
+                    : `Dispute window ends in ${formatTimeRemaining(bet.disputeWindowEndsAt)}`
+                  }
+                </Text>
+              </View>
 
-          {/* File Dispute Button - Only for participants, not creator */}
-          {userParticipation.hasJoined && !isCreator && (
-            <TouchableOpacity
-              style={styles.disputeButton}
-              onPress={() => setShowDisputeModal(true)}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="alert-circle-outline" size={18} color={colors.error} />
-              <Text style={styles.disputeButtonText}>File Dispute</Text>
-            </TouchableOpacity>
+              {/* Resolution Reason */}
+              {bet.resolutionReason && (
+                <Text style={styles.resolutionReason} numberOfLines={2}>
+                  {bet.resolutionReason}
+                </Text>
+              )}
+
+              {/* File Dispute Button - Only for participants, not creator */}
+              {userParticipation.hasJoined && !isCreator && (
+                <TouchableOpacity
+                  style={styles.disputeButton}
+                  onPress={() => setShowDisputeModal(true)}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="alert-circle-outline" size={18} color={colors.error} />
+                  <Text style={styles.disputeButtonText}>File Dispute</Text>
+                </TouchableOpacity>
+              )}
+            </View>
           )}
-        </View>
+        </>
       )}
 
       {/* Action Buttons - Only for ACTIVE bets */}
@@ -755,7 +773,35 @@ const styles = StyleSheet.create({
     fontWeight: typography.fontWeight.bold,
   },
 
-  // Dispute Window (PENDING_RESOLUTION status)
+  // Awaiting Resolution (PENDING_RESOLUTION without winningSide)
+  awaitingResolutionContainer: {
+    backgroundColor: colors.textMuted + '10',
+    borderRadius: spacing.radius.sm,
+    padding: spacing.sm,
+    marginTop: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.textMuted + '30',
+  },
+  awaitingResolutionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.xs,
+  },
+  awaitingResolutionTitle: {
+    ...textStyles.button,
+    color: colors.textSecondary,
+    fontSize: typography.fontSize.sm,
+    marginLeft: spacing.xs / 2,
+    fontWeight: typography.fontWeight.semibold,
+  },
+  awaitingResolutionMessage: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    fontSize: typography.fontSize.xs,
+    lineHeight: 16,
+  },
+
+  // Dispute Window (PENDING_RESOLUTION with winningSide)
   disputeWindowContainer: {
     backgroundColor: colors.warning + '10',
     borderRadius: spacing.radius.sm,
