@@ -44,8 +44,15 @@ export const CustomAlert: React.FC<CustomAlertProps> = ({
   onDismiss,
 }) => {
   const handleButtonPress = (button: AlertButton) => {
-    button.onPress?.();
+    // Dismiss modal first for immediate UI feedback
     onDismiss?.();
+
+    // Then call the button callback (use setTimeout to ensure modal closes first)
+    if (button.onPress) {
+      setTimeout(() => {
+        button.onPress?.();
+      }, 100);
+    }
   };
 
   const handleBackdropPress = () => {
@@ -68,11 +75,7 @@ export const CustomAlert: React.FC<CustomAlertProps> = ({
         activeOpacity={1}
         onPress={handleBackdropPress}
       >
-        <TouchableOpacity
-          style={styles.alertContainer}
-          activeOpacity={1}
-          onPress={(e) => e.stopPropagation()}
-        >
+        <View style={styles.alertContainer}>
           <View style={styles.alertContent}>
             {/* Title */}
             <Text style={styles.title}>{title}</Text>
@@ -109,7 +112,7 @@ export const CustomAlert: React.FC<CustomAlertProps> = ({
               ))}
             </View>
           </View>
-        </TouchableOpacity>
+        </View>
       </TouchableOpacity>
     </Modal>
   );
