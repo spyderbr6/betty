@@ -411,9 +411,11 @@ export const BetCard: React.FC<BetCardProps> = ({
               </Text>
               <View style={styles.sideInfo}>
                 {userParticipation.hasJoined && userParticipation.side === 'A' ? (
-                  <Text style={styles.sideInfoText}>
-                    You • ${userParticipation.amount} • {sideACount}
-                  </Text>
+                  <View style={styles.sideParticipantsJoined}>
+                    <Text style={styles.sideInfoText}>You • ${userParticipation.amount} • </Text>
+                    <Ionicons name="people" size={12} color={colors.primary} />
+                    <Text style={styles.sideInfoText}>{sideACount}</Text>
+                  </View>
                 ) : (
                   <View style={styles.sideParticipants}>
                     <Ionicons name="people" size={12} color={colors.textSecondary} />
@@ -450,9 +452,11 @@ export const BetCard: React.FC<BetCardProps> = ({
               </Text>
               <View style={styles.sideInfo}>
                 {userParticipation.hasJoined && userParticipation.side === 'B' ? (
-                  <Text style={styles.sideInfoText}>
-                    You • ${userParticipation.amount} • {sideBCount}
-                  </Text>
+                  <View style={styles.sideParticipantsJoined}>
+                    <Text style={styles.sideInfoText}>You • ${userParticipation.amount} • </Text>
+                    <Ionicons name="people" size={12} color={colors.primary} />
+                    <Text style={styles.sideInfoText}>{sideBCount}</Text>
+                  </View>
                 ) : (
                   <View style={styles.sideParticipants}>
                     <Ionicons name="people" size={12} color={colors.textSecondary} />
@@ -753,6 +757,10 @@ const styles = StyleSheet.create({
     fontWeight: typography.fontWeight.semibold,
   },
   sideParticipants: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  sideParticipantsJoined: {
     flexDirection: 'row',
     alignItems: 'center',
   },
