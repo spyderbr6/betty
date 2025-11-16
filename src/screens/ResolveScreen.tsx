@@ -63,6 +63,7 @@ const transformAmplifyBet = (bet: any): Bet | null => {
     deadline: bet.deadline || new Date().toISOString(),
     winningSide: bet.winningSide || undefined,
     resolutionReason: bet.resolutionReason || undefined,
+    disputeWindowEndsAt: bet.disputeWindowEndsAt || undefined,
     createdAt: bet.createdAt || new Date().toISOString(),
     updatedAt: bet.updatedAt || new Date().toISOString(),
     participants: [],
@@ -280,16 +281,21 @@ export const ResolveScreen: React.FC = () => {
       const totalWinnerAmount = winners.reduce((sum, p) => sum + p.amount, 0);
       const totalPot = bet.totalPot;
 
-      // Update bet status to RESOLVED
+      // Calculate dispute window end time (48 hours from now)
+      const disputeWindowEndsAt = new Date();
+      disputeWindowEndsAt.setHours(disputeWindowEndsAt.getHours() + 48);
+
+      // Update bet status to PENDING_RESOLUTION (48-hour dispute window)
       await client.models.Bet.update({
         id: bet.id,
-        status: 'RESOLVED',
+        status: 'PENDING_RESOLUTION',
         winningSide: winningSide,
         resolutionReason: `Resolved by creator. Winner: ${winningSide === 'A' ? bet.odds.sideAName || 'Side A' : bet.odds.sideBName || 'Side B'}`,
+        disputeWindowEndsAt: disputeWindowEndsAt.toISOString(),
         updatedAt: new Date().toISOString()
       });
 
-      // Update participant payouts and user balances
+      // Create pending payout transactions (balance NOT updated yet - happens after 48h dispute window)
       if (bet.participants) {
         await Promise.all(
           bet.participants.map(async (participant) => {
@@ -302,21 +308,31 @@ export const ResolveScreen: React.FC = () => {
               payout = totalPot * winnerShare;
             }
 
-            // Update participant record
+            // Update participant record with calculated payout
             await client.models.Participant.update({
               id: participant.id,
               payout: payout,
               status: isWinner ? 'ACCEPTED' : 'DECLINED'
             });
 
-            // Record transaction for winners and losers
+            // Create PENDING transactions (will be completed by payout-processor after 48h)
             if (isWinner && payout > 0) {
-              await TransactionService.recordBetWinnings(
-                participant.userId,
-                payout,
-                bet.id,
-                participant.id
-              );
+              // Get current balance for transaction record
+              const { data: userData } = await client.models.User.get({ id: participant.userId });
+              const currentBalance = userData?.balance || 0;
+
+              await client.models.Transaction.create({
+                userId: participant.userId,
+                type: 'BET_WON',
+                status: 'PENDING', // NOT COMPLETED - awaiting dispute window
+                amount: payout,
+                balanceBefore: currentBalance,
+                balanceAfter: currentBalance + payout, // Projected balance
+                relatedBetId: bet.id,
+                relatedParticipantId: participant.id,
+                notes: `Bet winnings (pending 48h dispute window): ${bet.title}`,
+                createdAt: new Date().toISOString()
+              });
             } else if (!isWinner) {
               // Record lost bet transaction (zero amount, for tracking/dispute)
               await TransactionService.recordBetLoss(
@@ -326,19 +342,22 @@ export const ResolveScreen: React.FC = () => {
               );
             }
 
-            // Update user stats (win rate, total bets, etc.)
-            await updateUserStats(participant.userId, isWinner, participant.amount, payout);
-
-            // Send bet resolved notification to participant (but not to the resolver/creator)
+            // Send bet resolved notification to participant
             if (participant.userId !== user?.userId) {
               try {
-                await NotificationService.notifyBetResolved(
-                  participant.userId,
-                  bet.title,
-                  isWinner,
-                  payout,
-                  bet.id
-                );
+                await NotificationService.createNotification({
+                  userId: participant.userId,
+                  type: 'BET_RESOLVED',
+                  title: isWinner ? 'Bet Won! (Pending)' : 'Bet Lost',
+                  message: isWinner
+                    ? `You won $${payout.toFixed(2)} on "${bet.title}". Funds will be available in 48 hours if no disputes are filed.`
+                    : `You lost on "${bet.title}". The winner was ${winningSide === 'A' ? bet.odds.sideAName : bet.odds.sideBName}.`,
+                  priority: isWinner ? 'HIGH' : 'MEDIUM',
+                  actionType: 'view_bet',
+                  actionData: { betId: bet.id },
+                  relatedBetId: bet.id,
+                  relatedUserId: undefined
+                });
               } catch (notificationError) {
                 console.warn('Failed to send bet resolved notification to participant:', notificationError);
               }
@@ -353,6 +372,13 @@ export const ResolveScreen: React.FC = () => {
         ...prev,
         [bet.id]: null
       }));
+
+      // Show success message
+      Alert.alert(
+        'Bet Resolved',
+        `Winner: ${winningSide === 'A' ? bet.odds.sideAName || 'Side A' : bet.odds.sideBName || 'Side B'}\n\nPayouts are pending a 48-hour dispute window. If no disputes are filed, funds will be automatically distributed.`,
+        [{ text: 'OK' }]
+      );
 
     } catch (error) {
       console.error('Error resolving bet:', error);

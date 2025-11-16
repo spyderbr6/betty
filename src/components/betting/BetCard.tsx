@@ -22,6 +22,7 @@ import { formatCurrency } from '../../utils/formatting';
 import { useAuth } from '../../contexts/AuthContext';
 import { NotificationService } from '../../services/notificationService';
 import { TransactionService } from '../../services/transactionService';
+import { FileDisputeModal } from '../ui/FileDisputeModal';
 
 // Initialize GraphQL client
 const client = generateClient<Schema>();
@@ -100,6 +101,7 @@ export const BetCard: React.FC<BetCardProps> = ({
     amount: number;
   }>({ hasJoined: false, side: null, amount: 0 });
   const [timeRemaining, setTimeRemaining] = useState<string>('');
+  const [showDisputeModal, setShowDisputeModal] = useState(false);
 
   // Check if current user has joined this bet
   useEffect(() => {
@@ -453,6 +455,38 @@ export const BetCard: React.FC<BetCardProps> = ({
         </TouchableOpacity>
       </View>
 
+      {/* PENDING_RESOLUTION: Show dispute window countdown and File Dispute button */}
+      {bet.status === 'PENDING_RESOLUTION' && bet.disputeWindowEndsAt && (
+        <View style={styles.disputeWindowContainer}>
+          {/* Dispute Window Countdown */}
+          <View style={styles.disputeWindowHeader}>
+            <Ionicons name="time-outline" size={16} color={colors.warning} />
+            <Text style={styles.disputeWindowText}>
+              Payout in {formatTimeRemaining(bet.disputeWindowEndsAt)}
+            </Text>
+          </View>
+
+          {/* Resolution Reason */}
+          {bet.resolutionReason && (
+            <Text style={styles.resolutionReason} numberOfLines={2}>
+              {bet.resolutionReason}
+            </Text>
+          )}
+
+          {/* File Dispute Button - Only for participants, not creator */}
+          {userParticipation.hasJoined && !isCreator && (
+            <TouchableOpacity
+              style={styles.disputeButton}
+              onPress={() => setShowDisputeModal(true)}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="alert-circle-outline" size={18} color={colors.error} />
+              <Text style={styles.disputeButtonText}>File Dispute</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+
       {/* Action Buttons - Only for ACTIVE bets */}
       {isActive && (
         <View style={styles.actionRow}>
@@ -517,6 +551,18 @@ export const BetCard: React.FC<BetCardProps> = ({
           </Text>
         </View>
       )}
+
+      {/* File Dispute Modal */}
+      <FileDisputeModal
+        visible={showDisputeModal}
+        onClose={() => setShowDisputeModal(false)}
+        bet={bet}
+        userId={user?.userId || ''}
+        onDisputeFiled={() => {
+          // Refresh bet data or show success message
+          setShowDisputeModal(false);
+        }}
+      />
     </TouchableOpacity>
   );
 };
@@ -672,6 +718,53 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 11,
     fontWeight: typography.fontWeight.bold,
+  },
+
+  // Dispute Window (PENDING_RESOLUTION status)
+  disputeWindowContainer: {
+    backgroundColor: colors.warning + '10',
+    borderRadius: spacing.radius.sm,
+    padding: spacing.sm,
+    marginTop: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.warning + '30',
+  },
+  disputeWindowHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.xs,
+  },
+  disputeWindowText: {
+    ...textStyles.button,
+    color: colors.warning,
+    fontSize: typography.fontSize.sm,
+    marginLeft: spacing.xs / 2,
+    fontWeight: typography.fontWeight.semibold,
+  },
+  resolutionReason: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    fontSize: typography.fontSize.xs,
+    marginBottom: spacing.sm,
+    lineHeight: 16,
+  },
+  disputeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+    borderWidth: 1.5,
+    borderColor: colors.error,
+    borderRadius: spacing.radius.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+  },
+  disputeButtonText: {
+    ...textStyles.button,
+    color: colors.error,
+    fontSize: typography.fontSize.sm,
+    marginLeft: spacing.xs / 2,
+    fontWeight: typography.fontWeight.semibold,
   },
 
   // Action Row
