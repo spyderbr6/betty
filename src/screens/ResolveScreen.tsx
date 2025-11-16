@@ -86,20 +86,10 @@ export const ResolveScreen: React.FC = () => {
         setIsLoading(true);
         console.log('Fetching bets pending resolution for user:', user.userId);
 
-        // Fetch bets that need resolution (PENDING_RESOLUTION status)
+        // Fetch all PENDING_RESOLUTION bets (for everyone, not just creators)
         const { data: betsData } = await client.models.Bet.list({
           filter: {
-            or: [
-              { status: { eq: 'PENDING_RESOLUTION' } },
-              // Also include ACTIVE bets past their deadline that user created
-              {
-                and: [
-                  { status: { eq: 'ACTIVE' } },
-                  { creatorId: { eq: user.userId } },
-                  { deadline: { lt: new Date().toISOString() } }
-                ]
-              }
-            ]
+            status: { eq: 'PENDING_RESOLUTION' }
           },
         });
 
@@ -131,22 +121,31 @@ export const ResolveScreen: React.FC = () => {
 
           const validBets = betsWithParticipants.filter((bet): bet is Bet => bet !== null);
 
-          // Filter to only show bets the user can resolve (creator or participant) with participants
-          const resolvableBets = validBets.filter(bet => {
+          // Filter to only show bets where user is involved (creator or participant)
+          const userBets = validBets.filter(bet => {
             const isCreator = bet.creatorId === user.userId;
             const isParticipant = bet.participants?.some(p => p.userId === user.userId);
-            const hasParticipants = bet.participants && bet.participants.length > 0;
 
-            // Only show bets that have participants and user is involved
-            return hasParticipants && (isCreator || isParticipant);
+            // Show all PENDING_RESOLUTION bets where user is involved
+            return isCreator || isParticipant;
           });
 
-          // Sort by creation date (newest first)
-          const sortedBets = resolvableBets.sort((a, b) =>
-            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-          );
+          // Priority sorting: creator's bets needing resolution FIRST (no winningSide), then all others by creation date
+          const sortedBets = userBets.sort((a, b) => {
+            const aIsCreator = a.creatorId === user.userId;
+            const bIsCreator = b.creatorId === user.userId;
+            const aNeedsResolution = aIsCreator && !a.winningSide;
+            const bNeedsResolution = bIsCreator && !b.winningSide;
 
-          console.log('Found resolvable bets:', sortedBets.length);
+            // Priority 1: Bets needing resolution (creator's bets without winningSide) go first
+            if (aNeedsResolution && !bNeedsResolution) return -1;
+            if (!aNeedsResolution && bNeedsResolution) return 1;
+
+            // Priority 2: Sort by creation date (newest first)
+            return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+          });
+
+          console.log('Found pending resolution bets:', sortedBets.length);
           setPendingBets(sortedBets);
         }
       } catch (error) {
