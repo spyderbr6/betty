@@ -80,7 +80,6 @@ export const BetsScreen: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearch, setShowSearch] = useState(false);
-  const [selectedFilter, setSelectedFilter] = useState<'ACTIVE' | 'PENDING_RESOLUTION'>('ACTIVE');
   const [refreshing, setRefreshing] = useState(false);
   const [processingInvitations, setProcessingInvitations] = useState<Set<string>>(new Set());
 
@@ -627,7 +626,7 @@ export const BetsScreen: React.FC = () => {
   }, [user]);
 
 
-  // Filter for user's specific bets (created by user OR user is participant)
+  // Filter for user's ACTIVE bets only (created by user OR user is participant)
   const filteredBets = bets.filter(bet => {
     const isCreator = bet.creatorId === user?.userId;
     const isParticipant = bet.participants?.some(p => p.userId === user?.userId);
@@ -635,8 +634,8 @@ export const BetsScreen: React.FC = () => {
     // First filter by user involvement
     if (!(isCreator || isParticipant)) return false;
 
-    // Then filter by status
-    if (bet.status !== selectedFilter) return false;
+    // Only show ACTIVE bets (PENDING_RESOLUTION moved to Results tab)
+    if (bet.status !== 'ACTIVE') return false;
 
     // Finally filter by search query if one exists
     if (searchQuery.trim()) {
@@ -650,21 +649,6 @@ export const BetsScreen: React.FC = () => {
 
     return true;
   });
-
-
-  // Status filter options (only showing actionable bets - ACTIVE and PENDING_RESOLUTION)
-  const statusFilters = [
-    { id: 'ACTIVE', label: 'Active', count: bets.filter(bet => {
-      const isCreator = bet.creatorId === user?.userId;
-      const isParticipant = bet.participants?.some(p => p.userId === user?.userId);
-      return (isCreator || isParticipant) && bet.status === 'ACTIVE';
-    }).length },
-    { id: 'PENDING_RESOLUTION', label: 'Pending', count: bets.filter(bet => {
-      const isCreator = bet.creatorId === user?.userId;
-      const isParticipant = bet.participants?.some(p => p.userId === user?.userId);
-      return (isCreator || isParticipant) && bet.status === 'PENDING_RESOLUTION';
-    }).length },
-  ];
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -715,42 +699,9 @@ export const BetsScreen: React.FC = () => {
           </>
         )}
 
-        {/* Status Filters with Search Icon */}
+        {/* Search Icon */}
         <View style={styles.filtersContainer}>
           <View style={styles.filtersRow}>
-            {/* Filter Buttons */}
-            {statusFilters.map((filter) => (
-              <TouchableOpacity
-                key={filter.id}
-                style={[
-                  styles.filterButton,
-                  selectedFilter === filter.id && styles.filterButtonActive
-                ]}
-                onPress={() => setSelectedFilter(filter.id as any)}
-              >
-                <Text style={[
-                  styles.filterButtonText,
-                  selectedFilter === filter.id && styles.filterButtonTextActive
-                ]}>
-                  {filter.label}
-                </Text>
-                {filter.count > 0 && (
-                  <View style={[
-                    styles.filterBadge,
-                    selectedFilter === filter.id && styles.filterBadgeActive
-                  ]}>
-                    <Text style={[
-                      styles.filterBadgeText,
-                      selectedFilter === filter.id && styles.filterBadgeTextActive
-                    ]}>
-                      {filter.count}
-                    </Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-            ))}
-
-            {/* Search Icon Button */}
             <TouchableOpacity
               style={styles.searchIconButton}
               onPress={handleSearchToggle}
@@ -820,21 +771,10 @@ export const BetsScreen: React.FC = () => {
           ))
         ) : (
           <View style={styles.emptyContainer}>
-            {selectedFilter === 'PENDING_RESOLUTION' ? (
-              <>
-                <Text style={styles.emptyTitle}>No Bets Awaiting Resolution</Text>
-                <Text style={styles.emptyDescription}>
-                  When your bets finish and need resolution, they'll appear here.
-                </Text>
-              </>
-            ) : (
-              <>
-                <Text style={styles.emptyTitle}>No {selectedFilter.toLowerCase()} Bets</Text>
-                <Text style={styles.emptyDescription}>
-                  You don't have any {selectedFilter.toLowerCase()} bets at the moment.
-                </Text>
-              </>
-            )}
+            <Text style={styles.emptyTitle}>No Active Bets</Text>
+            <Text style={styles.emptyDescription}>
+              You don't have any active bets at the moment. Create or join a bet to get started!
+            </Text>
           </View>
         )}
 

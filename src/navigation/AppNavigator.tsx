@@ -62,36 +62,36 @@ const TabNavigator = () => {
       }}
       initialRouteName="Bets"
     >
-      <Tab.Screen 
-        name="Bets" 
+      <Tab.Screen
+        name="Bets"
         component={BetsStackNavigator}
         options={{
-          tabBarLabel: 'Bets',
+          tabBarLabel: 'Active',
         }}
       />
-      <Tab.Screen 
-        name="Live" 
-        component={LiveEventsScreen}
+      <Tab.Screen
+        name="Resolve"
+        component={ResolveScreen}
         options={{
-          tabBarLabel: 'Live',
+          tabBarLabel: 'Results',
         }}
       />
-      <Tab.Screen 
-        name="Create" 
+      <Tab.Screen
+        name="Create"
         component={CreateBetScreen}
         options={{
           tabBarLabel: 'Create',
         }}
       />
-      <Tab.Screen 
-        name="Resolve" 
-        component={ResolveScreen}
+      <Tab.Screen
+        name="Live"
+        component={LiveEventsScreen}
         options={{
-          tabBarLabel: 'Resolve',
+          tabBarLabel: 'Join',
         }}
       />
-      <Tab.Screen 
-        name="Account" 
+      <Tab.Screen
+        name="Account"
         component={AccountScreen}
         options={{
           tabBarLabel: 'Account',
