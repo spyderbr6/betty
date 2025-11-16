@@ -2,6 +2,7 @@ import { type ClientSchema, a, defineData } from "@aws-amplify/backend";
 import { scheduledBetChecker } from "../functions/scheduled-bet-checker/resource";
 import { pushNotificationSender } from "../functions/push-notification-sender/resource";
 import { eventFetcher } from "../functions/event-fetcher/resource";
+import { payoutProcessor } from "../functions/payout-processor/resource";
 
 /*== SIDEBET BETTING PLATFORM SCHEMA =======================================
 This schema defines the core data models for the SideBet peer-to-peer betting
@@ -173,6 +174,7 @@ const schema = a.schema({
       deadline: a.datetime().required(),
       winningSide: a.string(), // Which side won
       resolutionReason: a.string(), // Why the bet was resolved this way
+      disputeWindowEndsAt: a.datetime(), // When the 48-hour dispute window closes
       eventId: a.id(), // Optional link to live event
       isPrivate: a.boolean().default(false), // Private bets only visible to invited users
       createdAt: a.datetime(),
@@ -182,7 +184,8 @@ const schema = a.schema({
       participants: a.hasMany('Participant', 'betId'),
       evidence: a.hasMany('Evidence', 'betId'),
       invitations: a.hasMany('BetInvitation', 'betId'),
-      notifications: a.hasMany('Notification', 'relatedBetId')
+      notifications: a.hasMany('Notification', 'relatedBetId'),
+      disputes: a.hasMany('Dispute', 'betId')
     })
     .authorization((allow) => [
       allow.owner().to(['create', 'read', 'update', 'delete']),
@@ -223,6 +226,53 @@ const schema = a.schema({
     .authorization((allow) => [
       allow.owner(),
       allow.authenticated().to(['read'])
+    ]),
+
+  // Dispute system for challenging bet resolutions
+  Dispute: a
+    .model({
+      id: a.id(),
+      betId: a.id().required(),
+      filedBy: a.id().required(),          // User who filed the dispute
+      againstUserId: a.id().required(),    // Usually the bet creator
+      reason: a.enum([
+        'INCORRECT_RESOLUTION',             // Winner picked wrong
+        'NO_RESOLUTION',                    // Creator never resolved
+        'EVIDENCE_IGNORED',                 // Creator ignored valid evidence
+        'OTHER'
+      ]),
+      description: a.string().required(),  // User's explanation
+      status: a.enum(['PENDING', 'UNDER_REVIEW', 'RESOLVED_FOR_FILER', 'RESOLVED_FOR_CREATOR', 'DISMISSED']),
+      evidenceUrls: a.string().array(),    // S3 URLs for supporting evidence
+      adminNotes: a.string(),              // Admin's internal notes
+      resolvedBy: a.id(),                  // Admin user who resolved
+      resolution: a.string(),              // Admin's explanation of decision
+      createdAt: a.datetime(),
+      resolvedAt: a.datetime(),
+      // Relations
+      bet: a.belongsTo('Bet', 'betId'),
+    })
+    .authorization((allow) => [
+      allow.owner().to(['create', 'read']),
+      allow.authenticated().to(['read', 'create', 'update']) // Admins can update to resolve
+    ]),
+
+  // Trust score change history for transparency and auditing
+  TrustScoreHistory: a
+    .model({
+      id: a.id(),
+      userId: a.id().required(),
+      change: a.float().required(),        // e.g., +0.2, -3.0
+      newScore: a.float().required(),      // Score after this change
+      reason: a.string().required(),       // Human-readable explanation
+      relatedBetId: a.id(),               // If related to bet resolution
+      relatedTransactionId: a.id(),       // If related to transaction
+      relatedDisputeId: a.id(),           // If related to dispute
+      createdAt: a.datetime(),
+    })
+    .authorization((allow) => [
+      allow.owner().to(['read']),
+      allow.authenticated().to(['read', 'create']) // System can create entries
     ]),
 
   // For tracking user statistics and leaderboards
@@ -483,6 +533,7 @@ const schema = a.schema({
   allow.resource(scheduledBetChecker).to(["query", "listen", "mutate"]),
   allow.resource(pushNotificationSender).to(["query", "listen", "mutate"]),
   allow.resource(eventFetcher).to(["query", "listen", "mutate"]),
+  allow.resource(payoutProcessor).to(["query", "listen", "mutate"]),
 ]);
 
 export type Schema = ClientSchema<typeof schema>;
