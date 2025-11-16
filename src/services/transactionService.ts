@@ -7,6 +7,7 @@
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
 import { NotificationService } from './notificationService';
+import { TrustScoreService } from './trustScoreService';
 
 const client = generateClient<Schema>();
 
@@ -457,6 +458,18 @@ export class TransactionService {
           message: `Your deposit of $${transaction.amount} has been completed`,
           priority: 'HIGH',
         });
+
+        // Apply trust score reward for successful deposit (+0.1)
+        try {
+          await TrustScoreService.rewardForSuccessfulDeposit(
+            transaction.userId!,
+            transactionId,
+            transaction.amount!
+          );
+          console.log('[Transaction] Applied +0.1 trust score reward for successful deposit');
+        } catch (trustError) {
+          console.error('[Transaction] Error updating trust score for deposit:', trustError);
+        }
       }
 
       // If completing a withdrawal, update user balance
@@ -519,6 +532,18 @@ export class TransactionService {
           message: `Your withdrawal of $${transaction.amount} has been sent`,
           priority: 'HIGH',
         });
+
+        // Apply trust score reward for successful withdrawal (+0.15)
+        try {
+          await TrustScoreService.rewardForSuccessfulWithdrawal(
+            transaction.userId!,
+            transactionId,
+            transaction.amount!
+          );
+          console.log('[Transaction] Applied +0.15 trust score reward for successful withdrawal');
+        } catch (trustError) {
+          console.error('[Transaction] Error updating trust score for withdrawal:', trustError);
+        }
       }
 
       // If deposit/withdrawal failed, send notification
@@ -534,6 +559,18 @@ export class TransactionService {
           message: failureReason || 'Transaction could not be completed',
           priority: 'HIGH',
         });
+
+        // Apply trust score penalty for failed transaction (-3.0) - indicates fraud attempt
+        try {
+          await TrustScoreService.penaltyForFailedTransaction(
+            transaction.userId!,
+            transactionId,
+            transaction.type
+          );
+          console.log('[Transaction] Applied -3.0 trust score penalty for failed transaction (fraud attempt)');
+        } catch (trustError) {
+          console.error('[Transaction] Error updating trust score for failed transaction:', trustError);
+        }
       }
 
       console.log('[Transaction] Status updated successfully:', {

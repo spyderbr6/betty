@@ -176,7 +176,9 @@ async function processCompletedDisputeWindows(): Promise<{
           try {
             const { data: creator } = await client.models.User.get({ id: bet.creatorId });
             if (creator) {
-              const newTrustScore = Math.min(10, (creator.trustScore || 5.0) + 0.2);
+              const currentScore = creator.trustScore || 5.0;
+              const change = 0.2;
+              const newTrustScore = Math.max(0, Math.min(10, currentScore + change));
 
               await client.models.User.update({
                 id: bet.creatorId,
@@ -186,14 +188,17 @@ async function processCompletedDisputeWindows(): Promise<{
               // Record trust score change
               await client.models.TrustScoreHistory.create({
                 userId: bet.creatorId,
-                change: 0.2,
+                change: change,
                 newScore: newTrustScore,
                 reason: `Bet "${bet.title}" resolved fairly without disputes`,
                 relatedBetId: bet.id,
                 createdAt: new Date().toISOString()
               });
 
-              console.log(`⭐ Trust score reward applied to creator ${bet.creatorId}: ${creator.trustScore} → ${newTrustScore}`);
+              console.log(`⭐ Trust score reward applied to creator ${bet.creatorId}: ${currentScore.toFixed(2)} → ${newTrustScore.toFixed(2)} (+${change})`);
+
+              // Check for milestone rewards
+              await checkAndApplyMilestones(bet.creatorId);
             }
           } catch (trustError) {
             console.warn(`Failed to update trust score for creator ${bet.creatorId}:`, trustError);
@@ -218,5 +223,66 @@ async function processCompletedDisputeWindows(): Promise<{
   } catch (error) {
     console.error('❌ Error in processCompletedDisputeWindows:', error);
     throw error;
+  }
+}
+
+/**
+ * Check and apply milestone rewards for clean bet resolutions
+ * Milestones: 10 bets (+0.5), 25 bets (+1.0), 50 bets (+1.5)
+ */
+async function checkAndApplyMilestones(userId: string): Promise<void> {
+  try {
+    // Get count of resolved bets created by this user
+    const { data: resolvedBets } = await client.models.Bet.list({
+      filter: {
+        and: [
+          { creatorId: { eq: userId } },
+          { status: { eq: 'RESOLVED' } }
+        ]
+      }
+    });
+
+    const resolvedCount = resolvedBets?.length || 0;
+
+    // Check if user just hit a milestone (exact count)
+    let milestoneReward = 0;
+    let milestoneName = '';
+
+    if (resolvedCount === 10) {
+      milestoneReward = 0.5;
+      milestoneName = '10 bets resolved fairly';
+    } else if (resolvedCount === 25) {
+      milestoneReward = 1.0;
+      milestoneName = '25 bets resolved fairly';
+    } else if (resolvedCount === 50) {
+      milestoneReward = 1.5;
+      milestoneName = '50 bets resolved fairly - super user status!';
+    }
+
+    // If milestone reached, apply reward
+    if (milestoneReward > 0) {
+      const { data: user } = await client.models.User.get({ id: userId });
+      if (user) {
+        const currentScore = user.trustScore || 5.0;
+        const newTrustScore = Math.max(0, Math.min(10, currentScore + milestoneReward));
+
+        await client.models.User.update({
+          id: userId,
+          trustScore: newTrustScore
+        });
+
+        await client.models.TrustScoreHistory.create({
+          userId: userId,
+          change: milestoneReward,
+          newScore: newTrustScore,
+          reason: `Milestone: ${milestoneName}`,
+          createdAt: new Date().toISOString()
+        });
+
+        console.log(`🎯 Milestone reward applied to user ${userId}: ${milestoneName} (+${milestoneReward})`);
+      }
+    }
+  } catch (error) {
+    console.warn(`Failed to check milestones for user ${userId}:`, error);
   }
 }

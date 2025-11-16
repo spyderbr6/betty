@@ -7,6 +7,7 @@
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
 import { NotificationService } from './notificationService';
+import { TrustScoreService } from './trustScoreService';
 
 const client = generateClient<Schema>();
 
@@ -343,6 +344,27 @@ export class DisputeService {
           status: 'PENDING_RESOLUTION'
         });
 
+        // Apply trust score penalties and rewards
+        try {
+          // Creator loses trust for resolving bet unfairly (-2.0)
+          await TrustScoreService.penaltyForLostDisputeCreator(
+            dispute.againstUserId,
+            dispute.betId,
+            disputeId
+          );
+          console.log('[Dispute] Applied -2.0 penalty to creator for losing dispute');
+
+          // Filer gains trust for correctly challenging unfair resolution (+0.3)
+          await TrustScoreService.rewardForWonDisputeParticipant(
+            dispute.filedBy,
+            dispute.betId,
+            disputeId
+          );
+          console.log('[Dispute] Applied +0.3 reward to filer for winning dispute');
+        } catch (trustError) {
+          console.error('[Dispute] Error updating trust scores:', trustError);
+        }
+
         // Send notification to filer
         await NotificationService.createNotification({
           userId: dispute.filedBy,
@@ -373,6 +395,27 @@ export class DisputeService {
           id: dispute.betId,
           status: 'PENDING_RESOLUTION' // Will be processed by payout Lambda
         });
+
+        // Apply trust score penalties and rewards
+        try {
+          // Creator gains trust for correct resolution (+0.2)
+          await TrustScoreService.rewardForDisputeDismissed(
+            dispute.againstUserId,
+            dispute.betId,
+            disputeId
+          );
+          console.log('[Dispute] Applied +0.2 reward to creator for dispute dismissed');
+
+          // Filer loses trust for filing false dispute (-0.4)
+          await TrustScoreService.penaltyForLostDisputeParticipant(
+            dispute.filedBy,
+            dispute.betId,
+            disputeId
+          );
+          console.log('[Dispute] Applied -0.4 penalty to filer for losing dispute');
+        } catch (trustError) {
+          console.error('[Dispute] Error updating trust scores:', trustError);
+        }
 
         // Send notification to filer
         await NotificationService.createNotification({
