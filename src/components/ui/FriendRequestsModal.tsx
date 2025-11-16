@@ -128,7 +128,7 @@ export const FriendRequestsModal: React.FC<FriendRequestsModalProps> = ({
       setFriendRequests(validRequests);
     } catch (error) {
       console.error('Error fetching friend requests:', error);
-      Alert.alert('Error', 'Failed to load friend requests. Please try again.');
+      showAlert('Error', 'Failed to load friend requests. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -170,10 +170,10 @@ export const FriendRequestsModal: React.FC<FriendRequestsModalProps> = ({
       setFriendRequests(prev => prev.filter(req => req.id !== request.id));
 
       onRequestHandled?.();
-      Alert.alert('Success', `You are now friends with ${request.fromUser.displayName || request.fromUser.email}!`);
+      showAlert('Success', `You are now friends with ${request.fromUser.displayName || request.fromUser.email}!`);
     } catch (error) {
       console.error('Error accepting friend request:', error);
-      Alert.alert('Error', 'Failed to accept friend request. Please try again.');
+      showAlert('Error', 'Failed to accept friend request. Please try again.');
     } finally {
       setProcessingRequests(prev => {
         const newSet = new Set(prev);
@@ -220,10 +220,10 @@ export const FriendRequestsModal: React.FC<FriendRequestsModalProps> = ({
       setFriendRequests(prev => prev.filter(req => req.id !== request.id));
 
       onRequestHandled?.();
-      Alert.alert('Request Declined', `Friend request from ${request.fromUser.displayName || request.fromUser.email} has been declined.`);
+      showAlert('Request Declined', `Friend request from ${request.fromUser.displayName || request.fromUser.email} has been declined.`);
     } catch (error) {
       console.error('Error declining friend request:', error);
-      Alert.alert('Error', 'Failed to decline friend request. Please try again.');
+      showAlert('Error', 'Failed to decline friend request. Please try again.');
     } finally {
       setProcessingRequests(prev => {
         const newSet = new Set(prev);

@@ -172,7 +172,7 @@ export const AddFriendModal: React.FC<AddFriendModalProps> = ({
       setSearchResults(resultsWithStatus);
     } catch (error) {
       console.error('Error searching users:', error);
-      Alert.alert('Error', 'Failed to search users. Please try again.');
+      showAlert('Error', 'Failed to search users. Please try again.');
     } finally {
       setIsSearching(false);
     }
@@ -215,10 +215,10 @@ export const AddFriendModal: React.FC<AddFriendModalProps> = ({
       );
 
       onRequestSent?.();
-      Alert.alert('Success', `Friend request sent to ${targetUser.displayName || targetUser.email}!`);
+      showAlert('Success', `Friend request sent to ${targetUser.displayName || targetUser.email}!`);
     } catch (error) {
       console.error('Error sending friend request:', error);
-      Alert.alert('Error', 'Failed to send friend request. Please try again.');
+      showAlert('Error', 'Failed to send friend request. Please try again.');
     } finally {
       setSendingRequests(prev => {
         const newSet = new Set(prev);

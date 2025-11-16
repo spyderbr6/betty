@@ -95,12 +95,12 @@ export const OnboardingProfilePictureStep: React.FC<OnboardingProfilePictureStep
       } else {
         console.error('[OnboardingProfilePicture] Upload failed:', result.error);
         setImageError(true);
-        Alert.alert('Error', result.error || 'Failed to upload profile picture.');
+        showAlert('Error', result.error || 'Failed to upload profile picture.');
       }
     } catch (error) {
       console.error('[Onboarding] Failed to upload profile picture:', error);
       setImageError(true);
-      Alert.alert('Error', 'Failed to upload profile picture. Please try again.');
+      showAlert('Error', 'Failed to upload profile picture. Please try again.');
     } finally {
       setIsUploading(false);
     }

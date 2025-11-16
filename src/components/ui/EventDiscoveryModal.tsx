@@ -80,7 +80,7 @@ export const EventDiscoveryModal: React.FC<EventDiscoveryModalProps> = ({
       console.log(`[EventDiscoveryModal] Loaded ${live.length} live, ${upcoming.length} upcoming events`);
     } catch (error) {
       console.error('[EventDiscoveryModal] Error loading events:', error);
-      Alert.alert('Error', 'Failed to load events. Please try again.');
+      showAlert('Error', 'Failed to load events. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -121,7 +121,7 @@ export const EventDiscoveryModal: React.FC<EventDiscoveryModalProps> = ({
       const checkIn = await checkIntoEvent(currentUserId, event.id);
 
       if (!checkIn) {
-        Alert.alert('Error', 'Failed to check in. Please try again.');
+        showAlert('Error', 'Failed to check in. Please try again.');
         setCheckingIn(null);
         return;
       }
@@ -136,14 +136,14 @@ export const EventDiscoveryModal: React.FC<EventDiscoveryModalProps> = ({
 
       // Show success message (optional - non-blocking)
       setTimeout(() => {
-        Alert.alert(
+        showAlert(
           'Checked In!',
           `You're now checked into ${event.homeTeam} vs ${event.awayTeam}`
         );
       }, 300); // Small delay to allow modal close animation
     } catch (error) {
       console.error('Error checking in:', error);
-      Alert.alert('Error', 'Failed to check in. Please try again.');
+      showAlert('Error', 'Failed to check in. Please try again.');
       setCheckingIn(null);
     }
   };

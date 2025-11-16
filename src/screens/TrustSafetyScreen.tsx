@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Modal, TextInput, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Modal, TextInput, ActivityIndicator, } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, textStyles, typography, commonStyles } from '../styles';
@@ -266,7 +266,7 @@ export const TrustSafetyScreen: React.FC<TrustSafetyScreenProps> = ({ onClose })
         onSuccess={async () => {
           setShowPhoneVerifyModal(false);
           await loadPhoneNumber();
-          Alert.alert('Success', 'Your phone number has been verified successfully!');
+          showAlert('Success', 'Your phone number has been verified successfully!');
         }}
         phoneNumber={phoneNumber}
       />
@@ -576,7 +576,7 @@ const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({ visible, onCl
     setIsLoading(true);
     try {
       await updatePassword({ oldPassword, newPassword });
-      Alert.alert(
+      showAlert(
         'Success',
         'Your password has been changed successfully.',
         [{ text: 'OK', onPress: handleClose }]
@@ -801,7 +801,7 @@ const TwoFactorAuthModal: React.FC<TwoFactorAuthModalProps> = ({ visible, onClos
     try {
       await verifyTOTPSetup({ code: verificationCode });
       await updateMFAPreference({ totp: 'PREFERRED' });
-      Alert.alert(
+      showAlert(
         'Success',
         'Two-factor authentication has been enabled successfully.',
         [{ text: 'OK', onPress: handleClose }]
@@ -819,7 +819,7 @@ const TwoFactorAuthModal: React.FC<TwoFactorAuthModalProps> = ({ visible, onClos
   };
 
   const handleDisable2FA = () => {
-    Alert.alert(
+    showAlert(
       'Disable 2FA',
       'Are you sure you want to disable two-factor authentication? This will make your account less secure.',
       [
@@ -831,10 +831,10 @@ const TwoFactorAuthModal: React.FC<TwoFactorAuthModalProps> = ({ visible, onClos
             setIsLoading(true);
             try {
               await updateMFAPreference({ totp: 'DISABLED' });
-              Alert.alert('Success', '2FA has been disabled', [{ text: 'OK', onPress: handleClose }]);
+              showAlert('Success', '2FA has been disabled', [{ text: 'OK', onPress: handleClose }]);
             } catch (err: any) {
               console.error('Error disabling 2FA:', err);
-              Alert.alert('Error', err.message || 'Failed to disable 2FA');
+              showAlert('Error', err.message || 'Failed to disable 2FA');
             } finally {
               setIsLoading(false);
             }

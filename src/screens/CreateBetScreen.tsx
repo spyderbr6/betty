@@ -306,24 +306,24 @@ export const CreateBetScreen: React.FC = () => {
 
   const handleCreateBet = async () => {
     if (!betTitle.trim() || !betDescription.trim() || !betAmount.trim()) {
-      Alert.alert('Missing Information', 'Please fill in all required fields.');
+      showAlert('Missing Information', 'Please fill in all required fields.');
       return;
     }
 
     const amount = parseFloat(betAmount);
     if (isNaN(amount) || amount <= 0) {
-      Alert.alert('Invalid Amount', 'Please enter a valid bet amount.');
+      showAlert('Invalid Amount', 'Please enter a valid bet amount.');
       return;
     }
 
     if (!selectedSide) {
-      Alert.alert('Pick a Side', 'Please choose Side A or Side B to join your bet.');
+      showAlert('Pick a Side', 'Please choose Side A or Side B to join your bet.');
       return;
     }
 
     const deadlineMinutes = parseInt(deadline);
     if (isNaN(deadlineMinutes) || deadlineMinutes <= 0) {
-      Alert.alert('Invalid Deadline', 'Please enter a valid deadline in minutes.');
+      showAlert('Invalid Deadline', 'Please enter a valid deadline in minutes.');
       return;
     }
 
@@ -338,7 +338,7 @@ export const CreateBetScreen: React.FC = () => {
       const currentBalance = userData?.balance || 0;
 
       if (currentBalance < amount) {
-        Alert.alert(
+        showAlert(
           'Insufficient Funds',
           `You need $${amount.toFixed(2)} to create this bet, but you only have $${currentBalance.toFixed(2)}. Please add funds to your account.`
         );
@@ -470,7 +470,7 @@ export const CreateBetScreen: React.FC = () => {
     } catch (error) {
       console.error('Error creating bet:', error);
       console.error('Full error object:', JSON.stringify(error, null, 2));
-      Alert.alert(
+      showAlert(
         'Error',
         'Failed to create bet. Please try again.',
         [{ text: 'OK' }]

@@ -40,12 +40,12 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({
   const validateForm = () => {
     const trimmedName = displayName.trim();
     if (trimmedName.length < 2) {
-      Alert.alert('Invalid Name', 'Display name must be at least 2 characters long.');
+      showAlert('Invalid Name', 'Display name must be at least 2 characters long.');
       setIsValid(false);
       return false;
     }
     if (trimmedName.length > 30) {
-      Alert.alert('Invalid Name', 'Display name must be less than 30 characters.');
+      showAlert('Invalid Name', 'Display name must be less than 30 characters.');
       setIsValid(false);
       return false;
     }
@@ -64,7 +64,7 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({
       await onSave(profileData);
     } catch (error) {
       console.error('Error saving profile:', error);
-      Alert.alert('Error', 'Failed to save profile. Please try again.');
+      showAlert('Error', 'Failed to save profile. Please try again.');
     }
   };
 
@@ -89,14 +89,14 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({
           // Success alert is shown by the parent component
         } catch (saveError) {
           console.error('Error saving profile picture:', saveError);
-          Alert.alert('Error', 'Profile picture uploaded but failed to save. Please try clicking Save Changes.');
+          showAlert('Error', 'Profile picture uploaded but failed to save. Please try clicking Save Changes.');
         }
       } else {
-        Alert.alert('Error', result.error || 'Failed to update profile picture');
+        showAlert('Error', result.error || 'Failed to update profile picture');
       }
     } catch (error) {
       console.error('Error updating profile picture:', error);
-      Alert.alert('Error', 'Failed to update profile picture. Please try again.');
+      showAlert('Error', 'Failed to update profile picture. Please try again.');
     } finally {
       setIsUploadingImage(false);
     }

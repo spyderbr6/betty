@@ -14,7 +14,6 @@ import {
   ActivityIndicator,
   ScrollView,
   RefreshControl,
-  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -27,6 +26,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { NotificationService } from '../services/notificationService';
 import { TransactionService } from '../services/transactionService';
 import { bulkLoadUserBetsWithParticipants, clearBulkLoadingCache } from '../services/bulkLoadingService';
+import { showAlert } from '../components/ui/CustomAlert';
 
 // Initialize GraphQL client
 const client = generateClient<Schema>();
@@ -266,7 +266,7 @@ export const BetsScreen: React.FC = () => {
       const { data: currentBet } = await client.models.Bet.get({ id: invitation.betId });
 
       if (!currentBet) {
-        Alert.alert('Error', 'This bet no longer exists.');
+        showAlert('Error', 'This bet no longer exists.');
         return;
       }
 
@@ -289,7 +289,7 @@ export const BetsScreen: React.FC = () => {
           default:
             statusMessage = 'This bet is no longer available to join.';
         }
-        Alert.alert('Bet Not Available', statusMessage);
+        showAlert('Bet Not Available', statusMessage);
         // Remove the invalid invitation from the list
         setBetInvitations(prev => prev.filter(inv => inv.id !== invitation.id));
         return;
@@ -299,7 +299,7 @@ export const BetsScreen: React.FC = () => {
       const { data: currentUser } = await client.models.User.get({ id: user.userId });
 
       if (!currentUser) {
-        Alert.alert('Error', 'Unable to verify your account. Please try again.');
+        showAlert('Error', 'Unable to verify your account. Please try again.');
         return;
       }
 
@@ -307,7 +307,7 @@ export const BetsScreen: React.FC = () => {
 
       // Check if user has sufficient balance
       if (currentBalance < betAmount) {
-        Alert.alert(
+        showAlert(
           'Insufficient Balance',
           `You need $${betAmount.toFixed(2)} to join this bet, but you only have $${currentBalance.toFixed(2)}.`
         );
@@ -427,7 +427,7 @@ export const BetsScreen: React.FC = () => {
       }, 3000);
     } catch (error) {
       console.error('Error accepting bet invitation:', error);
-      Alert.alert('Error', 'Failed to accept invitation. Please try again.');
+      showAlert('Error', 'Failed to accept invitation. Please try again.');
     } finally {
       setProcessingInvitations(prev => {
         const newSet = new Set(prev);
@@ -475,10 +475,10 @@ export const BetsScreen: React.FC = () => {
       // Remove from local invitations
       setBetInvitations(prev => prev.filter(inv => inv.id !== invitation.id));
 
-      Alert.alert('Declined', 'Bet invitation declined.');
+      showAlert('Declined', 'Bet invitation declined.');
     } catch (error) {
       console.error('Error declining bet invitation:', error);
-      Alert.alert('Error', 'Failed to decline invitation. Please try again.');
+      showAlert('Error', 'Failed to decline invitation. Please try again.');
     } finally {
       setProcessingInvitations(prev => {
         const newSet = new Set(prev);

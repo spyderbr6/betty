@@ -89,11 +89,11 @@ export const AddFundsModal: React.FC<AddFundsModalProps> = ({
   const validateAmount = (): boolean => {
     const numAmount = parseFloat(amount);
     if (isNaN(numAmount) || numAmount < MIN_DEPOSIT) {
-      Alert.alert('Invalid Amount', `Minimum deposit is $${MIN_DEPOSIT.toFixed(2)}`);
+      showAlert('Invalid Amount', `Minimum deposit is $${MIN_DEPOSIT.toFixed(2)}`);
       return false;
     }
     if (numAmount > MAX_DEPOSIT) {
-      Alert.alert('Invalid Amount', `Maximum deposit is $${MAX_DEPOSIT.toFixed(2)}`);
+      showAlert('Invalid Amount', `Maximum deposit is $${MAX_DEPOSIT.toFixed(2)}`);
       return false;
     }
     return true;
@@ -102,14 +102,14 @@ export const AddFundsModal: React.FC<AddFundsModalProps> = ({
   const handleContinue = () => {
     if (step === 'select_method') {
       if (!selectedPaymentMethod) {
-        Alert.alert('Select Payment Method', 'Please select a Venmo account or add a new one');
+        showAlert('Select Payment Method', 'Please select a Venmo account or add a new one');
         return;
       }
       setStep('enter_details');
     } else if (step === 'enter_details') {
       if (!validateAmount()) return;
       if (!venmoTransactionId.trim()) {
-        Alert.alert('Transaction ID Required', 'Please enter your Venmo transaction ID');
+        showAlert('Transaction ID Required', 'Please enter your Venmo transaction ID');
         return;
       }
       setStep('confirmation');
@@ -143,7 +143,7 @@ export const AddFundsModal: React.FC<AddFundsModalProps> = ({
 
       if (!transaction) {
         setIsSubmitting(false);
-        Alert.alert('Error', 'Failed to create deposit request. Please try again.');
+        showAlert('Error', 'Failed to create deposit request. Please try again.');
         return;
       }
 
@@ -155,7 +155,7 @@ export const AddFundsModal: React.FC<AddFundsModalProps> = ({
 
       // Show success message after modal is closed
       setTimeout(() => {
-        Alert.alert(
+        showAlert(
           'Deposit Request Submitted',
           'Your deposit request has been submitted! We\'ll verify your Venmo payment and credit your account shortly. You\'ll receive a notification when it\'s complete.',
           [{ text: 'OK' }]
@@ -167,7 +167,7 @@ export const AddFundsModal: React.FC<AddFundsModalProps> = ({
     } catch (error) {
       console.error('Error submitting deposit:', error);
       setIsSubmitting(false);
-      Alert.alert('Error', 'Failed to submit deposit request. Please try again.');
+      showAlert('Error', 'Failed to submit deposit request. Please try again.');
     }
   };
 

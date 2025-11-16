@@ -186,7 +186,7 @@ export const AccountScreen: React.FC = () => {
 
     } catch (error) {
       console.error('Error fetching user stats:', error);
-      Alert.alert(
+      showAlert(
         'Error',
         'Failed to load user stats. Please try again.',
         [{ text: 'OK' }]
@@ -244,7 +244,7 @@ export const AccountScreen: React.FC = () => {
       await signOut();
     } catch (error) {
       console.error('Sign out error:', error);
-      Alert.alert(
+      showAlert(
         'Error',
         'Failed to sign out. Please try again.',
         [{ text: 'OK' }]
@@ -331,11 +331,11 @@ export const AccountScreen: React.FC = () => {
         // Refresh user stats to ensure profile picture is updated everywhere
         await fetchUserStats();
 
-        Alert.alert('Success', 'Profile updated successfully!');
+        showAlert('Success', 'Profile updated successfully!');
       }
     } catch (error) {
       console.error('Error updating profile:', error);
-      Alert.alert('Error', 'Failed to update profile. Please try again.');
+      showAlert('Error', 'Failed to update profile. Please try again.');
     } finally {
       setIsUpdatingProfile(false);
     }

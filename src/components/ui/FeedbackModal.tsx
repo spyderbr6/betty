@@ -53,7 +53,7 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({
 
   const handleSubmit = async () => {
     if (!title.trim() || !description.trim()) {
-      Alert.alert('Missing Information', 'Please provide both a title and description for your feedback.');
+      showAlert('Missing Information', 'Please provide both a title and description for your feedback.');
       return;
     }
 
@@ -71,14 +71,14 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({
       setType('improvement');
       onClose();
 
-      Alert.alert(
+      showAlert(
         'Feedback Submitted!',
         'Thank you for your feedback. We\'ll review it and get back to you.',
         [{ text: 'OK' }]
       );
     } catch (error) {
       console.error('Error submitting feedback:', error);
-      Alert.alert(
+      showAlert(
         'Submission Failed',
         'Failed to submit your feedback. Please try again.',
         [{ text: 'OK' }]
@@ -90,7 +90,7 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({
 
   const handleClose = () => {
     if (title.trim() || description.trim()) {
-      Alert.alert(
+      showAlert(
         'Discard Feedback?',
         'You have unsaved changes. Are you sure you want to close?',
         [

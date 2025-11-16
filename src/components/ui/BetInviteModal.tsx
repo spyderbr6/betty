@@ -180,7 +180,7 @@ export const BetInviteModal: React.FC<BetInviteModalProps> = ({
       setFriends(invitableFriends);
     } catch (error) {
       console.error('Error fetching invitable friends:', error);
-      Alert.alert('Error', 'Failed to load friends. Please try again.');
+      showAlert('Error', 'Failed to load friends. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -200,7 +200,7 @@ export const BetInviteModal: React.FC<BetInviteModalProps> = ({
 
   const sendInvitations = async () => {
     if (selectedFriends.size === 0) {
-      Alert.alert('No Friends Selected', 'Please select at least one friend to invite.');
+      showAlert('No Friends Selected', 'Please select at least one friend to invite.');
       return;
     }
 
@@ -256,16 +256,16 @@ export const BetInviteModal: React.FC<BetInviteModalProps> = ({
       if (successCount > 0) {
         onInvitesSent?.(successCount);
         onClose();
-        Alert.alert(
+        showAlert(
           'Invitations Sent!',
           `Successfully sent ${successCount} invitation${successCount > 1 ? 's' : ''} to your friends.`
         );
       } else {
-        Alert.alert('Error', 'Failed to send invitations. Please try again.');
+        showAlert('Error', 'Failed to send invitations. Please try again.');
       }
     } catch (error) {
       console.error('Error sending invitations:', error);
-      Alert.alert('Error', 'Failed to send invitations. Please try again.');
+      showAlert('Error', 'Failed to send invitations. Please try again.');
     } finally {
       setSendingInvites(new Set());
     }

@@ -143,7 +143,7 @@ export const BetCard: React.FC<BetCardProps> = ({
     const betAmount = bet.betAmount || 10;
     const sideName = side === 'A' ? (bet.odds.sideAName || 'Side A') : (bet.odds.sideBName || 'Side B');
 
-    Alert.alert(
+    showAlert(
       'Join Bet',
       `Join "${bet.title}" with $${betAmount} on ${sideName}?`,
       [
@@ -165,7 +165,7 @@ export const BetCard: React.FC<BetCardProps> = ({
       const currentBalance = userData?.balance || 0;
 
       if (currentBalance < amount) {
-        Alert.alert(
+        showAlert(
           'Insufficient Balance',
           `You need $${amount} to join this bet, but your current balance is $${currentBalance.toFixed(2)}.`
         );
@@ -226,7 +226,7 @@ export const BetCard: React.FC<BetCardProps> = ({
           }
         }
 
-        Alert.alert(
+        showAlert(
           'Joined Successfully!',
           `You've joined the bet with $${amount}. Your new balance is $${(currentBalance - amount).toFixed(2)}.`
         );
@@ -244,7 +244,7 @@ export const BetCard: React.FC<BetCardProps> = ({
       }
     } catch (error) {
       console.error('Error joining bet:', error);
-      Alert.alert('Error', 'Failed to join bet. Please try again.');
+      showAlert('Error', 'Failed to join bet. Please try again.');
     } finally {
       setIsJoining(false);
       setSelectedSide(null);
@@ -253,7 +253,7 @@ export const BetCard: React.FC<BetCardProps> = ({
 
   const handleEndBet = () => {
     if (onEndBet) {
-      Alert.alert(
+      showAlert(
         'End Bet',
         'Are you sure you want to end this bet early? It will move to pending resolution.',
         [

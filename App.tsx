@@ -27,6 +27,7 @@ import { AppNavigator } from './src/navigation/AppNavigator';
 import { colors } from './src/styles';
 import Toast from 'react-native-toast-message';
 import { toastConfig } from './src/components/ui/ToastConfig';
+import { CustomAlertController } from './src/components/ui/CustomAlert';
 
 type AuthScreen = 'login' | 'signup';
 
@@ -82,6 +83,7 @@ export default function App() {
             <MainApp />
             <StatusBar style="light" backgroundColor={colors.background} />
             <Toast config={toastConfig} />
+            <CustomAlertController />
           </View>
         </EventCheckInProvider>
       </AuthProvider>
