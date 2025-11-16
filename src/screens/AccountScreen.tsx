@@ -34,7 +34,7 @@ import { SupportScreen } from './SupportScreen';
 import { AboutScreen } from './AboutScreen';
 import { AdminDashboardScreen } from './AdminDashboardScreen';
 import { AdminDisputeScreen } from './AdminDisputeScreen';
-import { AdminTestingScreen } from './AdminTestingScreen';
+import { AdminTestScreen } from './AdminTestScreen';
 import { useAuth } from '../contexts/AuthContext';
 import { ProfileEditForm, User } from '../types/betting';
 import { getProfilePictureUrl } from '../services/imageUploadService';
@@ -709,7 +709,7 @@ export const AccountScreen: React.FC = () => {
         presentationStyle="fullScreen"
         onRequestClose={() => setShowAdminTesting(false)}
       >
-        <AdminTestingScreen onClose={() => setShowAdminTesting(false)} />
+        <AdminTestScreen onClose={() => setShowAdminTesting(false)} />
       </Modal>
 
       {/* Sign Out Confirmation Modal */}
