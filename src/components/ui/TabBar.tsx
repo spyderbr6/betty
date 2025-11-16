@@ -125,19 +125,19 @@ export const TabBar: React.FC<BottomTabBarProps> = ({
 
   const getTabIcon = (routeName: string, focused: boolean) => {
     let iconName: keyof typeof Ionicons.glyphMap;
-    
+
     switch (routeName) {
       case 'Bets':
-        iconName = focused ? 'receipt' : 'receipt-outline';
+        iconName = focused ? 'list' : 'list-outline';
         break;
       case 'Live':
-        iconName = focused ? 'pulse' : 'pulse-outline';
+        iconName = focused ? 'search' : 'search-outline';
         break;
       case 'Create':
         iconName = focused ? 'add-circle' : 'add-circle-outline';
         break;
       case 'Resolve':
-        iconName = focused ? 'trophy' : 'trophy-outline';
+        iconName = focused ? 'hourglass' : 'hourglass-outline';
         break;
       case 'Account':
         iconName = focused ? 'person' : 'person-outline';
@@ -145,22 +145,22 @@ export const TabBar: React.FC<BottomTabBarProps> = ({
       default:
         iconName = 'help-outline';
     }
-    
+
     return iconName;
   };
 
   const getTabLabel = (routeName: string) => {
     switch (routeName) {
       case 'Bets':
-        return 'My Bets';
+        return 'Active';
       case 'Live':
-        return 'Live';
+        return 'Join';
       case 'Create':
         return 'Create';
       case 'Resolve':
         return 'Results';
       case 'Account':
-        return 'Profile';
+        return 'Account';
       default:
         return routeName;
     }
@@ -234,8 +234,8 @@ export const TabBar: React.FC<BottomTabBarProps> = ({
             {isFocused && !isCreateTab && (
               <View style={styles.activeIndicator} />
             )}
-            
-            {/* Live pulsing indicator for Live tab */}
+
+            {/* Pulsing indicator for Join tab (shows available bets) */}
             {isLiveTab && (
               <View style={styles.livePulseIndicator} />
             )}
