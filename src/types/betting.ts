@@ -32,6 +32,7 @@ export interface Bet {
   deadline: string;
   winningSide?: string;
   resolutionReason?: string;
+  disputeWindowEndsAt?: string; // When the 48-hour dispute window closes
   isPrivate?: boolean; // Private bets only visible to invited users
   createdAt: string;
   updatedAt: string;
