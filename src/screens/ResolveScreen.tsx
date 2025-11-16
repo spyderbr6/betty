@@ -499,8 +499,35 @@ export const ResolveScreen: React.FC = () => {
                 onPress={handleBetPress}
               />
 
-              {/* Resolution Actions - Only show if user is creator */}
-              {bet.creatorId === user?.userId && (
+              {/* Pending Dispute Window - Show if bet is PENDING_RESOLUTION */}
+              {bet.status === 'PENDING_RESOLUTION' && bet.disputeWindowEndsAt && (
+                <View style={styles.pendingResolutionInfo}>
+                  <View style={styles.pendingResolutionHeader}>
+                    <Text style={styles.pendingResolutionTitle}>✓ Bet Resolved</Text>
+                    <Text style={styles.pendingResolutionWinner}>
+                      Winner: {bet.winningSide === 'A' ? bet.odds.sideAName : bet.odds.sideBName}
+                    </Text>
+                  </View>
+                  <Text style={styles.pendingResolutionMessage}>
+                    Payouts will be distributed automatically in {' '}
+                    {(() => {
+                      const now = new Date();
+                      const endsAt = new Date(bet.disputeWindowEndsAt);
+                      const hoursRemaining = Math.max(0, Math.ceil((endsAt.getTime() - now.getTime()) / (1000 * 60 * 60)));
+                      return `${hoursRemaining} hours`;
+                    })()}
+                    {' '}if no disputes are filed.
+                  </Text>
+                  {bet.creatorId !== user?.userId && (
+                    <Text style={styles.pendingResolutionSubtext}>
+                      You can file a dispute if you believe this resolution is incorrect.
+                    </Text>
+                  )}
+                </View>
+              )}
+
+              {/* Resolution Actions - Only show if user is creator AND bet is ACTIVE (not already resolved) */}
+              {bet.creatorId === user?.userId && bet.status === 'ACTIVE' && (
                 <View style={styles.resolutionActions}>
                   {/* Payout Preview */}
                   <View style={styles.payoutPreview}>
@@ -792,5 +819,46 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: typography.fontSize.xs,
     textAlign: 'center',
+  },
+
+  // Pending Resolution Info
+  pendingResolutionInfo: {
+    backgroundColor: colors.warning + '15',
+    marginHorizontal: spacing.md,
+    borderRadius: spacing.radius.sm,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.warning + '40',
+    borderTopWidth: 0,
+    borderTopLeftRadius: 0,
+    borderTopRightRadius: 0,
+  },
+  pendingResolutionHeader: {
+    marginBottom: spacing.sm,
+    paddingBottom: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.warning + '30',
+  },
+  pendingResolutionTitle: {
+    ...textStyles.h4,
+    color: colors.success,
+    fontWeight: typography.fontWeight.bold,
+    marginBottom: spacing.xs / 2,
+  },
+  pendingResolutionWinner: {
+    ...textStyles.button,
+    color: colors.textPrimary,
+    fontWeight: typography.fontWeight.semibold,
+  },
+  pendingResolutionMessage: {
+    ...textStyles.body,
+    color: colors.textSecondary,
+    lineHeight: 20,
+    marginBottom: spacing.xs,
+  },
+  pendingResolutionSubtext: {
+    ...textStyles.caption,
+    color: colors.textMuted,
+    fontStyle: 'italic',
   },
 });
