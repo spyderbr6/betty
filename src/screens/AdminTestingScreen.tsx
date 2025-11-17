@@ -379,27 +379,61 @@ export const AdminTestingScreen: React.FC<{ onClose: () => void }> = ({ onClose 
   const betTestingModules: TestModule[] = [
     {
       id: 'create-test-bet',
-      title: 'Create Public Test Bet',
-      description: 'Creates a public bet ($10, 60min deadline) that anyone can join',
+      title: 'Create Joinable Test Bet',
+      description: 'Creates a public bet by "Test User" - you can join it as a normal user',
       action: async () => {
         if (!user) {
           addLog('❌ No user logged in');
           return;
         }
 
-        addLog('Creating public test bet...');
+        addLog('Creating joinable test bet...');
+
+        // Find or create a test user to be the creator
+        const testUsername = 'test-bet-creator';
+        let testUserId = 'test-user-' + Date.now();
+
+        addLog('Looking for test user account...');
+        const { data: existingUsers } = await client.models.User.list({
+          filter: { username: { eq: testUsername } }
+        });
+
+        if (existingUsers && existingUsers.length > 0) {
+          testUserId = existingUsers[0].id;
+          addLog(`✅ Using existing test user: ${testUserId}`);
+        } else {
+          addLog('Creating test user account...');
+          const { data: newTestUser } = await client.models.User.create({
+            id: testUserId,
+            username: testUsername,
+            email: 'testuser@sidebet.test',
+            displayName: 'Test User',
+            balance: 1000,
+            trustScore: 5.0,
+            totalBets: 0,
+            totalWinnings: 0,
+            winRate: 0,
+            role: 'USER',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          });
+
+          if (newTestUser) {
+            addLog(`✅ Created test user: ${testUserId}`);
+          }
+        }
 
         const deadline = new Date();
         deadline.setMinutes(deadline.getMinutes() + 60);
 
-        // Create bet WITHOUT isTestBet flag so it shows in regular lists
+        // Create bet with test user as creator (NOT current admin user)
         const { data: newBet } = await client.models.Bet.create({
           title: 'TEST: Will it rain tomorrow?',
           description: 'Public test bet - anyone can join!',
           category: 'CUSTOM',
           status: 'ACTIVE',
-          creatorId: user.userId,
-          totalPot: 0, // Start at 0, will increase when users join
+          creatorId: testUserId, // Test user is creator, not you
+          totalPot: 0, // No one joined yet
           betAmount: 10,
           odds: JSON.stringify({
             sideAName: 'Yes',
@@ -407,7 +441,7 @@ export const AdminTestingScreen: React.FC<{ onClose: () => void }> = ({ onClose 
           }),
           deadline: deadline.toISOString(),
           isPrivate: false,
-          isTestBet: false, // Make it visible in regular lists
+          isTestBet: false,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         });
@@ -418,9 +452,10 @@ export const AdminTestingScreen: React.FC<{ onClose: () => void }> = ({ onClose 
         }
 
         addLog(`✅ Test bet created! ID: ${newBet.id}`);
-        addLog('📍 Bet is now visible in the Home screen');
-        addLog('👥 Other users can join this bet');
-        addLog('💡 No balance was deducted from your account');
+        addLog(`📍 Creator: "Test User" (not you)`);
+        addLog('📍 You can JOIN this bet from Home screen');
+        addLog('👥 It will show in Active/Live bets');
+        addLog('💡 Test the join flow as a regular user');
       }
     },
     {
