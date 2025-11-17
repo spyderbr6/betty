@@ -63,18 +63,23 @@ export const CustomAlert: React.FC<CustomAlertProps> = ({
     }
   };
 
+  if (!visible) return null;
+
   return (
     <Modal
       visible={visible}
       transparent
       animationType="fade"
       onRequestClose={handleBackdropPress}
+      statusBarTranslucent
+      hardwareAccelerated
     >
-      <TouchableOpacity
-        style={styles.backdrop}
-        activeOpacity={1}
-        onPress={handleBackdropPress}
-      >
+      <View style={styles.backdrop}>
+        <TouchableOpacity
+          style={styles.backdropTouchable}
+          activeOpacity={1}
+          onPress={handleBackdropPress}
+        />
         <View style={styles.alertContainer}>
           <View style={styles.alertContent}>
             {/* Title */}
@@ -113,7 +118,7 @@ export const CustomAlert: React.FC<CustomAlertProps> = ({
             </View>
           </View>
         </View>
-      </TouchableOpacity>
+      </View>
     </Modal>
   );
 };
@@ -174,14 +179,20 @@ export const showAlert = (
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: spacing.lg,
+    zIndex: 9999, // Ensure alert appears above all other modals
+  },
+  backdropTouchable: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    zIndex: 9999,
   },
   alertContainer: {
     width: '100%',
     maxWidth: 340,
+    zIndex: 10000, // Ensure alert appears above all other modals
   },
   alertContent: {
     backgroundColor: colors.surface,
@@ -189,6 +200,7 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     borderWidth: 1,
     borderColor: colors.border,
+    zIndex: 10001, // Ensure alert content appears above backdrop
   },
 
   // Title and Message
