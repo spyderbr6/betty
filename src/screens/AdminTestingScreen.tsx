@@ -25,6 +25,9 @@ import {
   runFullDiagnostics
 } from '../utils/testEventFetcher';
 import { NotificationService } from '../services/notificationService';
+import { TransactionService } from '../services/transactionService';
+import { formatCurrency } from '../utils/formatting';
+import { showAlert } from '../components/ui/CustomAlert';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
 
@@ -373,6 +376,106 @@ export const AdminTestingScreen: React.FC<{ onClose: () => void }> = ({ onClose 
     },
   ];
 
+  const betTestingModules: TestModule[] = [
+    {
+      id: 'create-test-bet',
+      title: 'Create Public Test Bet',
+      description: 'Creates a public bet ($10, 60min deadline) that anyone can join',
+      action: async () => {
+        if (!user) {
+          addLog('❌ No user logged in');
+          return;
+        }
+
+        addLog('Creating public test bet...');
+
+        const deadline = new Date();
+        deadline.setMinutes(deadline.getMinutes() + 60);
+
+        // Create bet WITHOUT isTestBet flag so it shows in regular lists
+        const { data: newBet } = await client.models.Bet.create({
+          title: 'TEST: Will it rain tomorrow?',
+          description: 'Public test bet - anyone can join!',
+          category: 'CUSTOM',
+          status: 'ACTIVE',
+          creatorId: user.userId,
+          totalPot: 0, // Start at 0, will increase when users join
+          betAmount: 10,
+          odds: JSON.stringify({
+            sideAName: 'Yes',
+            sideBName: 'No'
+          }),
+          deadline: deadline.toISOString(),
+          isPrivate: false,
+          isTestBet: false, // Make it visible in regular lists
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        });
+
+        if (!newBet) {
+          addLog('❌ Failed to create bet');
+          return;
+        }
+
+        addLog(`✅ Test bet created! ID: ${newBet.id}`);
+        addLog('📍 Bet is now visible in the Home screen');
+        addLog('👥 Other users can join this bet');
+        addLog('💡 No balance was deducted from your account');
+      }
+    },
+    {
+      id: 'list-my-test-bets',
+      title: 'List My Active Bets',
+      description: 'Shows all your active bets (for resolving)',
+      action: async () => {
+        if (!user) {
+          addLog('❌ No user logged in');
+          return;
+        }
+
+        addLog('Loading your active bets...');
+        const { data: betsData } = await client.models.Bet.list({
+          filter: {
+            and: [
+              { creatorId: { eq: user.userId } },
+              { status: { eq: 'ACTIVE' } }
+            ]
+          }
+        });
+
+        if (!betsData || betsData.length === 0) {
+          addLog('No active bets found');
+          return;
+        }
+
+        addLog(`Found ${betsData.length} active bet(s):`);
+        betsData.forEach((bet, idx) => {
+          addLog(`${idx + 1}. ${bet.title}`);
+          addLog(`   ID: ${bet.id}`);
+          addLog(`   Pot: ${formatCurrency(bet.totalPot || 0)}`);
+          addLog(`   Deadline: ${new Date(bet.deadline).toLocaleString()}`);
+        });
+      }
+    },
+    {
+      id: 'resolve-test-bet',
+      title: 'Resolve Test Bet (Manual)',
+      description: 'Resolves a specific bet by ID - requires betId and winningSide',
+      action: async () => {
+        if (!user) {
+          addLog('❌ No user logged in');
+          return;
+        }
+
+        addLog('⚠️ This requires manual bet ID and side input');
+        addLog('Use "List My Active Bets" to find bet IDs first');
+        addLog('Then call resolveBet() from logs with:');
+        addLog('  betId: "your-bet-id"');
+        addLog('  winningSide: "A" or "B"');
+      }
+    },
+  ];
+
   if (!user || (user.role !== 'ADMIN' && user.role !== 'SUPER_ADMIN')) {
     return null;
   }
@@ -428,6 +531,33 @@ export const AdminTestingScreen: React.FC<{ onClose: () => void }> = ({ onClose 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>🏀 Event System Tests</Text>
           {eventTestModules.map((module) => (
+            <TouchableOpacity
+              key={module.id}
+              style={[
+                styles.testCard,
+                activeTest === module.id && styles.testCardActive
+              ]}
+              onPress={() => runTest(module.id, module.action)}
+              disabled={loading}
+            >
+              <View style={styles.testCardHeader}>
+                <Text style={styles.testCardTitle}>{module.title}</Text>
+                {activeTest === module.id && (
+                  <ActivityIndicator size="small" color={colors.primary} />
+                )}
+              </View>
+              <Text style={styles.testCardDescription}>{module.description}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {/* Bet System Tests */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>🎲 Bet System Tests</Text>
+          <Text style={styles.sectionDescription}>
+            Create and manage test bets. Test bets are public and visible to all users.
+          </Text>
+          {betTestingModules.map((module) => (
             <TouchableOpacity
               key={module.id}
               style={[
