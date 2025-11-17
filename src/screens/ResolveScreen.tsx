@@ -13,7 +13,7 @@ import {
   ActivityIndicator,
   RefreshControl,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
 import { colors, commonStyles, textStyles, spacing, typography } from '../styles';
@@ -72,6 +72,7 @@ const transformAmplifyBet = (bet: any): Bet | null => {
 
 export const ResolveScreen: React.FC = () => {
   const { user } = useAuth();
+  const insets = useSafeAreaInsets();
   const [pendingBets, setPendingBets] = useState<Bet[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isResolving, setIsResolving] = useState<string | null>(null);
@@ -466,6 +467,7 @@ export const ResolveScreen: React.FC = () => {
 
       <ScrollView
         style={styles.content}
+        contentContainerStyle={{ paddingBottom: spacing.navigation.baseHeight + insets.bottom }}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl

@@ -16,7 +16,7 @@ import {
   Modal,
   Image,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { generateClient } from 'aws-amplify/data';
 import { fetchUserAttributes } from 'aws-amplify/auth';
@@ -49,6 +49,7 @@ interface UserProfile extends User {
 
 export const AccountScreen: React.FC = () => {
   const { user, signOut } = useAuth();
+  const insets = useSafeAreaInsets();
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -394,6 +395,7 @@ export const AccountScreen: React.FC = () => {
 
       <ScrollView
         style={styles.content}
+        contentContainerStyle={{ paddingBottom: spacing.navigation.baseHeight + insets.bottom }}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl

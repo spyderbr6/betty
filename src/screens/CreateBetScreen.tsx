@@ -16,7 +16,7 @@ import {
   ActivityIndicator,
   Image,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { generateClient } from 'aws-amplify/data';
 import { getCurrentUser } from 'aws-amplify/auth';
@@ -55,6 +55,7 @@ const client = generateClient<Schema>();
 
 export const CreateBetScreen: React.FC = () => {
   const { user } = useAuth();
+  const insets = useSafeAreaInsets();
   const { checkedInEvent } = useEventCheckIn();
   const scrollRef = React.useRef<ScrollView | null>(null);
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
@@ -554,7 +555,7 @@ export const CreateBetScreen: React.FC = () => {
         </View>
       )}
 
-      <ScrollView ref={scrollRef} style={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView ref={scrollRef} style={styles.content} contentContainerStyle={{ paddingBottom: spacing.navigation.baseHeight + insets.bottom }} showsVerticalScrollIndicator={false}>
         {/* Bet Templates Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>CHOOSE BET TYPE</Text>
