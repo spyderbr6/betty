@@ -166,6 +166,11 @@ export async function getLiveEventsFromCache(forceRefresh: boolean = false): Pro
   const allEvents = await getCachedEvents(forceRefresh);
   const liveEvents = allEvents.filter(isEventLive);
 
+  // Sort by scheduled time (soonest first)
+  liveEvents.sort((a, b) => {
+    return new Date(a.scheduledTime).getTime() - new Date(b.scheduledTime).getTime();
+  });
+
   console.log(`[EventCache] Filtered ${liveEvents.length} live events from ${allEvents.length} cached events`);
   return liveEvents;
 }
@@ -198,7 +203,12 @@ export async function getAllEventsFromCache(forceRefresh: boolean = false): Prom
   const liveEvents = allEvents.filter(isEventLive);
   const upcomingEvents = allEvents.filter(isEventUpcoming);
 
-  // Sort upcoming by scheduled time
+  // Sort live events by scheduled time (soonest first)
+  liveEvents.sort((a, b) => {
+    return new Date(a.scheduledTime).getTime() - new Date(b.scheduledTime).getTime();
+  });
+
+  // Sort upcoming by scheduled time (soonest first)
   upcomingEvents.sort((a, b) => {
     return new Date(a.scheduledTime).getTime() - new Date(b.scheduledTime).getTime();
   });
