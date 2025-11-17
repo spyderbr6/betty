@@ -16,7 +16,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { commonStyles, colors, spacing, typography, textStyles } from '../styles';
 import { Header } from '../components/ui/Header';
 import { BetCard } from '../components/betting/BetCard';
@@ -74,6 +74,7 @@ const transformAmplifyBet = (bet: any): Bet | null => {
 
 export const BetsScreen: React.FC = () => {
   const { user } = useAuth();
+  const insets = useSafeAreaInsets();
   const [bets, setBets] = useState<Bet[]>([]);
   const [betInvitations, setBetInvitations] = useState<BetInvitation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -657,6 +658,7 @@ export const BetsScreen: React.FC = () => {
 
       <ScrollView
         style={styles.content}
+        contentContainerStyle={{ paddingBottom: spacing.navigation.baseHeight + insets.bottom }}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl

@@ -72,7 +72,8 @@ export const spacing = {
     padding: 16,    // Header horizontal padding
   },
   navigation: {
-    height: 80,     // Bottom tab navigation height
+    height: 80,     // Bottom tab navigation height (legacy)
+    baseHeight: 85, // Bottom tab bar base height (minHeight from TabBar component)
     padding: 12,    // Tab padding
   },
   
