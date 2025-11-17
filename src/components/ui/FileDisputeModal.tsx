@@ -103,18 +103,18 @@ export const FileDisputeModal: React.FC<FileDisputeModalProps> = ({
       setDescription('');
       setSelectedReason('INCORRECT_RESOLUTION');
 
-      // Show success alert FIRST, then close modal when user clicks OK
-      showAlert(
-        'Dispute Filed',
-        'Your dispute has been submitted and will be reviewed by an administrator. The payout is now on hold.',
-        [{
-          text: 'OK',
-          onPress: () => {
-            onClose();
-            onDisputeFiled?.();
-          }
-        }]
-      );
+      // Close modal FIRST, then show alert after modal closes
+      onClose();
+
+      // Wait for modal to close before showing alert (fixes z-index stacking on web)
+      setTimeout(() => {
+        showAlert(
+          'Dispute Filed',
+          'Your dispute has been submitted and will be reviewed by an administrator. The payout is now on hold.',
+          [{ text: 'OK' }]
+        );
+        onDisputeFiled?.();
+      }, 300);
     } catch (error: any) {
       console.error('Error filing dispute:', error);
       showAlert(
