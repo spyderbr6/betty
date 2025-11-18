@@ -312,7 +312,7 @@ async function upsertEvent(event: ESPNEvent, league: string): Promise<void> {
  * Main handler function
  *
  * Two operating modes:
- * 1. LIVE UPDATE MODE (every 15 min): Fetch today + tomorrow for live scores (handles UTC timezone edge cases)
+ * 1. LIVE UPDATE MODE (every 15 min): Fetch yesterday/today/tomorrow for live scores (handles UTC/ET timezone differences)
  * 2. WEEKLY DISCOVERY MODE (once daily at 6am UTC): Fetch next 7 days for planning visibility
  */
 export const handler: EventBridgeHandler<"Scheduled Event", null, boolean> = async (event) => {
@@ -340,12 +340,14 @@ export const handler: EventBridgeHandler<"Scheduled Event", null, boolean> = asy
       startDate = start.toISOString().split('T')[0];
       endDate = end.toISOString().split('T')[0];
     } else {
-      // LIVE UPDATE MODE: Fetch today + tomorrow for live scores
-      // This handles UTC timezone edge cases (8pm ET games show as next day in UTC)
+      // LIVE UPDATE MODE: Fetch yesterday, today, and tomorrow for live scores
+      // This handles UTC timezone edge cases since ESPN uses ET for game dates
+      // (Example: 8pm ET game on Nov 17 runs into Nov 18 UTC, so we need both dates)
       mode = '🔴 LIVE UPDATE';
       const start = new Date(now);
+      start.setDate(now.getDate() - 1); // Start with yesterday
       const end = new Date(now);
-      end.setDate(now.getDate() + 1); // Today + tomorrow
+      end.setDate(now.getDate() + 1); // End with tomorrow
 
       startDate = start.toISOString().split('T')[0];
       endDate = end.toISOString().split('T')[0];
