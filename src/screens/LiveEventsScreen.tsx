@@ -505,8 +505,14 @@ export const LiveEventsScreen: React.FC = () => {
               const hoursUntil = Math.floor((eventDate.getTime() - now.getTime()) / (1000 * 60 * 60));
               const daysUntil = Math.floor(hoursUntil / 24);
 
+              // Check if event is currently live or in halftime
+              const isLive = event.status === 'LIVE' || event.status === 'HALFTIME';
+
               let timeText = '';
-              if (daysUntil > 1) {
+              if (isLive) {
+                // Show LIVE status with current score
+                timeText = event.status === 'HALFTIME' ? '🔴 HALFTIME' : '🔴 LIVE NOW';
+              } else if (daysUntil > 1) {
                 timeText = `${daysUntil} days • ${eventDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
               } else if (daysUntil === 1) {
                 timeText = `Tomorrow • ${eventDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
@@ -522,14 +528,47 @@ export const LiveEventsScreen: React.FC = () => {
               const homeShort = formatTeamName(event.homeTeam, event.homeTeamShortName, event.homeTeamCode);
 
               return (
-                <View key={event.id} style={styles.upcomingEvent}>
+                <View
+                  key={event.id}
+                  style={[
+                    styles.upcomingEvent,
+                    isLive && styles.upcomingEventLive
+                  ]}
+                >
                   <View style={styles.upcomingHeader}>
                     <Text style={styles.upcomingTitle}>
                       {awayShort} @ {homeShort}
                     </Text>
-                    <Text style={styles.upcomingStatus}>{event.sport}</Text>
+                    <Text style={[
+                      styles.upcomingStatus,
+                      isLive && styles.upcomingStatusLive
+                    ]}>
+                      {event.sport}
+                    </Text>
                   </View>
-                  <Text style={styles.upcomingTime}>{timeText}</Text>
+                  <View style={styles.upcomingTimeContainer}>
+                    <Text style={[
+                      styles.upcomingTime,
+                      isLive && styles.upcomingTimeLive
+                    ]}>
+                      {timeText}
+                    </Text>
+                    {isLive && event.quarter && (
+                      <Text style={styles.upcomingQuarter}>• {event.quarter}</Text>
+                    )}
+                  </View>
+                  {isLive && (
+                    <View style={styles.liveScoreContainer}>
+                      <View style={styles.scoreRow}>
+                        <Text style={styles.scoreTeam}>{awayShort}</Text>
+                        <Text style={styles.scoreValue}>{event.awayScore}</Text>
+                      </View>
+                      <View style={styles.scoreRow}>
+                        <Text style={styles.scoreTeam}>{homeShort}</Text>
+                        <Text style={styles.scoreValue}>{event.homeScore}</Text>
+                      </View>
+                    </View>
+                  )}
                   {event.venue && (
                     <Text style={styles.upcomingLocation}>
                       📍 {event.venue}{event.city ? ` • ${event.city}` : ''}
@@ -769,6 +808,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
+  upcomingEventLive: {
+    borderLeftColor: colors.live,
+    borderColor: colors.live + '40', // 25% opacity
+    backgroundColor: colors.live + '08', // 3% opacity for subtle tint
+  },
   upcomingHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -790,10 +834,54 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: spacing.radius.xs,
   },
+  upcomingStatusLive: {
+    color: colors.live,
+    backgroundColor: colors.live + '20', // 12% opacity
+  },
+  upcomingTimeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
   upcomingTime: {
     ...textStyles.body,
     color: colors.textSecondary,
-    marginBottom: 4,
+  },
+  upcomingTimeLive: {
+    color: colors.live,
+    fontWeight: typography.fontWeight.bold,
+  },
+  upcomingQuarter: {
+    ...textStyles.caption,
+    color: colors.textMuted,
+    marginLeft: spacing.xs,
+    fontSize: 12,
+  },
+  liveScoreContainer: {
+    backgroundColor: colors.background,
+    borderRadius: spacing.radius.xs,
+    padding: spacing.sm,
+    marginBottom: spacing.xs,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  scoreRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 2,
+  },
+  scoreTeam: {
+    ...textStyles.body,
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontWeight: typography.fontWeight.medium,
+  },
+  scoreValue: {
+    ...textStyles.h4,
+    color: colors.textPrimary,
+    fontSize: typography.fontSize.lg,
+    fontWeight: typography.fontWeight.bold,
   },
   upcomingLocation: {
     ...textStyles.caption,
