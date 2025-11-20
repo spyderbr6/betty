@@ -122,6 +122,7 @@ export const OnboardingProfilePictureStep: React.FC<OnboardingProfilePictureStep
                 key={profilePictureUrl}
                 source={{ uri: profilePictureUrl }}
                 style={styles.profileImage}
+                resizeMode="cover"
                 onLoadStart={() => {
                   // Only set loading if this is actually a new URL
                   if (loadedUrlRef.current !== profilePictureUrl) {

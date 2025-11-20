@@ -429,6 +429,7 @@ export const AccountScreen: React.FC = () => {
                 <Image
                   source={{ uri: userProfile.profilePictureUrl }}
                   style={styles.profileImage}
+                  resizeMode="cover"
                 />
               ) : (
                 <View style={styles.avatar}>

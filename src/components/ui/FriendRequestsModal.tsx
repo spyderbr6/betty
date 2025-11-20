@@ -269,7 +269,7 @@ export const FriendRequestsModal: React.FC<FriendRequestsModalProps> = ({
           {/* Avatar */}
           <View style={styles.avatarContainer}>
             {item.fromUser.profilePictureUrl ? (
-              <Image source={{ uri: item.fromUser.profilePictureUrl }} style={styles.avatar} />
+              <Image source={{ uri: item.fromUser.profilePictureUrl }} style={styles.avatar} resizeMode="cover" />
             ) : (
               <View style={styles.avatarPlaceholder}>
                 <Text style={styles.avatarText}>{generateAvatarInitials(item.fromUser)}</Text>

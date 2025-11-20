@@ -247,7 +247,7 @@ export const AddFriendModal: React.FC<AddFriendModalProps> = ({
           {/* Avatar */}
           <View style={styles.avatarContainer}>
             {item.profilePictureUrl ? (
-              <Image source={{ uri: item.profilePictureUrl }} style={styles.avatar} />
+              <Image source={{ uri: item.profilePictureUrl }} style={styles.avatar} resizeMode="cover" />
             ) : (
               <View style={styles.avatarPlaceholder}>
                 <Text style={styles.avatarText}>{generateAvatarInitials(item)}</Text>

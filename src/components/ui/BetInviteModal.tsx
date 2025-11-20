@@ -300,7 +300,7 @@ export const BetInviteModal: React.FC<BetInviteModalProps> = ({
           {/* Avatar */}
           <View style={styles.avatarContainer}>
             {item.user.profilePictureUrl ? (
-              <Image source={{ uri: item.user.profilePictureUrl }} style={styles.avatar} />
+              <Image source={{ uri: item.user.profilePictureUrl }} style={styles.avatar} resizeMode="cover" />
             ) : (
               <View style={styles.avatarPlaceholder}>
                 <Text style={styles.avatarText}>{generateAvatarInitials(item.user)}</Text>
