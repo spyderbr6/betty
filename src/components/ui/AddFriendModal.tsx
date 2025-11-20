@@ -477,6 +477,7 @@ const styles = StyleSheet.create({
     width: 50,
     height: 50,
     borderRadius: 25,
+    resizeMode: 'cover',
   },
   avatarPlaceholder: {
     width: 50,

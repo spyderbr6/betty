@@ -234,6 +234,7 @@ const styles = StyleSheet.create({
     borderRadius: 60,
     borderWidth: 3,
     borderColor: colors.primary,
+    resizeMode: 'cover',
   },
   imageLoadingOverlay: {
     position: 'absolute',

@@ -1141,6 +1141,7 @@ const styles = StyleSheet.create({
     borderRadius: 25,
     borderWidth: 2,
     borderColor: colors.border,
+    resizeMode: 'cover',
   },
   friendPlaceholder: {
     width: 50,
