@@ -129,7 +129,7 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({
             disabled={isUploadingImage}
           >
             {profilePicture ? (
-              <Image source={{ uri: profilePicture }} style={styles.profileImage} />
+              <Image source={{ uri: profilePicture }} style={styles.profileImage} resizeMode="cover" />
             ) : (
               <View style={styles.placeholderImage}>
                 <Ionicons name="person" size={40} color={colors.textMuted} />

@@ -802,7 +802,7 @@ export const CreateBetScreen: React.FC = () => {
                     activeOpacity={0.7}
                   >
                     {friend.profilePictureUrl ? (
-                      <Image source={{ uri: friend.profilePictureUrl }} style={styles.friendImage} />
+                      <Image source={{ uri: friend.profilePictureUrl }} style={styles.friendImage} resizeMode="cover" />
                     ) : (
                       <View style={[styles.friendPlaceholder, selectedFriends.has(friend.id) && styles.friendPlaceholderSelected]}>
                         <Text style={[styles.friendInitials, selectedFriends.has(friend.id) && styles.friendInitialsSelected]}>

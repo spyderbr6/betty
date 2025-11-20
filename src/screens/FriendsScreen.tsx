@@ -380,6 +380,7 @@ const FriendCard: React.FC<FriendCardProps> = ({
             <Image
               source={{ uri: friend.user.profilePictureUrl }}
               style={styles.friendAvatar}
+              resizeMode="cover"
             />
           ) : (
             <View style={styles.friendAvatarPlaceholder}>
