@@ -20,6 +20,7 @@ import { PolicyModal } from './ui/PolicyModal';
 import { formatPhoneNumber, validatePhoneNumber } from '../utils/phoneValidation';
 import { CURRENT_TOS_VERSION, CURRENT_PRIVACY_VERSION } from '../constants/policies';
 import type { CountryCode } from 'libphonenumber-js';
+import { showAlert } from './ui/CustomAlert';
 
 const client = generateClient<Schema>();
 
@@ -150,7 +151,19 @@ export const SignUp: React.FC<SignUpProps> = ({ onLoginPress, onSignUpSuccess })
       // ensuring all new users have accepted current policies.
 
       setErrorMessage(''); // Clear any errors on success
-      onSignUpSuccess();
+
+      // Show success alert before navigating to login
+      showAlert(
+        'Account Created Successfully!',
+        'Your account has been created. You can now sign in with your email and password.',
+        [
+          {
+            text: 'Sign In',
+            style: 'default',
+            onPress: onSignUpSuccess,
+          },
+        ]
+      );
     } catch (error) {
       const err = error as Error;
       console.error('Confirmation error:', error);
