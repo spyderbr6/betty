@@ -87,6 +87,43 @@ export const LiveGameBanner: React.FC<LiveGameBannerProps> = ({
   const homeShort = formatTeamName(checkedInEvent.homeTeam, checkedInEvent.homeTeamShortName, checkedInEvent.homeTeamCode);
   const awayShort = formatTeamName(checkedInEvent.awayTeam, checkedInEvent.awayTeamShortName, checkedInEvent.awayTeamCode);
 
+  // Determine if we should show scores
+  const showScores = checkedInEvent.status === 'LIVE' ||
+                     checkedInEvent.status === 'HALFTIME' ||
+                     checkedInEvent.status === 'FINISHED';
+
+  // Build event display text
+  let eventText = '';
+  if (showScores) {
+    eventText = `${awayShort} ${checkedInEvent.awayScore} @ ${homeShort} ${checkedInEvent.homeScore}`;
+  } else {
+    eventText = `${awayShort} @ ${homeShort}`;
+  }
+
+  // Determine status text and color
+  let statusText = '';
+  let statusColor = colors.textMuted;
+
+  if (checkedInEvent.status === 'LIVE') {
+    statusText = 'LIVE';
+    statusColor = colors.live;
+  } else if (checkedInEvent.status === 'HALFTIME') {
+    statusText = 'HALF';
+    statusColor = colors.warning;
+  } else if (checkedInEvent.status === 'FINISHED') {
+    statusText = 'FINAL';
+    statusColor = colors.textSecondary;
+  } else if (checkedInEvent.status === 'UPCOMING' && checkedInEvent.scheduledTime) {
+    // Show time for upcoming events
+    const date = new Date(checkedInEvent.scheduledTime);
+    statusText = date.toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    });
+    statusColor = colors.textMuted;
+  }
+
   return (
     <TouchableOpacity
       style={styles.checkedInContainer}
@@ -98,17 +135,17 @@ export const LiveGameBanner: React.FC<LiveGameBannerProps> = ({
           <Ionicons name="location" size={20} color={colors.primary} />
           <View style={styles.eventInfo}>
             <Text style={styles.eventName} numberOfLines={1}>
-              {awayShort} @ {homeShort}
+              {eventText}
+              {statusText && (
+                <Text style={[styles.statusText, { color: statusColor }]}>
+                  {' '}• {statusText}
+                </Text>
+              )}
             </Text>
           </View>
         </View>
 
         <View style={styles.checkedInRight}>
-          {checkedInEvent.betCount > 0 && (
-            <Text style={styles.betCount}>
-              {checkedInEvent.betCount} {checkedInEvent.betCount === 1 ? 'bet' : 'bets'}
-            </Text>
-          )}
           <TouchableOpacity
             onPress={handleCheckOutPress}
             style={styles.checkOutButton}
@@ -183,16 +220,14 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.medium,
   },
+  statusText: {
+    ...textStyles.caption,
+    fontSize: typography.fontSize.xs,
+    fontWeight: typography.fontWeight.semibold,
+  },
   checkedInRight: {
     flexDirection: 'row',
     alignItems: 'center',
-  },
-  betCount: {
-    ...textStyles.caption,
-    color: colors.primary,
-    fontSize: typography.fontSize.xs,
-    fontWeight: typography.fontWeight.semibold,
-    marginRight: spacing.sm,
   },
   checkOutButton: {
     padding: spacing.xs / 2,
