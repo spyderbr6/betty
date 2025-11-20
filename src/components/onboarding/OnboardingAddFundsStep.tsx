@@ -9,6 +9,7 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
+  ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, textStyles, typography } from '../../styles';
@@ -64,7 +65,11 @@ export const OnboardingAddFundsStep: React.FC<OnboardingAddFundsStepProps> = ({
   return (
     <>
       <View style={styles.container}>
-        <View style={styles.content}>
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
           {/* Icon/Illustration */}
           <View style={styles.iconContainer}>
             <View style={styles.iconCircle}>
@@ -105,7 +110,7 @@ export const OnboardingAddFundsStep: React.FC<OnboardingAddFundsStepProps> = ({
             <Ionicons name="add-circle" size={20} color={colors.textInverse} />
             <Text style={styles.primaryButtonText}>Add Funds Now</Text>
           </TouchableOpacity>
-        </View>
+        </ScrollView>
 
         {/* Bottom Actions */}
         <View style={styles.bottomActions}>
@@ -151,13 +156,17 @@ export const OnboardingAddFundsStep: React.FC<OnboardingAddFundsStepProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    paddingHorizontal: spacing.container.padding,
   },
-  content: {
+  scrollView: {
     flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    paddingHorizontal: spacing.container.padding,
     paddingVertical: spacing.xl,
+    paddingBottom: spacing.xl * 2,
   },
   iconContainer: {
     marginBottom: spacing.xl,
@@ -215,10 +224,15 @@ const styles = StyleSheet.create({
     marginLeft: spacing.xs,
   },
   bottomActions: {
+    paddingHorizontal: spacing.container.padding,
+    paddingVertical: spacing.lg,
     paddingBottom: spacing.xl,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    backgroundColor: colors.background,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
   },
   backButton: {
     flexDirection: 'row',
