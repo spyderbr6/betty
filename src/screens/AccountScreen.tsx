@@ -28,6 +28,7 @@ import { FriendsScreen } from './FriendsScreen';
 import { DetailedStatsScreen } from './DetailedStatsScreen';
 import { BettingHistoryScreen } from './BettingHistoryScreen';
 import { PaymentMethodsScreen } from './PaymentMethodsScreen';
+import { CURRENT_TOS_VERSION, CURRENT_PRIVACY_VERSION } from '../constants/policies';
 import { TrustSafetyScreen } from './TrustSafetyScreen';
 import { SettingsScreen } from './SettingsScreen';
 import { SupportScreen } from './SupportScreen';
@@ -145,6 +146,9 @@ export const AccountScreen: React.FC = () => {
         });
       } else {
         // Create user record if it doesn't exist (use already fetched Cognito data)
+        // Note: Policy acceptance is implicitly true for new users since SignUp requires
+        // checkbox acceptance before creating Cognito account
+        const currentTime = new Date().toISOString();
         const newUser = await client.models.User.create({
           id: user.userId,
           username: user.username,
@@ -155,6 +159,13 @@ export const AccountScreen: React.FC = () => {
           totalBets: 0,
           totalWinnings: 0,
           winRate: 0,
+          // Policy acceptance - required during signup
+          tosAccepted: true,
+          tosAcceptedAt: currentTime,
+          tosVersion: CURRENT_TOS_VERSION,
+          privacyPolicyAccepted: true,
+          privacyPolicyAcceptedAt: currentTime,
+          privacyPolicyVersion: CURRENT_PRIVACY_VERSION,
         });
 
         if (newUser.data) {

@@ -30,6 +30,13 @@ const schema = a.schema({
       // Onboarding tracking
       onboardingCompleted: a.boolean().default(false), // Whether user has completed onboarding
       onboardingStep: a.integer().default(0), // Current step in onboarding (0 = not started, 1-3 = in progress, 4 = completed)
+      // Policy acceptance tracking
+      tosAccepted: a.boolean().default(false), // Terms of Service accepted
+      tosAcceptedAt: a.datetime(), // When ToS was accepted
+      tosVersion: a.string(), // Version of ToS accepted (e.g., "1.0")
+      privacyPolicyAccepted: a.boolean().default(false), // Privacy Policy accepted
+      privacyPolicyAcceptedAt: a.datetime(), // When Privacy Policy was accepted
+      privacyPolicyVersion: a.string(), // Version of Privacy Policy accepted (e.g., "1.0")
       createdAt: a.datetime(),
       updatedAt: a.datetime(),
       // Relations

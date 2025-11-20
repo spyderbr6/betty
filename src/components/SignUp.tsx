@@ -12,10 +12,16 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { signUp, confirmSignUp } from 'aws-amplify/auth';
+import { generateClient } from 'aws-amplify/data';
+import type { Schema } from '../../amplify/data/resource';
 import { colors, spacing, textStyles, typography, commonStyles, shadows } from '../styles';
 import { PhoneInput } from './ui/PhoneInput';
+import { PolicyModal } from './ui/PolicyModal';
 import { formatPhoneNumber, validatePhoneNumber } from '../utils/phoneValidation';
+import { CURRENT_TOS_VERSION, CURRENT_PRIVACY_VERSION } from '../constants/policies';
 import type { CountryCode } from 'libphonenumber-js';
+
+const client = generateClient<Schema>();
 
 interface SignUpProps {
   onLoginPress: () => void;
@@ -34,6 +40,27 @@ export const SignUp: React.FC<SignUpProps> = ({ onLoginPress, onSignUpSuccess })
   const [step, setStep] = useState<'signUp' | 'confirm'>('signUp');
   const [focusedField, setFocusedField] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string>('');
+
+  // Policy acceptance state
+  const [tosAccepted, setTosAccepted] = useState(false);
+  const [privacyAccepted, setPrivacyAccepted] = useState(false);
+  const [showPolicyModal, setShowPolicyModal] = useState(false);
+  const [policyModalType, setPolicyModalType] = useState<'terms' | 'privacy'>('terms');
+
+  // Policy modal handlers
+  const handleOpenTerms = () => {
+    setPolicyModalType('terms');
+    setShowPolicyModal(true);
+  };
+
+  const handleOpenPrivacy = () => {
+    setPolicyModalType('privacy');
+    setShowPolicyModal(true);
+  };
+
+  const handleClosePolicyModal = () => {
+    setShowPolicyModal(false);
+  };
 
   const handleSignUp = async () => {
     // Clear previous errors
@@ -58,6 +85,12 @@ export const SignUp: React.FC<SignUpProps> = ({ onLoginPress, onSignUpSuccess })
     // Validate phone number
     if (!validatePhoneNumber(phoneNumber, countryCode)) {
       setErrorMessage('Please enter a valid phone number');
+      return;
+    }
+
+    // Validate policy acceptance
+    if (!tosAccepted || !privacyAccepted) {
+      setErrorMessage('You must accept the Terms of Service and Privacy Policy to create an account');
       return;
     }
 
@@ -111,10 +144,16 @@ export const SignUp: React.FC<SignUpProps> = ({ onLoginPress, onSignUpSuccess })
         username: email.trim(),
         confirmationCode: confirmationCode.trim(),
       });
+
+      // Note: User record with policy acceptance is created on first login in AccountScreen
+      // The SignUp component validates policy acceptance before allowing signup,
+      // ensuring all new users have accepted current policies.
+
       setErrorMessage(''); // Clear any errors on success
       onSignUpSuccess();
     } catch (error) {
       const err = error as Error;
+      console.error('Confirmation error:', error);
       setErrorMessage(err.message || 'An error occurred during confirmation');
     } finally {
       setIsLoading(false);
@@ -341,6 +380,61 @@ export const SignUp: React.FC<SignUpProps> = ({ onLoginPress, onSignUpSuccess })
                 Phone number is required for account security and friend discovery
               </Text>
 
+              {/* Policy Acceptance Checkboxes */}
+              <View style={styles.policyContainer}>
+                {/* Terms of Service Checkbox */}
+                <TouchableOpacity
+                  style={styles.checkboxRow}
+                  onPress={() => setTosAccepted(!tosAccepted)}
+                  disabled={isLoading}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.checkbox, tosAccepted && styles.checkboxChecked]}>
+                    {tosAccepted && (
+                      <Ionicons name="checkmark" size={16} color={colors.background} />
+                    )}
+                  </View>
+                  <Text style={styles.policyText}>
+                    I agree to the{' '}
+                    <Text
+                      style={styles.policyLink}
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        handleOpenTerms();
+                      }}
+                    >
+                      Terms of Service
+                    </Text>
+                  </Text>
+                </TouchableOpacity>
+
+                {/* Privacy Policy Checkbox */}
+                <TouchableOpacity
+                  style={styles.checkboxRow}
+                  onPress={() => setPrivacyAccepted(!privacyAccepted)}
+                  disabled={isLoading}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.checkbox, privacyAccepted && styles.checkboxChecked]}>
+                    {privacyAccepted && (
+                      <Ionicons name="checkmark" size={16} color={colors.background} />
+                    )}
+                  </View>
+                  <Text style={styles.policyText}>
+                    I agree to the{' '}
+                    <Text
+                      style={styles.policyLink}
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        handleOpenPrivacy();
+                      }}
+                    >
+                      Privacy Policy
+                    </Text>
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
               {/* Sign Up Button */}
               <TouchableOpacity
                 style={[
@@ -379,7 +473,18 @@ export const SignUp: React.FC<SignUpProps> = ({ onLoginPress, onSignUpSuccess })
     </KeyboardAvoidingView>
   );
 
-  return step === 'confirm' ? renderConfirmationStep() : renderSignUpStep();
+  return (
+    <>
+      {step === 'confirm' ? renderConfirmationStep() : renderSignUpStep()}
+
+      {/* Policy Modal */}
+      <PolicyModal
+        visible={showPolicyModal}
+        onClose={handleClosePolicyModal}
+        policyType={policyModalType}
+      />
+    </>
+  );
 };
 
 const styles = StyleSheet.create({
@@ -534,6 +639,42 @@ const styles = StyleSheet.create({
   },
   linkButtonText: {
     ...textStyles.body,
+    color: colors.primary,
+    fontWeight: typography.fontWeight.medium,
+    textDecorationLine: 'underline',
+  },
+  policyContainer: {
+    marginTop: spacing.md,
+    marginBottom: spacing.md,
+  },
+  checkboxRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: spacing.sm,
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderWidth: 2,
+    borderColor: colors.border,
+    borderRadius: spacing.radius.xs,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.sm,
+    marginTop: 2, // Align with text baseline
+    backgroundColor: colors.surfaceLight,
+  },
+  checkboxChecked: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  policyText: {
+    ...textStyles.bodySmall,
+    color: colors.textSecondary,
+    flex: 1,
+    lineHeight: 20,
+  },
+  policyLink: {
     color: colors.primary,
     fontWeight: typography.fontWeight.medium,
     textDecorationLine: 'underline',
