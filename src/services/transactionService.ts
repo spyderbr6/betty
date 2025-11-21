@@ -33,7 +33,8 @@ export interface Transaction {
   userId: string;
   type: TransactionType;
   status: TransactionStatus;
-  amount: number;
+  amount: number; // Requested amount
+  actualAmount?: number; // Actual amount received after fees (for deposits/withdrawals)
   platformFee: number;
   balanceBefore: number;
   balanceAfter: number;
@@ -157,6 +158,7 @@ export class TransactionService {
         type: transaction.type as TransactionType,
         status: transaction.status as TransactionStatus,
         amount: transaction.amount!,
+        actualAmount: transaction.actualAmount || undefined,
         platformFee: transaction.platformFee || 0,
         balanceBefore: transaction.balanceBefore!,
         balanceAfter: transaction.balanceAfter!,
@@ -381,7 +383,8 @@ export class TransactionService {
     transactionId: string,
     status: TransactionStatus,
     failureReason?: string,
-    processedBy?: string
+    processedBy?: string,
+    actualAmount?: number // Actual amount received after Venmo fees (for deposits)
   ): Promise<boolean> {
     try {
       // Admin role validation - check if processedBy user has admin privileges
@@ -414,6 +417,10 @@ export class TransactionService {
         updateData.processedBy = processedBy;
       }
 
+      if (actualAmount !== undefined) {
+        updateData.actualAmount = actualAmount;
+      }
+
       // Get transaction to update user balance if completing a deposit/withdrawal
       const { data: transaction } = await client.models.Transaction.get({
         id: transactionId
@@ -434,13 +441,19 @@ export class TransactionService {
 
       // If completing a deposit, update user balance
       if (status === 'COMPLETED' && transaction.type === 'DEPOSIT') {
+        // Use actualAmount if provided (after Venmo fees), otherwise use requested amount
+        const amountToCredit = actualAmount !== undefined ? actualAmount : transaction.amount!;
+
         // Get current user balance (not the old balanceAfter from the transaction)
         const currentBalance = await this.getUserBalance(transaction.userId!);
-        const newBalance = currentBalance + transaction.amount!;
+        const newBalance = currentBalance + amountToCredit;
 
+        const feeAmount = transaction.amount! - amountToCredit;
         console.log('[Transaction] Approving deposit:', {
           transactionId,
-          amount: transaction.amount,
+          requestedAmount: transaction.amount,
+          actualAmountReceived: amountToCredit,
+          venmoFee: feeAmount,
           currentBalance,
           newBalance
         });
@@ -478,12 +491,16 @@ export class TransactionService {
           }
         }
 
-        // Send notification
+        // Send notification with actual amount credited
+        const notificationMessage = feeAmount > 0.01
+          ? `Your deposit of $${amountToCredit.toFixed(2)} has been completed (Venmo fee: $${feeAmount.toFixed(2)})`
+          : `Your deposit of $${amountToCredit.toFixed(2)} has been completed`;
+
         await NotificationService.createNotification({
           userId: transaction.userId!,
           type: 'DEPOSIT_COMPLETED',
           title: 'Deposit Successful',
-          message: `Your deposit of $${transaction.amount} has been completed`,
+          message: notificationMessage,
           priority: 'HIGH',
         });
 
@@ -647,6 +664,7 @@ export class TransactionService {
         type: t.type as TransactionType,
         status: t.status as TransactionStatus,
         amount: t.amount!,
+        actualAmount: t.actualAmount || undefined,
         platformFee: t.platformFee || 0,
         balanceBefore: t.balanceBefore!,
         balanceAfter: t.balanceAfter!,
@@ -690,6 +708,7 @@ export class TransactionService {
         type: t.type as TransactionType,
         status: t.status as TransactionStatus,
         amount: t.amount!,
+        actualAmount: t.actualAmount || undefined,
         platformFee: t.platformFee || 0,
         balanceBefore: t.balanceBefore!,
         balanceAfter: t.balanceAfter!,
@@ -734,6 +753,7 @@ export class TransactionService {
         type: transaction.type as TransactionType,
         status: transaction.status as TransactionStatus,
         amount: transaction.amount!,
+        actualAmount: transaction.actualAmount || undefined,
         platformFee: transaction.platformFee || 0,
         balanceBefore: transaction.balanceBefore!,
         balanceAfter: transaction.balanceAfter!,
