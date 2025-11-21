@@ -10,7 +10,6 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  Alert,
   ActivityIndicator,
   Modal,
   KeyboardAvoidingView,
@@ -22,6 +21,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, typography, textStyles } from '../../styles';
 import { useAuth } from '../../contexts/AuthContext';
 import { ModalHeader } from './ModalHeader';
+import { showAlert } from './CustomAlert';
 import { TransactionService } from '../../services/transactionService';
 import { PaymentMethodService } from '../../services/paymentMethodService';
 import type { PaymentMethod } from '../../services/paymentMethodService';
@@ -460,6 +460,7 @@ const styles = StyleSheet.create({
 
   // Payment Methods
   methodsList: {
+    width: '100%',
     marginBottom: spacing.lg,
   },
   methodCard: {
@@ -518,6 +519,7 @@ const styles = StyleSheet.create({
 
   // Input Sections
   inputSection: {
+    width: '100%',
     marginBottom: spacing.lg,
   },
   inputLabel: {
@@ -527,6 +529,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   amountInputContainer: {
+    width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: colors.surface,
@@ -549,6 +552,7 @@ const styles = StyleSheet.create({
     marginLeft: spacing.xs,
   },
   textInput: {
+    width: '100%',
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
@@ -567,6 +571,7 @@ const styles = StyleSheet.create({
 
   // Instructions
   instructionsBox: {
+    width: '100%',
     flexDirection: 'row',
     backgroundColor: colors.info + '20',
     borderRadius: spacing.radius.md,
@@ -593,6 +598,7 @@ const styles = StyleSheet.create({
 
   // Summary
   summaryCard: {
+    width: '100%',
     backgroundColor: colors.surface,
     borderRadius: spacing.radius.lg,
     padding: spacing.lg,
@@ -636,6 +642,7 @@ const styles = StyleSheet.create({
 
   // Warning Banner
   warningBanner: {
+    width: '100%',
     flexDirection: 'row',
     backgroundColor: colors.warning + '20',
     borderRadius: spacing.radius.md,
