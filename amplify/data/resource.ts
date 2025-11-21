@@ -407,6 +407,7 @@ const schema = a.schema({
       ]),
       status: a.enum(['PENDING', 'PROCESSING', 'COMPLETED', 'FAILED', 'CANCELLED']),
       amount: a.float().required(),
+      platformFee: a.float().default(0), // Platform fee taken (3% on winnings, 2% on withdrawals)
       // Balance tracking
       balanceBefore: a.float().required(),
       balanceAfter: a.float().required(),
