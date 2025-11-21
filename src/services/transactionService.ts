@@ -34,6 +34,7 @@ export interface Transaction {
   type: TransactionType;
   status: TransactionStatus;
   amount: number;
+  platformFee: number;
   balanceBefore: number;
   balanceAfter: number;
   paymentMethodId?: string;
@@ -53,6 +54,7 @@ export interface CreateTransactionParams {
   userId: string;
   type: TransactionType;
   amount: number;
+  platformFee?: number;
   status?: TransactionStatus;
   paymentMethodId?: string;
   venmoTransactionId?: string;
@@ -120,6 +122,7 @@ export class TransactionService {
         type: params.type,
         status: params.status || 'COMPLETED',
         amount,
+        platformFee: params.platformFee || 0,
         balanceBefore,
         balanceAfter,
         paymentMethodId: params.paymentMethodId,
@@ -154,6 +157,7 @@ export class TransactionService {
         type: transaction.type as TransactionType,
         status: transaction.status as TransactionStatus,
         amount: transaction.amount!,
+        platformFee: transaction.platformFee || 0,
         balanceBefore: transaction.balanceBefore!,
         balanceAfter: transaction.balanceAfter!,
         paymentMethodId: transaction.paymentMethodId || undefined,
@@ -205,6 +209,7 @@ export class TransactionService {
 
   /**
    * Create a withdrawal transaction (App → Venmo)
+   * Applies 2% platform fee to withdrawal amount
    */
   static async createWithdrawal(
     userId: string,
@@ -234,11 +239,22 @@ export class TransactionService {
       return null;
     }
 
+    // Calculate platform fee (2% of withdrawal)
+    const platformFee = Math.round(amount * 0.02 * 100) / 100; // Round to 2 decimal places
+    const netAmount = amount - platformFee;
+
+    console.log('[Transaction] Withdrawal with fee:', {
+      requestedAmount: amount,
+      platformFee,
+      netAmount
+    });
+
     // Withdrawals start as PENDING until admin processes
     const transaction = await this.createTransaction({
       userId,
       type: 'WITHDRAWAL',
       amount,
+      platformFee,
       status: 'PENDING',
       paymentMethodId,
       venmoUsername,
@@ -274,6 +290,7 @@ export class TransactionService {
 
   /**
    * Record bet winnings payout
+   * Applies 3% platform fee to winnings
    */
   static async recordBetWinnings(
     userId: string,
@@ -281,23 +298,34 @@ export class TransactionService {
     betId: string,
     participantId?: string
   ): Promise<Transaction | null> {
+    // Calculate platform fee (3% of winnings)
+    const platformFee = Math.round(amount * 0.03 * 100) / 100; // Round to 2 decimal places
+    const netAmount = amount - platformFee;
+
+    console.log('[Transaction] Bet winnings with fee:', {
+      grossWinnings: amount,
+      platformFee,
+      netAmount
+    });
+
     const transaction = await this.createTransaction({
       userId,
       type: 'BET_WON',
-      amount,
+      amount: netAmount, // Credit net amount after fee
+      platformFee,
       status: 'COMPLETED',
       relatedBetId: betId,
       relatedParticipantId: participantId,
       notes: 'Bet winnings',
     });
 
-    // Send notification about winnings
+    // Send notification about winnings (show net amount)
     if (transaction) {
       await NotificationService.createNotification({
         userId,
         type: 'BET_RESOLVED',
         title: 'You Won!',
-        message: `You won $${amount.toFixed(2)}!`,
+        message: `You won $${netAmount.toFixed(2)}!`,
         priority: 'HIGH',
         relatedBetId: betId,
       });
@@ -619,6 +647,7 @@ export class TransactionService {
         type: t.type as TransactionType,
         status: t.status as TransactionStatus,
         amount: t.amount!,
+        platformFee: t.platformFee || 0,
         balanceBefore: t.balanceBefore!,
         balanceAfter: t.balanceAfter!,
         paymentMethodId: t.paymentMethodId || undefined,
@@ -661,6 +690,7 @@ export class TransactionService {
         type: t.type as TransactionType,
         status: t.status as TransactionStatus,
         amount: t.amount!,
+        platformFee: t.platformFee || 0,
         balanceBefore: t.balanceBefore!,
         balanceAfter: t.balanceAfter!,
         paymentMethodId: t.paymentMethodId || undefined,
@@ -704,6 +734,7 @@ export class TransactionService {
         type: transaction.type as TransactionType,
         status: transaction.status as TransactionStatus,
         amount: transaction.amount!,
+        platformFee: transaction.platformFee || 0,
         balanceBefore: transaction.balanceBefore!,
         balanceAfter: transaction.balanceAfter!,
         paymentMethodId: transaction.paymentMethodId || undefined,
