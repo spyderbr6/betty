@@ -78,7 +78,7 @@ export const TermsOfServiceScreen: React.FC<TermsOfServiceScreenProps> = ({ onCl
           <Text style={styles.subsectionTitle}>Bet Resolution</Text>
           <Text style={styles.bulletPoint}>• Only the bet creator can determine the winning side</Text>
           <Text style={styles.bulletPoint}>• Payouts are automatically distributed to winners</Text>
-          <Text style={styles.bulletPoint}>• SideBet does not charge fees or take a percentage of winnings</Text>
+          <Text style={styles.bulletPoint}>• A 3% platform fee is deducted from winnings before distribution</Text>
         </View>
 
         <View style={styles.section}>
@@ -95,6 +95,13 @@ export const TermsOfServiceScreen: React.FC<TermsOfServiceScreenProps> = ({ onCl
           <Text style={styles.bulletPoint}>• Withdrawals are processed manually by our admin team</Text>
           <Text style={styles.bulletPoint}>• Processing may take 1-5 business days</Text>
           <Text style={styles.bulletPoint}>• Minimum withdrawal amount may apply</Text>
+          <Text style={styles.bulletPoint}>• A 2% processing fee is deducted from withdrawal amounts</Text>
+
+          <Text style={styles.subsectionTitle}>Platform Fees</Text>
+          <Text style={styles.bulletPoint}>• Winnings Fee: 3% of bet winnings are retained as a platform fee</Text>
+          <Text style={styles.bulletPoint}>• Withdrawal Fee: 2% of withdrawal amounts are retained as a processing fee</Text>
+          <Text style={styles.bulletPoint}>• No fees are charged for deposits or placing bets</Text>
+          <Text style={styles.bulletPoint}>• Fees support platform maintenance, security, and customer support</Text>
 
           <Text style={styles.subsectionTitle}>Account Balance</Text>
           <Text style={styles.bulletPoint}>• Your balance reflects available funds for betting</Text>
