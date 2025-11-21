@@ -280,6 +280,7 @@ export const AddFundsModal: React.FC<AddFundsModalProps> = ({
             {'\n'}3. Copy the transaction ID from Venmo
             {'\n'}4. Paste it below for verification
             {'\n'}5. Our team will verify and approve within 1-2 hours
+            {'\n'}{'\n'}Note: Venmo may charge fees. You'll be credited with the actual amount received.
           </Text>
         </View>
       </View>

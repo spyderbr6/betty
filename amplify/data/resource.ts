@@ -406,7 +406,8 @@ const schema = a.schema({
         'ADMIN_ADJUSTMENT'  // Admin balance correction
       ]),
       status: a.enum(['PENDING', 'PROCESSING', 'COMPLETED', 'FAILED', 'CANCELLED']),
-      amount: a.float().required(),
+      amount: a.float().required(), // Requested amount (what user intended to deposit/withdraw)
+      actualAmount: a.float(), // Actual amount received after fees (for deposits) or sent (for withdrawals)
       // Balance tracking
       balanceBefore: a.float().required(),
       balanceAfter: a.float().required(),
