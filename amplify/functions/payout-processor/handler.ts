@@ -153,33 +153,44 @@ async function processCompletedDisputeWindows(): Promise<{
               continue;
             }
 
-            // Update transaction status to COMPLETED
+            // Calculate platform fee for BET_WON transactions (3%)
+            let platformFee = 0;
+            let netAmount = transaction.amount || 0;
+
+            if (transaction.type === 'BET_WON') {
+              platformFee = Math.round((transaction.amount || 0) * 0.03 * 100) / 100;
+              netAmount = (transaction.amount || 0) - platformFee;
+              console.log(`💰 Applying 3% platform fee: Gross: $${transaction.amount}, Fee: $${platformFee}, Net: $${netAmount}`);
+            }
+
+            // Update transaction status to COMPLETED with platform fee
             await client.models.Transaction.update({
               id: transaction.id,
               status: 'COMPLETED',
+              platformFee: platformFee,
               completedAt: new Date().toISOString()
             });
 
-            // Update user balance
+            // Update user balance with NET amount (after fee)
             const { data: user } = await client.models.User.get({ id: transaction.userId });
             if (user) {
-              const newBalance = (user.balance || 0) + (transaction.amount || 0);
+              const newBalance = (user.balance || 0) + netAmount;
               await client.models.User.update({
                 id: transaction.userId,
                 balance: newBalance
               });
 
-              console.log(`✅ User ${transaction.userId} balance updated: ${user.balance} → ${newBalance}`);
+              console.log(`✅ User ${transaction.userId} balance updated: ${user.balance} → ${newBalance} (net after ${platformFee > 0 ? '$' + platformFee.toFixed(2) + ' fee' : 'no fee'})`);
               totalPayouts++;
             }
 
-            // Send notification to winner
+            // Send notification to winner with NET amount
             try {
               await client.models.Notification.create({
                 userId: transaction.userId,
                 type: 'BET_RESOLVED',
                 title: 'Bet Won!',
-                message: `You won $${transaction.amount?.toFixed(2)} on "${bet.title}"`,
+                message: `You won $${netAmount.toFixed(2)} on "${bet.title}"`,
                 isRead: false,
                 priority: 'HIGH',
                 actionType: 'view_bet',
