@@ -232,14 +232,30 @@ const TransactionCard: React.FC<TransactionCardProps> = ({ transaction }) => {
     if (transaction.notes) return transaction.notes;
 
     switch (transaction.type) {
-      case 'DEPOSIT':
-        return transaction.venmoUsername
+      case 'DEPOSIT': {
+        const baseName = transaction.venmoUsername
           ? `From Venmo ${transaction.venmoUsername}`
           : 'Deposit to account';
-      case 'WITHDRAWAL':
-        return transaction.venmoUsername
+
+        // Show fee if actualAmount differs from requested amount
+        if (transaction.actualAmount !== undefined && transaction.actualAmount < transaction.amount) {
+          const fee = transaction.amount - transaction.actualAmount;
+          return `${baseName} (Fee: ${formatCurrency(fee)})`;
+        }
+        return baseName;
+      }
+      case 'WITHDRAWAL': {
+        const baseName = transaction.venmoUsername
           ? `To Venmo ${transaction.venmoUsername}`
           : 'Withdrawal from account';
+
+        // Show fee if actualAmount differs from requested amount
+        if (transaction.actualAmount !== undefined && transaction.actualAmount < transaction.amount) {
+          const fee = transaction.amount - transaction.actualAmount;
+          return `${baseName} (Fee: ${formatCurrency(fee)})`;
+        }
+        return baseName;
+      }
       case 'BET_PLACED':
         return 'Joined a bet';
       case 'BET_WON':
@@ -300,8 +316,13 @@ const TransactionCard: React.FC<TransactionCardProps> = ({ transaction }) => {
                      transaction.type === 'BET_CANCELLED' ||
                      transaction.type === 'BET_REFUND';
 
+    // For deposits/withdrawals, use actualAmount if available (after fees)
+    const displayAmount = (transaction.type === 'DEPOSIT' || transaction.type === 'WITHDRAWAL') && transaction.actualAmount !== undefined
+      ? transaction.actualAmount
+      : transaction.amount;
+
     const sign = isCredit ? '+' : '-';
-    return `${sign}${formatCurrency(transaction.amount)}`;
+    return `${sign}${formatCurrency(displayAmount)}`;
   };
 
   const formatDate = () => {
