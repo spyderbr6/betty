@@ -188,11 +188,23 @@ export const NotificationScreen: React.FC<NotificationScreenProps> = ({ onClose 
         unreadOnly: true // Fetch only unread notifications from database
       });
 
+      // DEBUG: Log notification details
+      console.log('[NotificationScreen] Fetched notifications:', userNotifications.length);
+      console.log('[NotificationScreen] All IDs:', userNotifications.map(n => n.id));
+      console.log('[NotificationScreen] All types:', userNotifications.map(n => n.type));
+      console.log('[NotificationScreen] Missing IDs:', userNotifications.filter(n => !n.id).length);
+      console.log('[NotificationScreen] Duplicate IDs:', userNotifications.filter((n, i, arr) =>
+        arr.findIndex(x => x.id === n.id) !== i
+      ).length);
+      console.log('[NotificationScreen] Full data:', userNotifications);
+
       // No need to filter - already filtered by database query
       const unreadNotifications = userNotifications;
 
       setNotifications(unreadNotifications);
       setUnreadCount(unreadNotifications.length);
+
+      console.log('[NotificationScreen] State set with:', unreadNotifications.length, 'notifications');
 
       // If we got fewer notifications than requested, there are no more
       setHasMore(userNotifications.length >= currentLimit);
@@ -287,6 +299,9 @@ export const NotificationScreen: React.FC<NotificationScreenProps> = ({ onClose 
     loadNotifications().finally(() => setIsLoading(false));
   }, [loadNotifications]);
 
+  // DEBUG: Log render state
+  console.log('[NotificationScreen] Rendering with notifications.length:', notifications.length, 'unreadCount:', unreadCount);
+
   if (isLoading) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
@@ -321,7 +336,10 @@ export const NotificationScreen: React.FC<NotificationScreenProps> = ({ onClose 
 
       <FlatList
         data={notifications}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => {
+          console.log('[NotificationScreen] Rendering item with ID:', item.id, 'Type:', item.type);
+          return item.id;
+        }}
         renderItem={({ item }) => (
           <NotificationItem
             notification={item}
