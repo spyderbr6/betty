@@ -321,13 +321,18 @@ export const ResolveScreen: React.FC = () => {
               const { data: userData } = await client.models.User.get({ id: participant.userId });
               const currentBalance = userData?.balance || 0;
 
+              // Calculate platform fee (3% of winnings) - will be applied when payout-processor completes transaction
+              const platformFee = Math.round(payout * 0.03 * 100) / 100;
+              const netPayout = payout - platformFee;
+
               await client.models.Transaction.create({
                 userId: participant.userId,
                 type: 'BET_WON',
                 status: 'PENDING', // NOT COMPLETED - awaiting dispute window
-                amount: payout,
+                amount: payout, // Gross amount (before fee)
+                platformFee: 0, // Will be set by payout-processor when completed
                 balanceBefore: currentBalance,
-                balanceAfter: currentBalance + payout, // Projected balance
+                balanceAfter: currentBalance + netPayout, // Projected balance (after fee)
                 relatedBetId: bet.id,
                 relatedParticipantId: participant.id,
                 notes: `Bet winnings (pending 48h dispute window): ${bet.title}`,
@@ -345,12 +350,15 @@ export const ResolveScreen: React.FC = () => {
             // Send bet resolved notification to participant
             if (participant.userId !== user?.userId) {
               try {
+                // Calculate net payout for winner notification
+                const netPayoutForNotification = isWinner ? payout - Math.round(payout * 0.03 * 100) / 100 : 0;
+
                 await NotificationService.createNotification({
                   userId: participant.userId,
                   type: 'BET_RESOLVED',
                   title: isWinner ? 'Bet Won! (Pending)' : 'Bet Lost',
                   message: isWinner
-                    ? `You won $${payout.toFixed(2)} on "${bet.title}". Funds will be available in 48 hours if no disputes are filed.`
+                    ? `You won $${netPayoutForNotification.toFixed(2)} on "${bet.title}". Funds will be available in 48 hours if no disputes are filed.`
                     : `You lost on "${bet.title}". The winner was ${winningSide === 'A' ? bet.odds.sideAName : bet.odds.sideBName}.`,
                   priority: isWinner ? 'HIGH' : 'MEDIUM',
                   actionType: 'view_bet',
