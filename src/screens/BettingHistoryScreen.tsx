@@ -249,17 +249,29 @@ const TransactionCard: React.FC<TransactionCardProps> = ({ transaction }) => {
           ? `To Venmo ${transaction.venmoUsername}`
           : 'Withdrawal from account';
 
-        // Show fee if actualAmount differs from requested amount
-        if (transaction.actualAmount !== undefined && transaction.actualAmount < transaction.amount) {
-          const fee = transaction.amount - transaction.actualAmount;
-          return `${baseName} (Fee: ${formatCurrency(fee)})`;
+        // Show platform fee (2%) and Venmo fee if present
+        let feeInfo = '';
+        if (transaction.platformFee && transaction.platformFee > 0) {
+          feeInfo = `Platform fee: ${formatCurrency(transaction.platformFee)}`;
         }
-        return baseName;
+        if (transaction.actualAmount !== undefined && transaction.actualAmount < transaction.amount) {
+          const venmoFee = transaction.amount - transaction.actualAmount - (transaction.platformFee || 0);
+          if (venmoFee > 0) {
+            feeInfo += feeInfo ? `, Venmo fee: ${formatCurrency(venmoFee)}` : `Venmo fee: ${formatCurrency(venmoFee)}`;
+          }
+        }
+
+        return feeInfo ? `${baseName} (${feeInfo})` : baseName;
       }
       case 'BET_PLACED':
         return 'Joined a bet';
-      case 'BET_WON':
+      case 'BET_WON': {
+        // Show platform fee if present
+        if (transaction.platformFee && transaction.platformFee > 0) {
+          return `Winnings payout (Platform fee: ${formatCurrency(transaction.platformFee)})`;
+        }
         return 'Winnings payout';
+      }
       case 'BET_LOST':
         return 'Lost bet - tracking record';
       case 'BET_CANCELLED':
