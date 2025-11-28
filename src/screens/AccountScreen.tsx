@@ -39,6 +39,8 @@ import { AdminTestingScreen } from './AdminTestingScreen';
 import { useAuth } from '../contexts/AuthContext';
 import { ProfileEditForm, User } from '../types/betting';
 import { getProfilePictureUrl } from '../services/imageUploadService';
+import { NotificationPreferencesService } from '../services/notificationPreferencesService';
+import { showAlert } from '../components/ui/CustomAlert';
 
 // Initialize GraphQL client
 const client = generateClient<Schema>();
@@ -169,6 +171,16 @@ export const AccountScreen: React.FC = () => {
         });
 
         if (newUser.data) {
+          // Create default notification preferences for new user
+          // This ensures notifications work immediately without race conditions
+          try {
+            await NotificationPreferencesService.createDefaultPreferences(newUser.data.id!);
+            console.log('[AccountScreen] Created default notification preferences for new user:', newUser.data.id);
+          } catch (prefError) {
+            console.error('[AccountScreen] Failed to create notification preferences for new user:', prefError);
+            // Don't block user creation if preferences fail - they'll be created on first notification
+          }
+
           // Get fresh signed URL for profile picture if it exists
           let profilePictureUrl = undefined;
           if (newUser.data.profilePictureUrl) {

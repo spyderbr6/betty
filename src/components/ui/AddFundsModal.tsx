@@ -10,7 +10,6 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  Alert,
   ActivityIndicator,
   Modal,
   KeyboardAvoidingView,
@@ -22,6 +21,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, typography, textStyles } from '../../styles';
 import { useAuth } from '../../contexts/AuthContext';
 import { ModalHeader } from './ModalHeader';
+import { showAlert } from './CustomAlert';
 import { TransactionService } from '../../services/transactionService';
 import { PaymentMethodService } from '../../services/paymentMethodService';
 import type { PaymentMethod } from '../../services/paymentMethodService';

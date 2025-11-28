@@ -12,7 +12,6 @@ import {
   Text,
   StyleSheet,
   Modal,
-  Alert,
   Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -21,6 +20,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
 import { getProfilePictureUrl } from '../services/imageUploadService';
+import { showAlert } from '../components/ui/CustomAlert';
 
 // Import step components
 import { OnboardingProfilePictureStep } from '../components/onboarding/OnboardingProfilePictureStep';
