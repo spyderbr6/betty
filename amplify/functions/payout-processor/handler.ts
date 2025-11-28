@@ -153,6 +153,15 @@ async function processCompletedDisputeWindows(): Promise<{
               continue;
             }
 
+            // Get user's current balance BEFORE crediting
+            const { data: user } = await client.models.User.get({ id: transaction.userId });
+            if (!user) {
+              console.error(`❌ User ${transaction.userId} not found, skipping transaction`);
+              continue;
+            }
+
+            const currentBalance = user.balance || 0;
+
             // Calculate platform fee for BET_WON transactions (3%)
             let platformFee = 0;
             let netAmount = transaction.amount || 0;
@@ -163,31 +172,30 @@ async function processCompletedDisputeWindows(): Promise<{
               console.log(`💰 Applying 3% platform fee: Gross: $${transaction.amount}, Fee: $${platformFee}, Net: $${netAmount}`);
             }
 
-            // Update transaction status to COMPLETED with platform fee
+            // Use actualAmount if available (net after platform fee), otherwise calculate from amount
+            const amountToCredit = transaction.actualAmount !== undefined && transaction.actualAmount !== null
+              ? transaction.actualAmount
+              : netAmount;
+            const newBalance = currentBalance + amountToCredit;
+
+            // Update transaction status to COMPLETED with correct balance fields
             await client.models.Transaction.update({
               id: transaction.id,
               status: 'COMPLETED',
               platformFee: platformFee,
+              balanceBefore: currentBalance,
+              balanceAfter: newBalance,
               completedAt: new Date().toISOString()
             });
 
             // Update user balance with NET amount (after fee)
-            const { data: user } = await client.models.User.get({ id: transaction.userId });
-            if (user) {
-              // Use actualAmount if available (net after platform fee), otherwise calculate from amount
-              const amountToCredit = transaction.actualAmount !== undefined && transaction.actualAmount !== null
-                ? transaction.actualAmount
-                : netAmount;
-              const newBalance = (user.balance || 0) + amountToCredit;
+            await client.models.User.update({
+              id: transaction.userId,
+              balance: newBalance
+            });
 
-              await client.models.User.update({
-                id: transaction.userId,
-                balance: newBalance
-              });
-
-              console.log(`✅ User ${transaction.userId} balance updated: ${user.balance} → ${newBalance} (credited: $${amountToCredit})`);
-              totalPayouts++;
-            }
+            console.log(`✅ User ${transaction.userId} balance updated: ${currentBalance} → ${newBalance} (credited: $${amountToCredit})`);
+            totalPayouts++;
 
             // Send notification to winner with NET amount
             try {
