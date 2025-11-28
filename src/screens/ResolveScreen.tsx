@@ -308,7 +308,11 @@ export const ResolveScreen: React.FC = () => {
               payout = totalPot * winnerShare;
             }
 
-            // Update participant record with calculated payout
+            // Calculate platform fee (3% of winnings) for winners
+            const platformFee = isWinner && payout > 0 ? Math.round(payout * 0.03 * 100) / 100 : 0;
+            const netPayout = payout - platformFee;
+
+            // Update participant record with calculated payout (gross amount)
             await client.models.Participant.update({
               id: participant.id,
               payout: payout,
@@ -325,9 +329,10 @@ export const ResolveScreen: React.FC = () => {
                 userId: participant.userId,
                 type: 'BET_WON',
                 status: 'PENDING', // NOT COMPLETED - awaiting dispute window
-                amount: payout,
+                amount: netPayout, // Net amount after platform fee
+                platformFee: platformFee, // 3% platform fee
                 balanceBefore: currentBalance,
-                balanceAfter: currentBalance + payout, // Projected balance
+                balanceAfter: currentBalance + netPayout, // Projected balance with net amount
                 relatedBetId: bet.id,
                 relatedParticipantId: participant.id,
                 notes: `Bet winnings (pending 48h dispute window): ${bet.title}`,
@@ -350,7 +355,7 @@ export const ResolveScreen: React.FC = () => {
                   type: 'BET_RESOLVED',
                   title: isWinner ? 'Bet Won! (Pending)' : 'Bet Lost',
                   message: isWinner
-                    ? `You won $${payout.toFixed(2)} on "${bet.title}". Funds will be available in 48 hours if no disputes are filed.`
+                    ? `You won $${netPayout.toFixed(2)} on "${bet.title}" (platform fee: $${platformFee.toFixed(2)}). Funds will be available in 48 hours if no disputes are filed.`
                     : `You lost on "${bet.title}". The winner was ${winningSide === 'A' ? bet.odds.sideAName : bet.odds.sideBName}.`,
                   priority: isWinner ? 'HIGH' : 'MEDIUM',
                   actionType: 'view_bet',
