@@ -328,10 +328,13 @@ const TransactionCard: React.FC<TransactionCardProps> = ({ transaction }) => {
                      transaction.type === 'BET_CANCELLED' ||
                      transaction.type === 'BET_REFUND';
 
-    // For deposits/withdrawals, use actualAmount if available (after fees)
-    const displayAmount = (transaction.type === 'DEPOSIT' || transaction.type === 'WITHDRAWAL') && transaction.actualAmount !== undefined
-      ? transaction.actualAmount
-      : transaction.amount;
+    let displayAmount = transaction.amount;
+
+    // For transactions with actualAmount, use it (net amount after fees)
+    // This includes: DEPOSIT (after Venmo fees), WITHDRAWAL (after all fees), BET_WON (after platform fee)
+    if (transaction.actualAmount !== undefined) {
+      displayAmount = transaction.actualAmount;
+    }
 
     const sign = isCredit ? '+' : '-';
     return `${sign}${formatCurrency(displayAmount)}`;

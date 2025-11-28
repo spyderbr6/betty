@@ -174,23 +174,34 @@ async function processCompletedDisputeWindows(): Promise<{
             // Update user balance with NET amount (after fee)
             const { data: user } = await client.models.User.get({ id: transaction.userId });
             if (user) {
-              const newBalance = (user.balance || 0) + netAmount;
+              // Use actualAmount if available (net after platform fee), otherwise calculate from amount
+              const amountToCredit = transaction.actualAmount !== undefined && transaction.actualAmount !== null
+                ? transaction.actualAmount
+                : netAmount;
+              const newBalance = (user.balance || 0) + amountToCredit;
+
               await client.models.User.update({
                 id: transaction.userId,
                 balance: newBalance
               });
 
-              console.log(`✅ User ${transaction.userId} balance updated: ${user.balance} → ${newBalance} (net after ${platformFee > 0 ? '$' + platformFee.toFixed(2) + ' fee' : 'no fee'})`);
+              console.log(`✅ User ${transaction.userId} balance updated: ${user.balance} → ${newBalance} (credited: $${amountToCredit})`);
               totalPayouts++;
             }
 
             // Send notification to winner with NET amount
             try {
+              const netAmount = transaction.actualAmount || transaction.amount || 0;
+              const platformFee = transaction.platformFee || 0;
+              const message = platformFee > 0
+                ? `You won $${netAmount.toFixed(2)} on "${bet.title}" (platform fee: $${platformFee.toFixed(2)})`
+                : `You won $${netAmount.toFixed(2)} on "${bet.title}"`;
+
               await client.models.Notification.create({
                 userId: transaction.userId,
                 type: 'BET_RESOLVED',
                 title: 'Bet Won!',
-                message: `You won $${netAmount.toFixed(2)} on "${bet.title}"`,
+                message: message,
                 isRead: false,
                 priority: 'HIGH',
                 actionType: 'view_bet',

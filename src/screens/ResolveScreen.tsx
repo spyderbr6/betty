@@ -333,8 +333,9 @@ export const ResolveScreen: React.FC = () => {
                 userId: participant.userId,
                 type: 'BET_WON',
                 status: 'PENDING', // NOT COMPLETED - awaiting dispute window
-                amount: payout, // Gross amount (before fee)
-                platformFee: 0, // Will be set by payout-processor when completed
+                amount: payout, // Gross payout amount (before fees) - consistent with deposits
+                actualAmount: netPayout, // Net amount received after platform fee
+                platformFee: platformFee, // 3% platform fee
                 balanceBefore: currentBalance,
                 balanceAfter: currentBalance + netPayout, // Projected balance (after fee)
                 relatedBetId: bet.id,
