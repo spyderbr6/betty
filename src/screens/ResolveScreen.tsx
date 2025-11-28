@@ -308,7 +308,11 @@ export const ResolveScreen: React.FC = () => {
               payout = totalPot * winnerShare;
             }
 
-            // Update participant record with calculated payout
+            // Calculate platform fee (3% of winnings) for winners
+            const platformFee = isWinner && payout > 0 ? Math.round(payout * 0.03 * 100) / 100 : 0;
+            const netPayout = payout - platformFee;
+
+            // Update participant record with calculated payout (gross amount)
             await client.models.Participant.update({
               id: participant.id,
               payout: payout,
