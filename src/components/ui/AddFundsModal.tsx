@@ -172,7 +172,7 @@ export const AddFundsModal: React.FC<AddFundsModalProps> = ({
   };
 
   const renderSelectMethod = () => (
-    <ScrollView style={styles.stepContent} showsVerticalScrollIndicator={false}>
+    <ScrollView style={styles.stepContent} contentContainerStyle={styles.stepContentContainer} showsVerticalScrollIndicator={false}>
       <Text style={styles.sectionTitle}>SELECT VENMO ACCOUNT</Text>
 
       {isLoadingMethods ? (
@@ -246,7 +246,7 @@ export const AddFundsModal: React.FC<AddFundsModalProps> = ({
   );
 
   const renderEnterDetails = () => (
-    <ScrollView style={styles.stepContent} showsVerticalScrollIndicator={false}>
+    <ScrollView style={styles.stepContent} contentContainerStyle={styles.stepContentContainer} showsVerticalScrollIndicator={false}>
       <Text style={styles.sectionTitle}>DEPOSIT DETAILS</Text>
 
       {/* Amount Input */}
@@ -321,7 +321,7 @@ export const AddFundsModal: React.FC<AddFundsModalProps> = ({
   );
 
   const renderConfirmation = () => (
-    <ScrollView style={styles.stepContent} showsVerticalScrollIndicator={false}>
+    <ScrollView style={styles.stepContent} contentContainerStyle={styles.stepContentContainer} showsVerticalScrollIndicator={false}>
       <Text style={styles.sectionTitle}>CONFIRM DEPOSIT</Text>
 
       {/* Summary Card */}
@@ -442,6 +442,8 @@ const styles = StyleSheet.create({
   // Content
   stepContent: {
     flex: 1,
+  },
+  stepContentContainer: {
     padding: spacing.lg,
   },
   sectionTitle: {
