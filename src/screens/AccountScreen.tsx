@@ -235,9 +235,13 @@ export const AccountScreen: React.FC = () => {
         }
       });
 
-      // Calculate total pending payouts
+      // Calculate total pending payouts (use actualAmount for net after fees)
       const total = pendingTransactions?.reduce((sum, transaction) => {
-        return sum + (transaction.amount || 0);
+        // Use actualAmount (net after fees) if available, otherwise fall back to amount
+        const netAmount = transaction.actualAmount !== undefined && transaction.actualAmount !== null
+          ? transaction.actualAmount
+          : transaction.amount || 0;
+        return sum + netAmount;
       }, 0) || 0;
 
       setPendingPayouts(total);
