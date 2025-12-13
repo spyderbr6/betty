@@ -318,7 +318,7 @@ export class NotificationService {
 
   /**
    * Get notifications for a user
-   * Handles pagination properly when using filters (e.g., unreadOnly)
+   * Uses efficient GSI query for unread notifications (no scanning/filtering needed)
    */
   static async getUserNotifications(
     userId: string,
@@ -329,53 +329,48 @@ export class NotificationService {
     } = {}
   ): Promise<Notification[]> {
     try {
-      const filter: any = { userId: { eq: userId } };
-
-      if (options.unreadOnly) {
-        filter.isRead = { eq: false };
-      }
-
-      if (options.type) {
-        filter.type = { eq: options.type };
-      }
-
       const requestedLimit = options.limit || 50;
-      let allNotifications: any[] = [];
-      let nextToken: string | null | undefined = undefined;
 
       console.log(`[Notification] Fetching notifications for user ${userId}, unreadOnly: ${options.unreadOnly}, limit: ${requestedLimit}`);
 
-      // Keep fetching until we have enough filtered results or no more data
-      // This handles the DynamoDB issue where limit applies to scan, not filtered results
-      do {
+      let data: any[] = [];
+
+      // Use efficient GSI query when filtering by read status
+      if (options.unreadOnly) {
+        console.log(`[Notification] Using GSI query for unread notifications`);
+        const response: any = await client.models.Notification.notificationsByUserAndReadStatus({
+          userId: userId,
+          isRead: { eq: false }
+        }, {
+          limit: requestedLimit,
+          // sortDirection: 'DESC' // Sort by createdAt descending (newest first)
+        });
+        data = response.data || [];
+        console.log(`[Notification] GSI query returned ${data.length} unread notifications`);
+      } else {
+        // For all notifications (read + unread), use standard list query
+        console.log(`[Notification] Using standard list query for all notifications`);
+        const filter: any = { userId: { eq: userId } };
+
+        if (options.type) {
+          filter.type = { eq: options.type };
+        }
+
         const response: any = await client.models.Notification.list({
           filter,
-          limit: 100, // Fetch in larger chunks to handle filtered results efficiently
-          nextToken: nextToken || undefined,
+          limit: requestedLimit,
         });
+        data = response.data || [];
+        console.log(`[Notification] List query returned ${data.length} notifications`);
+      }
 
-        const { data, nextToken: token } = response;
-
-        if (data && data.length > 0) {
-          console.log(`[Notification] Fetched ${data.length} notifications (nextToken: ${!!token})`);
-          allNotifications.push(...data);
-        } else {
-          console.log(`[Notification] No more notifications found`);
-        }
-
-        nextToken = token;
-
-        // If we have enough results, stop fetching
-        if (allNotifications.length >= requestedLimit) {
-          console.log(`[Notification] Reached requested limit: ${allNotifications.length} >= ${requestedLimit}`);
-          break;
-        }
-      } while (nextToken);
-
-      console.log(`[Notification] Total notifications fetched: ${allNotifications.length}`);
+      // Apply type filter if specified (for unread queries, since GSI doesn't support it)
+      if (options.type) {
+        data = data.filter(n => n.type === options.type);
+      }
 
       // Map and sort notifications by createdAt descending (newest first)
-      const mapped = allNotifications
+      const mapped = data
         .map(notification => ({
           id: notification.id!,
           userId: notification.userId!,
@@ -392,7 +387,7 @@ export class NotificationService {
           createdAt: notification.createdAt || new Date().toISOString(),
         }))
         .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-        .slice(0, requestedLimit); // Limit to exact requested amount
+        .slice(0, requestedLimit);
 
       console.log(`[Notification] Returning ${mapped.length} notifications`);
       return mapped;
