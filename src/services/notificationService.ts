@@ -335,41 +335,39 @@ export class NotificationService {
 
       let data: any[] = [];
 
-      // Use efficient GSI query when filtering by read status
+      // Use efficient GSI query by userId (returns date-ordered results)
+      // Then filter by isRead client-side (efficient for typical notification volumes)
       if (options.unreadOnly) {
-        console.log(`[Notification] Using GSI query for unread notifications`);
-        const response: any = await client.models.Notification.notificationsByUserAndReadStatus({
-          userId: userId,
-          isRead: { eq: false }
+        console.log(`[Notification] Using GSI query for user notifications (will filter isRead client-side)`);
+        const response: any = await client.models.Notification.notificationsByUser({
+          userId: userId
+        }, {
+          limit: requestedLimit * 2, // Fetch extra to account for client-side filtering
+          sortDirection: 'DESC' // Sort by createdAt descending (newest first)
+        });
+        data = response.data || [];
+        // Filter for unread notifications client-side
+        data = data.filter((n: any) => n.isRead === false);
+        console.log(`[Notification] GSI query returned ${data.length} unread notifications after filtering`);
+      } else {
+        // For all notifications (read + unread), use efficient GSI query
+        console.log(`[Notification] Using GSI query for all user notifications`);
+        const response: any = await client.models.Notification.notificationsByUser({
+          userId: userId
         }, {
           limit: requestedLimit,
-          // sortDirection: 'DESC' // Sort by createdAt descending (newest first)
+          sortDirection: 'DESC' // Newest first
         });
         data = response.data || [];
-        console.log(`[Notification] GSI query returned ${data.length} unread notifications`);
-      } else {
-        // For all notifications (read + unread), use standard list query
-        console.log(`[Notification] Using standard list query for all notifications`);
-        const filter: any = { userId: { eq: userId } };
-
-        if (options.type) {
-          filter.type = { eq: options.type };
-        }
-
-        const response: any = await client.models.Notification.list({
-          filter,
-          limit: requestedLimit,
-        });
-        data = response.data || [];
-        console.log(`[Notification] List query returned ${data.length} notifications`);
+        console.log(`[Notification] GSI query returned ${data.length} notifications`);
       }
 
-      // Apply type filter if specified (for unread queries, since GSI doesn't support it)
+      // Apply type filter client-side if specified
       if (options.type) {
         data = data.filter(n => n.type === options.type);
       }
 
-      // Map and sort notifications by createdAt descending (newest first)
+      // Map notifications (already sorted by GSI createdAt DESC)
       const mapped = data
         .map(notification => ({
           id: notification.id!,
@@ -386,8 +384,7 @@ export class NotificationService {
           relatedRequestId: notification.relatedRequestId || undefined,
           createdAt: notification.createdAt || new Date().toISOString(),
         }))
-        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-        .slice(0, requestedLimit);
+        .slice(0, requestedLimit); // Limit to exact requested amount
 
       console.log(`[Notification] Returning ${mapped.length} notifications`);
       return mapped;
