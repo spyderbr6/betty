@@ -643,22 +643,15 @@ export class TransactionService {
     } = {}
   ): Promise<Transaction[]> {
     try {
-      const filter: any = { userId: { eq: userId } };
-
-      if (options.type) {
-        filter.type = { eq: options.type };
-      }
-
-      if (options.status) {
-        filter.status = { eq: options.status };
-      }
-
-      const { data } = await client.models.Transaction.list({
-        filter,
+      // Use efficient GSI query by userId (already sorted by createdAt DESC)
+      const { data } = await client.models.Transaction.transactionsByUser({
+        userId: userId
+      }, {
         limit: options.limit || 50,
+        sortDirection: 'DESC' // Newest first
       });
 
-      const transactions = (data || []).map(t => ({
+      let transactions = (data || []).map(t => ({
         id: t.id!,
         userId: t.userId!,
         type: t.type as TransactionType,
@@ -681,10 +674,16 @@ export class TransactionService {
         completedAt: t.completedAt || undefined,
       }));
 
-      // Sort by createdAt descending (newest first)
-      return transactions.sort((a, b) =>
-        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-      );
+      // Filter client-side by type and/or status if specified
+      if (options.type) {
+        transactions = transactions.filter(t => t.type === options.type);
+      }
+      if (options.status) {
+        transactions = transactions.filter(t => t.status === options.status);
+      }
+
+      // Already sorted by GSI (createdAt DESC), no need to sort again
+      return transactions;
     } catch (error) {
       console.error('[Transaction] Error fetching transactions:', error);
       return [];
@@ -696,10 +695,11 @@ export class TransactionService {
    */
   static async getPendingTransactions(): Promise<Transaction[]> {
     try {
-      const { data } = await client.models.Transaction.list({
-        filter: {
-          status: { eq: 'PENDING' }
-        }
+      // Use efficient GSI query by status (sorted by createdAt ASC for admin queue)
+      const { data } = await client.models.Transaction.transactionsByStatus({
+        status: 'PENDING'
+      }, {
+        sortDirection: 'ASC' // Oldest first for admin processing queue
       });
 
       const transactions = (data || []).map(t => ({

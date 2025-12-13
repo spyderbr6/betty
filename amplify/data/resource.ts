@@ -202,6 +202,13 @@ const schema = a.schema({
       notifications: a.hasMany('Notification', 'relatedBetId'),
       disputes: a.hasMany('Dispute', 'betId')
     })
+    .secondaryIndexes((index) => [
+      // Index for efficiently querying bets by status (home screen)
+      // Allows: SELECT * WHERE status = 'ACTIVE' ORDER BY createdAt DESC
+      index('status')
+        .sortKeys(['createdAt'])
+        .queryField('betsByStatus')
+    ])
     .authorization((allow) => [
       allow.owner().to(['create', 'read', 'update', 'delete']),
       allow.authenticated().to(['read', 'create', 'update']) // Allow any authenticated user to create bets, read all bets, and update (for total pot changes)
@@ -224,6 +231,18 @@ const schema = a.schema({
       bet: a.belongsTo('Bet', 'betId'),
       user: a.belongsTo('User', 'userId'),
     })
+    .secondaryIndexes((index) => [
+      // Index for efficiently querying participants by bet (bet operations)
+      // Allows: SELECT * WHERE betId = X ORDER BY joinedAt DESC (newest first)
+      index('betId')
+        .sortKeys(['joinedAt'])
+        .queryField('participantsByBet'),
+      // Index for efficiently querying participants by user (user bet history)
+      // Allows: SELECT * WHERE userId = X ORDER BY joinedAt DESC (newest first)
+      index('userId')
+        .sortKeys(['joinedAt'])
+        .queryField('participantsByUser')
+    ])
     .authorization((allow) => [
       allow.owner(),
       allow.authenticated().to(['read', 'create', 'update'])
@@ -439,6 +458,18 @@ const schema = a.schema({
       user: a.belongsTo('User', 'userId'),
       paymentMethod: a.belongsTo('PaymentMethod', 'paymentMethodId'),
     })
+    .secondaryIndexes((index) => [
+      // Index for efficiently querying transactions by user (transaction history)
+      // Allows: SELECT * WHERE userId = X ORDER BY createdAt DESC
+      index('userId')
+        .sortKeys(['createdAt'])
+        .queryField('transactionsByUser'),
+      // Index for efficiently querying transactions by status (admin dashboard)
+      // Allows: SELECT * WHERE status = 'PENDING' ORDER BY createdAt ASC
+      index('status')
+        .sortKeys(['createdAt'])
+        .queryField('transactionsByStatus')
+    ])
     .authorization((allow) => [
       allow.owner().to(['create', 'read']), // Users can create their own transactions and read them
       allow.authenticated().to(['read', 'create', 'update']), // All authenticated users can read/create/update transactions
