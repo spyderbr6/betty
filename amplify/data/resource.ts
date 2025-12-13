@@ -233,14 +233,14 @@ const schema = a.schema({
     })
     .secondaryIndexes((index) => [
       // Index for efficiently querying participants by bet (bet operations)
-      // Allows: SELECT * WHERE betId = X ORDER BY userId
+      // Allows: SELECT * WHERE betId = X ORDER BY joinedAt DESC (newest first)
       index('betId')
-        .sortKeys(['userId'])
+        .sortKeys(['joinedAt'])
         .queryField('participantsByBet'),
       // Index for efficiently querying participants by user (user bet history)
-      // Allows: SELECT * WHERE userId = X ORDER BY betId
+      // Allows: SELECT * WHERE userId = X ORDER BY joinedAt DESC (newest first)
       index('userId')
-        .sortKeys(['betId'])
+        .sortKeys(['joinedAt'])
         .queryField('participantsByUser')
     ])
     .authorization((allow) => [

@@ -47,15 +47,13 @@ export class BetAcceptanceService {
         return false;
       }
 
-      // Get the participant record
-      const { data: participants } = await client.models.Participant.list({
-        filter: {
-          and: [
-            { betId: { eq: betId } },
-            { userId: { eq: userId } }
-          ]
-        }
+      // Get the participant record using efficient GSI query
+      const { data: allParticipants } = await client.models.Participant.participantsByBet({
+        betId: betId
       });
+
+      // Filter for specific user
+      const participants = allParticipants?.filter((p: any) => p.userId === userId) || [];
 
       if (!participants || participants.length === 0) {
         console.error('[BetAcceptance] User is not a participant in this bet');
@@ -133,9 +131,9 @@ export class BetAcceptanceService {
         return false;
       }
 
-      // Get all participants for this bet
-      const { data: participants } = await client.models.Participant.list({
-        filter: { betId: { eq: betId } }
+      // Get all participants for this bet using efficient GSI query
+      const { data: participants } = await client.models.Participant.participantsByBet({
+        betId: betId
       });
 
       if (!participants || participants.length === 0) {
@@ -183,8 +181,8 @@ export class BetAcceptanceService {
         return { totalCount: 0, acceptedCount: 0, acceptedUserIds: [] };
       }
 
-      const { data: participants } = await client.models.Participant.list({
-        filter: { betId: { eq: betId } }
+      const { data: participants } = await client.models.Participant.participantsByBet({
+        betId: betId
       });
 
       if (!participants) {
@@ -245,8 +243,8 @@ export class BetAcceptanceService {
       console.log('[BetAcceptance] Payout will be processed within 5 minutes by scheduled Lambda');
 
       // Notify all participants that bet will close early
-      const { data: participants } = await client.models.Participant.list({
-        filter: { betId: { eq: betId } }
+      const { data: participants } = await client.models.Participant.participantsByBet({
+        betId: betId
       });
 
       if (participants) {
