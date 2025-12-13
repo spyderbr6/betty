@@ -10,7 +10,6 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  Alert,
   ActivityIndicator,
   FlatList,
   Image,
@@ -28,6 +27,7 @@ import { User } from '../../types/betting';
 import { NotificationService } from '../../services/notificationService';
 import { ModalHeader } from './ModalHeader';
 import { getProfilePictureUrl } from '../../services/imageUploadService';
+import { showAlert } from './CustomAlert';
 
 // Initialize GraphQL client
 const client = generateClient<Schema>();
@@ -195,7 +195,10 @@ export const AddFriendModal: React.FC<AddFriendModalProps> = ({
       if (newRequest) {
         // Fetch current user's display name from database
         const { data: currentUserData } = await client.models.User.get({ id: user.userId });
-        const currentUserDisplayName = currentUserData?.displayName || currentUserData?.username || user.username;
+        // Use displayName first, then extract friendly name from email, finally fallback to "Someone"
+        const currentUserDisplayName = currentUserData?.displayName ||
+          currentUserData?.email?.split('@')[0] ||
+          'Someone';
 
         await NotificationService.notifyFriendRequestReceived(
           targetUser.id,

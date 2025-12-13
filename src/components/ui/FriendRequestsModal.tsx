@@ -9,7 +9,6 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
-  Alert,
   ActivityIndicator,
   FlatList,
   Image,
@@ -25,6 +24,7 @@ import { User } from '../../types/betting';
 import { NotificationService } from '../../services/notificationService';
 import { ModalHeader } from './ModalHeader';
 import { getProfilePictureUrl } from '../../services/imageUploadService';
+import { showAlert } from './CustomAlert';
 
 // Initialize GraphQL client
 const client = generateClient<Schema>();
@@ -158,7 +158,10 @@ export const FriendRequestsModal: React.FC<FriendRequestsModalProps> = ({
       // Send notification to the original requester
       // Fetch current user's display name from database
       const { data: currentUserData } = await client.models.User.get({ id: user.userId });
-      const currentUserDisplayName = currentUserData?.displayName || currentUserData?.username || user.username;
+      // Use displayName first, then extract friendly name from email, finally fallback to "Someone"
+      const currentUserDisplayName = currentUserData?.displayName ||
+        currentUserData?.email?.split('@')[0] ||
+        'Someone';
 
       await NotificationService.notifyFriendRequestAccepted(
         request.fromUserId,
@@ -198,7 +201,10 @@ export const FriendRequestsModal: React.FC<FriendRequestsModalProps> = ({
         // Fetch current user's display name for the notification
         if (user?.userId) {
           const { data: currentUserData } = await client.models.User.get({ id: user.userId });
-          const currentUserDisplayName = currentUserData?.displayName || currentUserData?.username || 'Someone';
+          // Use displayName first, then extract friendly name from email, finally fallback to "Someone"
+          const currentUserDisplayName = currentUserData?.displayName ||
+            currentUserData?.email?.split('@')[0] ||
+            'Someone';
 
           await NotificationService.createNotification({
             userId: request.fromUserId,
