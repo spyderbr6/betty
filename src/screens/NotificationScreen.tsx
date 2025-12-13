@@ -20,6 +20,7 @@ import { Ionicons } from '@expo/vector-icons';
 // import type { Schema } from '../../amplify/data/resource';
 import { colors, spacing, textStyles, commonStyles, typography } from '../styles';
 import { ModalHeader } from '../components/ui/ModalHeader';
+import { showAlert } from '../components/ui/CustomAlert';
 import { useAuth } from '../contexts/AuthContext';
 import { NotificationService } from '../services/notificationService';
 import { Notification, NotificationType } from '../types/betting';
