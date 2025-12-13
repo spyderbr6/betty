@@ -33,7 +33,7 @@ interface AddFundsModalProps {
   onAddPaymentMethod?: () => void;
 }
 
-const APP_VENMO_USERNAME = '@SideBet'; // Replace with actual app Venmo username
+const APP_VENMO_USERNAME = '@PropBets'; // Replace with actual app Venmo username
 const MIN_DEPOSIT = 5;
 const MAX_DEPOSIT = 500;
 
