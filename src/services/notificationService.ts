@@ -318,6 +318,7 @@ export class NotificationService {
 
   /**
    * Get notifications for a user
+   * Handles pagination properly when using filters (e.g., unreadOnly)
    */
   static async getUserNotifications(
     userId: string,
@@ -338,13 +339,43 @@ export class NotificationService {
         filter.type = { eq: options.type };
       }
 
-      const { data } = await client.models.Notification.list({
-        filter,
-        limit: options.limit || 50,
-      });
+      const requestedLimit = options.limit || 50;
+      let allNotifications: any[] = [];
+      let nextToken: string | null | undefined = undefined;
+
+      console.log(`[Notification] Fetching notifications for user ${userId}, unreadOnly: ${options.unreadOnly}, limit: ${requestedLimit}`);
+
+      // Keep fetching until we have enough filtered results or no more data
+      // This handles the DynamoDB issue where limit applies to scan, not filtered results
+      do {
+        const response: any = await client.models.Notification.list({
+          filter,
+          limit: 100, // Fetch in larger chunks to handle filtered results efficiently
+          nextToken: nextToken || undefined,
+        });
+
+        const { data, nextToken: token } = response;
+
+        if (data && data.length > 0) {
+          console.log(`[Notification] Fetched ${data.length} notifications (nextToken: ${!!token})`);
+          allNotifications.push(...data);
+        } else {
+          console.log(`[Notification] No more notifications found`);
+        }
+
+        nextToken = token;
+
+        // If we have enough results, stop fetching
+        if (allNotifications.length >= requestedLimit) {
+          console.log(`[Notification] Reached requested limit: ${allNotifications.length} >= ${requestedLimit}`);
+          break;
+        }
+      } while (nextToken);
+
+      console.log(`[Notification] Total notifications fetched: ${allNotifications.length}`);
 
       // Map and sort notifications by createdAt descending (newest first)
-      return (data || [])
+      const mapped = allNotifications
         .map(notification => ({
           id: notification.id!,
           userId: notification.userId!,
@@ -360,7 +391,11 @@ export class NotificationService {
           relatedRequestId: notification.relatedRequestId || undefined,
           createdAt: notification.createdAt || new Date().toISOString(),
         }))
-        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+        .slice(0, requestedLimit); // Limit to exact requested amount
+
+      console.log(`[Notification] Returning ${mapped.length} notifications`);
+      return mapped;
     } catch (error) {
       console.error('Error fetching notifications:', error);
       return [];
