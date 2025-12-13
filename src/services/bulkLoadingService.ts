@@ -148,114 +148,86 @@ const queryWithTimeout = async <T>(
   }
 };
 
-// Paginated bet loading with limits
+// Paginated bet loading with limits using efficient GSI queries
 const loadBetsWithPagination = async (
   statusFilters: string[],
   limit: number = BULK_LOADING_CONFIG.MAX_BETS_PER_QUERY
 ): Promise<any[]> => {
   const allBets: any[] = [];
-  let nextToken: string | undefined;
-  let pageCount = 0;
-  const maxPages = Math.ceil(1000 / limit); // Hard limit: max 1000 bets total
 
-  do {
-    pageCount++;
-    if (pageCount > maxPages) {
-      console.warn(`⚠️ Reached maximum page limit (${maxPages}). Some bets may not be loaded.`);
-      break;
+  // Use efficient GSI query for each status (much faster than scanning with filter)
+  // Query each status separately and combine results
+  const betsPerStatus = Math.ceil(limit / statusFilters.length);
+
+  const statusQueries = statusFilters.map(async (status) => {
+    try {
+      const query = client.models.Bet.betsByStatus({
+        status: status as any
+      }, {
+        limit: betsPerStatus,
+        // sortDirection: 'DESC' // Newest first
+      });
+
+      const result = await queryWithTimeout(query, `Bet query for status ${status}`);
+      return result.data || [];
+    } catch (error) {
+      console.error(`Error querying bets with status ${status}:`, error);
+      return [];
     }
+  });
 
+  const resultsPerStatus = await Promise.all(statusQueries);
 
-    const query = client.models.Bet.list({
-      filter: {
-        or: statusFilters.map(status => ({ status: { eq: status } }))
-      },
-      limit,
-      nextToken,
-    });
+  // Flatten and combine all results
+  resultsPerStatus.forEach(bets => {
+    allBets.push(...bets);
+  });
 
-    const result = await queryWithTimeout(query, `Bet query page ${pageCount}`);
-
-    if (result.data) {
-      allBets.push(...result.data);
-      nextToken = result.nextToken || undefined;
-    } else {
-      break;
-    }
-
-
-  } while (nextToken && allBets.length < 1000);
+  console.log(`📊 Loaded ${allBets.length} bets via GSI queries (${statusFilters.join(', ')})`);
 
   return allBets;
 };
 
-// Paginated participant loading with limits
+// Paginated participant loading with limits using efficient GSI queries
 const loadParticipantsForBets = async (
   betIds: string[],
   limit: number = BULK_LOADING_CONFIG.MAX_PARTICIPANTS_PER_QUERY
 ): Promise<any[]> => {
   if (betIds.length === 0) return [];
 
-  // If we have too many bet IDs, we need to batch them
-  const maxBetIdsPerQuery = 50; // Amplify filter limit
-  const batches: string[][] = [];
-
-  for (let i = 0; i < betIds.length; i += maxBetIdsPerQuery) {
-    batches.push(betIds.slice(i, i + maxBetIdsPerQuery));
-  }
-
-
   const allParticipants: any[] = [];
 
-  // Process batches with concurrency limit
-  for (let i = 0; i < batches.length; i += BULK_LOADING_CONFIG.MAX_CONCURRENT_QUERIES) {
-    const concurrentBatches = batches.slice(i, i + BULK_LOADING_CONFIG.MAX_CONCURRENT_QUERIES);
+  // Use efficient GSI query for each betId (much faster than scanning with filter)
+  // Process with concurrency limit
+  for (let i = 0; i < betIds.length; i += BULK_LOADING_CONFIG.MAX_CONCURRENT_QUERIES) {
+    const concurrentBetIds = betIds.slice(i, i + BULK_LOADING_CONFIG.MAX_CONCURRENT_QUERIES);
 
-    const batchPromises = concurrentBatches.map(async (batchBetIds, batchIndex) => {
-      const actualBatchIndex = i + batchIndex + 1;
-
-      let batchParticipants: any[] = [];
-      let nextToken: string | undefined;
-      let pageCount = 0;
-      const maxPages = 10; // Limit pages per batch
-
-      do {
-        pageCount++;
-        if (pageCount > maxPages) {
-          console.warn(`⚠️ Batch ${actualBatchIndex} reached page limit (${maxPages})`);
-          break;
-        }
-
-        const query = client.models.Participant.list({
-          filter: {
-            or: batchBetIds.map(betId => ({ betId: { eq: betId } }))
-          },
-          limit,
-          nextToken
+    const betQueries = concurrentBetIds.map(async (betId) => {
+      try {
+        const query = client.models.Participant.participantsByBet({
+          betId: betId
+        }, {
+          limit: 100 // Reasonable limit per bet
         });
 
-        const result = await queryWithTimeout(query, `Participant batch ${actualBatchIndex} page ${pageCount}`);
-
-        if (result.data) {
-          batchParticipants.push(...result.data);
-          nextToken = result.nextToken || undefined;
-        } else {
-          break;
-        }
-
-      } while (nextToken && batchParticipants.length < limit * 5);
-
-      return batchParticipants;
+        const result = await queryWithTimeout(query, `Participants for bet ${betId}`);
+        return result.data || [];
+      } catch (error) {
+        console.error(`Error querying participants for bet ${betId}:`, error);
+        return [];
+      }
     });
 
-    const batchResults = await Promise.all(batchPromises);
+    const batchResults = await Promise.all(betQueries);
     batchResults.forEach(participants => allParticipants.push(...participants));
 
     // Add small delay between concurrent batch groups to avoid overwhelming the API
-    if (i + BULK_LOADING_CONFIG.MAX_CONCURRENT_QUERIES < batches.length) {
+    if (i + BULK_LOADING_CONFIG.MAX_CONCURRENT_QUERIES < betIds.length) {
       await new Promise(resolve => setTimeout(resolve, 100));
     }
   }
+
+  console.log(`📊 Loaded ${allParticipants.length} participants via GSI queries for ${betIds.length} bets`);
 
   return allParticipants;
 };
