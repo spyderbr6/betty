@@ -101,11 +101,11 @@ const schema = a.schema({
       relatedBet: a.belongsTo('Bet', 'relatedBetId'),
     })
     .secondaryIndexes((index) => [
-      // Index for efficiently querying unread notifications by user
-      // Allows: SELECT * WHERE userId = X AND isRead = false ORDER BY createdAt DESC
+      // Index for efficiently querying notifications by user ordered by date
+      // Note: isRead filtering happens client-side (acceptable for typical notification counts)
       index('userId')
-        .sortKeys(['isRead', 'createdAt'])
-        .queryField('notificationsByUserAndReadStatus')
+        .sortKeys(['createdAt'])
+        .queryField('notificationsByUser')
     ])
     .authorization((allow) => [
       allow.authenticated().to(['read', 'create', 'update']) // Any authenticated user can create/read/update notifications
