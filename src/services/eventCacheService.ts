@@ -59,7 +59,7 @@ export function isEventUpcoming(event: LiveEventData): boolean {
  * This is the only place that actually queries DynamoDB for events
  *
  * Uses the isActive GSI for efficient single-query retrieval:
- * - isActive=true returns all UPCOMING/LIVE/HALFTIME events (managed by Lambda)
+ * - isActive=1 returns all UPCOMING/LIVE/HALFTIME events (managed by Lambda)
  * - Results are sorted by scheduledTime via the GSI
  * - No scan+filter needed - direct GSI query
  */
@@ -69,10 +69,10 @@ async function fetchAllEvents(): Promise<LiveEventData[]> {
 
     // Query for all active events (UPCOMING/LIVE/HALFTIME) using efficient GSI
     // The event-fetcher Lambda manages isActive lifecycle:
-    //   - Sets isActive=true for UPCOMING/LIVE/HALFTIME
-    //   - Sets isActive=false for FINISHED/CANCELLED/POSTPONED
+    //   - Sets isActive=1 for UPCOMING/LIVE/HALFTIME
+    //   - Sets isActive=0 for FINISHED/CANCELLED/POSTPONED
     const { data: events, errors } = await client.models.LiveEvent.activeEventsByTime({
-      isActive: true
+      isActive: 1
     }, {
       limit: 500, // High limit to get all active events
       sortDirection: 'ASC' // Soonest first

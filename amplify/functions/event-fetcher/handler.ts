@@ -249,7 +249,8 @@ async function upsertEvent(event: ESPNEvent, league: string): Promise<void> {
 
     // Determine if event is active (UPCOMING/LIVE/HALFTIME) or inactive (FINISHED/POSTPONED/CANCELLED)
     // This enables efficient single-query retrieval of all relevant events via isActive GSI
-    const isActive = status === 'UPCOMING' || status === 'LIVE' || status === 'HALFTIME';
+    // Use 1 for active (true), 0 for inactive (false) - integer required for DynamoDB GSI
+    const isActive = (status === 'UPCOMING' || status === 'LIVE' || status === 'HALFTIME') ? 1 : 0;
 
     const eventData = {
       externalId: event.id,
@@ -267,7 +268,7 @@ async function upsertEvent(event: ESPNEvent, league: string): Promise<void> {
       homeScore: parseInt(homeCompetitor.score) || 0,
       awayScore: parseInt(awayCompetitor.score) || 0,
       status: status,
-      isActive: isActive, // Lifecycle state managed by Lambda for efficient querying
+      isActive: isActive, // Lifecycle state managed by Lambda for efficient querying (1=active, 0=inactive)
       quarter: competition.status.period ? `Period ${competition.status.period}` : undefined,
       timeLeft: competition.status.displayClock || undefined,
       scheduledTime: new Date(competition.date).toISOString(),

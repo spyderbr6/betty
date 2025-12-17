@@ -513,7 +513,7 @@ const schema = a.schema({
       checkInCount: a.integer().default(0), // Denormalized count for trending
       betCount: a.integer().default(0), // Number of bets linked to this event
       // Lifecycle management for efficient querying
-      isActive: a.boolean().default(true), // Managed by event-fetcher Lambda: true for UPCOMING/LIVE/HALFTIME, false for FINISHED/CANCELLED/old events
+      isActive: a.integer().default(1), // Managed by event-fetcher Lambda: true (1) for UPCOMING/LIVE/HALFTIME, false (0) for FINISHED/CANCELLED/old events
       createdAt: a.datetime(),
       updatedAt: a.datetime(),
       // Relations
@@ -522,9 +522,6 @@ const schema = a.schema({
     .secondaryIndexes((index) => [
       index('status').sortKeys(['scheduledTime']).queryField('listEventsByStatusAndTime'),
       index('externalId').queryField('listEventsByExternalId'),
-      // Index for efficiently querying active events (UPCOMING/LIVE/HALFTIME) managed by Lambda
-      // Allows: SELECT * WHERE isActive = true ORDER BY scheduledTime ASC
-      // @ts-expect-error - TypeScript incorrectly infers index field types, but isActive exists in model
       index('isActive').sortKeys(['scheduledTime']).queryField('activeEventsByTime'),
     ])
     .authorization((allow) => [
