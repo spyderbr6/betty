@@ -183,27 +183,31 @@ export const handler: EventBridgeHandler<"Scheduled Event", null, boolean> = asy
   console.log('Live Score Updater triggered:', JSON.stringify(event, null, 2));
 
   try {
-    // Get all events that are LIVE, HALFTIME, or UPCOMING (within next 2 hours)
+    // Get all active events (LIVE, HALFTIME, UPCOMING) using efficient GSI query
+    // The isActive field is managed by event-fetcher Lambda (1=active, 0=finished/cancelled)
     const now = new Date();
     const twoHoursLater = new Date(now.getTime() + 2 * 60 * 60 * 1000);
 
-    const { data: liveEvents } = await client.models.LiveEvent.list({
-      filter: {
-        or: [
-          { status: { eq: 'LIVE' } },
-          { status: { eq: 'HALFTIME' } },
-          {
-            and: [
-              { status: { eq: 'UPCOMING' } },
-              { scheduledTime: { le: twoHoursLater.toISOString() } }
-            ]
-          }
-        ]
-      }
+    const { data: activeEvents } = await client.models.LiveEvent.activeEventsByTime({
+      isActive: 1
+    }, {
+      limit: 500, // Get all active events
+      sortDirection: 'ASC' // Soonest first
     });
 
-    if (!liveEvents || liveEvents.length === 0) {
-      console.log('No live or upcoming events to update');
+    if (!activeEvents || activeEvents.length === 0) {
+      console.log('No active events to update');
+      return true;
+    }
+
+    // Filter client-side for events within next 2 hours (or already started)
+    const liveEvents = activeEvents.filter(event => {
+      const scheduledTime = new Date(event.scheduledTime);
+      return scheduledTime <= twoHoursLater;
+    });
+
+    if (liveEvents.length === 0) {
+      console.log('No events within 2-hour window to update');
       return true;
     }
 
