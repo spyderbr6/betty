@@ -201,7 +201,7 @@ export const handler: EventBridgeHandler<"Scheduled Event", null, boolean> = asy
     }
 
     // Filter client-side for events within next 2 hours (or already started)
-    const liveEvents = activeEvents.filter(event => {
+    const liveEvents = activeEvents.filter((event: any) => {
       const scheduledTime = new Date(event.scheduledTime);
       return scheduledTime <= twoHoursLater;
     });
