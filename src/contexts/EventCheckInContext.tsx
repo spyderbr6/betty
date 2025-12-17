@@ -8,6 +8,7 @@ import { } from 'react-native';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
 import { getUserCheckedInEvent, checkOutOfEvent } from '../services/eventService';
+import { getLiveEventsFromCache } from '../services/eventCacheService';
 import type { LiveEvent } from '../types/events';
 import { useAuth } from './AuthContext';
 
@@ -181,13 +182,9 @@ export const EventCheckInProvider: React.FC<EventCheckInProviderProps> = ({ chil
 
   const fetchNearbyEventsCount = async () => {
     try {
-      // Fetch live events count
-      const { data: liveEvents } = await client.models.LiveEvent.list({
-        filter: {
-          status: { eq: 'LIVE' }
-        }
-      });
-      setNearbyEventsCount(liveEvents?.length || 0);
+      // Fetch live events count using cache service (uses activeEventsByTime GSI)
+      const liveEvents = await getLiveEventsFromCache();
+      setNearbyEventsCount(liveEvents.length);
     } catch (error) {
       console.error('[EventCheckIn] Error fetching nearby events count:', error);
     }
