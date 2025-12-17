@@ -59,7 +59,7 @@ export const handler: AppSyncResolverHandler<PushNotificationArgs, boolean> = as
         Accept: 'application/json',
         'Accept-encoding': 'gzip, deflate',
         'Content-Type': 'application/json',
-        // In production, add: 'Authorization': `Bearer ${env.EXPO_ACCESS_TOKEN}`,
+        'Authorization': `Bearer ${env.EXPO_ACCESS_TOKEN}`
       },
       body: JSON.stringify(notifications),
     });
