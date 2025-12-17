@@ -102,7 +102,7 @@ export const LiveGameBanner: React.FC<LiveGameBannerProps> = ({
 
   // Determine status text and color
   let statusText = '';
-  let statusColor = colors.textMuted;
+  let statusColor: string = colors.textMuted;
 
   if (checkedInEvent.status === 'LIVE') {
     statusText = 'LIVE';

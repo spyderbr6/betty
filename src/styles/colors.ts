@@ -14,6 +14,7 @@ export const colors = {
   border: '#4B5563',        // gray-600 - Primary borders
   borderLight: '#6B7280',   // gray-500 - Lighter borders
   borderSubtle: '#374151',  // gray-700 - Subtle borders
+  divider: '#4B5563',       // gray-600 - Divider lines (same as border)
   
   // Text colors
   textPrimary: '#FFFFFF',   // Pure white - Primary text

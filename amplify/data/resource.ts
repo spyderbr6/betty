@@ -524,7 +524,7 @@ const schema = a.schema({
       index('externalId').queryField('listEventsByExternalId'),
       // Index for efficiently querying active events (UPCOMING/LIVE/HALFTIME) managed by Lambda
       // Allows: SELECT * WHERE isActive = true ORDER BY scheduledTime ASC
-      index('isActive').sortKeys(['scheduledTime']).queryField('activeEventsByTime'),
+      index('isActive' as any).sortKeys(['scheduledTime' as any]).queryField('activeEventsByTime'),
     ])
     .authorization((allow) => [
       allow.authenticated().to(['read', 'create', 'update']) // All authenticated users can read, Lambda functions can create/update

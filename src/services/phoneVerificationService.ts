@@ -3,7 +3,7 @@
  * Handles phone number verification via AWS Cognito SMS
  */
 
-import { updateUserAttribute, verifyUserAttribute, sendUserAttributeVerificationCode } from 'aws-amplify/auth';
+import { updateUserAttribute, confirmUserAttribute, sendUserAttributeVerificationCode } from 'aws-amplify/auth';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
 import { formatPhoneNumber, validatePhoneNumber } from '../utils/phoneValidation';
@@ -131,7 +131,7 @@ export const verifyCode = async (code: string): Promise<PhoneVerificationResult>
     }
 
     // Verify the code with Cognito
-    await verifyUserAttribute({
+    await confirmUserAttribute({
       userAttributeKey: 'phone_number',
       confirmationCode: code.trim(),
     });
