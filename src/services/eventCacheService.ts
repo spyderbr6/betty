@@ -57,25 +57,25 @@ export function isEventUpcoming(event: LiveEventData): boolean {
 /**
  * Fetch all events from database
  * This is the only place that actually queries DynamoDB for events
+ *
+ * Uses the isActive GSI for efficient single-query retrieval:
+ * - isActive=true returns all UPCOMING/LIVE/HALFTIME events (managed by Lambda)
+ * - Results are sorted by scheduledTime via the GSI
+ * - No scan+filter needed - direct GSI query
  */
 async function fetchAllEvents(): Promise<LiveEventData[]> {
   try {
-    console.log('[EventCache] Fetching all events from database');
+    console.log('[EventCache] Fetching active events from database via isActive GSI');
 
-    // Calculate time window: 4 hours ago to 48 hours from now
-    const now = new Date();
-    const fourHoursAgo = new Date(now.getTime() - 4 * 60 * 60 * 1000);
-    const next48Hours = new Date(now.getTime() + 48 * 60 * 60 * 1000);
-
-    // Fetch all events in this time window
-    const { data: events, errors } = await client.models.LiveEvent.list({
-      filter: {
-        and: [
-          { scheduledTime: { ge: fourHoursAgo.toISOString() } },
-          { scheduledTime: { le: next48Hours.toISOString() } }
-        ]
-      },
-      limit: 500 // High limit to get all events
+    // Query for all active events (UPCOMING/LIVE/HALFTIME) using efficient GSI
+    // The event-fetcher Lambda manages isActive lifecycle:
+    //   - Sets isActive=true for UPCOMING/LIVE/HALFTIME
+    //   - Sets isActive=false for FINISHED/CANCELLED/POSTPONED
+    const { data: events, errors } = await client.models.LiveEvent.activeEventsByTime({
+      isActive: true
+    }, {
+      limit: 500, // High limit to get all active events
+      sortDirection: 'ASC' // Soonest first
     });
 
     if (errors || !events) {
@@ -83,7 +83,7 @@ async function fetchAllEvents(): Promise<LiveEventData[]> {
       return [];
     }
 
-    console.log(`[EventCache] Fetched ${events.length} events from database`);
+    console.log(`[EventCache] Fetched ${events.length} active events from database via GSI`);
 
     // Map to LiveEventData format
     const mappedEvents: LiveEventData[] = events.map(event => ({
