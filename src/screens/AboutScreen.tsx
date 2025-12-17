@@ -3,18 +3,26 @@
  * App version and legal information
  */
 
-import React from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Linking } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, textStyles, typography } from '../styles';
 import { ModalHeader } from '../components/ui/ModalHeader';
+import { PrivacyPolicyScreen } from './PrivacyPolicyScreen';
+import { TermsOfServiceScreen } from './TermsOfServiceScreen';
+import { CommunityGuidelinesScreen } from './CommunityGuidelinesScreen';
+import { OpenSourceLicensesScreen } from './OpenSourceLicensesScreen';
 
 interface AboutScreenProps {
   onClose: () => void;
 }
 
 export const AboutScreen: React.FC<AboutScreenProps> = ({ onClose }) => {
+  const [showPrivacyPolicy, setShowPrivacyPolicy] = useState(false);
+  const [showTermsOfService, setShowTermsOfService] = useState(false);
+  const [showCommunityGuidelines, setShowCommunityGuidelines] = useState(false);
+  const [showOpenSourceLicenses, setShowOpenSourceLicenses] = useState(false);
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <ModalHeader title="About" onClose={onClose} />
@@ -34,50 +42,50 @@ export const AboutScreen: React.FC<AboutScreenProps> = ({ onClose }) => {
         <View style={styles.section}>
           <TouchableOpacity
             style={styles.linkItem}
-            onPress={() => Linking.openURL('https://github.com/anthropics/claude-code')}
+            onPress={() => setShowTermsOfService(true)}
             activeOpacity={0.7}
           >
             <View style={styles.linkItemLeft}>
               <Ionicons name="document-text-outline" size={22} color={colors.textSecondary} />
               <Text style={styles.linkItemText}>Terms of Service</Text>
             </View>
-            <Ionicons name="open-outline" size={18} color={colors.textMuted} />
+            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
           </TouchableOpacity>
 
           <TouchableOpacity
             style={styles.linkItem}
-            onPress={() => Linking.openURL('https://github.com/anthropics/claude-code')}
+            onPress={() => setShowPrivacyPolicy(true)}
             activeOpacity={0.7}
           >
             <View style={styles.linkItemLeft}>
               <Ionicons name="shield-checkmark-outline" size={22} color={colors.textSecondary} />
               <Text style={styles.linkItemText}>Privacy Policy</Text>
             </View>
-            <Ionicons name="open-outline" size={18} color={colors.textMuted} />
+            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
           </TouchableOpacity>
 
           <TouchableOpacity
             style={styles.linkItem}
-            onPress={() => Linking.openURL('https://github.com/anthropics/claude-code')}
+            onPress={() => setShowCommunityGuidelines(true)}
             activeOpacity={0.7}
           >
             <View style={styles.linkItemLeft}>
-              <Ionicons name="help-circle-outline" size={22} color={colors.textSecondary} />
+              <Ionicons name="people-outline" size={22} color={colors.textSecondary} />
               <Text style={styles.linkItemText}>Community Guidelines</Text>
             </View>
-            <Ionicons name="open-outline" size={18} color={colors.textMuted} />
+            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
           </TouchableOpacity>
 
           <TouchableOpacity
             style={styles.linkItem}
-            onPress={() => Linking.openURL('https://github.com/anthropics/claude-code')}
+            onPress={() => setShowOpenSourceLicenses(true)}
             activeOpacity={0.7}
           >
             <View style={styles.linkItemLeft}>
-              <Ionicons name="logo-github" size={22} color={colors.textSecondary} />
-              <Text style={styles.linkItemText}>Open Source</Text>
+              <Ionicons name="code-slash-outline" size={22} color={colors.textSecondary} />
+              <Text style={styles.linkItemText}>Open Source Licenses</Text>
             </View>
-            <Ionicons name="open-outline" size={18} color={colors.textMuted} />
+            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
           </TouchableOpacity>
         </View>
 
@@ -95,10 +103,47 @@ export const AboutScreen: React.FC<AboutScreenProps> = ({ onClose }) => {
             Made with ❤️ for peer-to-peer betting
           </Text>
           <Text style={styles.copyright}>
-            © 2025 SideBet. All rights reserved.
+            © 2025 SideBet LLC. All rights reserved.
           </Text>
         </View>
       </ScrollView>
+
+      {/* Legal Pages Modals */}
+      <Modal
+        visible={showTermsOfService}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setShowTermsOfService(false)}
+      >
+        <TermsOfServiceScreen onClose={() => setShowTermsOfService(false)} />
+      </Modal>
+
+      <Modal
+        visible={showPrivacyPolicy}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setShowPrivacyPolicy(false)}
+      >
+        <PrivacyPolicyScreen onClose={() => setShowPrivacyPolicy(false)} />
+      </Modal>
+
+      <Modal
+        visible={showCommunityGuidelines}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setShowCommunityGuidelines(false)}
+      >
+        <CommunityGuidelinesScreen onClose={() => setShowCommunityGuidelines(false)} />
+      </Modal>
+
+      <Modal
+        visible={showOpenSourceLicenses}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setShowOpenSourceLicenses(false)}
+      >
+        <OpenSourceLicensesScreen onClose={() => setShowOpenSourceLicenses(false)} />
+      </Modal>
     </SafeAreaView>
   );
 };

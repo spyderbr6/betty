@@ -87,9 +87,12 @@ const LEAGUE_ENDPOINTS: Record<string, string> = {
 };
 
 /**
- * Fetch events from ESPN API
+ * Fetch events from ESPN API using date range
+ * @param league - League name (NBA, NFL)
+ * @param startDate - Start date in YYYY-MM-DD format
+ * @param endDate - End date in YYYY-MM-DD format
  */
-async function fetchEventsFromAPI(league: string, date: string): Promise<ESPNEvent[]> {
+async function fetchEventsFromAPI(league: string, startDate: string, endDate: string): Promise<ESPNEvent[]> {
   try {
     const leagueEndpoint = LEAGUE_ENDPOINTS[league];
     if (!leagueEndpoint) {
@@ -97,11 +100,18 @@ async function fetchEventsFromAPI(league: string, date: string): Promise<ESPNEve
       return [];
     }
 
-    // Format date as YYYYMMDD for ESPN API
-    const formattedDate = date.replace(/-/g, '');
-    const url = `${ESPN_API_BASE}/${leagueEndpoint}/scoreboard?dates=${formattedDate}`;
+    // Format dates as YYYYMMDD for ESPN API
+    const formattedStartDate = startDate.replace(/-/g, '');
+    const formattedEndDate = endDate.replace(/-/g, '');
 
-    console.log(`🔍 Fetching events for ${league} on ${date}`);
+    // Use date range format: YYYYMMDD-YYYYMMDD
+    const dateRange = formattedStartDate === formattedEndDate
+      ? formattedStartDate
+      : `${formattedStartDate}-${formattedEndDate}`;
+
+    const url = `${ESPN_API_BASE}/${leagueEndpoint}/scoreboard?dates=${dateRange}`;
+
+    console.log(`🔍 Fetching events for ${league} from ${startDate} to ${endDate}`);
     console.log(`🌐 Full URL: ${url}`);
 
     const response = await fetch(url);
@@ -118,11 +128,11 @@ async function fetchEventsFromAPI(league: string, date: string): Promise<ESPNEve
     const data: ESPNResponse = await response.json();
 
     if (!data.events || data.events.length === 0) {
-      console.log(`⚠️  No events found for ${league} on ${date} (ESPN returned empty - normal if no games)`);
+      console.log(`⚠️  No events found for ${league} in date range ${startDate} to ${endDate} (ESPN returned empty - normal if no games)`);
       return [];
     }
 
-    console.log(`✅ Found ${data.events.length} ${league} events on ${date}`);
+    console.log(`✅ Found ${data.events.length} ${league} events in date range`);
 
     // Log first event for verification
     if (data.events.length > 0) {
@@ -224,12 +234,16 @@ async function upsertEvent(event: ESPNEvent, league: string): Promise<void> {
       return;
     }
 
-    // Check if event already exists using ESPN event ID
-    const { data: existingEvents } = await client.models.LiveEvent.list({
-      filter: {
-        externalId: { eq: event.id }
-      }
+    // Check if event already exists using the externalId GSI
+    const { data: existingEvents, errors: queryErrors } = await client.models.LiveEvent.listEventsByExternalId({
+      externalId: event.id,
+      limit: 100 // Get all potential duplicates
     });
+
+    if (queryErrors) {
+      console.error(`❌ Error querying for existing event ${event.id}:`, queryErrors);
+      return;
+    }
 
     const eventData = {
       externalId: event.id,
@@ -237,6 +251,8 @@ async function upsertEvent(event: ESPNEvent, league: string): Promise<void> {
       league: league,
       homeTeam: homeCompetitor.team.displayName || homeCompetitor.team.name,
       awayTeam: awayCompetitor.team.displayName || awayCompetitor.team.name,
+      homeTeamShortName: homeCompetitor.team.name, // Short name (e.g., "Steelers")
+      awayTeamShortName: awayCompetitor.team.name, // Short name (e.g., "Browns")
       homeTeamCode: homeCompetitor.team.abbreviation,
       awayTeamCode: awayCompetitor.team.abbreviation,
       venue: competition.venue?.fullName || undefined,
@@ -253,17 +269,39 @@ async function upsertEvent(event: ESPNEvent, league: string): Promise<void> {
     };
 
     if (existingEvents && existingEvents.length > 0) {
-      // Update existing event
+      // Update the first existing event
       const existingEvent = existingEvents[0];
       await client.models.LiveEvent.update({
         id: existingEvent.id,
         ...eventData,
       });
-      console.log(`✅ Updated: ${awayCompetitor.team.abbreviation} @ ${homeCompetitor.team.abbreviation}`);
+      console.log(`✅ Updated: ${awayCompetitor.team.abbreviation} @ ${homeCompetitor.team.abbreviation} (id: ${existingEvent.id})`);
+
+      // If there are duplicates, delete them
+      if (existingEvents.length > 1) {
+        console.log(`⚠️  Found ${existingEvents.length} duplicate entries for externalId ${event.id}, cleaning up...`);
+        for (let i = 1; i < existingEvents.length; i++) {
+          const duplicate = existingEvents[i];
+          try {
+            await client.models.LiveEvent.delete({ id: duplicate.id });
+            console.log(`🗑️  Deleted duplicate entry: ${duplicate.id}`);
+          } catch (deleteError) {
+            console.error(`❌ Error deleting duplicate ${duplicate.id}:`, deleteError);
+          }
+        }
+      }
     } else {
       // Create new event
-      await client.models.LiveEvent.create(eventData);
-      console.log(`✅ Created: ${awayCompetitor.team.abbreviation} @ ${homeCompetitor.team.abbreviation}`);
+      try {
+        const result = await client.models.LiveEvent.create(eventData);
+        if (result.errors) {
+          console.error(`❌ Error creating event ${event.id}:`, result.errors);
+        } else {
+          console.log(`✅ Created: ${awayCompetitor.team.abbreviation} @ ${homeCompetitor.team.abbreviation} (id: ${result.data?.id})`);
+        }
+      } catch (createError) {
+        console.error(`❌ Exception creating event ${event.id}:`, createError);
+      }
     }
   } catch (error) {
     console.error(`❌ Error upserting event ${event.id}:`, error);
@@ -272,48 +310,69 @@ async function upsertEvent(event: ESPNEvent, league: string): Promise<void> {
 
 /**
  * Main handler function
+ *
+ * Two operating modes:
+ * 1. LIVE UPDATE MODE (every 15 min): Fetch yesterday/today/tomorrow for live scores (handles UTC/ET timezone differences)
+ * 2. WEEKLY DISCOVERY MODE (once daily at 6am UTC): Fetch next 7 days for planning visibility
  */
 export const handler: EventBridgeHandler<"Scheduled Event", null, boolean> = async (event) => {
   console.log('Event Fetcher triggered:', JSON.stringify(event, null, 2));
 
   try {
-    // Get today's date
-    const today = new Date();
-    const todayStr = today.toISOString().split('T')[0];
+    const now = new Date();
+    const currentHour = now.getUTCHours();
 
-    console.log(`📅 Current date: ${todayStr}`);
+    // Determine which mode to run
+    // Weekly discovery mode: Run at 6am UTC (1am ET / 10pm PT)
+    const isWeeklyFetchTime = currentHour === 6;
 
-    // Get next 7 days
-    const dates: string[] = [];
-    for (let i = 0; i < 7; i++) {
-      const date = new Date(today);
-      date.setDate(today.getDate() + i);
-      dates.push(date.toISOString().split('T')[0]);
+    let startDate: string;
+    let endDate: string;
+    let mode: string;
+
+    if (isWeeklyFetchTime) {
+      // WEEKLY DISCOVERY MODE: Fetch next 7 days for game planning
+      mode = '🗓️  WEEKLY DISCOVERY';
+      const start = new Date(now);
+      const end = new Date(now);
+      end.setDate(now.getDate() + 6); // 7 days total (today + 6)
+
+      startDate = start.toISOString().split('T')[0];
+      endDate = end.toISOString().split('T')[0];
+    } else {
+      // LIVE UPDATE MODE: Fetch yesterday, today, and tomorrow for live scores
+      // This handles UTC timezone edge cases since ESPN uses ET for game dates
+      // (Example: 8pm ET game on Nov 17 runs into Nov 18 UTC, so we need both dates)
+      mode = '🔴 LIVE UPDATE';
+      const start = new Date(now);
+      start.setDate(now.getDate() - 1); // Start with yesterday
+      const end = new Date(now);
+      end.setDate(now.getDate() + 1); // End with tomorrow
+
+      startDate = start.toISOString().split('T')[0];
+      endDate = end.toISOString().split('T')[0];
     }
 
-    console.log(`📅 Checking dates: ${dates.join(', ')}`);
+    console.log(`${mode} MODE - Date range: ${startDate} to ${endDate}`);
 
-    // Fetch events for NBA and NFL for next 7 days
     const leagues = ['NBA', 'NFL'];
-
     let totalEventsProcessed = 0;
     let totalApiCalls = 0;
 
+    // Fetch events for each league (2 API calls total)
     for (const league of leagues) {
-      for (const date of dates) {
-        totalApiCalls++;
-        const events = await fetchEventsFromAPI(league, date);
+      totalApiCalls++;
+      const events = await fetchEventsFromAPI(league, startDate, endDate);
 
-        console.log(`📊 ${league} on ${date}: Found ${events.length} events`);
+      console.log(`📊 ${league}: Found ${events.length} events in date range`);
 
-        for (const eventData of events) {
-          await upsertEvent(eventData, league);
-          totalEventsProcessed++;
-        }
+      for (const eventData of events) {
+        await upsertEvent(eventData, league);
+        totalEventsProcessed++;
       }
     }
 
-    console.log(`✅ Event Fetcher completed. Made ${totalApiCalls} API calls, processed ${totalEventsProcessed} events.`);
+    console.log(`✅ Event Fetcher completed (${mode}). Made ${totalApiCalls} API calls, processed ${totalEventsProcessed} events.`);
     return true;
 
   } catch (error) {

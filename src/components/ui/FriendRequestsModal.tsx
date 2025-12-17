@@ -9,7 +9,6 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
-  Alert,
   ActivityIndicator,
   FlatList,
   Image,
@@ -25,6 +24,7 @@ import { User } from '../../types/betting';
 import { NotificationService } from '../../services/notificationService';
 import { ModalHeader } from './ModalHeader';
 import { getProfilePictureUrl } from '../../services/imageUploadService';
+import { showAlert } from './CustomAlert';
 
 // Initialize GraphQL client
 const client = generateClient<Schema>();
@@ -128,7 +128,7 @@ export const FriendRequestsModal: React.FC<FriendRequestsModalProps> = ({
       setFriendRequests(validRequests);
     } catch (error) {
       console.error('Error fetching friend requests:', error);
-      Alert.alert('Error', 'Failed to load friend requests. Please try again.');
+      showAlert('Error', 'Failed to load friend requests. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -158,7 +158,10 @@ export const FriendRequestsModal: React.FC<FriendRequestsModalProps> = ({
       // Send notification to the original requester
       // Fetch current user's display name from database
       const { data: currentUserData } = await client.models.User.get({ id: user.userId });
-      const currentUserDisplayName = currentUserData?.displayName || currentUserData?.username || user.username;
+      // Use displayName first, then extract friendly name from email, finally fallback to "Someone"
+      const currentUserDisplayName = currentUserData?.displayName ||
+        currentUserData?.email?.split('@')[0] ||
+        'Someone';
 
       await NotificationService.notifyFriendRequestAccepted(
         request.fromUserId,
@@ -170,10 +173,10 @@ export const FriendRequestsModal: React.FC<FriendRequestsModalProps> = ({
       setFriendRequests(prev => prev.filter(req => req.id !== request.id));
 
       onRequestHandled?.();
-      Alert.alert('Success', `You are now friends with ${request.fromUser.displayName || request.fromUser.email}!`);
+      showAlert('Success', `You are now friends with ${request.fromUser.displayName || request.fromUser.email}!`);
     } catch (error) {
       console.error('Error accepting friend request:', error);
-      Alert.alert('Error', 'Failed to accept friend request. Please try again.');
+      showAlert('Error', 'Failed to accept friend request. Please try again.');
     } finally {
       setProcessingRequests(prev => {
         const newSet = new Set(prev);
@@ -198,7 +201,10 @@ export const FriendRequestsModal: React.FC<FriendRequestsModalProps> = ({
         // Fetch current user's display name for the notification
         if (user?.userId) {
           const { data: currentUserData } = await client.models.User.get({ id: user.userId });
-          const currentUserDisplayName = currentUserData?.displayName || currentUserData?.username || 'Someone';
+          // Use displayName first, then extract friendly name from email, finally fallback to "Someone"
+          const currentUserDisplayName = currentUserData?.displayName ||
+            currentUserData?.email?.split('@')[0] ||
+            'Someone';
 
           await NotificationService.createNotification({
             userId: request.fromUserId,
@@ -220,10 +226,10 @@ export const FriendRequestsModal: React.FC<FriendRequestsModalProps> = ({
       setFriendRequests(prev => prev.filter(req => req.id !== request.id));
 
       onRequestHandled?.();
-      Alert.alert('Request Declined', `Friend request from ${request.fromUser.displayName || request.fromUser.email} has been declined.`);
+      showAlert('Request Declined', `Friend request from ${request.fromUser.displayName || request.fromUser.email} has been declined.`);
     } catch (error) {
       console.error('Error declining friend request:', error);
-      Alert.alert('Error', 'Failed to decline friend request. Please try again.');
+      showAlert('Error', 'Failed to decline friend request. Please try again.');
     } finally {
       setProcessingRequests(prev => {
         const newSet = new Set(prev);
@@ -269,7 +275,7 @@ export const FriendRequestsModal: React.FC<FriendRequestsModalProps> = ({
           {/* Avatar */}
           <View style={styles.avatarContainer}>
             {item.fromUser.profilePictureUrl ? (
-              <Image source={{ uri: item.fromUser.profilePictureUrl }} style={styles.avatar} />
+              <Image source={{ uri: item.fromUser.profilePictureUrl }} style={styles.avatar} resizeMode="cover" />
             ) : (
               <View style={styles.avatarPlaceholder}>
                 <Text style={styles.avatarText}>{generateAvatarInitials(item.fromUser)}</Text>

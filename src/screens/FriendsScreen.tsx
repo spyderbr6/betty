@@ -135,7 +135,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ onClose }) => {
       setFriends(friendListItems);
     } catch (error) {
       console.error('Error fetching friends:', error);
-      Alert.alert('Error', 'Failed to load friends. Please try again.');
+      showAlert('Error', 'Failed to load friends. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -182,7 +182,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ onClose }) => {
   };
 
   const handleRemoveFriend = (friend: FriendListItem) => {
-    Alert.alert(
+    showAlert(
       'Remove Friend',
       `Are you sure you want to remove ${friend.user.displayName || friend.user.username} from your friends?`,
       [
@@ -200,10 +200,10 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ onClose }) => {
     try {
       await client.models.Friendship.delete({ id: friend.friendship.id });
       setFriends(friends.filter(f => f.friendship.id !== friend.friendship.id));
-      Alert.alert('Success', 'Friend removed successfully.');
+      showAlert('Success', 'Friend removed successfully.');
     } catch (error) {
       console.error('Error removing friend:', error);
-      Alert.alert('Error', 'Failed to remove friend. Please try again.');
+      showAlert('Error', 'Failed to remove friend. Please try again.');
     }
   };
 
@@ -380,6 +380,7 @@ const FriendCard: React.FC<FriendCardProps> = ({
             <Image
               source={{ uri: friend.user.profilePictureUrl }}
               style={styles.friendAvatar}
+              resizeMode="cover"
             />
           ) : (
             <View style={styles.friendAvatarPlaceholder}>

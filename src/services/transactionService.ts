@@ -7,6 +7,7 @@
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
 import { NotificationService } from './notificationService';
+import { TrustScoreService } from './trustScoreService';
 
 const client = generateClient<Schema>();
 
@@ -15,6 +16,7 @@ export type TransactionType =
   | 'WITHDRAWAL'
   | 'BET_PLACED'
   | 'BET_WON'
+  | 'BET_LOST'
   | 'BET_CANCELLED'
   | 'BET_REFUND'
   | 'ADMIN_ADJUSTMENT';
@@ -31,7 +33,9 @@ export interface Transaction {
   userId: string;
   type: TransactionType;
   status: TransactionStatus;
-  amount: number;
+  amount: number; // Requested amount
+  actualAmount?: number; // Actual amount received after fees (for deposits/withdrawals)
+  platformFee: number;
   balanceBefore: number;
   balanceAfter: number;
   paymentMethodId?: string;
@@ -51,6 +55,7 @@ export interface CreateTransactionParams {
   userId: string;
   type: TransactionType;
   amount: number;
+  platformFee?: number;
   status?: TransactionStatus;
   paymentMethodId?: string;
   venmoTransactionId?: string;
@@ -118,6 +123,7 @@ export class TransactionService {
         type: params.type,
         status: params.status || 'COMPLETED',
         amount,
+        platformFee: params.platformFee || 0,
         balanceBefore,
         balanceAfter,
         paymentMethodId: params.paymentMethodId,
@@ -152,6 +158,8 @@ export class TransactionService {
         type: transaction.type as TransactionType,
         status: transaction.status as TransactionStatus,
         amount: transaction.amount!,
+        actualAmount: transaction.actualAmount || undefined,
+        platformFee: transaction.platformFee || 0,
         balanceBefore: transaction.balanceBefore!,
         balanceAfter: transaction.balanceAfter!,
         paymentMethodId: transaction.paymentMethodId || undefined,
@@ -203,6 +211,7 @@ export class TransactionService {
 
   /**
    * Create a withdrawal transaction (App → Venmo)
+   * Applies 2% platform fee to withdrawal amount
    */
   static async createWithdrawal(
     userId: string,
@@ -210,6 +219,21 @@ export class TransactionService {
     paymentMethodId: string,
     venmoUsername: string
   ): Promise<Transaction | null> {
+    // Import PaymentMethodService at runtime to avoid circular dependency
+    const { PaymentMethodService } = await import('./paymentMethodService');
+
+    // Check if payment method exists and is verified
+    const paymentMethod = await PaymentMethodService.getPaymentMethod(paymentMethodId);
+    if (!paymentMethod) {
+      console.error('[Transaction] Payment method not found:', paymentMethodId);
+      return null;
+    }
+
+    if (!paymentMethod.isVerified) {
+      console.error('[Transaction] Cannot withdraw to unverified payment method:', paymentMethodId);
+      return null;
+    }
+
     // Check if user has sufficient balance
     const currentBalance = await this.getUserBalance(userId);
     if (currentBalance < amount) {
@@ -217,11 +241,22 @@ export class TransactionService {
       return null;
     }
 
+    // Calculate platform fee (2% of withdrawal)
+    const platformFee = Math.round(amount * 0.02 * 100) / 100; // Round to 2 decimal places
+    const netAmount = amount - platformFee;
+
+    console.log('[Transaction] Withdrawal with fee:', {
+      requestedAmount: amount,
+      platformFee,
+      netAmount
+    });
+
     // Withdrawals start as PENDING until admin processes
     const transaction = await this.createTransaction({
       userId,
       type: 'WITHDRAWAL',
       amount,
+      platformFee,
       status: 'PENDING',
       paymentMethodId,
       venmoUsername,
@@ -257,6 +292,7 @@ export class TransactionService {
 
   /**
    * Record bet winnings payout
+   * Applies 3% platform fee to winnings
    */
   static async recordBetWinnings(
     userId: string,
@@ -264,29 +300,59 @@ export class TransactionService {
     betId: string,
     participantId?: string
   ): Promise<Transaction | null> {
+    // Calculate platform fee (3% of winnings)
+    const platformFee = Math.round(amount * 0.03 * 100) / 100; // Round to 2 decimal places
+    const netAmount = amount - platformFee;
+
+    console.log('[Transaction] Bet winnings with fee:', {
+      grossWinnings: amount,
+      platformFee,
+      netAmount
+    });
+
     const transaction = await this.createTransaction({
       userId,
       type: 'BET_WON',
-      amount,
+      amount: netAmount, // Credit net amount after fee
+      platformFee,
       status: 'COMPLETED',
       relatedBetId: betId,
       relatedParticipantId: participantId,
       notes: 'Bet winnings',
     });
 
-    // Send notification about winnings
+    // Send notification about winnings (show net amount)
     if (transaction) {
       await NotificationService.createNotification({
         userId,
         type: 'BET_RESOLVED',
         title: 'You Won!',
-        message: `You won $${amount.toFixed(2)}!`,
+        message: `You won $${netAmount.toFixed(2)}!`,
         priority: 'HIGH',
         relatedBetId: betId,
       });
     }
 
     return transaction;
+  }
+
+  /**
+   * Record a lost bet (zero amount, for tracking and dispute purposes)
+   */
+  static async recordBetLoss(
+    userId: string,
+    betId: string,
+    participantId?: string
+  ): Promise<Transaction | null> {
+    return await this.createTransaction({
+      userId,
+      type: 'BET_LOST',
+      amount: 0, // Zero amount - user already paid when joining bet
+      status: 'COMPLETED',
+      relatedBetId: betId,
+      relatedParticipantId: participantId,
+      notes: 'Bet lost',
+    });
   }
 
   /**
@@ -317,7 +383,8 @@ export class TransactionService {
     transactionId: string,
     status: TransactionStatus,
     failureReason?: string,
-    processedBy?: string
+    processedBy?: string,
+    actualAmount?: number // Actual amount received after Venmo fees (for deposits)
   ): Promise<boolean> {
     try {
       // Admin role validation - check if processedBy user has admin privileges
@@ -350,6 +417,10 @@ export class TransactionService {
         updateData.processedBy = processedBy;
       }
 
+      if (actualAmount !== undefined) {
+        updateData.actualAmount = actualAmount;
+      }
+
       // Get transaction to update user balance if completing a deposit/withdrawal
       const { data: transaction } = await client.models.Transaction.get({
         id: transactionId
@@ -370,13 +441,19 @@ export class TransactionService {
 
       // If completing a deposit, update user balance
       if (status === 'COMPLETED' && transaction.type === 'DEPOSIT') {
+        // Use actualAmount if provided (after Venmo fees), otherwise use requested amount
+        const amountToCredit = actualAmount !== undefined ? actualAmount : transaction.amount!;
+
         // Get current user balance (not the old balanceAfter from the transaction)
         const currentBalance = await this.getUserBalance(transaction.userId!);
-        const newBalance = currentBalance + transaction.amount!;
+        const newBalance = currentBalance + amountToCredit;
 
+        const feeAmount = transaction.amount! - amountToCredit;
         console.log('[Transaction] Approving deposit:', {
           transactionId,
-          amount: transaction.amount,
+          requestedAmount: transaction.amount,
+          actualAmountReceived: amountToCredit,
+          venmoFee: feeAmount,
           currentBalance,
           newBalance
         });
@@ -391,14 +468,53 @@ export class TransactionService {
           return false;
         }
 
-        // Send notification
+        // Auto-verify payment method on first successful deposit
+        if (transaction.paymentMethodId) {
+          const { PaymentMethodService } = await import('./paymentMethodService');
+          const paymentMethod = await PaymentMethodService.getPaymentMethod(transaction.paymentMethodId);
+
+          if (paymentMethod && !paymentMethod.isVerified) {
+            console.log('[Transaction] Auto-verifying payment method:', transaction.paymentMethodId);
+            await PaymentMethodService.verifyPaymentMethod(
+              transaction.paymentMethodId,
+              'TRANSACTION_ID'
+            );
+
+            // Send notification about payment method verification
+            await NotificationService.createNotification({
+              userId: transaction.userId!,
+              type: 'PAYMENT_METHOD_VERIFIED',
+              title: 'Payment Method Verified',
+              message: `Your Venmo account ${paymentMethod.venmoUsername} is now verified and can be used for withdrawals`,
+              priority: 'MEDIUM',
+            });
+          }
+        }
+
+        // Send notification with actual amount credited
+        const notificationMessage = feeAmount > 0.01
+          ? `Your deposit of $${amountToCredit.toFixed(2)} has been completed (Venmo fee: $${feeAmount.toFixed(2)})`
+          : `Your deposit of $${amountToCredit.toFixed(2)} has been completed`;
+
         await NotificationService.createNotification({
           userId: transaction.userId!,
           type: 'DEPOSIT_COMPLETED',
           title: 'Deposit Successful',
-          message: `Your deposit of $${transaction.amount} has been completed`,
+          message: notificationMessage,
           priority: 'HIGH',
         });
+
+        // Apply trust score reward for successful deposit (+0.1)
+        try {
+          await TrustScoreService.rewardForSuccessfulDeposit(
+            transaction.userId!,
+            transactionId,
+            transaction.amount!
+          );
+          console.log('[Transaction] Applied +0.1 trust score reward for successful deposit');
+        } catch (trustError) {
+          console.error('[Transaction] Error updating trust score for deposit:', trustError);
+        }
       }
 
       // If completing a withdrawal, update user balance
@@ -461,6 +577,18 @@ export class TransactionService {
           message: `Your withdrawal of $${transaction.amount} has been sent`,
           priority: 'HIGH',
         });
+
+        // Apply trust score reward for successful withdrawal (+0.15)
+        try {
+          await TrustScoreService.rewardForSuccessfulWithdrawal(
+            transaction.userId!,
+            transactionId,
+            transaction.amount!
+          );
+          console.log('[Transaction] Applied +0.15 trust score reward for successful withdrawal');
+        } catch (trustError) {
+          console.error('[Transaction] Error updating trust score for withdrawal:', trustError);
+        }
       }
 
       // If deposit/withdrawal failed, send notification
@@ -476,6 +604,18 @@ export class TransactionService {
           message: failureReason || 'Transaction could not be completed',
           priority: 'HIGH',
         });
+
+        // Apply trust score penalty for failed transaction (-3.0) - indicates fraud attempt
+        try {
+          await TrustScoreService.penaltyForFailedTransaction(
+            transaction.userId!,
+            transactionId,
+            transaction.type
+          );
+          console.log('[Transaction] Applied -3.0 trust score penalty for failed transaction (fraud attempt)');
+        } catch (trustError) {
+          console.error('[Transaction] Error updating trust score for failed transaction:', trustError);
+        }
       }
 
       console.log('[Transaction] Status updated successfully:', {
@@ -503,27 +643,22 @@ export class TransactionService {
     } = {}
   ): Promise<Transaction[]> {
     try {
-      const filter: any = { userId: { eq: userId } };
-
-      if (options.type) {
-        filter.type = { eq: options.type };
-      }
-
-      if (options.status) {
-        filter.status = { eq: options.status };
-      }
-
-      const { data } = await client.models.Transaction.list({
-        filter,
+      // Use efficient GSI query by userId (already sorted by createdAt DESC)
+      const { data } = await client.models.Transaction.transactionsByUser({
+        userId: userId
+      }, {
         limit: options.limit || 50,
+        sortDirection: 'DESC' // Newest first
       });
 
-      const transactions = (data || []).map(t => ({
+      let transactions = (data || []).map(t => ({
         id: t.id!,
         userId: t.userId!,
         type: t.type as TransactionType,
         status: t.status as TransactionStatus,
         amount: t.amount!,
+        actualAmount: t.actualAmount || undefined,
+        platformFee: t.platformFee || 0,
         balanceBefore: t.balanceBefore!,
         balanceAfter: t.balanceAfter!,
         paymentMethodId: t.paymentMethodId || undefined,
@@ -539,10 +674,16 @@ export class TransactionService {
         completedAt: t.completedAt || undefined,
       }));
 
-      // Sort by createdAt descending (newest first)
-      return transactions.sort((a, b) =>
-        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-      );
+      // Filter client-side by type and/or status if specified
+      if (options.type) {
+        transactions = transactions.filter(t => t.type === options.type);
+      }
+      if (options.status) {
+        transactions = transactions.filter(t => t.status === options.status);
+      }
+
+      // Already sorted by GSI (createdAt DESC), no need to sort again
+      return transactions;
     } catch (error) {
       console.error('[Transaction] Error fetching transactions:', error);
       return [];
@@ -554,10 +695,11 @@ export class TransactionService {
    */
   static async getPendingTransactions(): Promise<Transaction[]> {
     try {
-      const { data } = await client.models.Transaction.list({
-        filter: {
-          status: { eq: 'PENDING' }
-        }
+      // Use efficient GSI query by status (sorted by createdAt ASC for admin queue)
+      const { data } = await client.models.Transaction.transactionsByStatus({
+        status: 'PENDING'
+      }, {
+        sortDirection: 'ASC' // Oldest first for admin processing queue
       });
 
       const transactions = (data || []).map(t => ({
@@ -566,6 +708,8 @@ export class TransactionService {
         type: t.type as TransactionType,
         status: t.status as TransactionStatus,
         amount: t.amount!,
+        actualAmount: t.actualAmount || undefined,
+        platformFee: t.platformFee || 0,
         balanceBefore: t.balanceBefore!,
         balanceAfter: t.balanceAfter!,
         paymentMethodId: t.paymentMethodId || undefined,
@@ -609,6 +753,8 @@ export class TransactionService {
         type: transaction.type as TransactionType,
         status: transaction.status as TransactionStatus,
         amount: transaction.amount!,
+        actualAmount: transaction.actualAmount || undefined,
+        platformFee: transaction.platformFee || 0,
         balanceBefore: transaction.balanceBefore!,
         balanceAfter: transaction.balanceAfter!,
         paymentMethodId: transaction.paymentMethodId || undefined,

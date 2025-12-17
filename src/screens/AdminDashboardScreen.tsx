@@ -12,7 +12,6 @@ import {
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
-  Alert,
   RefreshControl,
   TextInput,
   Modal,
@@ -29,6 +28,7 @@ import { TransactionService } from '../services/transactionService';
 import type { Transaction } from '../services/transactionService';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
+import { showAlert } from '../components/ui/CustomAlert';
 
 const client = generateClient<Schema>();
 
@@ -55,11 +55,12 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
   const [approvalModalVisible, setApprovalModalVisible] = useState(false);
   const [approvalTransaction, setApprovalTransaction] = useState<Transaction | null>(null);
   const [verificationCode, setVerificationCode] = useState('');
+  const [actualAmountReceived, setActualAmountReceived] = useState('');
 
   // Check admin role on mount
   useEffect(() => {
     if (!user || (user.role !== 'ADMIN' && user.role !== 'SUPER_ADMIN')) {
-      Alert.alert(
+      showAlert(
         'Access Denied',
         'You do not have permission to access the admin dashboard.',
         [{ text: 'OK', onPress: onClose }]
@@ -103,7 +104,7 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
       console.log('[AdminDashboard] User details loaded for', userDetailsMap.size, 'users');
     } catch (error) {
       console.error('[AdminDashboard] Error loading pending transactions:', error);
-      Alert.alert('Error', 'Failed to load pending transactions');
+      showAlert('Error', 'Failed to load pending transactions');
     } finally {
       setIsLoading(false);
     }
@@ -118,6 +119,7 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
   const handleApprove = (transaction: Transaction) => {
     setApprovalTransaction(transaction);
     setVerificationCode('');
+    setActualAmountReceived(transaction.amount.toFixed(2)); // Pre-fill with requested amount
     setApprovalModalVisible(true);
   };
 
@@ -155,9 +157,24 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
     const last4 = verificationId.slice(-4).toLowerCase();
 
     if (verificationCode.toLowerCase() !== last4) {
-      Alert.alert(
+      showAlert(
         'Verification Failed',
         `The code you entered does not match the last 4 digits of the ${getVerificationLabel(approvalTransaction).toLowerCase()}.`
+      );
+      return;
+    }
+
+    // Validate actual amount received
+    const actualAmount = parseFloat(actualAmountReceived);
+    if (isNaN(actualAmount) || actualAmount <= 0) {
+      showAlert('Invalid Amount', 'Please enter a valid amount received');
+      return;
+    }
+
+    if (actualAmount > approvalTransaction.amount) {
+      showAlert(
+        'Amount Too High',
+        `The amount received ($${actualAmount.toFixed(2)}) cannot be greater than the requested amount ($${approvalTransaction.amount.toFixed(2)})`
       );
       return;
     }
@@ -166,30 +183,36 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
       setApprovalModalVisible(false);
       setProcessingId(approvalTransaction.id);
 
-      console.log('[AdminDashboard] Approving transaction:', approvalTransaction.id);
+      console.log('[AdminDashboard] Approving transaction:', approvalTransaction.id, 'with actual amount:', actualAmount);
       const success = await TransactionService.updateTransactionStatus(
         approvalTransaction.id,
         'COMPLETED',
         undefined,
-        user.userId
+        user.userId,
+        actualAmount // Pass the actual amount received
       );
 
       console.log('[AdminDashboard] Approval result:', success);
 
       if (success) {
-        Alert.alert('Success', 'Transaction approved successfully');
+        const feeAmount = approvalTransaction.amount - actualAmount;
+        const message = feeAmount > 0.01
+          ? `Transaction approved. User credited with $${actualAmount.toFixed(2)} (Venmo fee: $${feeAmount.toFixed(2)})`
+          : 'Transaction approved successfully';
+        showAlert('Success', message);
         console.log('[AdminDashboard] Reloading transactions after approval...');
         await loadPendingTransactions();
       } else {
-        Alert.alert('Error', 'Failed to approve transaction');
+        showAlert('Error', 'Failed to approve transaction');
       }
     } catch (error) {
       console.error('[AdminDashboard] Error approving transaction:', error);
-      Alert.alert('Error', 'Failed to approve transaction');
+      showAlert('Error', 'Failed to approve transaction');
     } finally {
       setProcessingId(null);
       setApprovalTransaction(null);
       setVerificationCode('');
+      setActualAmountReceived('');
     }
   };
 
@@ -203,7 +226,7 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
     if (!user?.userId || !rejectTransaction) return;
 
     if (!rejectReason.trim()) {
-      Alert.alert('Reason Required', 'Please enter a reason for rejecting this transaction');
+      showAlert('Reason Required', 'Please enter a reason for rejecting this transaction');
       return;
     }
 
@@ -222,15 +245,15 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
       console.log('[AdminDashboard] Rejection result:', success);
 
       if (success) {
-        Alert.alert('Success', 'Transaction rejected successfully');
+        showAlert('Success', 'Transaction rejected successfully');
         console.log('[AdminDashboard] Reloading transactions after rejection...');
         await loadPendingTransactions();
       } else {
-        Alert.alert('Error', 'Failed to reject transaction');
+        showAlert('Error', 'Failed to reject transaction');
       }
     } catch (error) {
       console.error('[AdminDashboard] Error rejecting transaction:', error);
-      Alert.alert('Error', 'Failed to reject transaction');
+      showAlert('Error', 'Failed to reject transaction');
     } finally {
       setProcessingId(null);
       setRejectTransaction(null);
@@ -491,6 +514,26 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
                 )}
 
                 <Text style={styles.approvalModalLabel}>
+                  Actual Amount Received (After Fees)
+                </Text>
+                <View style={styles.amountInputContainer}>
+                  <Text style={styles.currencySymbol}>$</Text>
+                  <TextInput
+                    style={styles.amountInput}
+                    placeholder="0.00"
+                    placeholderTextColor={colors.textMuted}
+                    value={actualAmountReceived}
+                    onChangeText={setActualAmountReceived}
+                    keyboardType="decimal-pad"
+                  />
+                </View>
+                {approvalTransaction && parseFloat(actualAmountReceived) < approvalTransaction.amount && (
+                  <Text style={styles.feeWarning}>
+                    Venmo Fee: ${(approvalTransaction.amount - parseFloat(actualAmountReceived || '0')).toFixed(2)}
+                  </Text>
+                )}
+
+                <Text style={styles.approvalModalLabel}>
                   Enter Last 4 Digits to Verify
                 </Text>
                 <TextInput
@@ -517,10 +560,10 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
                   <TouchableOpacity
                     style={[
                       styles.approvalModalConfirmButton,
-                      verificationCode.length !== 4 && styles.approvalModalConfirmButtonDisabled
+                      (verificationCode.length !== 4 || !actualAmountReceived || parseFloat(actualAmountReceived) <= 0) && styles.approvalModalConfirmButtonDisabled
                     ]}
                     onPress={handleConfirmApprove}
-                    disabled={verificationCode.length !== 4}
+                    disabled={verificationCode.length !== 4 || !actualAmountReceived || parseFloat(actualAmountReceived) <= 0}
                     activeOpacity={0.7}
                   >
                     <Ionicons name="checkmark" size={20} color={colors.background} />
@@ -876,6 +919,36 @@ const styles = StyleSheet.create({
   approvalModalLabel: {
     ...textStyles.button,
     color: colors.textPrimary,
+    fontWeight: typography.fontWeight.semibold,
+    marginBottom: spacing.sm,
+    marginTop: spacing.md,
+  },
+  amountInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderWidth: 2,
+    borderColor: colors.primary,
+    borderRadius: spacing.radius.md,
+    paddingHorizontal: spacing.md,
+    marginBottom: spacing.xs,
+  },
+  currencySymbol: {
+    ...textStyles.h3,
+    color: colors.textPrimary,
+    fontWeight: typography.fontWeight.bold,
+  },
+  amountInput: {
+    flex: 1,
+    ...textStyles.h3,
+    color: colors.textPrimary,
+    fontWeight: typography.fontWeight.bold,
+    paddingVertical: spacing.sm,
+    marginLeft: spacing.xs,
+  },
+  feeWarning: {
+    ...textStyles.caption,
+    color: colors.warning,
     fontWeight: typography.fontWeight.semibold,
     marginBottom: spacing.sm,
   },

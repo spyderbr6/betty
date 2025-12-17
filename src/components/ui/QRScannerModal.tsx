@@ -63,7 +63,7 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
         onBetScanned(betId);
         onClose();
       } else {
-        Alert.alert(
+        showAlert(
           'Invalid QR Code',
           'This QR code is not a valid SideBet invitation.',
           [
@@ -81,7 +81,7 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
       }
     } catch (error) {
       console.error('Error parsing QR code:', error);
-      Alert.alert(
+      showAlert(
         'Error',
         'Failed to process QR code. Please try again.',
         [

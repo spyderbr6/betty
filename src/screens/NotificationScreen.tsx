@@ -20,6 +20,7 @@ import { Ionicons } from '@expo/vector-icons';
 // import type { Schema } from '../../amplify/data/resource';
 import { colors, spacing, textStyles, commonStyles, typography } from '../styles';
 import { ModalHeader } from '../components/ui/ModalHeader';
+import { showAlert } from '../components/ui/CustomAlert';
 import { useAuth } from '../contexts/AuthContext';
 import { NotificationService } from '../services/notificationService';
 import { Notification, NotificationType } from '../types/betting';
@@ -198,7 +199,7 @@ export const NotificationScreen: React.FC<NotificationScreenProps> = ({ onClose 
       setHasMore(userNotifications.length >= currentLimit);
     } catch (error) {
       console.error('Error loading notifications:', error);
-      Alert.alert('Error', 'Failed to load notifications. Please try again.');
+      showAlert('Error', 'Failed to load notifications. Please try again.');
     }
   }, [user, notifications.length, hasMore]);
 
@@ -279,7 +280,7 @@ export const NotificationScreen: React.FC<NotificationScreenProps> = ({ onClose 
       }
     } catch (error) {
       console.error('Error marking all notifications as read:', error);
-      Alert.alert('Error', 'Failed to mark all notifications as read.');
+      showAlert('Error', 'Failed to mark all notifications as read.');
     }
   }, [user, unreadCount]);
 

@@ -104,17 +104,17 @@ export const WithdrawFundsModal: React.FC<WithdrawFundsModalProps> = ({
     const numAmount = parseFloat(amount);
 
     if (isNaN(numAmount) || numAmount <= 0) {
-      Alert.alert('Invalid Amount', 'Please enter a valid amount');
+      showAlert('Invalid Amount', 'Please enter a valid amount');
       return false;
     }
 
     if (numAmount < MIN_WITHDRAWAL) {
-      Alert.alert('Invalid Amount', `Minimum withdrawal is ${formatCurrency(MIN_WITHDRAWAL)}`);
+      showAlert('Invalid Amount', `Minimum withdrawal is ${formatCurrency(MIN_WITHDRAWAL)}`);
       return false;
     }
 
     if (numAmount > userBalance) {
-      Alert.alert('Insufficient Balance', `You only have ${formatCurrency(userBalance)} available`);
+      showAlert('Insufficient Balance', `You only have ${formatCurrency(userBalance)} available`);
       return false;
     }
 
@@ -124,7 +124,7 @@ export const WithdrawFundsModal: React.FC<WithdrawFundsModalProps> = ({
   const handleContinue = () => {
     if (step === 'select_method') {
       if (!selectedPaymentMethod) {
-        Alert.alert('Select Payment Method', 'Please select a verified Venmo account');
+        showAlert('Select Payment Method', 'Please select a verified Venmo account');
         return;
       }
       setStep('enter_amount');
@@ -159,14 +159,14 @@ export const WithdrawFundsModal: React.FC<WithdrawFundsModalProps> = ({
       );
 
       if (!transaction) {
-        Alert.alert('Error', 'Failed to create withdrawal request. Please try again.');
+        showAlert('Error', 'Failed to create withdrawal request. Please try again.');
         return;
       }
 
       // Update last used timestamp
       await PaymentMethodService.updateLastUsed(selectedPaymentMethod.id);
 
-      Alert.alert(
+      showAlert(
         'Withdrawal Pending',
         `Your withdrawal request for ${formatCurrency(numAmount)} has been submitted! We'll process it within 1-2 business days and send the funds to your Venmo account. You'll receive a notification when it's complete.`,
         [
@@ -181,7 +181,7 @@ export const WithdrawFundsModal: React.FC<WithdrawFundsModalProps> = ({
       );
     } catch (error) {
       console.error('Error submitting withdrawal:', error);
-      Alert.alert('Error', 'Failed to submit withdrawal request. Please try again.');
+      showAlert('Error', 'Failed to submit withdrawal request. Please try again.');
     } finally {
       setIsSubmitting(false);
     }

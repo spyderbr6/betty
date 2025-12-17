@@ -9,7 +9,6 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
-  Alert,
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -22,6 +21,9 @@ import { formatCurrency } from '../../utils/formatting';
 import { useAuth } from '../../contexts/AuthContext';
 import { NotificationService } from '../../services/notificationService';
 import { TransactionService } from '../../services/transactionService';
+import { BetAcceptanceService } from '../../services/betAcceptanceService';
+import { FileDisputeModal } from '../ui/FileDisputeModal';
+import { showAlert } from '../ui/CustomAlert';
 
 // Initialize GraphQL client
 const client = generateClient<Schema>();
@@ -100,6 +102,13 @@ export const BetCard: React.FC<BetCardProps> = ({
     amount: number;
   }>({ hasJoined: false, side: null, amount: 0 });
   const [timeRemaining, setTimeRemaining] = useState<string>('');
+  const [showDisputeModal, setShowDisputeModal] = useState(false);
+  const [isAccepting, setIsAccepting] = useState(false);
+  const [acceptanceProgress, setAcceptanceProgress] = useState<{
+    totalCount: number;
+    acceptedCount: number;
+    hasUserAccepted: boolean;
+  }>({ totalCount: 0, acceptedCount: 0, hasUserAccepted: false });
 
   // Check if current user has joined this bet
   useEffect(() => {
@@ -131,8 +140,71 @@ export const BetCard: React.FC<BetCardProps> = ({
     return () => clearInterval(interval);
   }, [bet.status, bet.deadline]);
 
+  // Load acceptance progress for PENDING_RESOLUTION bets
+  useEffect(() => {
+    const loadAcceptanceProgress = async () => {
+      if (bet.status !== 'PENDING_RESOLUTION' || !bet.winningSide || !user) return;
+
+      try {
+        const progress = await BetAcceptanceService.getAcceptanceProgress(bet.id);
+        const hasUserAccepted = progress.acceptedUserIds.includes(user.userId);
+
+        setAcceptanceProgress({
+          totalCount: progress.totalCount,
+          acceptedCount: progress.acceptedCount,
+          hasUserAccepted
+        });
+      } catch (error) {
+        console.error('Error loading acceptance progress:', error);
+      }
+    };
+
+    loadAcceptanceProgress();
+  }, [bet.status, bet.winningSide, bet.id, user, bet.participants]);
+
   const handlePress = () => {
     onPress?.(bet);
+  };
+
+  const handleAcceptResult = async () => {
+    if (!user || isAccepting) return;
+
+    setIsAccepting(true);
+
+    try {
+      const success = await BetAcceptanceService.acceptBetResult(bet.id, user.userId);
+
+      if (success) {
+        // Update local state to show acceptance
+        setAcceptanceProgress(prev => ({
+          ...prev,
+          acceptedCount: prev.acceptedCount + 1,
+          hasUserAccepted: true
+        }));
+
+        // Show success message
+        showAlert(
+          'Result Accepted',
+          'You have accepted this bet result. If all participants accept, payout will be processed within 5 minutes.',
+          [{ text: 'OK' }]
+        );
+      } else {
+        showAlert(
+          'Error',
+          'Failed to accept bet result. Please try again.',
+          [{ text: 'OK' }]
+        );
+      }
+    } catch (error) {
+      console.error('Error accepting bet result:', error);
+      showAlert(
+        'Error',
+        'An error occurred. Please try again.',
+        [{ text: 'OK' }]
+      );
+    } finally {
+      setIsAccepting(false);
+    }
   };
 
   const handleJoinBet = async (side: 'A' | 'B') => {
@@ -141,7 +213,7 @@ export const BetCard: React.FC<BetCardProps> = ({
     const betAmount = bet.betAmount || 10;
     const sideName = side === 'A' ? (bet.odds.sideAName || 'Side A') : (bet.odds.sideBName || 'Side B');
 
-    Alert.alert(
+    showAlert(
       'Join Bet',
       `Join "${bet.title}" with $${betAmount} on ${sideName}?`,
       [
@@ -163,7 +235,7 @@ export const BetCard: React.FC<BetCardProps> = ({
       const currentBalance = userData?.balance || 0;
 
       if (currentBalance < amount) {
-        Alert.alert(
+        showAlert(
           'Insufficient Balance',
           `You need $${amount} to join this bet, but your current balance is $${currentBalance.toFixed(2)}.`
         );
@@ -224,7 +296,7 @@ export const BetCard: React.FC<BetCardProps> = ({
           }
         }
 
-        Alert.alert(
+        showAlert(
           'Joined Successfully!',
           `You've joined the bet with $${amount}. Your new balance is $${(currentBalance - amount).toFixed(2)}.`
         );
@@ -242,7 +314,7 @@ export const BetCard: React.FC<BetCardProps> = ({
       }
     } catch (error) {
       console.error('Error joining bet:', error);
-      Alert.alert('Error', 'Failed to join bet. Please try again.');
+      showAlert('Error', 'Failed to join bet. Please try again.');
     } finally {
       setIsJoining(false);
       setSelectedSide(null);
@@ -251,7 +323,7 @@ export const BetCard: React.FC<BetCardProps> = ({
 
   const handleEndBet = () => {
     if (onEndBet) {
-      Alert.alert(
+      showAlert(
         'End Bet',
         'Are you sure you want to end this bet early? It will move to pending resolution.',
         [
@@ -267,6 +339,10 @@ export const BetCard: React.FC<BetCardProps> = ({
       case 'ACTIVE':
         return colors.active;
       case 'PENDING_RESOLUTION':
+        // Show win/loss color if user participated
+        if (userParticipation.hasJoined && bet.winningSide) {
+          return userParticipation.side === bet.winningSide ? colors.success : colors.error;
+        }
         return colors.pending;
       case 'RESOLVED':
         // Show win/loss color if user participated
@@ -282,10 +358,16 @@ export const BetCard: React.FC<BetCardProps> = ({
   };
 
   const getStatusText = (status: BetStatus): string => {
-    if (status === 'RESOLVED' && userParticipation.hasJoined && bet.winningSide) {
-      return userParticipation.side === bet.winningSide ? 'WON' : 'LOST';
+    // Show WON/LOST for both PENDING_RESOLUTION and RESOLVED if user participated
+    if ((status === 'RESOLVED' || status === 'PENDING_RESOLUTION') && userParticipation.hasJoined && bet.winningSide) {
+      const isWinner = userParticipation.side === bet.winningSide;
+      if (status === 'PENDING_RESOLUTION') {
+        // Both winners and losers show (PENDING) during dispute window
+        return isWinner ? 'WON (PENDING)' : 'LOST (PENDING)';
+      }
+      return isWinner ? 'WON' : 'LOST';
     }
-    
+
     switch (status) {
       case 'ACTIVE':
         return 'ACTIVE';
@@ -399,9 +481,11 @@ export const BetCard: React.FC<BetCardProps> = ({
               </Text>
               <View style={styles.sideInfo}>
                 {userParticipation.hasJoined && userParticipation.side === 'A' ? (
-                  <Text style={styles.sideInfoText}>
-                    You • ${userParticipation.amount} • {sideACount}
-                  </Text>
+                  <View style={styles.sideParticipantsJoined}>
+                    <Text style={styles.sideInfoText}>You • ${userParticipation.amount} • </Text>
+                    <Ionicons name="people" size={12} color={colors.primary} />
+                    <Text style={styles.sideInfoText}>{sideACount}</Text>
+                  </View>
                 ) : (
                   <View style={styles.sideParticipants}>
                     <Ionicons name="people" size={12} color={colors.textSecondary} />
@@ -438,9 +522,11 @@ export const BetCard: React.FC<BetCardProps> = ({
               </Text>
               <View style={styles.sideInfo}>
                 {userParticipation.hasJoined && userParticipation.side === 'B' ? (
-                  <Text style={styles.sideInfoText}>
-                    You • ${userParticipation.amount} • {sideBCount}
-                  </Text>
+                  <View style={styles.sideParticipantsJoined}>
+                    <Text style={styles.sideInfoText}>You • ${userParticipation.amount} • </Text>
+                    <Ionicons name="people" size={12} color={colors.primary} />
+                    <Text style={styles.sideInfoText}>{sideBCount}</Text>
+                  </View>
                 ) : (
                   <View style={styles.sideParticipants}>
                     <Ionicons name="people" size={12} color={colors.textSecondary} />
@@ -452,6 +538,126 @@ export const BetCard: React.FC<BetCardProps> = ({
           )}
         </TouchableOpacity>
       </View>
+
+      {/* PENDING_RESOLUTION: Two states based on winningSide */}
+      {bet.status === 'PENDING_RESOLUTION' && (
+        <>
+          {/* State 1: Awaiting creator's decision (no winningSide yet) */}
+          {!bet.winningSide && (
+            <View style={styles.awaitingResolutionContainer}>
+              <View style={styles.awaitingResolutionHeader}>
+                <Ionicons name="hourglass-outline" size={18} color={colors.warning} />
+                <Text style={styles.awaitingResolutionTitle}>Awaiting Resolution</Text>
+              </View>
+              <Text style={styles.awaitingResolutionMessage}>
+                The bet creator has up to 24 hours to declare the winner. You'll be notified once resolved.
+              </Text>
+            </View>
+          )}
+
+          {/* State 2: Winner declared, dispute window active (winningSide is set) */}
+          {bet.winningSide && bet.disputeWindowEndsAt && (
+            <View style={styles.disputeWindowContainer}>
+              {/* Win/Loss Result - Prominent for participants */}
+              {userParticipation.hasJoined && (
+                <View style={[
+                  styles.resultBanner,
+                  userParticipation.side === bet.winningSide ? styles.resultBannerWin : styles.resultBannerLose
+                ]}>
+                  <Ionicons
+                    name={userParticipation.side === bet.winningSide ? "trophy" : "close-circle"}
+                    size={20}
+                    color={userParticipation.side === bet.winningSide ? colors.success : colors.error}
+                  />
+                  <Text style={[
+                    styles.resultText,
+                    userParticipation.side === bet.winningSide ? styles.resultTextWin : styles.resultTextLose
+                  ]}>
+                    {userParticipation.side === bet.winningSide
+                      ? `You Won - ${bet.winningSide === 'A' ? bet.odds.sideAName : bet.odds.sideBName}`
+                      : `You Lost - ${bet.winningSide === 'A' ? bet.odds.sideAName : bet.odds.sideBName} Won`
+                    }
+                  </Text>
+                </View>
+              )}
+
+              {/* Dispute Window Countdown */}
+              <View style={styles.disputeWindowHeader}>
+                <Ionicons name="time-outline" size={16} color={colors.warning} />
+                <Text style={styles.disputeWindowText}>
+                  {userParticipation.hasJoined && userParticipation.side === bet.winningSide
+                    ? `Payout in ${formatTimeRemaining(bet.disputeWindowEndsAt)}`
+                    : `Dispute window ends in ${formatTimeRemaining(bet.disputeWindowEndsAt)}`
+                  }
+                </Text>
+              </View>
+
+              {/* Resolution Reason */}
+              {bet.resolutionReason && (
+                <Text style={styles.resolutionReason} numberOfLines={2}>
+                  {bet.resolutionReason}
+                </Text>
+              )}
+
+              {/* Acceptance Progress Bar - Show if at least one participant has accepted */}
+              {acceptanceProgress.totalCount > 0 && acceptanceProgress.acceptedCount > 0 && (
+                <View style={styles.acceptanceProgressContainer}>
+                  <View style={styles.acceptanceProgressHeader}>
+                    <Ionicons name="checkmark-circle" size={16} color={colors.success} />
+                    <Text style={styles.acceptanceProgressText}>
+                      {acceptanceProgress.acceptedCount} of {acceptanceProgress.totalCount} accepted
+                    </Text>
+                  </View>
+                  <View style={styles.acceptanceProgressBar}>
+                    <View
+                      style={[
+                        styles.acceptanceProgressFill,
+                        { width: `${(acceptanceProgress.acceptedCount / acceptanceProgress.totalCount) * 100}%` }
+                      ]}
+                    />
+                  </View>
+                  <Text style={styles.acceptanceProgressSubtext}>
+                    {acceptanceProgress.acceptedCount === acceptanceProgress.totalCount
+                      ? 'All participants accepted! Payout processing soon...'
+                      : 'Accept early to close this bet and receive payout faster'}
+                  </Text>
+                </View>
+              )}
+
+              {/* Accept Result Button - Only for NON-CREATOR participants who haven't accepted yet */}
+              {userParticipation.hasJoined && !acceptanceProgress.hasUserAccepted && bet.creatorId !== user?.userId && (
+                <TouchableOpacity
+                  style={styles.acceptButton}
+                  onPress={handleAcceptResult}
+                  activeOpacity={0.7}
+                  disabled={isAccepting}
+                >
+                  {isAccepting ? (
+                    <ActivityIndicator size="small" color={colors.background} />
+                  ) : (
+                    <>
+                      <Ionicons name="checkmark-circle" size={18} color={colors.background} />
+                      <Text style={styles.acceptButtonText}>Accept Result</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              )}
+
+              {/* File Dispute Button - Available for all participants including creator */}
+              {userParticipation.hasJoined && (
+                <TouchableOpacity
+                  style={styles.disputeButton}
+                  onPress={() => setShowDisputeModal(true)}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="alert-circle-outline" size={18} color={colors.error} />
+                  <Text style={styles.disputeButtonText}>File Dispute</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+        </>
+      )}
 
       {/* Action Buttons - Only for ACTIVE bets */}
       {isActive && (
@@ -517,6 +723,18 @@ export const BetCard: React.FC<BetCardProps> = ({
           </Text>
         </View>
       )}
+
+      {/* File Dispute Modal */}
+      <FileDisputeModal
+        visible={showDisputeModal}
+        onClose={() => setShowDisputeModal(false)}
+        bet={bet}
+        userId={user?.userId || ''}
+        onDisputeFiled={() => {
+          // Refresh bet data or show success message
+          setShowDisputeModal(false);
+        }}
+      />
     </TouchableOpacity>
   );
 };
@@ -656,6 +874,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
+  sideParticipantsJoined: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   sideCount: {
     ...textStyles.caption,
     color: colors.textSecondary,
@@ -672,6 +894,170 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 11,
     fontWeight: typography.fontWeight.bold,
+  },
+
+  // Awaiting Resolution (PENDING_RESOLUTION without winningSide)
+  awaitingResolutionContainer: {
+    backgroundColor: colors.textMuted + '10',
+    borderRadius: spacing.radius.sm,
+    padding: spacing.sm,
+    marginTop: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.textMuted + '30',
+  },
+  awaitingResolutionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.xs,
+  },
+  awaitingResolutionTitle: {
+    ...textStyles.button,
+    color: colors.textSecondary,
+    fontSize: typography.fontSize.sm,
+    marginLeft: spacing.xs / 2,
+    fontWeight: typography.fontWeight.semibold,
+  },
+  awaitingResolutionMessage: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    fontSize: typography.fontSize.xs,
+    lineHeight: 16,
+  },
+
+  // Dispute Window (PENDING_RESOLUTION with winningSide)
+  disputeWindowContainer: {
+    backgroundColor: colors.warning + '10',
+    borderRadius: spacing.radius.sm,
+    padding: spacing.sm,
+    marginTop: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.warning + '30',
+  },
+  resultBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: spacing.sm,
+    borderRadius: spacing.radius.sm,
+    marginBottom: spacing.sm,
+  },
+  resultBannerWin: {
+    backgroundColor: colors.success + '15',
+    borderWidth: 1,
+    borderColor: colors.success + '40',
+  },
+  resultBannerLose: {
+    backgroundColor: colors.error + '10',
+    borderWidth: 1,
+    borderColor: colors.error + '30',
+  },
+  resultText: {
+    ...textStyles.button,
+    fontSize: typography.fontSize.sm,
+    marginLeft: spacing.xs,
+    fontWeight: typography.fontWeight.bold,
+    flex: 1,
+  },
+  resultTextWin: {
+    color: colors.success,
+  },
+  resultTextLose: {
+    color: colors.error,
+  },
+  disputeWindowHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.xs,
+  },
+  disputeWindowText: {
+    ...textStyles.button,
+    color: colors.warning,
+    fontSize: typography.fontSize.sm,
+    marginLeft: spacing.xs / 2,
+    fontWeight: typography.fontWeight.semibold,
+  },
+  resolutionReason: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    fontSize: typography.fontSize.xs,
+    marginBottom: spacing.sm,
+    lineHeight: 16,
+  },
+  // Acceptance Progress
+  acceptanceProgressContainer: {
+    backgroundColor: colors.success + '10',
+    borderRadius: spacing.radius.sm,
+    padding: spacing.sm,
+    marginBottom: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.success + '30',
+  },
+  acceptanceProgressHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.xs,
+  },
+  acceptanceProgressText: {
+    ...textStyles.button,
+    color: colors.success,
+    fontSize: typography.fontSize.sm,
+    marginLeft: spacing.xs / 2,
+    fontWeight: typography.fontWeight.semibold,
+  },
+  acceptanceProgressBar: {
+    height: 6,
+    backgroundColor: colors.border,
+    borderRadius: spacing.radius.xs,
+    overflow: 'hidden',
+    marginBottom: spacing.xs,
+  },
+  acceptanceProgressFill: {
+    height: '100%',
+    backgroundColor: colors.success,
+    borderRadius: spacing.radius.xs,
+  },
+  acceptanceProgressSubtext: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    fontSize: typography.fontSize.xs,
+    lineHeight: 14,
+  },
+
+  // Accept Result Button
+  acceptButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.success,
+    borderRadius: spacing.radius.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    marginBottom: spacing.xs,
+  },
+  acceptButtonText: {
+    ...textStyles.button,
+    color: colors.background,
+    fontSize: typography.fontSize.sm,
+    marginLeft: spacing.xs / 2,
+    fontWeight: typography.fontWeight.semibold,
+  },
+
+  disputeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+    borderWidth: 1.5,
+    borderColor: colors.error,
+    borderRadius: spacing.radius.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+  },
+  disputeButtonText: {
+    ...textStyles.button,
+    color: colors.error,
+    fontSize: typography.fontSize.sm,
+    marginLeft: spacing.xs / 2,
+    fontWeight: typography.fontWeight.semibold,
   },
 
   // Action Row

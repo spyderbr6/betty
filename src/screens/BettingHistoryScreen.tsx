@@ -26,7 +26,7 @@ interface BettingHistoryScreenProps {
   onClose: () => void;
 }
 
-type FilterType = 'ALL' | 'DEPOSITS' | 'WITHDRAWALS' | 'BETS' | 'WINNINGS' | 'REFUNDS';
+type FilterType = 'ALL' | 'DEPOSITS' | 'WITHDRAWALS' | 'BETS' | 'WINNINGS' | 'LOSSES' | 'REFUNDS';
 
 export const BettingHistoryScreen: React.FC<BettingHistoryScreenProps> = ({ onClose }) => {
   const { user } = useAuth();
@@ -82,6 +82,7 @@ export const BettingHistoryScreen: React.FC<BettingHistoryScreenProps> = ({ onCl
         WITHDRAWALS: ['WITHDRAWAL'],
         BETS: ['BET_PLACED'],
         WINNINGS: ['BET_WON'],
+        LOSSES: ['BET_LOST'],
         REFUNDS: ['BET_CANCELLED', 'BET_REFUND'],
       };
 
@@ -138,6 +139,7 @@ export const BettingHistoryScreen: React.FC<BettingHistoryScreenProps> = ({ onCl
           {renderFilterButton('WITHDRAWALS', 'Withdrawals', 'arrow-up-circle-outline')}
           {renderFilterButton('BETS', 'Bets', 'game-controller-outline')}
           {renderFilterButton('WINNINGS', 'Wins', 'trophy-outline')}
+          {renderFilterButton('LOSSES', 'Losses', 'close-circle-outline')}
           {renderFilterButton('REFUNDS', 'Refunds', 'refresh-outline')}
         </View>
       </ScrollView>
@@ -182,6 +184,7 @@ const TransactionCard: React.FC<TransactionCardProps> = ({ transaction }) => {
       case 'WITHDRAWAL': return 'arrow-up-circle';
       case 'BET_PLACED': return 'game-controller';
       case 'BET_WON': return 'trophy';
+      case 'BET_LOST': return 'close-circle';
       case 'BET_CANCELLED':
       case 'BET_REFUND': return 'refresh-circle';
       case 'ADMIN_ADJUSTMENT': return 'settings';
@@ -202,6 +205,8 @@ const TransactionCard: React.FC<TransactionCardProps> = ({ transaction }) => {
       case 'WITHDRAWAL':
       case 'BET_PLACED':
         return colors.error;
+      case 'BET_LOST':
+        return colors.textMuted; // Neutral color for lost bets (no balance change)
       case 'ADMIN_ADJUSTMENT':
         return colors.info;
       default:
@@ -215,6 +220,7 @@ const TransactionCard: React.FC<TransactionCardProps> = ({ transaction }) => {
       case 'WITHDRAWAL': return 'Withdrawal';
       case 'BET_PLACED': return 'Bet Placed';
       case 'BET_WON': return 'Bet Won';
+      case 'BET_LOST': return 'Bet Lost';
       case 'BET_CANCELLED': return 'Bet Cancelled';
       case 'BET_REFUND': return 'Refund';
       case 'ADMIN_ADJUSTMENT': return 'Adjustment';
@@ -226,18 +232,48 @@ const TransactionCard: React.FC<TransactionCardProps> = ({ transaction }) => {
     if (transaction.notes) return transaction.notes;
 
     switch (transaction.type) {
-      case 'DEPOSIT':
-        return transaction.venmoUsername
+      case 'DEPOSIT': {
+        const baseName = transaction.venmoUsername
           ? `From Venmo ${transaction.venmoUsername}`
           : 'Deposit to account';
-      case 'WITHDRAWAL':
-        return transaction.venmoUsername
+
+        // Show fee if actualAmount differs from requested amount
+        if (transaction.actualAmount !== undefined && transaction.actualAmount < transaction.amount) {
+          const fee = transaction.amount - transaction.actualAmount;
+          return `${baseName} (Fee: ${formatCurrency(fee)})`;
+        }
+        return baseName;
+      }
+      case 'WITHDRAWAL': {
+        const baseName = transaction.venmoUsername
           ? `To Venmo ${transaction.venmoUsername}`
           : 'Withdrawal from account';
+
+        // Show platform fee (2%) and Venmo fee if present
+        let feeInfo = '';
+        if (transaction.platformFee && transaction.platformFee > 0) {
+          feeInfo = `Platform fee: ${formatCurrency(transaction.platformFee)}`;
+        }
+        if (transaction.actualAmount !== undefined && transaction.actualAmount < transaction.amount) {
+          const venmoFee = transaction.amount - transaction.actualAmount - (transaction.platformFee || 0);
+          if (venmoFee > 0) {
+            feeInfo += feeInfo ? `, Venmo fee: ${formatCurrency(venmoFee)}` : `Venmo fee: ${formatCurrency(venmoFee)}`;
+          }
+        }
+
+        return feeInfo ? `${baseName} (${feeInfo})` : baseName;
+      }
       case 'BET_PLACED':
         return 'Joined a bet';
-      case 'BET_WON':
+      case 'BET_WON': {
+        // Show platform fee if present
+        if (transaction.platformFee && transaction.platformFee > 0) {
+          return `Winnings payout (Platform fee: ${formatCurrency(transaction.platformFee)})`;
+        }
         return 'Winnings payout';
+      }
+      case 'BET_LOST':
+        return 'Lost bet - tracking record';
       case 'BET_CANCELLED':
         return 'Bet cancelled - refund';
       case 'BET_REFUND':
@@ -282,13 +318,26 @@ const TransactionCard: React.FC<TransactionCardProps> = ({ transaction }) => {
   };
 
   const formatAmount = () => {
+    // BET_LOST is a zero-amount tracking transaction
+    if (transaction.type === 'BET_LOST') {
+      return formatCurrency(0);
+    }
+
     const isCredit = transaction.type === 'DEPOSIT' ||
                      transaction.type === 'BET_WON' ||
                      transaction.type === 'BET_CANCELLED' ||
                      transaction.type === 'BET_REFUND';
 
+    let displayAmount = transaction.amount;
+
+    // For transactions with actualAmount, use it (net amount after fees)
+    // This includes: DEPOSIT (after Venmo fees), WITHDRAWAL (after all fees), BET_WON (after platform fee)
+    if (transaction.actualAmount !== undefined) {
+      displayAmount = transaction.actualAmount;
+    }
+
     const sign = isCredit ? '+' : '-';
-    return `${sign}${formatCurrency(transaction.amount)}`;
+    return `${sign}${formatCurrency(displayAmount)}`;
   };
 
   const formatDate = () => {
@@ -306,6 +355,9 @@ const TransactionCard: React.FC<TransactionCardProps> = ({ transaction }) => {
                    transaction.type === 'BET_WON' ||
                    transaction.type === 'BET_CANCELLED' ||
                    transaction.type === 'BET_REFUND';
+
+  // BET_LOST is neutral (no balance change)
+  const isNeutral = transaction.type === 'BET_LOST';
 
   return (
     <View style={[styles.transactionCard, { borderLeftColor: getTransactionColor() }]}>
@@ -333,7 +385,7 @@ const TransactionCard: React.FC<TransactionCardProps> = ({ transaction }) => {
         <View style={styles.transactionAmountContainer}>
           <Text style={[
             styles.transactionAmount,
-            isCredit ? styles.transactionAmountCredit : styles.transactionAmountDebit,
+            isNeutral ? styles.transactionAmountNeutral : (isCredit ? styles.transactionAmountCredit : styles.transactionAmountDebit),
           ]}>
             {formatAmount()}
           </Text>
@@ -529,6 +581,9 @@ const styles = StyleSheet.create({
   },
   transactionAmountDebit: {
     color: colors.error,
+  },
+  transactionAmountNeutral: {
+    color: colors.textMuted,
   },
   transactionBalance: {
     ...textStyles.caption,

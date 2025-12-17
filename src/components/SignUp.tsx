@@ -12,7 +12,17 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { signUp, confirmSignUp } from 'aws-amplify/auth';
+import { generateClient } from 'aws-amplify/data';
+import type { Schema } from '../../amplify/data/resource';
 import { colors, spacing, textStyles, typography, commonStyles, shadows } from '../styles';
+import { PhoneInput } from './ui/PhoneInput';
+import { PolicyModal } from './ui/PolicyModal';
+import { formatPhoneNumber, validatePhoneNumber } from '../utils/phoneValidation';
+import { CURRENT_TOS_VERSION, CURRENT_PRIVACY_VERSION } from '../constants/policies';
+import type { CountryCode } from 'libphonenumber-js';
+import { showAlert } from './ui/CustomAlert';
+
+const client = generateClient<Schema>();
 
 interface SignUpProps {
   onLoginPress: () => void;
@@ -23,17 +33,42 @@ export const SignUp: React.FC<SignUpProps> = ({ onLoginPress, onSignUpSuccess })
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [formattedPhoneNumber, setFormattedPhoneNumber] = useState('');
+  const [countryCode, setCountryCode] = useState<CountryCode>('US');
   const [confirmationCode, setConfirmationCode] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [step, setStep] = useState<'signUp' | 'confirm'>('signUp');
   const [focusedField, setFocusedField] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string>('');
 
+  // Policy acceptance state
+  const [tosAccepted, setTosAccepted] = useState(false);
+  const [privacyAccepted, setPrivacyAccepted] = useState(false);
+  const [showPolicyModal, setShowPolicyModal] = useState(false);
+  const [policyModalType, setPolicyModalType] = useState<'terms' | 'privacy'>('terms');
+
+  // Policy modal handlers
+  const handleOpenTerms = () => {
+    setPolicyModalType('terms');
+    setShowPolicyModal(true);
+  };
+
+  const handleOpenPrivacy = () => {
+    setPolicyModalType('privacy');
+    setShowPolicyModal(true);
+  };
+
+  const handleClosePolicyModal = () => {
+    setShowPolicyModal(false);
+  };
+
   const handleSignUp = async () => {
     // Clear previous errors
     setErrorMessage('');
 
-    if (!email.trim() || !password.trim() || !displayName.trim()) {
+    // Validate all fields
+    if (!email.trim() || !password.trim() || !displayName.trim() || !phoneNumber.trim()) {
       setErrorMessage('Please fill in all fields');
       return;
     }
@@ -48,6 +83,29 @@ export const SignUp: React.FC<SignUpProps> = ({ onLoginPress, onSignUpSuccess })
       return;
     }
 
+    // Validate phone number
+    if (!validatePhoneNumber(phoneNumber, countryCode)) {
+      setErrorMessage('Please enter a valid phone number');
+      return;
+    }
+
+    // Validate policy acceptance
+    if (!tosAccepted || !privacyAccepted) {
+      setErrorMessage('You must accept the Terms of Service and Privacy Policy to create an account');
+      return;
+    }
+
+    // Format phone number to E.164
+    const formatted = formatPhoneNumber(phoneNumber, countryCode);
+    if (!formatted) {
+      setErrorMessage('Failed to format phone number');
+      return;
+    }
+
+    setFormattedPhoneNumber(formatted);
+
+    // Create Cognito account with phone number (unverified initially)
+    // Phone verification will happen after login
     setIsLoading(true);
     try {
       await signUp({
@@ -57,12 +115,13 @@ export const SignUp: React.FC<SignUpProps> = ({ onLoginPress, onSignUpSuccess })
           userAttributes: {
             email: email.trim(),
             preferred_username: email.trim(),
-            name: displayName.trim(), // Store display name in Cognito
+            name: displayName.trim(),
+            phone_number: formatted, // Add phone number (will be unverified)
           },
         },
       });
       setStep('confirm');
-      setErrorMessage(''); // Clear any errors on success
+      setErrorMessage('');
     } catch (error) {
       const err = error as Error;
       setErrorMessage(err.message || 'An error occurred during sign up');
@@ -86,10 +145,28 @@ export const SignUp: React.FC<SignUpProps> = ({ onLoginPress, onSignUpSuccess })
         username: email.trim(),
         confirmationCode: confirmationCode.trim(),
       });
+
+      // Note: User record with policy acceptance is created on first login in AccountScreen
+      // The SignUp component validates policy acceptance before allowing signup,
+      // ensuring all new users have accepted current policies.
+
       setErrorMessage(''); // Clear any errors on success
-      onSignUpSuccess();
+
+      // Show success alert before navigating to login
+      showAlert(
+        'Account Created Successfully!',
+        'Your account has been created. You can now sign in with your email and password.',
+        [
+          {
+            text: 'Sign In',
+            style: 'default',
+            onPress: onSignUpSuccess,
+          },
+        ]
+      );
     } catch (error) {
       const err = error as Error;
+      console.error('Confirmation error:', error);
       setErrorMessage(err.message || 'An error occurred during confirmation');
     } finally {
       setIsLoading(false);
@@ -298,10 +375,78 @@ export const SignUp: React.FC<SignUpProps> = ({ onLoginPress, onSignUpSuccess })
                 />
               </View>
 
+              {/* Phone Number Input */}
+              <PhoneInput
+                value={phoneNumber}
+                onChangeText={setPhoneNumber}
+                onChangeFormattedText={setFormattedPhoneNumber}
+                onChangeCountryCode={setCountryCode}
+                label="Phone Number"
+                placeholder="Enter your phone number"
+                required
+                disabled={isLoading}
+                defaultCountryCode={countryCode}
+              />
+
               {/* Helper Text */}
               <Text style={styles.helperText}>
-                Your display name is how you'll appear to friends
+                Phone number is required for account security and friend discovery
               </Text>
+
+              {/* Policy Acceptance Checkboxes */}
+              <View style={styles.policyContainer}>
+                {/* Terms of Service Checkbox */}
+                <TouchableOpacity
+                  style={styles.checkboxRow}
+                  onPress={() => setTosAccepted(!tosAccepted)}
+                  disabled={isLoading}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.checkbox, tosAccepted && styles.checkboxChecked]}>
+                    {tosAccepted && (
+                      <Ionicons name="checkmark" size={16} color={colors.background} />
+                    )}
+                  </View>
+                  <Text style={styles.policyText}>
+                    I agree to the{' '}
+                    <Text
+                      style={styles.policyLink}
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        handleOpenTerms();
+                      }}
+                    >
+                      Terms of Service
+                    </Text>
+                  </Text>
+                </TouchableOpacity>
+
+                {/* Privacy Policy Checkbox */}
+                <TouchableOpacity
+                  style={styles.checkboxRow}
+                  onPress={() => setPrivacyAccepted(!privacyAccepted)}
+                  disabled={isLoading}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.checkbox, privacyAccepted && styles.checkboxChecked]}>
+                    {privacyAccepted && (
+                      <Ionicons name="checkmark" size={16} color={colors.background} />
+                    )}
+                  </View>
+                  <Text style={styles.policyText}>
+                    I agree to the{' '}
+                    <Text
+                      style={styles.policyLink}
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        handleOpenPrivacy();
+                      }}
+                    >
+                      Privacy Policy
+                    </Text>
+                  </Text>
+                </TouchableOpacity>
+              </View>
 
               {/* Sign Up Button */}
               <TouchableOpacity
@@ -341,7 +486,18 @@ export const SignUp: React.FC<SignUpProps> = ({ onLoginPress, onSignUpSuccess })
     </KeyboardAvoidingView>
   );
 
-  return step === 'confirm' ? renderConfirmationStep() : renderSignUpStep();
+  return (
+    <>
+      {step === 'confirm' ? renderConfirmationStep() : renderSignUpStep()}
+
+      {/* Policy Modal */}
+      <PolicyModal
+        visible={showPolicyModal}
+        onClose={handleClosePolicyModal}
+        policyType={policyModalType}
+      />
+    </>
+  );
 };
 
 const styles = StyleSheet.create({
@@ -352,6 +508,7 @@ const styles = StyleSheet.create({
   scrollContainer: {
     flexGrow: 1,
     justifyContent: 'center',
+    backgroundColor: colors.background,
   },
   container: {
     flex: 1,
@@ -496,6 +653,42 @@ const styles = StyleSheet.create({
   },
   linkButtonText: {
     ...textStyles.body,
+    color: colors.primary,
+    fontWeight: typography.fontWeight.medium,
+    textDecorationLine: 'underline',
+  },
+  policyContainer: {
+    marginTop: spacing.md,
+    marginBottom: spacing.md,
+  },
+  checkboxRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: spacing.sm,
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderWidth: 2,
+    borderColor: colors.border,
+    borderRadius: spacing.radius.xs,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.sm,
+    marginTop: 2, // Align with text baseline
+    backgroundColor: colors.surfaceLight,
+  },
+  checkboxChecked: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  policyText: {
+    ...textStyles.bodySmall,
+    color: colors.textSecondary,
+    flex: 1,
+    lineHeight: 20,
+  },
+  policyLink: {
     color: colors.primary,
     fontWeight: typography.fontWeight.medium,
     textDecorationLine: 'underline',

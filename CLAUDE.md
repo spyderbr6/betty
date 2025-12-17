@@ -49,6 +49,49 @@ src/
 - **[PUSH_NOTIFICATION_GUIDE.md](./PUSH_NOTIFICATION_GUIDE.md)**: Complete guide to push notification setup, testing, and troubleshooting
 - **todo.md**: Current tasks and project roadmap
 
+### UI Components & Alerts
+
+#### CustomAlert System (Cross-Platform Alerts)
+**CRITICAL: Always use `showAlert()` instead of `Alert.alert()`**
+
+React Native's `Alert.alert()` uses native system popups that **do not work on web**. The app uses a custom alert system for cross-platform compatibility.
+
+**❌ NEVER DO:**
+```typescript
+import { Alert } from 'react-native';
+Alert.alert('Error', 'Something went wrong'); // Breaks on web!
+```
+
+**✅ ALWAYS DO:**
+```typescript
+import { showAlert } from '../components/ui/CustomAlert';
+showAlert('Error', 'Something went wrong'); // Works everywhere!
+```
+
+**API Usage:**
+```typescript
+// Simple alert (single OK button)
+showAlert('Title', 'Message');
+
+// Alert with custom buttons
+showAlert('Confirm Action', 'Are you sure?', [
+  { text: 'Cancel', style: 'cancel' },
+  { text: 'Delete', style: 'destructive', onPress: () => handleDelete() }
+]);
+
+// Button styles: 'default' | 'cancel' | 'destructive'
+```
+
+**Why CustomAlert:**
+- ✅ Works on iOS, Android, **and Web**
+- ✅ Consistent styling across platforms
+- ✅ Supports multiple buttons with different styles
+- ✅ Modal-based (not browser alerts that get blocked)
+- ✅ Matches app design system
+
+**Controller Setup:**
+The `CustomAlertController` is already mounted in `App.tsx` - no additional setup needed.
+
 ### Backend Integration
 - **GraphQL API**: Real-time queries with `observeQuery()` for live updates
 - **Bulk Loading**: Optimized data fetching with `bulkLoadingService` to reduce N+1 queries

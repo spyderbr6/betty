@@ -25,6 +25,9 @@ import {
   runFullDiagnostics
 } from '../utils/testEventFetcher';
 import { NotificationService } from '../services/notificationService';
+import { TransactionService } from '../services/transactionService';
+import { formatCurrency } from '../utils/formatting';
+import { showAlert } from '../components/ui/CustomAlert';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
 
@@ -46,7 +49,7 @@ export const AdminTestingScreen: React.FC<{ onClose: () => void }> = ({ onClose 
   // Check if user is admin
   React.useEffect(() => {
     if (!user || (user.role !== 'ADMIN' && user.role !== 'SUPER_ADMIN')) {
-      Alert.alert(
+      showAlert(
         'Access Denied',
         'You do not have permission to access admin testing tools.',
         [{ text: 'OK', onPress: onClose }]
@@ -72,10 +75,10 @@ export const AdminTestingScreen: React.FC<{ onClose: () => void }> = ({ onClose 
       addLog(`Starting test: ${testId}`);
       await testFn();
       addLog(`✅ Test completed: ${testId}`);
-      Alert.alert('Success', `Test "${testId}" completed successfully. Check logs for details.`);
+      showAlert('Success', `Test "${testId}" completed successfully. Check logs for details.`);
     } catch (error) {
       addLog(`❌ Test failed: ${error instanceof Error ? error.message : String(error)}`);
-      Alert.alert('Error', `Test "${testId}" failed. Check logs for details.`);
+      showAlert('Error', `Test "${testId}" failed. Check logs for details.`);
     } finally {
       setLoading(false);
       setActiveTest(null);
@@ -373,6 +376,404 @@ export const AdminTestingScreen: React.FC<{ onClose: () => void }> = ({ onClose 
     },
   ];
 
+  const betTestingModules: TestModule[] = [
+    {
+      id: 'create-test-bet',
+      title: 'Create Joinable Test Bet',
+      description: 'Creates a public bet by "Test User" - you can join it as a normal user',
+      action: async () => {
+        if (!user) {
+          addLog('❌ No user logged in');
+          return;
+        }
+
+        addLog('Creating joinable test bet...');
+
+        // Find or create a test user to be the creator
+        const testUsername = 'test-bet-creator';
+        let testUserId = 'test-user-' + Date.now();
+
+        addLog('Looking for test user account...');
+        const { data: existingUsers } = await client.models.User.list({
+          filter: { username: { eq: testUsername } }
+        });
+
+        if (existingUsers && existingUsers.length > 0) {
+          testUserId = existingUsers[0].id;
+          addLog(`✅ Using existing test user: ${testUserId}`);
+        } else {
+          addLog('Creating test user account...');
+          const { data: newTestUser } = await client.models.User.create({
+            id: testUserId,
+            username: testUsername,
+            email: 'testuser@sidebet.test',
+            displayName: 'Test User',
+            balance: 1000,
+            trustScore: 5.0,
+            totalBets: 0,
+            totalWinnings: 0,
+            winRate: 0,
+            role: 'USER',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          });
+
+          if (newTestUser) {
+            addLog(`✅ Created test user: ${testUserId}`);
+          }
+        }
+
+        const deadline = new Date();
+        deadline.setMinutes(deadline.getMinutes() + 60);
+
+        // Create bet with test user as creator (NOT current admin user)
+        const { data: newBet } = await client.models.Bet.create({
+          title: 'TEST: Will it rain tomorrow?',
+          description: 'Public test bet - anyone can join!',
+          category: 'CUSTOM',
+          status: 'ACTIVE',
+          creatorId: testUserId, // Test user is creator, not you
+          totalPot: 0, // No one joined yet
+          betAmount: 10,
+          odds: JSON.stringify({
+            sideAName: 'Yes',
+            sideBName: 'No'
+          }),
+          deadline: deadline.toISOString(),
+          isPrivate: false,
+          isTestBet: false,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        });
+
+        if (!newBet) {
+          addLog('❌ Failed to create bet');
+          return;
+        }
+
+        addLog(`✅ Test bet created! ID: ${newBet.id}`);
+        addLog(`📍 Creator: "Test User" (not you)`);
+        addLog('📍 You can JOIN this bet from Home screen');
+        addLog('👥 It will show in Active/Live bets');
+        addLog('💡 Test the join flow as a regular user');
+      }
+    },
+    {
+      id: 'list-test-bets',
+      title: 'List Test Bets (PENDING_RESOLUTION)',
+      description: 'Shows test bets ready to be resolved',
+      action: async () => {
+        if (!user) {
+          addLog('❌ No user logged in');
+          return;
+        }
+
+        addLog('Loading test bets pending resolution...');
+
+        // Find test user
+        const { data: testUsers } = await client.models.User.list({
+          filter: { username: { eq: 'test-bet-creator' } }
+        });
+
+        if (!testUsers || testUsers.length === 0) {
+          addLog('❌ No test user found');
+          addLog('💡 Create a test bet first');
+          return;
+        }
+
+        const testUserId = testUsers[0].id;
+
+        // Get test bets that are PENDING_RESOLUTION
+        const { data: betsData } = await client.models.Bet.list({
+          filter: {
+            and: [
+              { creatorId: { eq: testUserId } },
+              { status: { eq: 'PENDING_RESOLUTION' } }
+            ]
+          }
+        });
+
+        if (!betsData || betsData.length === 0) {
+          addLog('No test bets pending resolution');
+          addLog('💡 Join a test bet and wait for deadline');
+          return;
+        }
+
+        addLog(`Found ${betsData.length} test bet(s) pending resolution:`);
+        betsData.forEach((bet, idx) => {
+          let sideAName = 'Side A';
+          let sideBName = 'Side B';
+          try {
+            const odds = typeof bet.odds === 'string' ? JSON.parse(bet.odds) : bet.odds;
+            sideAName = odds?.sideAName || 'Side A';
+            sideBName = odds?.sideBName || 'Side B';
+          } catch (e) {}
+
+          addLog(`${idx + 1}. ${bet.title}`);
+          addLog(`   ID: ${bet.id}`);
+          addLog(`   Pot: ${formatCurrency(bet.totalPot || 0)}`);
+          addLog(`   Sides: ${sideAName} vs ${sideBName}`);
+        });
+      }
+    },
+    {
+      id: 'resolve-test-bet-side-a',
+      title: 'Resolve Test Bet → Side A Wins',
+      description: 'Resolves the most recent test bet with Side A as winner',
+      action: async () => {
+        if (!user) {
+          addLog('❌ No user logged in');
+          return;
+        }
+
+        addLog('Finding most recent test bet...');
+
+        // Find test user
+        const { data: testUsers } = await client.models.User.list({
+          filter: { username: { eq: 'test-bet-creator' } }
+        });
+
+        if (!testUsers || testUsers.length === 0) {
+          addLog('❌ No test user found');
+          return;
+        }
+
+        const testUserId = testUsers[0].id;
+
+        // Get most recent PENDING_RESOLUTION test bet
+        const { data: betsData } = await client.models.Bet.list({
+          filter: {
+            and: [
+              { creatorId: { eq: testUserId } },
+              { status: { eq: 'PENDING_RESOLUTION' } }
+            ]
+          }
+        });
+
+        if (!betsData || betsData.length === 0) {
+          addLog('❌ No test bets pending resolution');
+          return;
+        }
+
+        // Get most recent
+        const bet = betsData[0];
+        addLog(`Resolving: ${bet.title}`);
+
+        // Get participants
+        const { data: participants } = await client.models.Participant.list({
+          filter: { betId: { eq: bet.id! } }
+        });
+
+        if (!participants || participants.length === 0) {
+          addLog('❌ No participants found');
+          return;
+        }
+
+        // Parse odds
+        let sideAName = 'Side A';
+        let sideBName = 'Side B';
+        try {
+          const odds = typeof bet.odds === 'string' ? JSON.parse(bet.odds) : bet.odds;
+          sideAName = odds?.sideAName || 'Side A';
+          sideBName = odds?.sideBName || 'Side B';
+        } catch (e) {}
+
+        // Calculate payouts
+        const winners = participants.filter(p => p.side === 'A');
+        const totalWinnerAmount = winners.reduce((sum, p) => sum + (p.amount || 0), 0);
+        const totalPot = bet.totalPot || 0;
+
+        addLog(`Winner: ${sideAName}`);
+        addLog(`Total Pot: ${formatCurrency(totalPot)}`);
+
+        // Dispute window
+        const disputeWindowEndsAt = new Date();
+        disputeWindowEndsAt.setHours(disputeWindowEndsAt.getHours() + 48);
+
+        // Update bet
+        await client.models.Bet.update({
+          id: bet.id!,
+          status: 'PENDING_RESOLUTION',
+          winningSide: 'A',
+          resolutionReason: `Admin test resolution: ${sideAName} wins`,
+          disputeWindowEndsAt: disputeWindowEndsAt.toISOString(),
+          updatedAt: new Date().toISOString()
+        });
+
+        // Update participants
+        await Promise.all(
+          participants.map(async (participant) => {
+            const isWinner = participant.side === 'A';
+            let payout = 0;
+
+            if (isWinner && totalWinnerAmount > 0) {
+              const winnerShare = (participant.amount || 0) / totalWinnerAmount;
+              payout = totalPot * winnerShare;
+            }
+
+            await client.models.Participant.update({
+              id: participant.id!,
+              payout: payout,
+              status: isWinner ? 'ACCEPTED' : 'DECLINED'
+            });
+
+            // Create transaction
+            if (isWinner && payout > 0 && participant.userId) {
+              const { data: userData } = await client.models.User.get({ id: participant.userId });
+              const currentBalance = userData?.balance || 0;
+
+              await client.models.Transaction.create({
+                userId: participant.userId,
+                type: 'BET_WON',
+                status: 'PENDING',
+                amount: payout,
+                balanceBefore: currentBalance,
+                balanceAfter: currentBalance + payout,
+                relatedBetId: bet.id,
+                relatedParticipantId: participant.id,
+                notes: `Test bet winnings: ${bet.title}`,
+                createdAt: new Date().toISOString()
+              });
+
+              addLog(`✅ ${isWinner ? 'Winner' : 'Loser'} payout: ${formatCurrency(payout)}`);
+            }
+          })
+        );
+
+        addLog(`✅ Test bet resolved! Winner: ${sideAName}`);
+        addLog('💰 Payouts pending 48h dispute window');
+      }
+    },
+    {
+      id: 'resolve-test-bet-side-b',
+      title: 'Resolve Test Bet → Side B Wins',
+      description: 'Resolves the most recent test bet with Side B as winner',
+      action: async () => {
+        if (!user) {
+          addLog('❌ No user logged in');
+          return;
+        }
+
+        addLog('Finding most recent test bet...');
+
+        // Find test user
+        const { data: testUsers } = await client.models.User.list({
+          filter: { username: { eq: 'test-bet-creator' } }
+        });
+
+        if (!testUsers || testUsers.length === 0) {
+          addLog('❌ No test user found');
+          return;
+        }
+
+        const testUserId = testUsers[0].id;
+
+        // Get most recent PENDING_RESOLUTION test bet
+        const { data: betsData } = await client.models.Bet.list({
+          filter: {
+            and: [
+              { creatorId: { eq: testUserId } },
+              { status: { eq: 'PENDING_RESOLUTION' } }
+            ]
+          }
+        });
+
+        if (!betsData || betsData.length === 0) {
+          addLog('❌ No test bets pending resolution');
+          return;
+        }
+
+        // Get most recent
+        const bet = betsData[0];
+        addLog(`Resolving: ${bet.title}`);
+
+        // Get participants
+        const { data: participants } = await client.models.Participant.list({
+          filter: { betId: { eq: bet.id! } }
+        });
+
+        if (!participants || participants.length === 0) {
+          addLog('❌ No participants found');
+          return;
+        }
+
+        // Parse odds
+        let sideAName = 'Side A';
+        let sideBName = 'Side B';
+        try {
+          const odds = typeof bet.odds === 'string' ? JSON.parse(bet.odds) : bet.odds;
+          sideAName = odds?.sideAName || 'Side A';
+          sideBName = odds?.sideBName || 'Side B';
+        } catch (e) {}
+
+        // Calculate payouts
+        const winners = participants.filter(p => p.side === 'B');
+        const totalWinnerAmount = winners.reduce((sum, p) => sum + (p.amount || 0), 0);
+        const totalPot = bet.totalPot || 0;
+
+        addLog(`Winner: ${sideBName}`);
+        addLog(`Total Pot: ${formatCurrency(totalPot)}`);
+
+        // Dispute window
+        const disputeWindowEndsAt = new Date();
+        disputeWindowEndsAt.setHours(disputeWindowEndsAt.getHours() + 48);
+
+        // Update bet
+        await client.models.Bet.update({
+          id: bet.id!,
+          status: 'PENDING_RESOLUTION',
+          winningSide: 'B',
+          resolutionReason: `Admin test resolution: ${sideBName} wins`,
+          disputeWindowEndsAt: disputeWindowEndsAt.toISOString(),
+          updatedAt: new Date().toISOString()
+        });
+
+        // Update participants
+        await Promise.all(
+          participants.map(async (participant) => {
+            const isWinner = participant.side === 'B';
+            let payout = 0;
+
+            if (isWinner && totalWinnerAmount > 0) {
+              const winnerShare = (participant.amount || 0) / totalWinnerAmount;
+              payout = totalPot * winnerShare;
+            }
+
+            await client.models.Participant.update({
+              id: participant.id!,
+              payout: payout,
+              status: isWinner ? 'ACCEPTED' : 'DECLINED'
+            });
+
+            // Create transaction
+            if (isWinner && payout > 0 && participant.userId) {
+              const { data: userData } = await client.models.User.get({ id: participant.userId });
+              const currentBalance = userData?.balance || 0;
+
+              await client.models.Transaction.create({
+                userId: participant.userId,
+                type: 'BET_WON',
+                status: 'PENDING',
+                amount: payout,
+                balanceBefore: currentBalance,
+                balanceAfter: currentBalance + payout,
+                relatedBetId: bet.id,
+                relatedParticipantId: participant.id,
+                notes: `Test bet winnings: ${bet.title}`,
+                createdAt: new Date().toISOString()
+              });
+
+              addLog(`✅ ${isWinner ? 'Winner' : 'Loser'} payout: ${formatCurrency(payout)}`);
+            }
+          })
+        );
+
+        addLog(`✅ Test bet resolved! Winner: ${sideBName}`);
+        addLog('💰 Payouts pending 48h dispute window');
+      }
+    },
+  ];
+
   if (!user || (user.role !== 'ADMIN' && user.role !== 'SUPER_ADMIN')) {
     return null;
   }
@@ -428,6 +829,33 @@ export const AdminTestingScreen: React.FC<{ onClose: () => void }> = ({ onClose 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>🏀 Event System Tests</Text>
           {eventTestModules.map((module) => (
+            <TouchableOpacity
+              key={module.id}
+              style={[
+                styles.testCard,
+                activeTest === module.id && styles.testCardActive
+              ]}
+              onPress={() => runTest(module.id, module.action)}
+              disabled={loading}
+            >
+              <View style={styles.testCardHeader}>
+                <Text style={styles.testCardTitle}>{module.title}</Text>
+                {activeTest === module.id && (
+                  <ActivityIndicator size="small" color={colors.primary} />
+                )}
+              </View>
+              <Text style={styles.testCardDescription}>{module.description}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {/* Bet System Tests */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>🎲 Bet System Tests</Text>
+          <Text style={styles.sectionDescription}>
+            Create and manage test bets. Test bets are public and visible to all users.
+          </Text>
+          {betTestingModules.map((module) => (
             <TouchableOpacity
               key={module.id}
               style={[

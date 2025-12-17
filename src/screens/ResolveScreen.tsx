@@ -10,11 +10,10 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Alert,
   ActivityIndicator,
   RefreshControl,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
 import { colors, commonStyles, textStyles, spacing, typography } from '../styles';
@@ -25,6 +24,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { formatCurrency } from '../utils/formatting';
 import { NotificationService } from '../services/notificationService';
 import { TransactionService } from '../services/transactionService';
+import { showAlert } from '../components/ui/CustomAlert';
 
 // Initialize GraphQL client
 const client = generateClient<Schema>();
@@ -63,6 +63,7 @@ const transformAmplifyBet = (bet: any): Bet | null => {
     deadline: bet.deadline || new Date().toISOString(),
     winningSide: bet.winningSide || undefined,
     resolutionReason: bet.resolutionReason || undefined,
+    disputeWindowEndsAt: bet.disputeWindowEndsAt || undefined,
     createdAt: bet.createdAt || new Date().toISOString(),
     updatedAt: bet.updatedAt || new Date().toISOString(),
     participants: [],
@@ -71,6 +72,7 @@ const transformAmplifyBet = (bet: any): Bet | null => {
 
 export const ResolveScreen: React.FC = () => {
   const { user } = useAuth();
+  const insets = useSafeAreaInsets();
   const [pendingBets, setPendingBets] = useState<Bet[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isResolving, setIsResolving] = useState<string | null>(null);
@@ -85,20 +87,10 @@ export const ResolveScreen: React.FC = () => {
         setIsLoading(true);
         console.log('Fetching bets pending resolution for user:', user.userId);
 
-        // Fetch bets that need resolution (PENDING_RESOLUTION status)
+        // Fetch all PENDING_RESOLUTION bets (for everyone, not just creators)
         const { data: betsData } = await client.models.Bet.list({
           filter: {
-            or: [
-              { status: { eq: 'PENDING_RESOLUTION' } },
-              // Also include ACTIVE bets past their deadline that user created
-              {
-                and: [
-                  { status: { eq: 'ACTIVE' } },
-                  { creatorId: { eq: user.userId } },
-                  { deadline: { lt: new Date().toISOString() } }
-                ]
-              }
-            ]
+            status: { eq: 'PENDING_RESOLUTION' }
           },
         });
 
@@ -130,22 +122,31 @@ export const ResolveScreen: React.FC = () => {
 
           const validBets = betsWithParticipants.filter((bet): bet is Bet => bet !== null);
 
-          // Filter to only show bets the user can resolve (creator or participant) with participants
-          const resolvableBets = validBets.filter(bet => {
+          // Filter to only show bets where user is involved (creator or participant)
+          const userBets = validBets.filter(bet => {
             const isCreator = bet.creatorId === user.userId;
             const isParticipant = bet.participants?.some(p => p.userId === user.userId);
-            const hasParticipants = bet.participants && bet.participants.length > 0;
 
-            // Only show bets that have participants and user is involved
-            return hasParticipants && (isCreator || isParticipant);
+            // Show all PENDING_RESOLUTION bets where user is involved
+            return isCreator || isParticipant;
           });
 
-          // Sort by creation date (newest first)
-          const sortedBets = resolvableBets.sort((a, b) =>
-            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-          );
+          // Priority sorting: creator's bets needing resolution FIRST (no winningSide), then all others by creation date
+          const sortedBets = userBets.sort((a, b) => {
+            const aIsCreator = a.creatorId === user.userId;
+            const bIsCreator = b.creatorId === user.userId;
+            const aNeedsResolution = aIsCreator && !a.winningSide;
+            const bNeedsResolution = bIsCreator && !b.winningSide;
 
-          console.log('Found resolvable bets:', sortedBets.length);
+            // Priority 1: Bets needing resolution (creator's bets without winningSide) go first
+            if (aNeedsResolution && !bNeedsResolution) return -1;
+            if (!aNeedsResolution && bNeedsResolution) return 1;
+
+            // Priority 2: Sort by creation date (newest first)
+            return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+          });
+
+          console.log('Found pending resolution bets:', sortedBets.length);
           setPendingBets(sortedBets);
         }
       } catch (error) {
@@ -254,7 +255,7 @@ export const ResolveScreen: React.FC = () => {
 
     // Only allow creator to resolve bets
     if (bet.creatorId !== user?.userId) {
-      Alert.alert('Error', 'Only the bet creator can resolve this bet.');
+      showAlert('Error', 'Only the bet creator can resolve this bet.');
       return;
     }
 
@@ -280,16 +281,21 @@ export const ResolveScreen: React.FC = () => {
       const totalWinnerAmount = winners.reduce((sum, p) => sum + p.amount, 0);
       const totalPot = bet.totalPot;
 
-      // Update bet status to RESOLVED
+      // Calculate dispute window end time (48 hours from now)
+      const disputeWindowEndsAt = new Date();
+      disputeWindowEndsAt.setHours(disputeWindowEndsAt.getHours() + 48);
+
+      // Update bet status to PENDING_RESOLUTION (48-hour dispute window)
       await client.models.Bet.update({
         id: bet.id,
-        status: 'RESOLVED',
+        status: 'PENDING_RESOLUTION',
         winningSide: winningSide,
         resolutionReason: `Resolved by creator. Winner: ${winningSide === 'A' ? bet.odds.sideAName || 'Side A' : bet.odds.sideBName || 'Side B'}`,
+        disputeWindowEndsAt: disputeWindowEndsAt.toISOString(),
         updatedAt: new Date().toISOString()
       });
 
-      // Update participant payouts and user balances
+      // Create pending payout transactions (balance NOT updated yet - happens after 48h dispute window)
       if (bet.participants) {
         await Promise.all(
           bet.participants.map(async (participant) => {
@@ -302,36 +308,69 @@ export const ResolveScreen: React.FC = () => {
               payout = totalPot * winnerShare;
             }
 
-            // Update participant record
+            // Calculate platform fee (3% of winnings) for winners
+            const platformFee = isWinner && payout > 0 ? Math.round(payout * 0.03 * 100) / 100 : 0;
+            const netPayout = payout - platformFee;
+
+            // Update participant record with calculated payout (gross amount)
             await client.models.Participant.update({
               id: participant.id,
               payout: payout,
               status: isWinner ? 'ACCEPTED' : 'DECLINED'
             });
 
-            // Record transaction for winners
+            // Create PENDING transactions (will be completed by payout-processor after 48h)
             if (isWinner && payout > 0) {
-              await TransactionService.recordBetWinnings(
+              // Get current balance for transaction record
+              const { data: userData } = await client.models.User.get({ id: participant.userId });
+              const currentBalance = userData?.balance || 0;
+
+              // Calculate platform fee (3% of winnings) - will be applied when payout-processor completes transaction
+              const platformFee = Math.round(payout * 0.03 * 100) / 100;
+              const netPayout = payout - platformFee;
+
+              await client.models.Transaction.create({
+                userId: participant.userId,
+                type: 'BET_WON',
+                status: 'PENDING', // NOT COMPLETED - awaiting dispute window
+                amount: payout, // Gross payout amount (before fees) - consistent with deposits
+                actualAmount: netPayout, // Net amount received after platform fee
+                platformFee: platformFee, // 3% platform fee
+                balanceBefore: currentBalance,
+                balanceAfter: currentBalance + netPayout, // Projected balance (after fee)
+                relatedBetId: bet.id,
+                relatedParticipantId: participant.id,
+                notes: `Bet winnings (pending 48h dispute window): ${bet.title}`,
+                createdAt: new Date().toISOString()
+              });
+            } else if (!isWinner) {
+              // Record lost bet transaction (zero amount, for tracking/dispute)
+              await TransactionService.recordBetLoss(
                 participant.userId,
-                payout,
                 bet.id,
                 participant.id
               );
             }
 
-            // Update user stats (win rate, total bets, etc.)
-            await updateUserStats(participant.userId, isWinner, participant.amount, payout);
-
-            // Send bet resolved notification to participant (but not to the resolver/creator)
+            // Send bet resolved notification to participant
             if (participant.userId !== user?.userId) {
               try {
-                await NotificationService.notifyBetResolved(
-                  participant.userId,
-                  bet.title,
-                  isWinner,
-                  payout,
-                  bet.id
-                );
+                // Calculate net payout for winner notification
+                const netPayoutForNotification = isWinner ? payout - Math.round(payout * 0.03 * 100) / 100 : 0;
+
+                await NotificationService.createNotification({
+                  userId: participant.userId,
+                  type: 'BET_RESOLVED',
+                  title: isWinner ? 'Bet Won! (Pending)' : 'Bet Lost',
+                  message: isWinner
+                    ? `You won $${netPayoutForNotification.toFixed(2)} on "${bet.title}". Funds will be available in 48 hours if no disputes are filed.`
+                    : `You lost on "${bet.title}". The winner was ${winningSide === 'A' ? bet.odds.sideAName : bet.odds.sideBName}.`,
+                  priority: isWinner ? 'HIGH' : 'MEDIUM',
+                  actionType: 'view_bet',
+                  actionData: { betId: bet.id },
+                  relatedBetId: bet.id,
+                  relatedUserId: undefined
+                });
               } catch (notificationError) {
                 console.warn('Failed to send bet resolved notification to participant:', notificationError);
               }
@@ -347,9 +386,16 @@ export const ResolveScreen: React.FC = () => {
         [bet.id]: null
       }));
 
+      // Show success message
+      showAlert(
+        'Bet Resolved',
+        `Winner: ${winningSide === 'A' ? bet.odds.sideAName || 'Side A' : bet.odds.sideBName || 'Side B'}\n\nPayouts are pending a 48-hour dispute window. If no disputes are filed, funds will be automatically distributed.`,
+        [{ text: 'OK' }]
+      );
+
     } catch (error) {
       console.error('Error resolving bet:', error);
-      Alert.alert(
+      showAlert(
         'Error',
         'Failed to resolve bet. Please try again.',
         [{ text: 'OK' }]
@@ -434,6 +480,7 @@ export const ResolveScreen: React.FC = () => {
 
       <ScrollView
         style={styles.content}
+        contentContainerStyle={{ paddingBottom: spacing.navigation.baseHeight + insets.bottom }}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
@@ -444,14 +491,6 @@ export const ResolveScreen: React.FC = () => {
           />
         }
       >
-        {/* Section Header */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>PENDING RESOLUTION</Text>
-          <Text style={styles.sectionSubtitle}>
-            {pendingBets.length} bets awaiting resolution
-          </Text>
-        </View>
-
         {/* Loading State */}
         {isLoading ? (
           <View style={styles.loadingContainer}>
@@ -466,8 +505,8 @@ export const ResolveScreen: React.FC = () => {
                 onPress={handleBetPress}
               />
 
-              {/* Resolution Actions - Only show if user is creator */}
-              {bet.creatorId === user?.userId && (
+              {/* Resolution Actions - Only show if user is creator AND bet needs resolution */}
+              {bet.creatorId === user?.userId && (bet.status === 'ACTIVE' || (bet.status === 'PENDING_RESOLUTION' && !bet.winningSide)) && (
                 <View style={styles.resolutionActions}>
                   {/* Payout Preview */}
                   <View style={styles.payoutPreview}>
@@ -577,27 +616,6 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-  },
-
-  // Section Header
-  sectionHeader: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-    backgroundColor: colors.background,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  sectionTitle: {
-    ...textStyles.h3,
-    color: colors.textPrimary,
-    fontWeight: typography.fontWeight.bold,
-    fontSize: typography.fontSize.lg,
-    marginBottom: spacing.xs,
-  },
-  sectionSubtitle: {
-    ...textStyles.body,
-    color: colors.textMuted,
-    fontSize: typography.fontSize.sm,
   },
 
   // Loading and Empty States

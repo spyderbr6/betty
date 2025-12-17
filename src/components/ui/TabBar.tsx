@@ -63,11 +63,12 @@ export const TabBar: React.FC<BottomTabBarProps> = ({
             })
           );
 
-          // Count user's bets (creator or participant)
+          // Count user's bets (creator or participant) - exclude PENDING_RESOLUTION
           const myBetsCount = betsWithParticipants.filter(({ bet, participants }) => {
             const isCreator = bet.creatorId === user.userId;
             const isParticipant = participants.some(p => p.userId === user.userId);
-            return isCreator || isParticipant;
+            const isActiveBet = bet.status === 'ACTIVE' || bet.status === 'LIVE';
+            return (isCreator || isParticipant) && isActiveBet;
           }).length;
 
           // Count joinable bets (not creator, not participant)
@@ -125,19 +126,19 @@ export const TabBar: React.FC<BottomTabBarProps> = ({
 
   const getTabIcon = (routeName: string, focused: boolean) => {
     let iconName: keyof typeof Ionicons.glyphMap;
-    
+
     switch (routeName) {
       case 'Bets':
-        iconName = focused ? 'receipt' : 'receipt-outline';
+        iconName = focused ? 'list' : 'list-outline';
         break;
       case 'Live':
-        iconName = focused ? 'pulse' : 'pulse-outline';
+        iconName = focused ? 'search' : 'search-outline';
         break;
       case 'Create':
         iconName = focused ? 'add-circle' : 'add-circle-outline';
         break;
       case 'Resolve':
-        iconName = focused ? 'trophy' : 'trophy-outline';
+        iconName = focused ? 'hourglass' : 'hourglass-outline';
         break;
       case 'Account':
         iconName = focused ? 'person' : 'person-outline';
@@ -145,22 +146,22 @@ export const TabBar: React.FC<BottomTabBarProps> = ({
       default:
         iconName = 'help-outline';
     }
-    
+
     return iconName;
   };
 
   const getTabLabel = (routeName: string) => {
     switch (routeName) {
       case 'Bets':
-        return 'My Bets';
+        return 'Active';
       case 'Live':
-        return 'Live';
+        return 'Join';
       case 'Create':
         return 'Create';
       case 'Resolve':
         return 'Results';
       case 'Account':
-        return 'Profile';
+        return 'Account';
       default:
         return routeName;
     }
@@ -211,7 +212,6 @@ export const TabBar: React.FC<BottomTabBarProps> = ({
 
         // Special styling for different tabs
         const isCreateTab = route.name === 'Create';
-        const isLiveTab = route.name === 'Live';
         const hasBadge = count !== null && count > 0;
 
         return (
@@ -233,11 +233,6 @@ export const TabBar: React.FC<BottomTabBarProps> = ({
             {/* Active tab indicator line */}
             {isFocused && !isCreateTab && (
               <View style={styles.activeIndicator} />
-            )}
-            
-            {/* Live pulsing indicator for Live tab */}
-            {isLiveTab && (
-              <View style={styles.livePulseIndicator} />
             )}
             
             <View style={[
@@ -366,19 +361,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs / 2,
     fontSize: 9,
   },
-  
-  // Live pulsing indicator
-  livePulseIndicator: {
-    position: 'absolute',
-    top: 4,
-    left: '50%',
-    transform: [{ translateX: -3 }],
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: colors.live,
-  },
-  
+
   // Notification badges
   badge: {
     position: 'absolute',

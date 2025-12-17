@@ -74,7 +74,7 @@ export const PaymentMethodsScreen: React.FC<PaymentMethodsScreenProps> = ({ onCl
   };
 
   const handleRemovePaymentMethod = async (paymentMethod: PaymentMethod) => {
-    Alert.alert(
+    showAlert(
       'Remove Payment Method',
       `Are you sure you want to remove ${paymentMethod.displayName}?`,
       [
@@ -87,7 +87,7 @@ export const PaymentMethodsScreen: React.FC<PaymentMethodsScreenProps> = ({ onCl
             if (success) {
               await refreshData();
             } else {
-              Alert.alert('Error', 'Failed to remove payment method');
+              showAlert('Error', 'Failed to remove payment method');
             }
           },
         },
@@ -102,7 +102,7 @@ export const PaymentMethodsScreen: React.FC<PaymentMethodsScreenProps> = ({ onCl
     if (success) {
       await refreshData();
     } else {
-      Alert.alert('Error', 'Failed to set default payment method');
+      showAlert('Error', 'Failed to set default payment method');
     }
   };
 
@@ -271,7 +271,7 @@ export const PaymentMethodsScreen: React.FC<PaymentMethodsScreenProps> = ({ onCl
           <View style={styles.infoBannerContent}>
             <Text style={styles.infoBannerTitle}>How It Works</Text>
             <Text style={styles.infoBannerText}>
-              Add funds via Venmo and start betting. Your deposits will be verified within 1-2 hours. Withdrawals are processed within 1-2 business days.
+              Add funds via Venmo to get started. Your payment method will be automatically verified when your first deposit is approved (typically 1-2 hours). Once verified, you can withdraw funds anytime. Withdrawals are processed within 1-2 business days.
             </Text>
           </View>
         </View>

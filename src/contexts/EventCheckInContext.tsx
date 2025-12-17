@@ -4,7 +4,7 @@
  */
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { Alert } from 'react-native';
+import { } from 'react-native';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
 import { getUserCheckedInEvent, checkOutOfEvent } from '../services/eventService';
@@ -120,39 +120,49 @@ export const EventCheckInProvider: React.FC<EventCheckInProviderProps> = ({ chil
     };
   }, [user?.userId]);
 
-  // Periodic check for event end (every 30 seconds)
+  // Monitor checked-in event for completion and auto-checkout
   useEffect(() => {
-    if (!checkedInEvent) return;
+    if (!user?.userId || !checkedInEvent) return;
 
-    console.log('[EventCheckIn] Starting periodic event status check');
+    console.log('[EventCheckIn] Monitoring event for completion:', checkedInEvent.id);
 
-    const checkEventStatus = async () => {
+    const checkEventCompletion = async () => {
       try {
         const { data: event } = await client.models.LiveEvent.get({ id: checkedInEvent.id });
 
         if (event && (event.status === 'FINISHED' || event.status === 'CANCELLED')) {
-          console.log('[EventCheckIn] Event has ended, auto-checking out');
-          // Event has ended, clear local state (Lambda already checked out user)
+          console.log('[EventCheckIn] Event has ended, performing auto-checkout');
+
+          // Get the user's check-in record
+          const result = await getUserCheckedInEvent(user.userId);
+          if (result) {
+            // Actually check out (update database)
+            await checkOutOfEvent(user.userId, result.checkIn.id);
+            console.log('[EventCheckIn] Auto-checkout successful');
+          }
+
+          // Clear local state
           setCheckedInEvent(null);
-          // Optionally show a notification
-          // Alert.alert('Event Ended', 'You have been automatically checked out.');
+
+          // Optional: Show notification
+          // showAlert('Event Ended', 'You have been automatically checked out.');
         }
       } catch (error) {
-        console.error('[EventCheckIn] Error checking event status:', error);
+        console.error('[EventCheckIn] Error during auto-checkout:', error);
       }
     };
 
     // Check immediately
-    checkEventStatus();
+    checkEventCompletion();
 
-    // Then check every 30 seconds
-    const interval = setInterval(checkEventStatus, 30000);
+    // Check every 2 minutes (less aggressive than before)
+    const interval = setInterval(checkEventCompletion, 120000);
 
     return () => {
-      console.log('[EventCheckIn] Cleaning up periodic event status check');
+      console.log('[EventCheckIn] Cleaning up event completion monitor');
       clearInterval(interval);
     };
-  }, [checkedInEvent]);
+  }, [checkedInEvent, user?.userId]);
 
   const fetchCheckedInEvent = async () => {
     if (!user?.userId) return;
@@ -201,7 +211,7 @@ export const EventCheckInProvider: React.FC<EventCheckInProviderProps> = ({ chil
       }
     } catch (error) {
       console.error('[EventCheckIn] Error checking out:', error);
-      Alert.alert('Error', 'Failed to check out. Please try again.');
+      showAlert('Error', 'Failed to check out. Please try again.');
     } finally {
       setIsLoading(false);
     }

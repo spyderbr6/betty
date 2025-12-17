@@ -16,7 +16,7 @@ import {
   ActivityIndicator,
   Image,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { generateClient } from 'aws-amplify/data';
 import { getCurrentUser } from 'aws-amplify/auth';
@@ -55,6 +55,7 @@ const client = generateClient<Schema>();
 
 export const CreateBetScreen: React.FC = () => {
   const { user } = useAuth();
+  const insets = useSafeAreaInsets();
   const { checkedInEvent } = useEventCheckIn();
   const scrollRef = React.useRef<ScrollView | null>(null);
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
@@ -306,24 +307,24 @@ export const CreateBetScreen: React.FC = () => {
 
   const handleCreateBet = async () => {
     if (!betTitle.trim() || !betDescription.trim() || !betAmount.trim()) {
-      Alert.alert('Missing Information', 'Please fill in all required fields.');
+      showAlert('Missing Information', 'Please fill in all required fields.');
       return;
     }
 
     const amount = parseFloat(betAmount);
     if (isNaN(amount) || amount <= 0) {
-      Alert.alert('Invalid Amount', 'Please enter a valid bet amount.');
+      showAlert('Invalid Amount', 'Please enter a valid bet amount.');
       return;
     }
 
     if (!selectedSide) {
-      Alert.alert('Pick a Side', 'Please choose Side A or Side B to join your bet.');
+      showAlert('Pick a Side', 'Please choose Side A or Side B to join your bet.');
       return;
     }
 
     const deadlineMinutes = parseInt(deadline);
     if (isNaN(deadlineMinutes) || deadlineMinutes <= 0) {
-      Alert.alert('Invalid Deadline', 'Please enter a valid deadline in minutes.');
+      showAlert('Invalid Deadline', 'Please enter a valid deadline in minutes.');
       return;
     }
 
@@ -338,7 +339,7 @@ export const CreateBetScreen: React.FC = () => {
       const currentBalance = userData?.balance || 0;
 
       if (currentBalance < amount) {
-        Alert.alert(
+        showAlert(
           'Insufficient Funds',
           `You need $${amount.toFixed(2)} to create this bet, but you only have $${currentBalance.toFixed(2)}. Please add funds to your account.`
         );
@@ -470,7 +471,7 @@ export const CreateBetScreen: React.FC = () => {
     } catch (error) {
       console.error('Error creating bet:', error);
       console.error('Full error object:', JSON.stringify(error, null, 2));
-      Alert.alert(
+      showAlert(
         'Error',
         'Failed to create bet. Please try again.',
         [{ text: 'OK' }]
@@ -554,7 +555,7 @@ export const CreateBetScreen: React.FC = () => {
         </View>
       )}
 
-      <ScrollView ref={scrollRef} style={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView ref={scrollRef} style={styles.content} contentContainerStyle={{ paddingBottom: spacing.navigation.baseHeight + insets.bottom }} showsVerticalScrollIndicator={false}>
         {/* Bet Templates Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>CHOOSE BET TYPE</Text>
@@ -801,7 +802,7 @@ export const CreateBetScreen: React.FC = () => {
                     activeOpacity={0.7}
                   >
                     {friend.profilePictureUrl ? (
-                      <Image source={{ uri: friend.profilePictureUrl }} style={styles.friendImage} />
+                      <Image source={{ uri: friend.profilePictureUrl }} style={styles.friendImage} resizeMode="cover" />
                     ) : (
                       <View style={[styles.friendPlaceholder, selectedFriends.has(friend.id) && styles.friendPlaceholderSelected]}>
                         <Text style={[styles.friendInitials, selectedFriends.has(friend.id) && styles.friendInitialsSelected]}>

@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, StyleSheet, Switch, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, Switch, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, textStyles } from '../styles';
@@ -12,6 +12,10 @@ import { ModalHeader } from '../components/ui/ModalHeader';
 import { useAuth } from '../contexts/AuthContext';
 import { NotificationPreferencesService } from '../services/notificationPreferencesService';
 import { NotificationPreferences } from '../types/betting';
+import { generateClient } from 'aws-amplify/data';
+import type { Schema } from '../../amplify/data/resource';
+
+const client = generateClient<Schema>();
 
 interface SettingsScreenProps {
   onClose: () => void;
@@ -20,10 +24,12 @@ interface SettingsScreenProps {
 export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
   const { user } = useAuth();
   const [preferences, setPreferences] = useState<NotificationPreferences | null>(null);
+  const [allowPhoneDiscovery, setAllowPhoneDiscovery] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     loadPreferences();
+    loadPrivacySettings();
   }, []);
 
   const loadPreferences = async () => {
@@ -37,9 +43,22 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
       setPreferences(prefs);
     } catch (error) {
       console.error('[SettingsScreen] Error loading preferences:', error);
-      Alert.alert('Error', 'Failed to load notification settings');
+      showAlert('Error', 'Failed to load notification settings');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const loadPrivacySettings = async () => {
+    if (!user) return;
+
+    try {
+      const { data: userData } = await client.models.User.get({ id: user.userId });
+      if (userData) {
+        setAllowPhoneDiscovery(userData.allowPhoneDiscovery || false);
+      }
+    } catch (error) {
+      console.error('[SettingsScreen] Error loading privacy settings:', error);
     }
   };
 
@@ -59,7 +78,34 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
     if (!success) {
       // Revert on failure
       await loadPreferences();
-      Alert.alert('Error', 'Failed to update preference. Please try again.');
+      showAlert('Error', 'Failed to update preference. Please try again.');
+    }
+  };
+
+  const handlePhoneDiscoveryToggle = async (value: boolean) => {
+    if (!user) return;
+
+    // Optimistic update
+    const previousValue = allowPhoneDiscovery;
+    setAllowPhoneDiscovery(value);
+
+    try {
+      // Update database
+      const result = await client.models.User.update({
+        id: user.userId,
+        allowPhoneDiscovery: value,
+      });
+
+      if (!result.data) {
+        // Revert on failure
+        setAllowPhoneDiscovery(previousValue);
+        showAlert('Error', 'Failed to update privacy setting. Please try again.');
+      }
+    } catch (error) {
+      console.error('[SettingsScreen] Error updating phone discovery:', error);
+      // Revert on failure
+      setAllowPhoneDiscovery(previousValue);
+      showAlert('Error', 'Failed to update privacy setting. Please try again.');
     }
   };
 
@@ -215,6 +261,26 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
               </Text>
             </View>
           )}
+        </View>
+
+        {/* Privacy */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>PRIVACY</Text>
+
+          <SettingRow
+            icon="phone-portrait-outline"
+            title="Phone Number Discovery"
+            subtitle="Allow friends to find you by your phone number"
+            value={allowPhoneDiscovery}
+            onValueChange={handlePhoneDiscoveryToggle}
+          />
+
+          <View style={styles.privacyNote}>
+            <Ionicons name="information-circle-outline" size={18} color={colors.info} />
+            <Text style={styles.privacyNoteText}>
+              When enabled, friends who have your phone number can find your profile. Your number is never publicly displayed.
+            </Text>
+          </View>
         </View>
 
         {/* App Preferences */}
@@ -383,5 +449,21 @@ const styles = StyleSheet.create({
     ...textStyles.caption,
     color: colors.textSecondary,
     marginTop: 2,
+  },
+  privacyNote: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    backgroundColor: colors.info + '10',
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  privacyNoteText: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    marginLeft: spacing.sm,
+    flex: 1,
+    lineHeight: 18,
   },
 });

@@ -32,6 +32,7 @@ export interface Bet {
   deadline: string;
   winningSide?: string;
   resolutionReason?: string;
+  disputeWindowEndsAt?: string; // When the 48-hour dispute window closes
   isPrivate?: boolean; // Private bets only visible to invited users
   createdAt: string;
   updatedAt: string;
@@ -49,6 +50,9 @@ export interface Participant {
   status: ParticipantStatus;
   payout: number;
   joinedAt: string;
+  // Bet result acceptance (for early closure)
+  hasAcceptedResult?: boolean; // Has participant accepted the bet outcome?
+  acceptedResultAt?: string; // When they accepted the result
 }
 
 export interface Evidence {

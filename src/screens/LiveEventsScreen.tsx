@@ -15,7 +15,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
 import { colors, commonStyles, textStyles, spacing, typography } from '../styles';
@@ -26,7 +26,9 @@ import { Bet } from '../types/betting';
 import { useAuth } from '../contexts/AuthContext';
 import { bulkLoadJoinableBetsWithParticipants, bulkLoadFriendsBetsWithParticipants, clearBulkLoadingCache } from '../services/bulkLoadingService';
 import { QRScannerModal } from '../components/ui/QRScannerModal';
-import { getRecommendedUpcomingEvents, type LiveEventData } from '../services/eventService';
+import { getUpcomingEventsFromCache } from '../services/eventCacheService';
+import type { LiveEventData } from '../services/eventService';
+import { formatTeamName } from '../utils/formatting';
 
 // Initialize GraphQL client
 const client = generateClient<Schema>();
@@ -113,6 +115,7 @@ const mockLiveBets: Bet[] = [
 
 export const LiveEventsScreen: React.FC = () => {
   const { user } = useAuth();
+  const insets = useSafeAreaInsets();
   const [liveBets, setLiveBets] = useState<Bet[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -162,12 +165,15 @@ export const LiveEventsScreen: React.FC = () => {
 
     const fetchRecommendedEvents = async () => {
       try {
-        console.log('🎯 Fetching recommended events for user:', user.userId);
-        const events = await getRecommendedUpcomingEvents(user.userId, 5);
-        console.log(`✅ Loaded ${events.length} recommended events`);
-        setRecommendedEvents(events);
+        console.log('🎯 Fetching upcoming events from cache');
+        // Get first 5 upcoming events from cache (already deduplicated by cache service)
+        const events = await getUpcomingEventsFromCache();
+        const topEvents = events.slice(0, 5);
+
+        console.log(`✅ Loaded ${topEvents.length} upcoming events`);
+        setRecommendedEvents(topEvents);
       } catch (error) {
-        console.error('❌ Error fetching recommended events:', error);
+        console.error('❌ Error fetching upcoming events:', error);
       }
     };
 
@@ -302,6 +308,7 @@ export const LiveEventsScreen: React.FC = () => {
       
       <ScrollView
         style={styles.content}
+        contentContainerStyle={{ paddingBottom: spacing.navigation.baseHeight + insets.bottom }}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
@@ -498,8 +505,14 @@ export const LiveEventsScreen: React.FC = () => {
               const hoursUntil = Math.floor((eventDate.getTime() - now.getTime()) / (1000 * 60 * 60));
               const daysUntil = Math.floor(hoursUntil / 24);
 
+              // Check if event is currently live or in halftime
+              const isLive = event.status === 'LIVE' || event.status === 'HALFTIME';
+
               let timeText = '';
-              if (daysUntil > 1) {
+              if (isLive) {
+                // Show LIVE status with current score
+                timeText = event.status === 'HALFTIME' ? '🔴 HALFTIME' : '🔴 LIVE NOW';
+              } else if (daysUntil > 1) {
                 timeText = `${daysUntil} days • ${eventDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
               } else if (daysUntil === 1) {
                 timeText = `Tomorrow • ${eventDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
@@ -511,15 +524,51 @@ export const LiveEventsScreen: React.FC = () => {
                 timeText = 'Starting soon';
               }
 
+              const awayShort = formatTeamName(event.awayTeam, event.awayTeamShortName, event.awayTeamCode);
+              const homeShort = formatTeamName(event.homeTeam, event.homeTeamShortName, event.homeTeamCode);
+
               return (
-                <View key={event.id} style={styles.upcomingEvent}>
+                <View
+                  key={event.id}
+                  style={[
+                    styles.upcomingEvent,
+                    isLive && styles.upcomingEventLive
+                  ]}
+                >
                   <View style={styles.upcomingHeader}>
                     <Text style={styles.upcomingTitle}>
-                      {event.awayTeam} @ {event.homeTeam}
+                      {awayShort} @ {homeShort}
                     </Text>
-                    <Text style={styles.upcomingStatus}>{event.sport}</Text>
+                    <Text style={[
+                      styles.upcomingStatus,
+                      isLive && styles.upcomingStatusLive
+                    ]}>
+                      {event.sport}
+                    </Text>
                   </View>
-                  <Text style={styles.upcomingTime}>{timeText}</Text>
+                  <View style={styles.upcomingTimeContainer}>
+                    <Text style={[
+                      styles.upcomingTime,
+                      isLive && styles.upcomingTimeLive
+                    ]}>
+                      {timeText}
+                    </Text>
+                    {isLive && event.quarter && (
+                      <Text style={styles.upcomingQuarter}>• {event.quarter}</Text>
+                    )}
+                  </View>
+                  {isLive && (
+                    <View style={styles.liveScoreContainer}>
+                      <View style={styles.scoreRow}>
+                        <Text style={styles.scoreTeam}>{awayShort}</Text>
+                        <Text style={styles.scoreValue}>{event.awayScore}</Text>
+                      </View>
+                      <View style={styles.scoreRow}>
+                        <Text style={styles.scoreTeam}>{homeShort}</Text>
+                        <Text style={styles.scoreValue}>{event.homeScore}</Text>
+                      </View>
+                    </View>
+                  )}
                   {event.venue && (
                     <Text style={styles.upcomingLocation}>
                       📍 {event.venue}{event.city ? ` • ${event.city}` : ''}
@@ -759,6 +808,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
+  upcomingEventLive: {
+    borderLeftColor: colors.live,
+    borderColor: colors.live + '40', // 25% opacity
+    backgroundColor: colors.live + '08', // 3% opacity for subtle tint
+  },
   upcomingHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -780,10 +834,54 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: spacing.radius.xs,
   },
+  upcomingStatusLive: {
+    color: colors.live,
+    backgroundColor: colors.live + '20', // 12% opacity
+  },
+  upcomingTimeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
   upcomingTime: {
     ...textStyles.body,
     color: colors.textSecondary,
-    marginBottom: 4,
+  },
+  upcomingTimeLive: {
+    color: colors.live,
+    fontWeight: typography.fontWeight.bold,
+  },
+  upcomingQuarter: {
+    ...textStyles.caption,
+    color: colors.textMuted,
+    marginLeft: spacing.xs,
+    fontSize: 12,
+  },
+  liveScoreContainer: {
+    backgroundColor: colors.background,
+    borderRadius: spacing.radius.xs,
+    padding: spacing.sm,
+    marginBottom: spacing.xs,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  scoreRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 2,
+  },
+  scoreTeam: {
+    ...textStyles.body,
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontWeight: typography.fontWeight.medium,
+  },
+  scoreValue: {
+    ...textStyles.h4,
+    color: colors.textPrimary,
+    fontSize: typography.fontSize.lg,
+    fontWeight: typography.fontWeight.bold,
   },
   upcomingLocation: {
     ...textStyles.caption,

@@ -9,16 +9,14 @@ import type { Schema } from '../../amplify/data/resource';
 import {
   View,
   Text,
-  TextInput,
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
   ScrollView,
   RefreshControl,
-  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { commonStyles, colors, spacing, typography, textStyles } from '../styles';
 import { Header } from '../components/ui/Header';
 import { BetCard } from '../components/betting/BetCard';
@@ -28,6 +26,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { NotificationService } from '../services/notificationService';
 import { TransactionService } from '../services/transactionService';
 import { bulkLoadUserBetsWithParticipants, clearBulkLoadingCache } from '../services/bulkLoadingService';
+import { showAlert } from '../components/ui/CustomAlert';
 
 // Initialize GraphQL client
 const client = generateClient<Schema>();
@@ -75,12 +74,10 @@ const transformAmplifyBet = (bet: any): Bet | null => {
 
 export const BetsScreen: React.FC = () => {
   const { user } = useAuth();
+  const insets = useSafeAreaInsets();
   const [bets, setBets] = useState<Bet[]>([]);
   const [betInvitations, setBetInvitations] = useState<BetInvitation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [showSearch, setShowSearch] = useState(false);
-  const [selectedFilter, setSelectedFilter] = useState<'ACTIVE' | 'PENDING_RESOLUTION' | 'RESOLVED'>('ACTIVE');
   const [refreshing, setRefreshing] = useState(false);
   const [processingInvitations, setProcessingInvitations] = useState<Set<string>>(new Set());
 
@@ -270,7 +267,7 @@ export const BetsScreen: React.FC = () => {
       const { data: currentBet } = await client.models.Bet.get({ id: invitation.betId });
 
       if (!currentBet) {
-        Alert.alert('Error', 'This bet no longer exists.');
+        showAlert('Error', 'This bet no longer exists.');
         return;
       }
 
@@ -293,7 +290,7 @@ export const BetsScreen: React.FC = () => {
           default:
             statusMessage = 'This bet is no longer available to join.';
         }
-        Alert.alert('Bet Not Available', statusMessage);
+        showAlert('Bet Not Available', statusMessage);
         // Remove the invalid invitation from the list
         setBetInvitations(prev => prev.filter(inv => inv.id !== invitation.id));
         return;
@@ -303,7 +300,7 @@ export const BetsScreen: React.FC = () => {
       const { data: currentUser } = await client.models.User.get({ id: user.userId });
 
       if (!currentUser) {
-        Alert.alert('Error', 'Unable to verify your account. Please try again.');
+        showAlert('Error', 'Unable to verify your account. Please try again.');
         return;
       }
 
@@ -311,7 +308,7 @@ export const BetsScreen: React.FC = () => {
 
       // Check if user has sufficient balance
       if (currentBalance < betAmount) {
-        Alert.alert(
+        showAlert(
           'Insufficient Balance',
           `You need $${betAmount.toFixed(2)} to join this bet, but you only have $${currentBalance.toFixed(2)}.`
         );
@@ -431,7 +428,7 @@ export const BetsScreen: React.FC = () => {
       }, 3000);
     } catch (error) {
       console.error('Error accepting bet invitation:', error);
-      Alert.alert('Error', 'Failed to accept invitation. Please try again.');
+      showAlert('Error', 'Failed to accept invitation. Please try again.');
     } finally {
       setProcessingInvitations(prev => {
         const newSet = new Set(prev);
@@ -479,10 +476,10 @@ export const BetsScreen: React.FC = () => {
       // Remove from local invitations
       setBetInvitations(prev => prev.filter(inv => inv.id !== invitation.id));
 
-      Alert.alert('Declined', 'Bet invitation declined.');
+      showAlert('Declined', 'Bet invitation declined.');
     } catch (error) {
       console.error('Error declining bet invitation:', error);
-      Alert.alert('Error', 'Failed to decline invitation. Please try again.');
+      showAlert('Error', 'Failed to decline invitation. Please try again.');
     } finally {
       setProcessingInvitations(prev => {
         const newSet = new Set(prev);
@@ -526,15 +523,13 @@ export const BetsScreen: React.FC = () => {
       }, 1000); // 1 second debounce
     };
 
-    // Set up real-time subscription for bet changes
+    // Set up real-time subscription for bet changes (only actionable bets)
     // This will catch bet status changes, new bets, etc.
     const betSubscription = client.models.Bet.observeQuery({
       filter: {
         or: [
           { status: { eq: 'ACTIVE' } },
-          { status: { eq: 'LIVE' } },
-          { status: { eq: 'PENDING_RESOLUTION' } },
-          { status: { eq: 'RESOLVED' } }
+          { status: { eq: 'PENDING_RESOLUTION' } }
         ]
       }
     }).subscribe({
@@ -575,24 +570,27 @@ export const BetsScreen: React.FC = () => {
     // Navigate to balance/wallet screen
   };
 
+  const handleEndBet = async (bet: Bet) => {
+    try {
+      // Update bet status to PENDING_RESOLUTION
+      await client.models.Bet.update({
+        id: bet.id,
+        status: 'PENDING_RESOLUTION',
+        updatedAt: new Date().toISOString(),
+      });
 
-  // Removed - Header handles notifications internally now
+      // Clear cache and refresh bets
+      clearBulkLoadingCache();
+      await fetchBets();
 
-  const handleSearchChange = (query: string) => {
-    setSearchQuery(query);
-  };
-
-  const handleSearchToggle = () => {
-    setShowSearch(!showSearch);
-    if (showSearch) {
-      setSearchQuery(''); // Clear search when hiding
+      showAlert('Bet Ended', 'Your bet has been moved to pending resolution. You can now declare the winner.');
+    } catch (error) {
+      console.error('Error ending bet:', error);
+      showAlert('Error', 'Failed to end bet. Please try again.');
     }
   };
 
-  // const handleFilterPress = () => {
-  //   console.log('Filter pressed');
-  //   // Show filter modal
-  // };
+  // Removed - Header handles notifications internally now
 
 
   // Real user stats state
@@ -629,7 +627,7 @@ export const BetsScreen: React.FC = () => {
   }, [user]);
 
 
-  // Filter for user's specific bets (created by user OR user is participant)
+  // Filter for user's ACTIVE bets only (created by user OR user is participant)
   const filteredBets = bets.filter(bet => {
     const isCreator = bet.creatorId === user?.userId;
     const isParticipant = bet.participants?.some(p => p.userId === user?.userId);
@@ -637,46 +635,11 @@ export const BetsScreen: React.FC = () => {
     // First filter by user involvement
     if (!(isCreator || isParticipant)) return false;
 
-    // Then filter by status
-    if (bet.status !== selectedFilter) return false;
-
-    // Finally filter by search query if one exists
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase().trim();
-      const titleMatch = bet.title.toLowerCase().includes(query);
-      const descriptionMatch = bet.description.toLowerCase().includes(query);
-      const sideAMatch = bet.odds.sideAName.toLowerCase().includes(query);
-      const sideBMatch = bet.odds.sideBName.toLowerCase().includes(query);
-      return titleMatch || descriptionMatch || sideAMatch || sideBMatch;
-    }
+    // Only show ACTIVE bets (PENDING_RESOLUTION moved to Results tab)
+    if (bet.status !== 'ACTIVE') return false;
 
     return true;
   });
-
-
-  // Status filter options (removed 'ALL' filter, commented out LIVE filter)
-  const statusFilters = [
-    { id: 'ACTIVE', label: 'Active', count: bets.filter(bet => {
-      const isCreator = bet.creatorId === user?.userId;
-      const isParticipant = bet.participants?.some(p => p.userId === user?.userId);
-      return (isCreator || isParticipant) && bet.status === 'ACTIVE';
-    }).length },
-    // { id: 'LIVE', label: 'Live', count: bets.filter(bet => {
-    //   const isCreator = bet.creatorId === user?.userId;
-    //   const isParticipant = bet.participants?.some(p => p.userId === user?.userId);
-    //   return (isCreator || isParticipant) && bet.status === 'LIVE';
-    // }).length },
-    { id: 'PENDING_RESOLUTION', label: 'Pending', count: bets.filter(bet => {
-      const isCreator = bet.creatorId === user?.userId;
-      const isParticipant = bet.participants?.some(p => p.userId === user?.userId);
-      return (isCreator || isParticipant) && bet.status === 'PENDING_RESOLUTION';
-    }).length },
-    { id: 'RESOLVED', label: 'Resolved', count: bets.filter(bet => {
-      const isCreator = bet.creatorId === user?.userId;
-      const isParticipant = bet.participants?.some(p => p.userId === user?.userId);
-      return (isCreator || isParticipant) && bet.status === 'RESOLVED';
-    }).length },
-  ];
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -695,6 +658,7 @@ export const BetsScreen: React.FC = () => {
 
       <ScrollView
         style={styles.content}
+        contentContainerStyle={{ paddingBottom: spacing.navigation.baseHeight + insets.bottom }}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
@@ -727,89 +691,6 @@ export const BetsScreen: React.FC = () => {
           </>
         )}
 
-        {/* Status Filters with Search Icon */}
-        <View style={styles.filtersContainer}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filtersScrollView}>
-            {statusFilters.map((filter) => (
-              <TouchableOpacity
-                key={filter.id}
-                style={[
-                  styles.filterButton,
-                  selectedFilter === filter.id && styles.filterButtonActive
-                ]}
-                onPress={() => setSelectedFilter(filter.id as any)}
-              >
-                <Text style={[
-                  styles.filterButtonText,
-                  selectedFilter === filter.id && styles.filterButtonTextActive
-                ]}>
-                  {filter.label}
-                </Text>
-                {filter.count > 0 && (
-                  <View style={[
-                    styles.filterBadge,
-                    selectedFilter === filter.id && styles.filterBadgeActive
-                  ]}>
-                    <Text style={[
-                      styles.filterBadgeText,
-                      selectedFilter === filter.id && styles.filterBadgeTextActive
-                    ]}>
-                      {filter.count}
-                    </Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-            ))}
-
-            {/* Search Icon Button */}
-            <TouchableOpacity
-              style={styles.searchIconButtonInline}
-              onPress={handleSearchToggle}
-              activeOpacity={0.7}
-            >
-              <Ionicons
-                name={showSearch ? "close" : "search"}
-                size={18}
-                color={colors.textSecondary}
-              />
-            </TouchableOpacity>
-          </ScrollView>
-        </View>
-
-        {/* Search Input (conditionally shown) */}
-        {showSearch && (
-          <View style={styles.searchContainer}>
-            <View style={styles.searchInputContainer}>
-              <Ionicons
-                name="search"
-                size={16}
-                color={colors.textMuted}
-                style={styles.searchIcon}
-              />
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Search your bets..."
-                placeholderTextColor={colors.textMuted}
-                value={searchQuery}
-                onChangeText={handleSearchChange}
-                autoFocus={true}
-              />
-              {searchQuery.length > 0 && (
-                <TouchableOpacity
-                  onPress={() => setSearchQuery('')}
-                  style={styles.clearButton}
-                >
-                  <Ionicons
-                    name="close-circle"
-                    size={16}
-                    color={colors.textMuted}
-                  />
-                </TouchableOpacity>
-              )}
-            </View>
-          </View>
-        )}
-
         {/* Loading State */}
         {isLoading ? (
           <View style={styles.loadingContainer}>
@@ -827,25 +708,15 @@ export const BetsScreen: React.FC = () => {
                 setSelectedBetForInvite(bet);
                 setShowInviteModal(true);
               }}
+              onEndBet={handleEndBet}
             />
           ))
         ) : (
           <View style={styles.emptyContainer}>
-            {selectedFilter === 'PENDING_RESOLUTION' ? (
-              <>
-                <Text style={styles.emptyTitle}>No Bets Awaiting Resolution</Text>
-                <Text style={styles.emptyDescription}>
-                  When your bets finish and need resolution, they'll appear here.
-                </Text>
-              </>
-            ) : (
-              <>
-                <Text style={styles.emptyTitle}>No {selectedFilter.toLowerCase()} Bets</Text>
-                <Text style={styles.emptyDescription}>
-                  You don't have any {selectedFilter.toLowerCase()} bets at the moment.
-                </Text>
-              </>
-            )}
+            <Text style={styles.emptyTitle}>No Active Bets</Text>
+            <Text style={styles.emptyDescription}>
+              You don't have any active bets at the moment. Create or join a bet to get started!
+            </Text>
           </View>
         )}
 
@@ -1113,73 +984,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
-  // Status Filters
-  filtersContainer: {
-    backgroundColor: colors.background,
-    paddingVertical: spacing.md,
-  },
-  filtersScrollView: {
-    paddingHorizontal: spacing.md,
-  },
-  filterButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.background,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderRadius: spacing.radius.sm,
-    marginRight: spacing.sm,
-    borderWidth: 1,
-    borderColor: colors.border,
-    minHeight: 36,
-  },
-  filterButtonActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  filterButtonText: {
-    ...textStyles.caption,
-    color: colors.textSecondary,
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.medium,
-  },
-  filterButtonTextActive: {
-    color: colors.background,
-  },
-  filterBadge: {
-    backgroundColor: colors.surface,
-    borderRadius: spacing.radius.xs,
-    paddingHorizontal: spacing.xs,
-    paddingVertical: 2,
-    marginLeft: spacing.xs,
-    minWidth: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  filterBadgeActive: {
-    backgroundColor: colors.background,
-  },
-  filterBadgeText: {
-    ...textStyles.caption,
-    color: colors.textMuted,
-    fontSize: 10,
-    fontWeight: typography.fontWeight.bold,
-  },
-  filterBadgeTextActive: {
-    color: colors.primary,
-  },
-  searchIconButtonInline: {
-    backgroundColor: colors.surface,
-    borderRadius: spacing.radius.sm,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    marginRight: spacing.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 36,
-  },
 
   // Section Header (for invitations)
   sectionHeader: {
@@ -1195,37 +999,6 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontWeight: typography.fontWeight.bold,
     fontSize: typography.fontSize.lg,
-  },
-
-  // Search Input
-  searchContainer: {
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.sm,
-    backgroundColor: colors.background,
-  },
-  searchInputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: spacing.radius.sm,
-    paddingHorizontal: spacing.sm,
-  },
-  searchIcon: {
-    marginRight: spacing.xs,
-  },
-  searchInput: {
-    flex: 1,
-    paddingVertical: spacing.sm,
-    fontSize: typography.fontSize.sm,
-    color: colors.textPrimary,
-    fontFamily: typography.fontFamily.regular,
-    textAlignVertical: 'center',
-  },
-  clearButton: {
-    padding: spacing.xs / 2,
   },
 
   // Loading and Empty States

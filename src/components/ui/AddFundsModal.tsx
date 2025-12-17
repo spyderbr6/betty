@@ -10,7 +10,6 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  Alert,
   ActivityIndicator,
   Modal,
   KeyboardAvoidingView,
@@ -22,6 +21,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, typography, textStyles } from '../../styles';
 import { useAuth } from '../../contexts/AuthContext';
 import { ModalHeader } from './ModalHeader';
+import { showAlert } from './CustomAlert';
 import { TransactionService } from '../../services/transactionService';
 import { PaymentMethodService } from '../../services/paymentMethodService';
 import type { PaymentMethod } from '../../services/paymentMethodService';
@@ -33,7 +33,7 @@ interface AddFundsModalProps {
   onAddPaymentMethod?: () => void;
 }
 
-const APP_VENMO_USERNAME = '@SideBet'; // Replace with actual app Venmo username
+const APP_VENMO_USERNAME = '@PropBets'; // Replace with actual app Venmo username
 const MIN_DEPOSIT = 5;
 const MAX_DEPOSIT = 500;
 
@@ -89,11 +89,11 @@ export const AddFundsModal: React.FC<AddFundsModalProps> = ({
   const validateAmount = (): boolean => {
     const numAmount = parseFloat(amount);
     if (isNaN(numAmount) || numAmount < MIN_DEPOSIT) {
-      Alert.alert('Invalid Amount', `Minimum deposit is $${MIN_DEPOSIT.toFixed(2)}`);
+      showAlert('Invalid Amount', `Minimum deposit is $${MIN_DEPOSIT.toFixed(2)}`);
       return false;
     }
     if (numAmount > MAX_DEPOSIT) {
-      Alert.alert('Invalid Amount', `Maximum deposit is $${MAX_DEPOSIT.toFixed(2)}`);
+      showAlert('Invalid Amount', `Maximum deposit is $${MAX_DEPOSIT.toFixed(2)}`);
       return false;
     }
     return true;
@@ -102,14 +102,14 @@ export const AddFundsModal: React.FC<AddFundsModalProps> = ({
   const handleContinue = () => {
     if (step === 'select_method') {
       if (!selectedPaymentMethod) {
-        Alert.alert('Select Payment Method', 'Please select a Venmo account or add a new one');
+        showAlert('Select Payment Method', 'Please select a Venmo account or add a new one');
         return;
       }
       setStep('enter_details');
     } else if (step === 'enter_details') {
       if (!validateAmount()) return;
       if (!venmoTransactionId.trim()) {
-        Alert.alert('Transaction ID Required', 'Please enter your Venmo transaction ID');
+        showAlert('Transaction ID Required', 'Please enter your Venmo transaction ID');
         return;
       }
       setStep('confirmation');
@@ -143,7 +143,7 @@ export const AddFundsModal: React.FC<AddFundsModalProps> = ({
 
       if (!transaction) {
         setIsSubmitting(false);
-        Alert.alert('Error', 'Failed to create deposit request. Please try again.');
+        showAlert('Error', 'Failed to create deposit request. Please try again.');
         return;
       }
 
@@ -155,7 +155,7 @@ export const AddFundsModal: React.FC<AddFundsModalProps> = ({
 
       // Show success message after modal is closed
       setTimeout(() => {
-        Alert.alert(
+        showAlert(
           'Deposit Request Submitted',
           'Your deposit request has been submitted! We\'ll verify your Venmo payment and credit your account shortly. You\'ll receive a notification when it\'s complete.',
           [{ text: 'OK' }]
@@ -167,12 +167,12 @@ export const AddFundsModal: React.FC<AddFundsModalProps> = ({
     } catch (error) {
       console.error('Error submitting deposit:', error);
       setIsSubmitting(false);
-      Alert.alert('Error', 'Failed to submit deposit request. Please try again.');
+      showAlert('Error', 'Failed to submit deposit request. Please try again.');
     }
   };
 
   const renderSelectMethod = () => (
-    <ScrollView style={styles.stepContent} showsVerticalScrollIndicator={false}>
+    <ScrollView style={styles.stepContent} contentContainerStyle={styles.stepContentContainer} showsVerticalScrollIndicator={false}>
       <Text style={styles.sectionTitle}>SELECT VENMO ACCOUNT</Text>
 
       {isLoadingMethods ? (
@@ -246,7 +246,7 @@ export const AddFundsModal: React.FC<AddFundsModalProps> = ({
   );
 
   const renderEnterDetails = () => (
-    <ScrollView style={styles.stepContent} showsVerticalScrollIndicator={false}>
+    <ScrollView style={styles.stepContent} contentContainerStyle={styles.stepContentContainer} showsVerticalScrollIndicator={false}>
       <Text style={styles.sectionTitle}>DEPOSIT DETAILS</Text>
 
       {/* Amount Input */}
@@ -280,6 +280,7 @@ export const AddFundsModal: React.FC<AddFundsModalProps> = ({
             {'\n'}3. Copy the transaction ID from Venmo
             {'\n'}4. Paste it below for verification
             {'\n'}5. Our team will verify and approve within 1-2 hours
+            {'\n'}{'\n'}Note: Venmo may charge fees. You'll be credited with the actual amount received.
           </Text>
         </View>
       </View>
@@ -320,7 +321,7 @@ export const AddFundsModal: React.FC<AddFundsModalProps> = ({
   );
 
   const renderConfirmation = () => (
-    <ScrollView style={styles.stepContent} showsVerticalScrollIndicator={false}>
+    <ScrollView style={styles.stepContent} contentContainerStyle={styles.stepContentContainer} showsVerticalScrollIndicator={false}>
       <Text style={styles.sectionTitle}>CONFIRM DEPOSIT</Text>
 
       {/* Summary Card */}
@@ -441,6 +442,8 @@ const styles = StyleSheet.create({
   // Content
   stepContent: {
     flex: 1,
+  },
+  stepContentContainer: {
     padding: spacing.lg,
   },
   sectionTitle: {

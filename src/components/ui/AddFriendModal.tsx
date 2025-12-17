@@ -10,7 +10,6 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  Alert,
   ActivityIndicator,
   FlatList,
   Image,
@@ -28,6 +27,7 @@ import { User } from '../../types/betting';
 import { NotificationService } from '../../services/notificationService';
 import { ModalHeader } from './ModalHeader';
 import { getProfilePictureUrl } from '../../services/imageUploadService';
+import { showAlert } from './CustomAlert';
 
 // Initialize GraphQL client
 const client = generateClient<Schema>();
@@ -73,8 +73,8 @@ export const AddFriendModal: React.FC<AddFriendModalProps> = ({
       setIsSearching(true);
       setHasSearched(true);
 
-      // Search users by email or display name
-      const [emailResults, nameResults] = await Promise.all([
+      // Search users by email, display name, or phone number (if discovery enabled)
+      const [emailResults, nameResults, phoneResults] = await Promise.all([
         client.models.User.list({
           filter: {
             email: { contains: searchQuery.trim().toLowerCase() }
@@ -86,11 +86,21 @@ export const AddFriendModal: React.FC<AddFriendModalProps> = ({
             displayName: { contains: searchQuery.trim() }
           },
           limit: 10,
+        }),
+        // Search by phone number (only if user has enabled phone discovery)
+        client.models.User.list({
+          filter: {
+            and: [
+              { phoneNumber: { contains: searchQuery.trim() } },
+              { allowPhoneDiscovery: { eq: true } }
+            ]
+          },
+          limit: 10,
         })
       ]);
 
       // Combine and deduplicate results
-      const allUsers = [...(emailResults.data || []), ...(nameResults.data || [])];
+      const allUsers = [...(emailResults.data || []), ...(nameResults.data || []), ...(phoneResults.data || [])];
       const uniqueUsers = allUsers.filter((user, index, array) =>
         array.findIndex(u => u.id === user.id) === index
       );
@@ -162,7 +172,7 @@ export const AddFriendModal: React.FC<AddFriendModalProps> = ({
       setSearchResults(resultsWithStatus);
     } catch (error) {
       console.error('Error searching users:', error);
-      Alert.alert('Error', 'Failed to search users. Please try again.');
+      showAlert('Error', 'Failed to search users. Please try again.');
     } finally {
       setIsSearching(false);
     }
@@ -185,7 +195,10 @@ export const AddFriendModal: React.FC<AddFriendModalProps> = ({
       if (newRequest) {
         // Fetch current user's display name from database
         const { data: currentUserData } = await client.models.User.get({ id: user.userId });
-        const currentUserDisplayName = currentUserData?.displayName || currentUserData?.username || user.username;
+        // Use displayName first, then extract friendly name from email, finally fallback to "Someone"
+        const currentUserDisplayName = currentUserData?.displayName ||
+          currentUserData?.email?.split('@')[0] ||
+          'Someone';
 
         await NotificationService.notifyFriendRequestReceived(
           targetUser.id,
@@ -205,10 +218,10 @@ export const AddFriendModal: React.FC<AddFriendModalProps> = ({
       );
 
       onRequestSent?.();
-      Alert.alert('Success', `Friend request sent to ${targetUser.displayName || targetUser.email}!`);
+      showAlert('Success', `Friend request sent to ${targetUser.displayName || targetUser.email}!`);
     } catch (error) {
       console.error('Error sending friend request:', error);
-      Alert.alert('Error', 'Failed to send friend request. Please try again.');
+      showAlert('Error', 'Failed to send friend request. Please try again.');
     } finally {
       setSendingRequests(prev => {
         const newSet = new Set(prev);
@@ -237,7 +250,7 @@ export const AddFriendModal: React.FC<AddFriendModalProps> = ({
           {/* Avatar */}
           <View style={styles.avatarContainer}>
             {item.profilePictureUrl ? (
-              <Image source={{ uri: item.profilePictureUrl }} style={styles.avatar} />
+              <Image source={{ uri: item.profilePictureUrl }} style={styles.avatar} resizeMode="cover" />
             ) : (
               <View style={styles.avatarPlaceholder}>
                 <Text style={styles.avatarText}>{generateAvatarInitials(item)}</Text>

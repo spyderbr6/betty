@@ -231,3 +231,26 @@ export const formatErrorMessage = (error: any): string => {
   if (error?.code) return `Error: ${error.code}`;
   return 'An unexpected error occurred';
 };
+
+// Team name formatting - extracts short name for display
+export const formatTeamName = (fullTeamName: string, shortName?: string, teamCode?: string): string => {
+  // Prefer short name from ESPN if available (e.g., "Steelers", "Browns")
+  if (shortName && shortName.trim()) {
+    return shortName.trim();
+  }
+
+  // Fallback: extract last word from full team name (e.g., "Pittsburgh Steelers" -> "Steelers")
+  // This provides better readability than abbreviations while ESPN data is being populated
+  const words = fullTeamName.trim().split(/\s+/);
+  if (words.length > 0 && words[words.length - 1]) {
+    return words[words.length - 1];
+  }
+
+  // Last resort: use team code if extraction fails (e.g., "LAL", "GSW")
+  if (teamCode && teamCode.trim()) {
+    return teamCode.trim();
+  }
+
+  // Ultimate fallback: return full name
+  return fullTeamName;
+};

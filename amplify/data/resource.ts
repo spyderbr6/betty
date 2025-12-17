@@ -2,6 +2,7 @@ import { type ClientSchema, a, defineData } from "@aws-amplify/backend";
 import { scheduledBetChecker } from "../functions/scheduled-bet-checker/resource";
 import { pushNotificationSender } from "../functions/push-notification-sender/resource";
 import { eventFetcher } from "../functions/event-fetcher/resource";
+import { payoutProcessor } from "../functions/payout-processor/resource";
 
 /*== SIDEBET BETTING PLATFORM SCHEMA =======================================
 This schema defines the core data models for the SideBet peer-to-peer betting
@@ -15,6 +16,11 @@ const schema = a.schema({
       email: a.string().required(),
       displayName: a.string(), // Friendly/display name for friends
       profilePictureUrl: a.string(), // S3 URL for profile picture
+      // Phone verification fields
+      phoneNumber: a.string(), // E.164 format: +1234567890
+      phoneNumberVerified: a.boolean().default(false),
+      phoneNumberVerifiedAt: a.datetime(),
+      allowPhoneDiscovery: a.boolean().default(false), // Opt-in for friend discovery by phone
       role: a.enum(['USER', 'ADMIN', 'SUPER_ADMIN']), // User role for access control
       balance: a.float().default(0),
       trustScore: a.float().default(5.0),
@@ -24,6 +30,13 @@ const schema = a.schema({
       // Onboarding tracking
       onboardingCompleted: a.boolean().default(false), // Whether user has completed onboarding
       onboardingStep: a.integer().default(0), // Current step in onboarding (0 = not started, 1-3 = in progress, 4 = completed)
+      // Policy acceptance tracking
+      tosAccepted: a.boolean().default(false), // Terms of Service accepted
+      tosAcceptedAt: a.datetime(), // When ToS was accepted
+      tosVersion: a.string(), // Version of ToS accepted (e.g., "1.0")
+      privacyPolicyAccepted: a.boolean().default(false), // Privacy Policy accepted
+      privacyPolicyAcceptedAt: a.datetime(), // When Privacy Policy was accepted
+      privacyPolicyVersion: a.string(), // Version of Privacy Policy accepted (e.g., "1.0")
       createdAt: a.datetime(),
       updatedAt: a.datetime(),
       // Relations
@@ -87,6 +100,13 @@ const schema = a.schema({
       user: a.belongsTo('User', 'userId'),
       relatedBet: a.belongsTo('Bet', 'relatedBetId'),
     })
+    .secondaryIndexes((index) => [
+      // Index for efficiently querying notifications by user ordered by date
+      // Note: isRead filtering happens client-side (acceptable for typical notification counts)
+      index('userId')
+        .sortKeys(['createdAt'])
+        .queryField('notificationsByUser')
+    ])
     .authorization((allow) => [
       allow.authenticated().to(['read', 'create', 'update']) // Any authenticated user can create/read/update notifications
     ]),
@@ -168,8 +188,10 @@ const schema = a.schema({
       deadline: a.datetime().required(),
       winningSide: a.string(), // Which side won
       resolutionReason: a.string(), // Why the bet was resolved this way
+      disputeWindowEndsAt: a.datetime(), // When the 48-hour dispute window closes
       eventId: a.id(), // Optional link to live event
       isPrivate: a.boolean().default(false), // Private bets only visible to invited users
+      isTestBet: a.boolean().default(false), // Flag for admin test bets (excludes from real bet lists)
       createdAt: a.datetime(),
       updatedAt: a.datetime(),
       // Relations
@@ -177,8 +199,16 @@ const schema = a.schema({
       participants: a.hasMany('Participant', 'betId'),
       evidence: a.hasMany('Evidence', 'betId'),
       invitations: a.hasMany('BetInvitation', 'betId'),
-      notifications: a.hasMany('Notification', 'relatedBetId')
+      notifications: a.hasMany('Notification', 'relatedBetId'),
+      disputes: a.hasMany('Dispute', 'betId')
     })
+    .secondaryIndexes((index) => [
+      // Index for efficiently querying bets by status (home screen)
+      // Allows: SELECT * WHERE status = 'ACTIVE' ORDER BY createdAt DESC
+      index('status')
+        .sortKeys(['createdAt'])
+        .queryField('betsByStatus')
+    ])
     .authorization((allow) => [
       allow.owner().to(['create', 'read', 'update', 'delete']),
       allow.authenticated().to(['read', 'create', 'update']) // Allow any authenticated user to create bets, read all bets, and update (for total pot changes)
@@ -194,10 +224,25 @@ const schema = a.schema({
       status: a.enum(['PENDING', 'ACCEPTED', 'DECLINED']),
       payout: a.float().default(0), // Calculated payout if they win
       joinedAt: a.datetime(),
+      // Bet result acceptance (allows early closure when all participants accept)
+      hasAcceptedResult: a.boolean().default(false), // Has participant accepted the bet outcome?
+      acceptedResultAt: a.datetime(), // When they accepted the result
       // Relations
       bet: a.belongsTo('Bet', 'betId'),
       user: a.belongsTo('User', 'userId'),
     })
+    .secondaryIndexes((index) => [
+      // Index for efficiently querying participants by bet (bet operations)
+      // Allows: SELECT * WHERE betId = X ORDER BY joinedAt DESC (newest first)
+      index('betId')
+        .sortKeys(['joinedAt'])
+        .queryField('participantsByBet'),
+      // Index for efficiently querying participants by user (user bet history)
+      // Allows: SELECT * WHERE userId = X ORDER BY joinedAt DESC (newest first)
+      index('userId')
+        .sortKeys(['joinedAt'])
+        .queryField('participantsByUser')
+    ])
     .authorization((allow) => [
       allow.owner(),
       allow.authenticated().to(['read', 'create', 'update'])
@@ -218,6 +263,53 @@ const schema = a.schema({
     .authorization((allow) => [
       allow.owner(),
       allow.authenticated().to(['read'])
+    ]),
+
+  // Dispute system for challenging bet resolutions
+  Dispute: a
+    .model({
+      id: a.id(),
+      betId: a.id().required(),
+      filedBy: a.id().required(),          // User who filed the dispute
+      againstUserId: a.id().required(),    // Usually the bet creator
+      reason: a.enum([
+        'INCORRECT_RESOLUTION',             // Winner picked wrong
+        'NO_RESOLUTION',                    // Creator never resolved
+        'EVIDENCE_IGNORED',                 // Creator ignored valid evidence
+        'OTHER'
+      ]),
+      description: a.string().required(),  // User's explanation
+      status: a.enum(['PENDING', 'UNDER_REVIEW', 'RESOLVED_FOR_FILER', 'RESOLVED_FOR_CREATOR', 'DISMISSED']),
+      evidenceUrls: a.string().array(),    // S3 URLs for supporting evidence
+      adminNotes: a.string(),              // Admin's internal notes
+      resolvedBy: a.id(),                  // Admin user who resolved
+      resolution: a.string(),              // Admin's explanation of decision
+      createdAt: a.datetime(),
+      resolvedAt: a.datetime(),
+      // Relations
+      bet: a.belongsTo('Bet', 'betId'),
+    })
+    .authorization((allow) => [
+      allow.owner().to(['create', 'read']),
+      allow.authenticated().to(['read', 'create', 'update']) // Admins can update to resolve
+    ]),
+
+  // Trust score change history for transparency and auditing
+  TrustScoreHistory: a
+    .model({
+      id: a.id(),
+      userId: a.id().required(),
+      change: a.float().required(),        // e.g., +0.2, -3.0
+      newScore: a.float().required(),      // Score after this change
+      reason: a.string().required(),       // Human-readable explanation
+      relatedBetId: a.id(),               // If related to bet resolution
+      relatedTransactionId: a.id(),       // If related to transaction
+      relatedDisputeId: a.id(),           // If related to dispute
+      createdAt: a.datetime(),
+    })
+    .authorization((allow) => [
+      allow.owner().to(['read']),
+      allow.authenticated().to(['read', 'create']) // System can create entries
     ]),
 
   // For tracking user statistics and leaderboards
@@ -334,12 +426,15 @@ const schema = a.schema({
         'WITHDRAWAL',        // User withdraws funds
         'BET_PLACED',        // Balance deducted when joining bet
         'BET_WON',          // Winnings paid out
+        'BET_LOST',         // Lost bet (zero amount, for tracking only)
         'BET_CANCELLED',    // Refund when bet cancelled
         'BET_REFUND',       // Manual refund by admin
         'ADMIN_ADJUSTMENT'  // Admin balance correction
       ]),
       status: a.enum(['PENDING', 'PROCESSING', 'COMPLETED', 'FAILED', 'CANCELLED']),
-      amount: a.float().required(),
+      amount: a.float().required(), // Requested amount (what user intended to deposit/withdraw)
+      actualAmount: a.float(), // Actual amount received after fees (for deposits) or sent (for withdrawals
+      platformFee: a.float().default(0), // Platform fee taken (3% on winnings, 2% on withdrawals)
       // Balance tracking
       balanceBefore: a.float().required(),
       balanceAfter: a.float().required(),
@@ -363,6 +458,18 @@ const schema = a.schema({
       user: a.belongsTo('User', 'userId'),
       paymentMethod: a.belongsTo('PaymentMethod', 'paymentMethodId'),
     })
+    .secondaryIndexes((index) => [
+      // Index for efficiently querying transactions by user (transaction history)
+      // Allows: SELECT * WHERE userId = X ORDER BY createdAt DESC
+      index('userId')
+        .sortKeys(['createdAt'])
+        .queryField('transactionsByUser'),
+      // Index for efficiently querying transactions by status (admin dashboard)
+      // Allows: SELECT * WHERE status = 'PENDING' ORDER BY createdAt ASC
+      index('status')
+        .sortKeys(['createdAt'])
+        .queryField('transactionsByStatus')
+    ])
     .authorization((allow) => [
       allow.owner().to(['create', 'read']), // Users can create their own transactions and read them
       allow.authenticated().to(['read', 'create', 'update']), // All authenticated users can read/create/update transactions
@@ -381,6 +488,8 @@ const schema = a.schema({
       // Event details
       homeTeam: a.string().required(),
       awayTeam: a.string().required(),
+      homeTeamShortName: a.string(), // e.g., "Steelers", "Browns" - from ESPN team.name
+      awayTeamShortName: a.string(),
       homeTeamCode: a.string(), // e.g., "LAL", "GSW"
       awayTeamCode: a.string(),
       // Venue
@@ -410,6 +519,7 @@ const schema = a.schema({
     })
     .secondaryIndexes((index) => [
       index('status').sortKeys(['scheduledTime']).queryField('listEventsByStatusAndTime'),
+      index('externalId').queryField('listEventsByExternalId'),
     ])
     .authorization((allow) => [
       allow.authenticated().to(['read', 'create', 'update']) // All authenticated users can read, Lambda functions can create/update
@@ -474,6 +584,7 @@ const schema = a.schema({
   allow.resource(scheduledBetChecker).to(["query", "listen", "mutate"]),
   allow.resource(pushNotificationSender).to(["query", "listen", "mutate"]),
   allow.resource(eventFetcher).to(["query", "listen", "mutate"]),
+  allow.resource(payoutProcessor).to(["query", "listen", "mutate"]),
 ]);
 
 export type Schema = ClientSchema<typeof schema>;

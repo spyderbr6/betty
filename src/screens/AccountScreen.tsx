@@ -16,7 +16,7 @@ import {
   Modal,
   Image,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { generateClient } from 'aws-amplify/data';
 import { fetchUserAttributes } from 'aws-amplify/auth';
@@ -28,16 +28,19 @@ import { FriendsScreen } from './FriendsScreen';
 import { DetailedStatsScreen } from './DetailedStatsScreen';
 import { BettingHistoryScreen } from './BettingHistoryScreen';
 import { PaymentMethodsScreen } from './PaymentMethodsScreen';
+import { CURRENT_TOS_VERSION, CURRENT_PRIVACY_VERSION } from '../constants/policies';
 import { TrustSafetyScreen } from './TrustSafetyScreen';
 import { SettingsScreen } from './SettingsScreen';
 import { SupportScreen } from './SupportScreen';
 import { AboutScreen } from './AboutScreen';
 import { AdminDashboardScreen } from './AdminDashboardScreen';
+import { AdminDisputeScreen } from './AdminDisputeScreen';
 import { AdminTestingScreen } from './AdminTestingScreen';
-import { formatCurrency, formatPercentage } from '../utils/formatting';
 import { useAuth } from '../contexts/AuthContext';
 import { ProfileEditForm, User } from '../types/betting';
 import { getProfilePictureUrl } from '../services/imageUploadService';
+import { NotificationPreferencesService } from '../services/notificationPreferencesService';
+import { showAlert } from '../components/ui/CustomAlert';
 
 // Initialize GraphQL client
 const client = generateClient<Schema>();
@@ -49,6 +52,7 @@ interface UserProfile extends User {
 
 export const AccountScreen: React.FC = () => {
   const { user, signOut } = useAuth();
+  const insets = useSafeAreaInsets();
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -62,8 +66,11 @@ export const AccountScreen: React.FC = () => {
   const [showSupport, setShowSupport] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
   const [showAdminDashboard, setShowAdminDashboard] = useState(false);
+  const [showAdminDispute, setShowAdminDispute] = useState(false);
   const [showAdminTesting, setShowAdminTesting] = useState(false);
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
+  const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
+  const [pendingPayouts, setPendingPayouts] = useState(0);
 
   useEffect(() => {
     if (user) {
@@ -141,6 +148,9 @@ export const AccountScreen: React.FC = () => {
         });
       } else {
         // Create user record if it doesn't exist (use already fetched Cognito data)
+        // Note: Policy acceptance is implicitly true for new users since SignUp requires
+        // checkbox acceptance before creating Cognito account
+        const currentTime = new Date().toISOString();
         const newUser = await client.models.User.create({
           id: user.userId,
           username: user.username,
@@ -151,9 +161,26 @@ export const AccountScreen: React.FC = () => {
           totalBets: 0,
           totalWinnings: 0,
           winRate: 0,
+          // Policy acceptance - required during signup
+          tosAccepted: true,
+          tosAcceptedAt: currentTime,
+          tosVersion: CURRENT_TOS_VERSION,
+          privacyPolicyAccepted: true,
+          privacyPolicyAcceptedAt: currentTime,
+          privacyPolicyVersion: CURRENT_PRIVACY_VERSION,
         });
 
         if (newUser.data) {
+          // Create default notification preferences for new user
+          // This ensures notifications work immediately without race conditions
+          try {
+            await NotificationPreferencesService.createDefaultPreferences(newUser.data.id!);
+            console.log('[AccountScreen] Created default notification preferences for new user:', newUser.data.id);
+          } catch (prefError) {
+            console.error('[AccountScreen] Failed to create notification preferences for new user:', prefError);
+            // Don't block user creation if preferences fail - they'll be created on first notification
+          }
+
           // Get fresh signed URL for profile picture if it exists
           let profilePictureUrl = undefined;
           if (newUser.data.profilePictureUrl) {
@@ -177,15 +204,52 @@ export const AccountScreen: React.FC = () => {
           });
         }
       }
+
+      // Fetch pending payouts
+      await fetchPendingPayouts();
+
     } catch (error) {
       console.error('Error fetching user stats:', error);
-      Alert.alert(
+      showAlert(
         'Error',
         'Failed to load user stats. Please try again.',
         [{ text: 'OK' }]
       );
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const fetchPendingPayouts = async () => {
+    if (!user) return;
+
+    try {
+      // Get all PENDING transactions of type BET_WON for this user
+      const { data: pendingTransactions } = await client.models.Transaction.list({
+        filter: {
+          and: [
+            { userId: { eq: user.userId } },
+            { type: { eq: 'BET_WON' } },
+            { status: { eq: 'PENDING' } }
+          ]
+        }
+      });
+
+      // Calculate total pending payouts (use actualAmount for net after fees)
+      const total = pendingTransactions?.reduce((sum, transaction) => {
+        // Use actualAmount (net after fees) if available, otherwise fall back to amount
+        const netAmount = transaction.actualAmount !== undefined && transaction.actualAmount !== null
+          ? transaction.actualAmount
+          : transaction.amount || 0;
+        return sum + netAmount;
+      }, 0) || 0;
+
+      setPendingPayouts(total);
+
+    } catch (error) {
+      console.error('Error fetching pending payouts:', error);
+      // Don't show alert for this, it's not critical
+      setPendingPayouts(0);
     }
   };
 
@@ -199,29 +263,25 @@ export const AccountScreen: React.FC = () => {
   };
 
   const handleSignOut = () => {
-    Alert.alert(
-      'Sign Out',
-      'Are you sure you want to sign out?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Sign Out',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await signOut();
-            } catch (error) {
-              console.error('Sign out error:', error);
-              Alert.alert(
-                'Error',
-                'Failed to sign out. Please try again.',
-                [{ text: 'OK' }]
-              );
-            }
-          }
-        },
-      ]
-    );
+    setShowSignOutConfirm(true);
+  };
+
+  const confirmSignOut = async () => {
+    setShowSignOutConfirm(false);
+    try {
+      await signOut();
+    } catch (error) {
+      console.error('Sign out error:', error);
+      showAlert(
+        'Error',
+        'Failed to sign out. Please try again.',
+        [{ text: 'OK' }]
+      );
+    }
+  };
+
+  const cancelSignOut = () => {
+    setShowSignOutConfirm(false);
   };
 
   const handleSettingsPress = () => {
@@ -254,6 +314,10 @@ export const AccountScreen: React.FC = () => {
 
   const handleAdminDashboardPress = () => {
     setShowAdminDashboard(true);
+  };
+
+  const handleAdminDisputePress = () => {
+    setShowAdminDispute(true);
   };
 
   const handleAdminTestingPress = () => {
@@ -295,11 +359,11 @@ export const AccountScreen: React.FC = () => {
         // Refresh user stats to ensure profile picture is updated everywhere
         await fetchUserStats();
 
-        Alert.alert('Success', 'Profile updated successfully!');
+        showAlert('Success', 'Profile updated successfully!');
       }
     } catch (error) {
       console.error('Error updating profile:', error);
-      Alert.alert('Error', 'Failed to update profile. Please try again.');
+      showAlert('Error', 'Failed to update profile. Please try again.');
     } finally {
       setIsUpdatingProfile(false);
     }
@@ -358,6 +422,7 @@ export const AccountScreen: React.FC = () => {
 
       <ScrollView
         style={styles.content}
+        contentContainerStyle={{ paddingBottom: spacing.navigation.baseHeight + insets.bottom }}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
@@ -380,6 +445,7 @@ export const AccountScreen: React.FC = () => {
                 <Image
                   source={{ uri: userProfile.profilePictureUrl }}
                   style={styles.profileImage}
+                  resizeMode="cover"
                 />
               ) : (
                 <View style={styles.avatar}>
@@ -398,33 +464,25 @@ export const AccountScreen: React.FC = () => {
                 </Text>
               </TouchableOpacity>
               <Text style={styles.email}>{userProfile.email}</Text>
+
+              {/* Balance Breakdown */}
+              <View style={styles.balanceBreakdown}>
+                <View style={styles.balanceRow}>
+                  <Text style={styles.balanceLabel}>Available:</Text>
+                  <Text style={styles.balanceValue}>${userProfile.balance.toFixed(2)}</Text>
+                </View>
+                {pendingPayouts > 0 && (
+                  <View style={styles.balanceRow}>
+                    <Text style={styles.balanceLabel}>Pending Payouts:</Text>
+                    <Text style={styles.pendingValue}>${pendingPayouts.toFixed(2)}</Text>
+                  </View>
+                )}
+              </View>
+
               <View style={styles.trustContainer}>
                 <Text style={styles.trustLabel}>Trust Score</Text>
                 <Text style={styles.trustScore}>{userProfile.trustScore.toFixed(1)}/10</Text>
               </View>
-            </View>
-          </View>
-        </View>
-
-        {/* Stats Grid */}
-        <View style={styles.statsSection}>
-          <Text style={styles.sectionTitle}>BETTING STATS</Text>
-          <View style={styles.statsGrid}>
-            <View style={styles.statCard}>
-              <Text style={styles.statValue}>{formatPercentage(userProfile.winRate)}</Text>
-              <Text style={styles.statLabel}>Win Rate</Text>
-            </View>
-            <View style={styles.statCard}>
-              <Text style={styles.statValue}>{userProfile.totalBets}</Text>
-              <Text style={styles.statLabel}>Total Bets</Text>
-            </View>
-            <View style={styles.statCard}>
-              <Text style={styles.statValue}>{formatCurrency(userProfile.totalWinnings)}</Text>
-              <Text style={styles.statLabel}>Total Winnings</Text>
-            </View>
-            <View style={styles.statCard}>
-              <Text style={styles.statValue}>{userProfile.balance > 1000 ? '📈' : '💰'}</Text>
-              <Text style={styles.statLabel}>Status</Text>
             </View>
           </View>
         </View>
@@ -451,6 +509,28 @@ export const AccountScreen: React.FC = () => {
                       </View>
                     </View>
                     <Text style={styles.menuOptionSubtitle}>Approve deposits and withdrawals</Text>
+                  </View>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.menuOption}
+                onPress={handleAdminDisputePress}
+                activeOpacity={0.7}
+              >
+                <View style={styles.menuOptionLeft}>
+                  <View style={[styles.menuIconContainer, styles.adminIconContainer]}>
+                    <Ionicons name="alert-circle" size={22} color={colors.warning} />
+                  </View>
+                  <View style={styles.menuOptionContent}>
+                    <View style={styles.adminTitleRow}>
+                      <Text style={styles.menuOptionTitle}>Dispute Dashboard</Text>
+                      <View style={styles.adminBadge}>
+                        <Text style={styles.adminBadgeText}>ADMIN</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.menuOptionSubtitle}>Review and resolve user disputes</Text>
                   </View>
                 </View>
                 <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
@@ -647,6 +727,11 @@ export const AccountScreen: React.FC = () => {
         <AdminDashboardScreen onClose={() => setShowAdminDashboard(false)} />
       </Modal>
 
+      {/* Admin Dispute Modal */}
+      {showAdminDispute && (
+        <AdminDisputeScreen onClose={() => setShowAdminDispute(false)} />
+      )}
+
       {/* Admin Testing Modal */}
       <Modal
         visible={showAdminTesting}
@@ -655,6 +740,40 @@ export const AccountScreen: React.FC = () => {
         onRequestClose={() => setShowAdminTesting(false)}
       >
         <AdminTestingScreen onClose={() => setShowAdminTesting(false)} />
+      </Modal>
+
+      {/* Sign Out Confirmation Modal */}
+      <Modal
+        visible={showSignOutConfirm}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={cancelSignOut}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.confirmModal}>
+            <View style={styles.confirmHeader}>
+              <Ionicons name="log-out-outline" size={32} color={colors.error} />
+              <Text style={styles.confirmTitle}>Sign Out</Text>
+            </View>
+            <Text style={styles.confirmMessage}>Are you sure?</Text>
+            <View style={styles.confirmButtons}>
+              <TouchableOpacity
+                style={[styles.confirmButton, styles.cancelButton]}
+                onPress={cancelSignOut}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.confirmButton, styles.signOutConfirmButton]}
+                onPress={confirmSignOut}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.signOutConfirmButtonText}>Sign Out</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
       </Modal>
     </SafeAreaView>
   );
@@ -797,6 +916,33 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginBottom: spacing.xs,
   },
+  balanceBreakdown: {
+    marginVertical: spacing.xs,
+    paddingVertical: spacing.xs,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: colors.border + '40',
+  },
+  balanceRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginVertical: spacing.xs / 2,
+  },
+  balanceLabel: {
+    ...textStyles.caption,
+    color: colors.textMuted,
+  },
+  balanceValue: {
+    ...textStyles.button,
+    color: colors.textPrimary,
+    fontWeight: '600',
+  },
+  pendingValue: {
+    ...textStyles.button,
+    color: colors.warning,
+    fontWeight: '600',
+  },
   trustContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -811,44 +957,7 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontWeight: '600',
   },
-  
-  // Stats section
-  statsSection: {
-    padding: spacing.lg,
-    backgroundColor: colors.surface,
-    marginTop: spacing.md,
-  },
-  sectionTitle: {
-    ...textStyles.label,
-    color: colors.textMuted,
-    marginBottom: spacing.md,
-  },
-  statsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    // gap is not supported on native; use margins on cards
-  },
-  statCard: {
-    flex: 1,
-    minWidth: '48%',
-    backgroundColor: colors.background,
-    padding: spacing.md,
-    borderRadius: spacing.radius.lg,
-    alignItems: 'center',
-    marginRight: spacing.sm,
-    marginBottom: spacing.sm,
-  },
-  statValue: {
-    ...textStyles.h3,
-    color: colors.textPrimary,
-    marginBottom: spacing.xs / 2,
-  },
-  statLabel: {
-    ...textStyles.caption,
-    color: colors.textMuted,
-    textAlign: 'center',
-  },
-  
+
   // Menu section
   menuSection: {
     backgroundColor: colors.surface,
@@ -933,5 +1042,69 @@ const styles = StyleSheet.create({
     ...textStyles.button,
     color: colors.error,
     marginLeft: spacing.xs,
+  },
+
+  // Sign Out Confirmation Modal
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.lg,
+  },
+  confirmModal: {
+    backgroundColor: colors.surface,
+    borderRadius: spacing.radius.lg,
+    padding: spacing.lg,
+    width: '100%',
+    maxWidth: 320,
+    alignItems: 'center',
+  },
+  confirmHeader: {
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  confirmTitle: {
+    ...textStyles.h3,
+    color: colors.textPrimary,
+    marginTop: spacing.sm,
+    fontWeight: '700',
+  },
+  confirmMessage: {
+    ...textStyles.body,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: spacing.lg,
+  },
+  confirmButtons: {
+    flexDirection: 'row',
+    width: '100%',
+  },
+  confirmButton: {
+    flex: 1,
+    paddingVertical: spacing.md,
+    borderRadius: spacing.radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelButton: {
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginRight: spacing.xs,
+  },
+  cancelButtonText: {
+    ...textStyles.button,
+    color: colors.textPrimary,
+    fontWeight: '600',
+  },
+  signOutConfirmButton: {
+    backgroundColor: colors.error,
+    marginLeft: spacing.xs,
+  },
+  signOutConfirmButtonText: {
+    ...textStyles.button,
+    color: colors.background,
+    fontWeight: '600',
   },
 });

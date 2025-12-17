@@ -12,6 +12,7 @@ import {
   Image,
   ActivityIndicator,
   Alert,
+  ScrollView,
 } from 'react-native';
 import { colors, spacing, textStyles, typography } from '../../styles';
 import { useAuth } from '../../contexts/AuthContext';
@@ -95,12 +96,12 @@ export const OnboardingProfilePictureStep: React.FC<OnboardingProfilePictureStep
       } else {
         console.error('[OnboardingProfilePicture] Upload failed:', result.error);
         setImageError(true);
-        Alert.alert('Error', result.error || 'Failed to upload profile picture.');
+        showAlert('Error', result.error || 'Failed to upload profile picture.');
       }
     } catch (error) {
       console.error('[Onboarding] Failed to upload profile picture:', error);
       setImageError(true);
-      Alert.alert('Error', 'Failed to upload profile picture. Please try again.');
+      showAlert('Error', 'Failed to upload profile picture. Please try again.');
     } finally {
       setIsUploading(false);
     }
@@ -108,7 +109,11 @@ export const OnboardingProfilePictureStep: React.FC<OnboardingProfilePictureStep
 
   return (
     <View style={styles.container}>
-      <View style={styles.content}>
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
         {/* Icon/Illustration */}
         <View style={styles.iconContainer}>
           {profilePictureUrl && !imageError ? (
@@ -117,6 +122,7 @@ export const OnboardingProfilePictureStep: React.FC<OnboardingProfilePictureStep
                 key={profilePictureUrl}
                 source={{ uri: profilePictureUrl }}
                 style={styles.profileImage}
+                resizeMode="cover"
                 onLoadStart={() => {
                   // Only set loading if this is actually a new URL
                   if (loadedUrlRef.current !== profilePictureUrl) {
@@ -176,7 +182,7 @@ export const OnboardingProfilePictureStep: React.FC<OnboardingProfilePictureStep
             </Text>
           )}
         </TouchableOpacity>
-      </View>
+      </ScrollView>
 
       {/* Bottom Actions */}
       <View style={styles.bottomActions}>
@@ -207,13 +213,17 @@ export const OnboardingProfilePictureStep: React.FC<OnboardingProfilePictureStep
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    paddingHorizontal: spacing.container.padding,
   },
-  content: {
+  scrollView: {
     flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    paddingHorizontal: spacing.container.padding,
     paddingVertical: spacing.xl,
+    paddingBottom: spacing.xl * 2,
   },
   iconContainer: {
     marginBottom: spacing.xl,
@@ -287,12 +297,17 @@ const styles = StyleSheet.create({
     color: colors.textInverse,
   },
   bottomActions: {
+    paddingHorizontal: spacing.container.padding,
+    paddingVertical: spacing.lg,
     paddingBottom: spacing.xl,
-    gap: spacing.md,
+    backgroundColor: colors.background,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
   },
   skipButton: {
     paddingVertical: spacing.md,
     alignItems: 'center',
+    marginBottom: spacing.md,
   },
   skipButtonText: {
     ...textStyles.body,
