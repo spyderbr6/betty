@@ -333,64 +333,34 @@ export async function getUpcomingEvents(
 /**
  * Get trending events (sorted by check-in count)
  *
+ * Uses eventCacheService which queries via isActive GSI for efficiency.
+ * Returns all active events (UPCOMING/LIVE/HALFTIME) sorted by check-in count.
+ *
  * @param limit - Maximum number of events to return
  * @returns Array of trending events
  */
 export async function getTrendingEvents(limit: number = 20): Promise<LiveEventData[]> {
   try {
-    console.log('[EventService] Fetching trending events');
+    console.log('[EventService] Fetching trending events from cache');
 
-    // Get events that are live or upcoming soon
-    const { data: events, errors } = await client.models.LiveEvent.list({
-      filter: {
-        or: [
-          { status: { eq: 'LIVE' } },
-          { status: { eq: 'UPCOMING' } },
-          { status: { eq: 'HALFTIME' } }
-        ]
-      },
-      limit: 100 // Fetch more to sort client-side
-    });
+    // Import cache service dynamically to avoid circular dependencies
+    const { getCachedEvents } = await import('./eventCacheService');
 
-    if (errors || !events) {
-      console.error('[EventService] Error fetching trending events:', errors);
+    // Get all active events from cache (uses isActive GSI query)
+    const events = await getCachedEvents();
+
+    if (!events || events.length === 0) {
+      console.log('[EventService] No active events found');
       return [];
     }
 
-    // Sort by check-in count (descending)
+    // Sort by check-in count (descending) and limit
     const sortedEvents = events
       .sort((a, b) => (b.checkInCount || 0) - (a.checkInCount || 0))
       .slice(0, limit);
 
-    return sortedEvents.map((event): LiveEventData => ({
-      id: event.id!,
-      externalId: event.externalId,
-      sport: event.sport || 'OTHER',
-      league: event.league || '',
-      homeTeam: event.homeTeam,
-      awayTeam: event.awayTeam,
-      homeTeamShortName: event.homeTeamShortName ?? undefined,
-      awayTeamShortName: event.awayTeamShortName ?? undefined,
-      homeTeamCode: event.homeTeamCode ?? undefined,
-      awayTeamCode: event.awayTeamCode ?? undefined,
-      venue: event.venue ?? undefined,
-      city: event.city ?? undefined,
-      country: event.country ?? undefined,
-      homeScore: event.homeScore || 0,
-      awayScore: event.awayScore || 0,
-      status: event.status || 'UPCOMING',
-      quarter: event.quarter ?? undefined,
-      timeLeft: event.timeLeft ?? undefined,
-      scheduledTime: event.scheduledTime,
-      startTime: event.startTime ?? undefined,
-      endTime: event.endTime ?? undefined,
-      season: event.season ?? undefined,
-      round: event.round ?? undefined,
-      checkInCount: event.checkInCount || 0,
-      betCount: event.betCount || 0,
-      createdAt: event.createdAt ?? undefined,
-      updatedAt: event.updatedAt ?? undefined
-    }));
+    console.log(`[EventService] Returning ${sortedEvents.length} trending events (from ${events.length} active events)`);
+    return sortedEvents;
 
   } catch (error) {
     console.error('[EventService] Error fetching trending events:', error);
@@ -401,12 +371,13 @@ export async function getTrendingEvents(limit: number = 20): Promise<LiveEventDa
 /**
  * Get live events (currently in progress based on scheduled time)
  *
+ * Uses eventCacheService which queries via isActive GSI for efficiency.
+ * Client-side filters for events in the "live" time window.
+ *
  * A game is considered "live" if:
  * - Scheduled time is within 90 minutes in the future OR has already started
  * - Less than 4 hours have passed since scheduled time (game duration)
  * - Status is not FINISHED or CANCELLED
- *
- * Uses simple filtering since the time window is small (~5.5 hours).
  *
  * @param sport - Optional sport filter
  * @returns Array of live events
@@ -415,66 +386,29 @@ export async function getLiveEvents(
   sport?: 'NBA' | 'NFL' | 'MLB' | 'NHL' | 'SOCCER' | 'COLLEGE_FOOTBALL' | 'COLLEGE_BASKETBALL' | 'OTHER'
 ): Promise<LiveEventData[]> {
   try {
-    console.log('[EventService] Fetching live events');
+    console.log('[EventService] Fetching live events from cache');
 
-    const now = new Date();
-    const ninetyMinutesFromNow = new Date(now.getTime() + 90 * 60 * 1000);
-    const fourHoursAgo = new Date(now.getTime() - 4 * 60 * 60 * 1000);
+    // Import cache service dynamically to avoid circular dependencies
+    const { getLiveEventsFromCache } = await import('./eventCacheService');
 
-    const filter: any = {
-      and: [
-        { scheduledTime: { ge: fourHoursAgo.toISOString() } },
-        { scheduledTime: { le: ninetyMinutesFromNow.toISOString() } },
-        { status: { ne: 'FINISHED' } },
-        { status: { ne: 'CANCELLED' } }
-      ]
-    };
+    // Get live events from cache (uses isActive GSI query + client-side time filtering)
+    let events = await getLiveEventsFromCache();
 
-    if (sport) {
-      filter.and.push({ sport: { eq: sport } });
-    }
-
-    const { data: events, errors } = await client.models.LiveEvent.list({
-      filter,
-      limit: 100
-    });
-
-    if (errors || !events) {
-      console.error('[EventService] Error fetching live events:', errors);
+    if (!events || events.length === 0) {
+      console.log('[EventService] No live events found');
       return [];
     }
 
-    console.log(`[EventService] Found ${events.length} live events`);
+    // Apply optional sport filter (client-side)
+    if (sport) {
+      events = events.filter(event => event.sport === sport);
+      console.log(`[EventService] Filtered to ${events.length} ${sport} live events`);
+    } else {
+      console.log(`[EventService] Found ${events.length} live events`);
+    }
 
-    return events.map((event): LiveEventData => ({
-      id: event.id!,
-      externalId: event.externalId,
-      sport: event.sport || 'OTHER',
-      league: event.league || '',
-      homeTeam: event.homeTeam,
-      awayTeam: event.awayTeam,
-      homeTeamShortName: event.homeTeamShortName ?? undefined,
-      awayTeamShortName: event.awayTeamShortName ?? undefined,
-      homeTeamCode: event.homeTeamCode ?? undefined,
-      awayTeamCode: event.awayTeamCode ?? undefined,
-      venue: event.venue ?? undefined,
-      city: event.city ?? undefined,
-      country: event.country ?? undefined,
-      homeScore: event.homeScore || 0,
-      awayScore: event.awayScore || 0,
-      status: event.status || 'UPCOMING',
-      quarter: event.quarter ?? undefined,
-      timeLeft: event.timeLeft ?? undefined,
-      scheduledTime: event.scheduledTime,
-      startTime: event.startTime ?? undefined,
-      endTime: event.endTime ?? undefined,
-      season: event.season ?? undefined,
-      round: event.round ?? undefined,
-      checkInCount: event.checkInCount || 0,
-      betCount: event.betCount || 0,
-      createdAt: event.createdAt ?? undefined,
-      updatedAt: event.updatedAt ?? undefined
-    }));
+    // Events are already mapped to LiveEventData by the cache service
+    return events;
 
   } catch (error) {
     console.error('[EventService] Error fetching live events:', error);

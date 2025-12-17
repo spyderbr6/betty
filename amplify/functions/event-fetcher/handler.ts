@@ -245,6 +245,12 @@ async function upsertEvent(event: ESPNEvent, league: string): Promise<void> {
       return;
     }
 
+    const status = parseEventStatus(competition.status);
+
+    // Determine if event is active (UPCOMING/LIVE/HALFTIME) or inactive (FINISHED/POSTPONED/CANCELLED)
+    // This enables efficient single-query retrieval of all relevant events via isActive GSI
+    const isActive = status === 'UPCOMING' || status === 'LIVE' || status === 'HALFTIME';
+
     const eventData = {
       externalId: event.id,
       sport: mapLeagueToSportType(league),
@@ -260,7 +266,8 @@ async function upsertEvent(event: ESPNEvent, league: string): Promise<void> {
       country: undefined, // ESPN doesn't provide country in this endpoint
       homeScore: parseInt(homeCompetitor.score) || 0,
       awayScore: parseInt(awayCompetitor.score) || 0,
-      status: parseEventStatus(competition.status),
+      status: status,
+      isActive: isActive, // Lifecycle state managed by Lambda for efficient querying
       quarter: competition.status.period ? `Period ${competition.status.period}` : undefined,
       timeLeft: competition.status.displayClock || undefined,
       scheduledTime: new Date(competition.date).toISOString(),
