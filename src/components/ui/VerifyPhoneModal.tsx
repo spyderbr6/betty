@@ -14,7 +14,6 @@ import {
   Modal,
   KeyboardAvoidingView,
   Platform,
-  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -22,6 +21,7 @@ import { colors, spacing, typography, textStyles, commonStyles } from '../../sty
 import { ModalHeader } from './ModalHeader';
 import { verifyCode, resendVerificationCode } from '../../services/phoneVerificationService';
 import { formatDisplayPhone } from '../../utils/phoneValidation';
+import { showAlert } from './CustomAlert';
 
 interface VerifyPhoneModalProps {
   visible: boolean;

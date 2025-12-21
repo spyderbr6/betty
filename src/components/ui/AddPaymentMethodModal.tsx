@@ -10,7 +10,6 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  Alert,
   ActivityIndicator,
   Modal,
   KeyboardAvoidingView,
@@ -23,6 +22,7 @@ import { colors, spacing, typography, textStyles } from '../../styles';
 import { useAuth } from '../../contexts/AuthContext';
 import { ModalHeader } from './ModalHeader';
 import { PaymentMethodService } from '../../services/paymentMethodService';
+import { showAlert } from './CustomAlert';
 
 interface AddPaymentMethodModalProps {
   visible: boolean;

@@ -18,6 +18,7 @@ import type { Schema } from '../../amplify/data/resource';
 import { sendVerificationCode, completePhoneVerification, changePhoneNumber } from '../services/phoneVerificationService';
 import { formatDisplayPhone, formatPhoneNumber, validatePhoneNumber } from '../utils/phoneValidation';
 import type { CountryCode } from 'libphonenumber-js';
+import { showAlert } from '../components/ui/CustomAlert';
 
 const client = generateClient<Schema>();
 

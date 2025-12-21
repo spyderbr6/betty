@@ -4,13 +4,13 @@
  */
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { } from 'react-native';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
 import { getUserCheckedInEvent, checkOutOfEvent } from '../services/eventService';
 import { getLiveEventsFromCache } from '../services/eventCacheService';
 import type { LiveEvent } from '../types/events';
 import { useAuth } from './AuthContext';
+import { showAlert } from '../components/ui/CustomAlert';
 
 const client = generateClient<Schema>();
 

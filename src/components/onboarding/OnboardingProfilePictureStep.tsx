@@ -11,7 +11,6 @@ import {
   TouchableOpacity,
   Image,
   ActivityIndicator,
-  Alert,
   ScrollView,
 } from 'react-native';
 import { colors, spacing, textStyles, typography } from '../../styles';
@@ -19,6 +18,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { updateProfilePicture } from '../../services/imageUploadService';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema} from '../../../amplify/data/resource';
+import { showAlert } from '../ui/CustomAlert';
 
 const client = generateClient<Schema>();
 

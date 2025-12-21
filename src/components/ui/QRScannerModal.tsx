@@ -9,7 +9,6 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
-  Alert,
   Modal,
   ActivityIndicator,
 } from 'react-native';
@@ -18,6 +17,7 @@ import { Camera, CameraView, BarcodeScanningResult } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, textStyles, typography } from '../../styles';
 import { ModalHeader } from './ModalHeader';
+import { showAlert } from './CustomAlert';
 
 interface QRScannerModalProps {
   visible: boolean;

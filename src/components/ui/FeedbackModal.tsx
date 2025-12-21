@@ -11,7 +11,6 @@ import {
   TouchableOpacity,
   StyleSheet,
   Modal,
-  Alert,
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
@@ -21,6 +20,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors, typography, spacing, textStyles } from '../../styles';
 import { ModalHeader } from './ModalHeader';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { showAlert } from './CustomAlert';
 
 interface FeedbackModalProps {
   visible: boolean;

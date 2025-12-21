@@ -12,7 +12,6 @@ import {
   TextInput,
   TouchableOpacity,
   Switch,
-  Alert,
   ActivityIndicator,
   Image,
 } from 'react-native';
@@ -30,6 +29,7 @@ import { NotificationService } from '../services/notificationService';
 import { TransactionService } from '../services/transactionService';
 import { getProfilePictureUrl } from '../services/imageUploadService';
 import { useEventCheckIn } from '../hooks/useEventCheckIn';
+import { showAlert } from '../components/ui/CustomAlert';
 
 interface BetTemplate {
   id: string;

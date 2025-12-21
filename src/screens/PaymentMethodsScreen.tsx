@@ -11,7 +11,6 @@ import {
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
-  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -25,6 +24,7 @@ import { formatCurrency } from '../utils/formatting';
 import { TransactionService } from '../services/transactionService';
 import { PaymentMethodService } from '../services/paymentMethodService';
 import type { PaymentMethod } from '../services/paymentMethodService';
+import { showAlert } from '../components/ui/CustomAlert';
 
 interface PaymentMethodsScreenProps {
   onClose: () => void;
