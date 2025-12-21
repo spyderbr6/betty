@@ -15,7 +15,7 @@ const client = generateClient<Schema>() as any;
 
 // Configure web-push with VAPID keys
 const WEB_PUSH_PUBLIC_KEY = env.WEB_PUSH_PUBLIC_KEY || '';
-const WEB_PUSH_PRIVATE_KEY = env.WEB_PUSH_PRIVATE_KEY || '';
+const WEB_PUSH_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || ''; // Secret accessed via process.env
 const WEB_PUSH_EMAIL = env.WEB_PUSH_EMAIL || 'mailto:admin@sidebet.app';
 
 if (WEB_PUSH_PUBLIC_KEY && WEB_PUSH_PRIVATE_KEY) {
