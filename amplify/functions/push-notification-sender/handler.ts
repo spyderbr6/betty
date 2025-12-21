@@ -4,7 +4,7 @@ import type { Schema } from '../../data/resource';
 import { Amplify } from 'aws-amplify';
 import { getAmplifyDataClientConfig } from '@aws-amplify/backend/function/runtime';
 import { env } from '$amplify/env/push-notification-sender';
-import webPush from 'web-push';
+import * as webPush from 'web-push';
 
 // CRITICAL: Top-level await configuration - this is required for proper client initialization
 const { resourceConfig, libraryOptions } = await getAmplifyDataClientConfig(env);
