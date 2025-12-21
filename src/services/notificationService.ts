@@ -15,15 +15,51 @@ import { getCurrentUser } from 'aws-amplify/auth';
 import { Platform } from 'react-native';
 import { NotificationPreferencesService } from './notificationPreferencesService';
 import ToastNotificationService from './toastNotificationService';
+import { subscribeToWebPush, isWebPushSupported, unsubscribeFromWebPush } from '../utils/webPushUtils';
 
 const client = generateClient<Schema>();
 
 export class NotificationService {
   /**
-   * Register push token for user
+   * Register push token for user (platform-aware: Expo for mobile, Web Push for web)
    */
   static async registerPushToken(userId: string): Promise<string | null> {
     try {
+      // WEB PLATFORM: Use Web Push API
+      if (Platform.OS === 'web') {
+        console.log('[Push] Registering web push token...');
+
+        if (!isWebPushSupported()) {
+          console.log('[Push] Web push not supported in this browser');
+          return null;
+        }
+
+        try {
+          // Subscribe to web push notifications
+          const webPushSubscription = await subscribeToWebPush();
+
+          // Store the subscription in database
+          await client.models.PushToken.create({
+            userId,
+            token: webPushSubscription,
+            platform: 'WEB',
+            deviceId: `web-${navigator.userAgent.substring(0, 50)}`,
+            appVersion: '1.0.0',
+            isActive: true,
+            lastUsed: new Date().toISOString(),
+          });
+
+          console.log('[Push] Web push token registered successfully');
+          return webPushSubscription;
+        } catch (webError) {
+          console.error('[Push] Web push registration failed:', webError);
+          return null;
+        }
+      }
+
+      // MOBILE PLATFORMS: Use Expo Push Notifications
+      console.log('[Push] Registering Expo push token...');
+
       // Check if push notifications are supported in this environment
       if (!Notifications.getExpoPushTokenAsync) {
         console.log('[Push] Notifications not supported in this environment');
@@ -74,6 +110,41 @@ export class NotificationService {
         console.error('[Push] Error registering push token:', error);
       }
       return null;
+    }
+  }
+
+  /**
+   * Unregister push token for user (platform-aware)
+   */
+  static async unregisterPushToken(userId: string): Promise<void> {
+    try {
+      if (Platform.OS === 'web') {
+        // Unsubscribe from web push
+        await unsubscribeFromWebPush();
+        console.log('[Push] Web push unsubscribed');
+      }
+
+      // Deactivate tokens in database
+      const { data: tokens } = await client.models.PushToken.list({
+        filter: {
+          userId: { eq: userId },
+          isActive: { eq: true }
+        }
+      });
+
+      if (tokens && tokens.length > 0) {
+        await Promise.all(
+          tokens.map(token =>
+            client.models.PushToken.update({
+              id: token.id!,
+              isActive: false,
+            })
+          )
+        );
+        console.log(`[Push] Deactivated ${tokens.length} push tokens`);
+      }
+    } catch (error) {
+      console.error('[Push] Error unregistering push token:', error);
     }
   }
 

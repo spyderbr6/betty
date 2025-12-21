@@ -30,7 +30,16 @@
       "versionCode": 1
     },
     "web": {
-      "favicon": "./assets/icon.png"
+      "favicon": "./assets/icon.png",
+      "bundler": "metro",
+      "output": "static",
+      "build": {
+        "babel": {
+          "include": [
+            "expo-router"
+          ]
+        }
+      }
     },
     "plugins": [
       "expo-dev-client",

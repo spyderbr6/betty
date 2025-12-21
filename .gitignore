@@ -49,3 +49,4 @@ ios/
 
 # Temporary files
 nul
+VAPID_KEYS.md
