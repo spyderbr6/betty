@@ -10,7 +10,6 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  Alert,
   ActivityIndicator,
   Modal,
   KeyboardAvoidingView,
@@ -26,6 +25,7 @@ import { TransactionService } from '../../services/transactionService';
 import { PaymentMethodService } from '../../services/paymentMethodService';
 import type { PaymentMethod } from '../../services/paymentMethodService';
 import { formatCurrency } from '../../utils/formatting';
+import { showAlert } from './CustomAlert';
 
 interface WithdrawFundsModalProps {
   visible: boolean;

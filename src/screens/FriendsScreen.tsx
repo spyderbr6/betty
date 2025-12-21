@@ -13,7 +13,6 @@ import {
   ActivityIndicator,
   RefreshControl,
   Image,
-  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -27,6 +26,7 @@ import { FriendRequestsModal } from '../components/ui/FriendRequestsModal';
 import { useAuth } from '../contexts/AuthContext';
 import { FriendListItem, User } from '../types/betting';
 import { getProfilePictureUrl } from '../services/imageUploadService';
+import { showAlert } from '../components/ui/CustomAlert';
 
 // Initialize GraphQL client
 const client = generateClient<Schema>();

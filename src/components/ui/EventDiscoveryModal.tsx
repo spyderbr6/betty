@@ -15,7 +15,6 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
-  Alert,
   TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -25,6 +24,7 @@ import { colors, typography, spacing, textStyles } from '../../styles';
 import { checkIntoEvent } from '../../services/eventService';
 import { getAllEventsFromCache } from '../../services/eventCacheService';
 import type { LiveEvent, SportType } from '../../types/events';
+import { showAlert } from './CustomAlert';
 
 export interface EventDiscoveryModalProps {
   visible: boolean;

@@ -14,6 +14,7 @@ import { NotificationPreferencesService } from '../services/notificationPreferen
 import { NotificationPreferences } from '../types/betting';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
+import { showAlert } from '../components/ui/CustomAlert';
 
 const client = generateClient<Schema>();
 

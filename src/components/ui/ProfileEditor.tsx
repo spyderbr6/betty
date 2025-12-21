@@ -10,7 +10,6 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  Alert,
   ActivityIndicator,
   Image,
 } from 'react-native';
@@ -18,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, typography, textStyles } from '../../styles';
 import { ProfileEditForm, User } from '../../types/betting';
 import { updateProfilePicture } from '../../services/imageUploadService';
+import { showAlert } from './CustomAlert';
 
 interface ProfileEditorProps {
   user: User;

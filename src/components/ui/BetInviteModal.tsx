@@ -9,7 +9,6 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
-  Alert,
   ActivityIndicator,
   FlatList,
   Image,
@@ -26,6 +25,7 @@ import { NotificationService } from '../../services/notificationService';
 import { ModalHeader } from './ModalHeader';
 import { BetQRCodeModal } from './BetQRCodeModal';
 import { getProfilePictureUrl } from '../../services/imageUploadService';
+import { showAlert } from './CustomAlert';
 
 // Initialize GraphQL client
 const client = generateClient<Schema>();
