@@ -49,13 +49,22 @@ This dual-platform approach allows users to receive notifications regardless of 
 BHREIE9gIc8ok6jMDRv0eGw_SUmAN77dav_Z5AJ1H8dM2oPBpk4YEvnIVP76-z2gqvZvkBsO9bxx_5Sk1BYlK9I
 ```
 
-**Private Key (Server-side ONLY)**:
-```
-Stored in: amplify/functions/push-notification-sender/resource.ts
-Environment variable: WEB_PUSH_PRIVATE_KEY
-```
+⚠️ **SECURITY NOTE**: The original private key was accidentally exposed and should be rotated. See VAPID_KEYS.md for rotation instructions.
 
-⚠️ **Security**: Private key is never exposed to clients. Only used in Lambda function.
+**Private Key Management**:
+- 🔒 Stored as Amplify secret: `VAPID_PRIVATE_KEY`
+- 📍 Configured in: `amplify/backend.ts`
+- ✅ Never hardcoded in source code
+- 🚫 Never committed to git
+
+**Setting the Secret**:
+```bash
+# For sandbox/development
+npx ampx sandbox secret set VAPID_PRIVATE_KEY
+
+# For production
+npx ampx secret set VAPID_PRIVATE_KEY --branch main
+```
 
 ### 2. Web Push Utils (`src/utils/webPushUtils.ts`)
 
@@ -297,15 +306,20 @@ await client.mutations.sendPushNotification({
 
 ### 1. VAPID Key Security
 
-**Current Setup** (Development):
-- Keys hardcoded in `resource.ts` for easy testing
+**✅ Proper Setup (Current)**:
+- Private key stored as Amplify secret
+- Public key in code (safe to expose)
+- Managed via `npx ampx sandbox secret set VAPID_PRIVATE_KEY`
 
-**Production Setup** (Recommended):
-- Store keys in AWS Secrets Manager
-- Reference in Lambda environment:
-  ```typescript
-  WEB_PUSH_PRIVATE_KEY: secretsManager.getSecretValue('web-push-private-key')
-  ```
+**Configuration**:
+```typescript
+// amplify/backend.ts
+const vapidPrivateKey = backend.addSecret('VAPID_PRIVATE_KEY');
+backend.pushNotificationSender.addEnvironment('VAPID_PRIVATE_KEY', vapidPrivateKey);
+```
+
+**⚠️ Key Rotation Required**:
+The initial VAPID keys were accidentally committed to git and must be rotated. See `VAPID_KEYS.md` for detailed rotation instructions.
 
 ### 2. Service Worker Caching
 
