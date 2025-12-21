@@ -13,21 +13,12 @@ Amplify.configure(resourceConfig, libraryOptions);
 // Use non-generic client to avoid complex union type inference
 const client = generateClient<Schema>() as any;
 
-// Configure web-push with VAPID keys
-const WEB_PUSH_PUBLIC_KEY = env.WEB_PUSH_PUBLIC_KEY || '';
-const WEB_PUSH_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || ''; // Secret accessed via process.env
-const WEB_PUSH_EMAIL = env.WEB_PUSH_EMAIL || 'mailto:admin@sidebet.app';
-
-if (WEB_PUSH_PUBLIC_KEY && WEB_PUSH_PRIVATE_KEY) {
-  webpush.setVapidDetails(
-    WEB_PUSH_EMAIL,
-    WEB_PUSH_PUBLIC_KEY,
-    WEB_PUSH_PRIVATE_KEY
-  );
-  console.log('[Web Push] VAPID keys configured');
-} else {
-  console.warn('[Web Push] VAPID keys not configured - web push notifications will not work');
-}
+// Configure web-push with VAPID details from environment (matching working app pattern)
+webpush.setVapidDetails(
+  env.WEB_PUSH_EMAIL,
+  env.WEB_PUSH_PUBLIC_KEY,
+  env.VAPID_PRIVATE_KEY
+);
 
 interface PushNotificationArgs {
   userId: string;
@@ -181,11 +172,6 @@ async function sendViaWebPush(
   priority: string
 ): Promise<number> {
   try {
-    if (!WEB_PUSH_PUBLIC_KEY || !WEB_PUSH_PRIVATE_KEY) {
-      console.error('[Web Push] VAPID keys not configured');
-      return 0;
-    }
-
     const payload = JSON.stringify({
       title,
       message,
