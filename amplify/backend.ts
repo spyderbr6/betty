@@ -17,7 +17,3 @@ const backend = defineBackend({
   payoutProcessor,
   // Note: liveScoreUpdater removed - TheSportsDB score updates are too unreliable
 });
-
-// Add VAPID private key as a secret for push notification sender
-const vapidPrivateKey = backend.addSecret('VAPID_PRIVATE_KEY');
-backend.pushNotificationSender.addEnvironment('VAPID_PRIVATE_KEY', vapidPrivateKey);
