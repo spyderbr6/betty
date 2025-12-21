@@ -4,7 +4,7 @@ import type { Schema } from '../../data/resource';
 import { Amplify } from 'aws-amplify';
 import { getAmplifyDataClientConfig } from '@aws-amplify/backend/function/runtime';
 import { env } from '$amplify/env/push-notification-sender';
-import webPush from 'web-push';
+import webpush from 'web-push';
 
 // CRITICAL: Top-level await configuration - this is required for proper client initialization
 const { resourceConfig, libraryOptions } = await getAmplifyDataClientConfig(env);
@@ -19,7 +19,7 @@ const WEB_PUSH_PRIVATE_KEY = env.WEB_PUSH_PRIVATE_KEY || '';
 const WEB_PUSH_EMAIL = env.WEB_PUSH_EMAIL || 'mailto:admin@sidebet.app';
 
 if (WEB_PUSH_PUBLIC_KEY && WEB_PUSH_PRIVATE_KEY) {
-  webPush.setVapidDetails(
+  webpush.setVapidDetails(
     WEB_PUSH_EMAIL,
     WEB_PUSH_PUBLIC_KEY,
     WEB_PUSH_PRIVATE_KEY
@@ -206,7 +206,7 @@ async function sendViaWebPush(
         try {
           const subscription = JSON.parse(tokenRecord.token!);
 
-          await webPush.sendNotification(subscription, payload);
+          await webpush.sendNotification(subscription, payload);
 
           // Update lastUsed timestamp
           await client.models.PushToken.update({
