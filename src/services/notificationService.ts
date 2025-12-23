@@ -27,12 +27,10 @@ export class NotificationService {
     try {
       console.log('[Push] 🚀 registerPushToken called for user:', userId);
       console.log('[Push] Platform.OS:', Platform.OS);
-      console.log('[Push] Has window?', typeof window !== 'undefined');
-      console.log('[Push] Has navigator?', typeof navigator !== 'undefined');
 
       // WEB PLATFORM: Use Web Push API
-      // Check both Platform.OS and window existence for web detection
-      const isWeb = Platform.OS === 'web' || (typeof window !== 'undefined' && typeof navigator !== 'undefined' && !Notifications.getExpoPushTokenAsync);
+      // React Native Web always sets Platform.OS to 'web'
+      const isWeb = Platform.OS === 'web';
 
       console.log('[Push] Is web?', isWeb);
 
