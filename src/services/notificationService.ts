@@ -25,22 +25,34 @@ export class NotificationService {
    */
   static async registerPushToken(userId: string): Promise<string | null> {
     try {
+      console.log('[Push] 🚀 registerPushToken called for user:', userId);
+      console.log('[Push] Platform.OS:', Platform.OS);
+      console.log('[Push] Has window?', typeof window !== 'undefined');
+      console.log('[Push] Has navigator?', typeof navigator !== 'undefined');
+
       // WEB PLATFORM: Use Web Push API
       // Check both Platform.OS and window existence for web detection
       const isWeb = Platform.OS === 'web' || (typeof window !== 'undefined' && typeof navigator !== 'undefined' && !Notifications.getExpoPushTokenAsync);
 
+      console.log('[Push] Is web?', isWeb);
+
       if (isWeb) {
-        console.log('[Push] Detected web platform, registering web push token...');
+        console.log('[Push] ✅ Detected web platform, registering web push token...');
 
         if (!isWebPushSupported()) {
-          console.log('[Push] Web push not supported in this browser');
+          console.log('[Push] ❌ Web push not supported in this browser');
+          console.log('[Push] serviceWorker in navigator?', 'serviceWorker' in navigator);
+          console.log('[Push] PushManager in window?', 'PushManager' in window);
+          console.log('[Push] Notification in window?', 'Notification' in window);
           return null;
         }
 
         try {
+          console.log('[Push] 🔔 Starting web push subscription process...');
           // Subscribe to web push notifications
           const webPushSubscription = await subscribeToWebPush();
 
+          console.log('[Push] 💾 Saving subscription to database...');
           // Store the subscription in database
           await client.models.PushToken.create({
             userId,
@@ -52,10 +64,10 @@ export class NotificationService {
             lastUsed: new Date().toISOString(),
           });
 
-          console.log('[Push] Web push token registered successfully');
+          console.log('[Push] ✅ Web push token registered successfully!');
           return webPushSubscription;
         } catch (webError) {
-          console.error('[Push] Web push registration failed:', webError);
+          console.error('[Push] ❌ Web push registration failed:', webError);
           return null;
         }
       }
