@@ -26,8 +26,11 @@ export class NotificationService {
   static async registerPushToken(userId: string): Promise<string | null> {
     try {
       // WEB PLATFORM: Use Web Push API
-      if (Platform.OS === 'web') {
-        console.log('[Push] Registering web push token...');
+      // Check both Platform.OS and window existence for web detection
+      const isWeb = Platform.OS === 'web' || (typeof window !== 'undefined' && typeof navigator !== 'undefined' && !Notifications.getExpoPushTokenAsync);
+
+      if (isWeb) {
+        console.log('[Push] Detected web platform, registering web push token...');
 
         if (!isWebPushSupported()) {
           console.log('[Push] Web push not supported in this browser');
