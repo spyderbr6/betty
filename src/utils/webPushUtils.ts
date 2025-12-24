@@ -78,6 +78,8 @@ export async function registerServiceWorker(): Promise<ServiceWorkerRegistration
 /**
  * Subscribe user to web push notifications
  * Returns the push subscription object as a JSON string
+ *
+ * NOTE: Service worker must already be registered (handled in App.tsx on startup)
  */
 export async function subscribeToWebPush(): Promise<string> {
   if (!isWebPushSupported()) {
@@ -86,32 +88,38 @@ export async function subscribeToWebPush(): Promise<string> {
 
   try {
     // Request permission
+    console.log('[Web Push] Requesting notification permission...');
     const permission = await requestNotificationPermission();
+    console.log('[Web Push] Permission result:', permission);
+
     if (permission !== 'granted') {
       throw new Error('Notification permission denied');
     }
 
-    // Register service worker
-    const registration = await registerServiceWorker();
+    // Wait for service worker to be ready (already registered in App.tsx)
+    console.log('[Web Push] Waiting for service worker to be ready...');
+    const registration = await navigator.serviceWorker.ready;
+    console.log('[Web Push] Service worker ready, scope:', registration.scope);
 
     // Check for existing subscription
     let subscription = await registration.pushManager.getSubscription();
 
     if (!subscription) {
       // Create new subscription with VAPID public key
+      console.log('[Web Push] Creating new push subscription...');
       subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
       });
-      console.log('[Web Push] New subscription created');
+      console.log('[Web Push] ✅ New subscription created');
     } else {
-      console.log('[Web Push] Using existing subscription');
+      console.log('[Web Push] ✅ Using existing subscription');
     }
 
     // Convert subscription to JSON string for storage
     return JSON.stringify(subscription.toJSON());
   } catch (error) {
-    console.error('[Web Push] Subscription failed:', error);
+    console.error('[Web Push] ❌ Subscription failed:', error);
     throw error;
   }
 }

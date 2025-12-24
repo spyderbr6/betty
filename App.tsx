@@ -15,9 +15,9 @@ import amplifyconfig from './amplify_outputs.json';
 Amplify.configure(amplifyconfig);
 
 // Now import components that use Amplify
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, View, ActivityIndicator } from 'react-native';
+import { StyleSheet, View, ActivityIndicator, Platform } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from './src/contexts/AuthContext';
 import { EventCheckInProvider } from './src/contexts/EventCheckInContext';
@@ -28,6 +28,7 @@ import { colors } from './src/styles';
 import Toast from 'react-native-toast-message';
 import { toastConfig } from './src/components/ui/ToastConfig';
 import { CustomAlertController } from './src/components/ui/CustomAlert';
+import { registerServiceWorker } from './src/utils/webPushUtils';
 
 type AuthScreen = 'login' | 'signup';
 
@@ -75,6 +76,20 @@ function MainApp() {
 }
 
 export default function App() {
+  // Register service worker on app startup (web only)
+  useEffect(() => {
+    if (Platform.OS === 'web') {
+      console.log('[App] Registering service worker on startup...');
+      registerServiceWorker()
+        .then(() => {
+          console.log('[App] ✅ Service worker registered successfully on startup');
+        })
+        .catch((error) => {
+          console.error('[App] ❌ Service worker registration failed:', error);
+        });
+    }
+  }, []);
+
   return (
     <SafeAreaProvider>
       <AuthProvider>
