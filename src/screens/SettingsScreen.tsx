@@ -11,6 +11,7 @@ import { colors, spacing, textStyles } from '../styles';
 import { ModalHeader } from '../components/ui/ModalHeader';
 import { useAuth } from '../contexts/AuthContext';
 import { NotificationPreferencesService } from '../services/notificationPreferencesService';
+import { NotificationService } from '../services/notificationService';
 import { NotificationPreferences } from '../types/betting';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
@@ -65,6 +66,34 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
 
   const handleToggle = async (key: keyof NotificationPreferences, value: boolean) => {
     if (!user || !preferences) return;
+
+    // Special handling for pushEnabled toggle
+    if (key === 'pushEnabled' && value === true) {
+      console.log('[Settings] Push notifications being enabled, requesting permission...');
+
+      try {
+        // Try to register push token (will prompt for permission on web)
+        const token = await NotificationService.registerPushToken(user.userId);
+
+        if (!token) {
+          console.log('[Settings] Push token registration failed or permission denied');
+          showAlert(
+            'Permission Required',
+            'Please allow notifications in your browser to enable push notifications.'
+          );
+          return; // Don't update preference if registration failed
+        }
+
+        console.log('[Settings] Push token registered successfully');
+      } catch (error) {
+        console.error('[Settings] Error registering push token:', error);
+        showAlert(
+          'Error',
+          'Failed to enable push notifications. Please try again.'
+        );
+        return; // Don't update preference on error
+      }
+    }
 
     // Optimistic update
     setPreferences(prev => prev ? { ...prev, [key]: value } : null);
