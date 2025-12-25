@@ -20,6 +20,7 @@ import { StatusBar } from 'expo-status-bar';
 import { StyleSheet, View, ActivityIndicator, Platform } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from './src/contexts/AuthContext';
+import { NotificationProvider } from './src/contexts/NotificationContext';
 import { EventCheckInProvider } from './src/contexts/EventCheckInContext';
 import { Login } from './src/components/Login';
 import { SignUp } from './src/components/SignUp';
@@ -93,14 +94,16 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <AuthProvider>
-        <EventCheckInProvider>
-          <View style={styles.container}>
-            <MainApp />
-            <StatusBar style="light" backgroundColor={colors.background} />
-            <Toast config={toastConfig} />
-            <CustomAlertController />
-          </View>
-        </EventCheckInProvider>
+        <NotificationProvider>
+          <EventCheckInProvider>
+            <View style={styles.container}>
+              <MainApp />
+              <StatusBar style="light" backgroundColor={colors.background} />
+              <Toast config={toastConfig} />
+              <CustomAlertController />
+            </View>
+          </EventCheckInProvider>
+        </NotificationProvider>
       </AuthProvider>
     </SafeAreaProvider>
   );

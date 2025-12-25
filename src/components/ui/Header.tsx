@@ -17,8 +17,8 @@ import { colors, typography, spacing, textStyles, shadows } from '../../styles';
 import { UserBalance } from './UserBalance';
 import { LiveGameBanner } from './LiveGameBanner';
 import { EventDiscoveryModal } from './EventDiscoveryModal';
-import { NotificationService } from '../../services/notificationService';
 import { useAuth } from '../../contexts/AuthContext';
+import { useNotifications } from '../../contexts/NotificationContext';
 import { useEventCheckIn } from '../../hooks/useEventCheckIn';
 import { NotificationModal } from './NotificationModal';
 
@@ -43,8 +43,8 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
+  const { unreadCount, refreshUnreadCount } = useNotifications();
   const [showNotificationModal, setShowNotificationModal] = useState(false);
-  const [unreadCount, setUnreadCount] = useState(0);
 
   // Event check-in state (managed globally by hook)
   const {
@@ -56,27 +56,6 @@ export const Header: React.FC<HeaderProps> = ({
     handleCheckOut,
     handleCheckInSuccess,
   } = useEventCheckIn();
-
-  // Load unread notification count
-  useEffect(() => {
-    const loadNotificationCount = async () => {
-      if (user) {
-        try {
-          const count = await NotificationService.getUnreadCount(user.userId);
-          setUnreadCount(count);
-        } catch (error) {
-          console.warn('Failed to load notification count:', error);
-        }
-      }
-    };
-
-    loadNotificationCount();
-
-    // Refresh count every 30 seconds for real-time updates
-    const interval = setInterval(loadNotificationCount, 30000);
-
-    return () => clearInterval(interval);
-  }, [user]);
 
   // Handle notification press
   const handleNotificationPress = () => {
@@ -165,11 +144,7 @@ export const Header: React.FC<HeaderProps> = ({
         onClose={() => {
           setShowNotificationModal(false);
           // Refresh notification count when modal closes
-          if (user) {
-            NotificationService.getUnreadCount(user.userId)
-              .then(setUnreadCount)
-              .catch(console.warn);
-          }
+          refreshUnreadCount();
         }}
       />
 
