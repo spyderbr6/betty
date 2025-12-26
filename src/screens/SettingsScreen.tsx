@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, StyleSheet, Switch, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, Switch, TouchableOpacity, ActivityIndicator, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, textStyles } from '../styles';
@@ -33,6 +33,36 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
     loadPreferences();
     loadPrivacySettings();
   }, []);
+
+  // Auto-trigger permission prompt if push is enabled but no token for this device
+  useEffect(() => {
+    const checkAndRegisterToken = async () => {
+      if (!user || !preferences || !preferences.pushEnabled) return;
+
+      try {
+        // Check if this device already has an active token
+        const { data: tokens } = await client.models.PushToken.list({
+          filter: {
+            userId: { eq: user.userId },
+            platform: { eq: Platform.OS.toUpperCase() as 'IOS' | 'ANDROID' | 'WEB' },
+            isActive: { eq: true }
+          }
+        });
+
+        // If push is enabled but no token exists for this device, auto-register
+        if (!tokens || tokens.length === 0) {
+          console.log('[Settings] Push enabled but no token for this device, auto-registering...');
+          await NotificationService.registerPushToken(user.userId);
+          console.log('[Settings] ✅ Auto-registration complete');
+        }
+      } catch (error) {
+        console.error('[Settings] Auto-registration failed:', error);
+        // Silent fail - user can manually toggle if needed
+      }
+    };
+
+    checkAndRegisterToken();
+  }, [user, preferences]);
 
   const loadPreferences = async () => {
     if (!user) {
@@ -72,26 +102,54 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
       console.log('[Settings] Push notifications being enabled, requesting permission...');
 
       try {
-        // Try to register push token (will prompt for permission on web)
+        // Try to register push token (will prompt for permission)
         const token = await NotificationService.registerPushToken(user.userId);
 
         if (!token) {
           console.log('[Settings] Push token registration failed or permission denied');
+
+          // Save preference anyway - user might grant permission later
+          const success = await NotificationPreferencesService.updatePreference(
+            user.userId,
+            key,
+            value
+          );
+
+          if (success) {
+            setPreferences(prev => prev ? { ...prev, [key]: value } : null);
+          }
+
+          // Show platform-specific message
+          const isWeb = Platform.OS === 'web';
           showAlert(
             'Permission Required',
-            'Please allow notifications in your browser to enable push notifications.'
+            isWeb
+              ? 'Push notifications are now enabled, but you need to allow notifications in your browser. You can do this in your browser settings.'
+              : 'Push notifications are now enabled, but you need to allow notifications for this app. You can do this in your device Settings > Notifications > SideBet.'
           );
-          return; // Don't update preference if registration failed
+          return;
         }
 
         console.log('[Settings] Push token registered successfully');
       } catch (error) {
         console.error('[Settings] Error registering push token:', error);
-        showAlert(
-          'Error',
-          'Failed to enable push notifications. Please try again.'
+
+        // Still save the preference
+        const success = await NotificationPreferencesService.updatePreference(
+          user.userId,
+          key,
+          value
         );
-        return; // Don't update preference on error
+
+        if (success) {
+          setPreferences(prev => prev ? { ...prev, [key]: value } : null);
+        }
+
+        showAlert(
+          'Notifications Enabled',
+          'Push notifications preference saved. If you denied permission, you can enable it later in your device settings.'
+        );
+        return;
       }
     }
 
