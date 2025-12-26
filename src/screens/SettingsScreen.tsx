@@ -34,6 +34,36 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
     loadPrivacySettings();
   }, []);
 
+  // Auto-trigger permission prompt if push is enabled but no token for this device
+  useEffect(() => {
+    const checkAndRegisterToken = async () => {
+      if (!user || !preferences || !preferences.pushEnabled) return;
+
+      try {
+        // Check if this device already has an active token
+        const { data: tokens } = await client.models.PushToken.list({
+          filter: {
+            userId: { eq: user.userId },
+            platform: { eq: Platform.OS.toUpperCase() as 'IOS' | 'ANDROID' | 'WEB' },
+            isActive: { eq: true }
+          }
+        });
+
+        // If push is enabled but no token exists for this device, auto-register
+        if (!tokens || tokens.length === 0) {
+          console.log('[Settings] Push enabled but no token for this device, auto-registering...');
+          await NotificationService.registerPushToken(user.userId);
+          console.log('[Settings] ✅ Auto-registration complete');
+        }
+      } catch (error) {
+        console.error('[Settings] Auto-registration failed:', error);
+        // Silent fail - user can manually toggle if needed
+      }
+    };
+
+    checkAndRegisterToken();
+  }, [user, preferences]);
+
   const loadPreferences = async () => {
     if (!user) {
       setIsLoading(false);
