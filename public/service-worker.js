@@ -30,8 +30,8 @@ self.addEventListener('push', (event) => {
   let notificationData = {
     title: 'SideBet Notification',
     body: 'You have a new notification',
-    icon: '/assets/icon.png',
-    badge: '/assets/icon.png',
+    icon: '/assets/icon-192.png',
+    badge: '/assets/icon-192.png',
     tag: 'default',
     data: {}
   };
