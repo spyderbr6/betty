@@ -24,6 +24,8 @@ export interface LiveEvent {
   country?: string;
   homeScore: number;
   awayScore: number;
+  homePeriodScores?: number[]; // Array of period scores [Q1, Q2, Q3, Q4, ...OT] - index is period number
+  awayPeriodScores?: number[]; // Array of period scores [Q1, Q2, Q3, Q4, ...OT] - index is period number
   status: EventStatus;
   quarter?: string; // e.g., "Q1", "Q2", "Halftime"
   timeLeft?: string; // e.g., "8:42"

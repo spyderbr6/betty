@@ -499,6 +499,8 @@ const schema = a.schema({
       // Scores
       homeScore: a.integer().default(0),
       awayScore: a.integer().default(0),
+      homePeriodScores: a.json(), // Array of period scores [Q1, Q2, Q3, Q4, ...OT] - index is period number
+      awayPeriodScores: a.json(), // Array of period scores [Q1, Q2, Q3, Q4, ...OT] - index is period number
       // Game state
       status: a.enum(['UPCOMING', 'LIVE', 'HALFTIME', 'FINISHED', 'POSTPONED', 'CANCELLED']),
       quarter: a.string(), // e.g., "Q1", "Q2", "Halftime", "OT"
