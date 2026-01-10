@@ -23,11 +23,16 @@ interface ESPNTeam {
   displayName: string;
 }
 
+interface ESPNLinescore {
+  value: number;
+}
+
 interface ESPNCompetitor {
   id: string;
   homeAway: 'home' | 'away';
   team: ESPNTeam;
   score: string;
+  linescores?: ESPNLinescore[];
   winner?: boolean;
 }
 
@@ -267,6 +272,8 @@ async function upsertEvent(event: ESPNEvent, league: string): Promise<void> {
       country: undefined, // ESPN doesn't provide country in this endpoint
       homeScore: parseInt(homeCompetitor.score) || 0,
       awayScore: parseInt(awayCompetitor.score) || 0,
+      homePeriodScores: homeCompetitor.linescores?.map(ls => ls.value) || undefined,
+      awayPeriodScores: awayCompetitor.linescores?.map(ls => ls.value) || undefined,
       status: status,
       isActive: isActive, // Lifecycle state managed by Lambda for efficient querying (1=active, 0=inactive)
       quarter: competition.status.period ? `Period ${competition.status.period}` : undefined,
