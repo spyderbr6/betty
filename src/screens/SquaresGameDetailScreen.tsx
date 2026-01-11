@@ -29,7 +29,7 @@ import { SquaresGameService } from '../services/squaresGameService';
 const client = generateClient<Schema>();
 
 export const SquaresGameDetailScreen = ({ route, navigation }: any) => {
-  const { squaresGameId } = route.params;
+  const { gameId } = route.params; // Changed from squaresGameId to match navigation
   const { user } = useAuth();
 
   const [game, setGame] = useState<any>(null);
@@ -45,7 +45,7 @@ export const SquaresGameDetailScreen = ({ route, navigation }: any) => {
   const loadGameData = useCallback(async () => {
     try {
       // Get game
-      const { data: gameData } = await client.models.SquaresGame.get({ id: squaresGameId });
+      const { data: gameData } = await client.models.SquaresGame.get({ id: gameId });
       if (!gameData) {
         showAlert('Game Not Found', 'This squares game could not be found.');
         navigation.goBack();
@@ -59,13 +59,13 @@ export const SquaresGameDetailScreen = ({ route, navigation }: any) => {
 
       // Get purchases
       const { data: purchasesData } = await client.models.SquaresPurchase.purchasesBySquaresGame({
-        squaresGameId,
+        squaresGameId: gameId,
       });
       setPurchases(purchasesData || []);
 
       // Get payouts
       const { data: payoutsData } = await client.models.SquaresPayout.payoutsBySquaresGame({
-        squaresGameId,
+        squaresGameId: gameId,
       });
       setPayouts(payoutsData || []);
     } catch (error) {
@@ -75,7 +75,7 @@ export const SquaresGameDetailScreen = ({ route, navigation }: any) => {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [squaresGameId, navigation]);
+  }, [gameId, navigation]);
 
   useEffect(() => {
     loadGameData();
