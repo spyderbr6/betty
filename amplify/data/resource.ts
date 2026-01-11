@@ -1,5 +1,6 @@
 import { type ClientSchema, a, defineData } from "@aws-amplify/backend";
 import { scheduledBetChecker } from "../functions/scheduled-bet-checker/resource";
+import { scheduledSquaresChecker } from "../functions/scheduled-squares-checker/resource";
 import { pushNotificationSender } from "../functions/push-notification-sender/resource";
 import { eventFetcher } from "../functions/event-fetcher/resource";
 import { payoutProcessor } from "../functions/payout-processor/resource";
@@ -667,7 +668,7 @@ const schema = a.schema({
       allow.authenticated().to(['read', 'create', 'update'])
     ]),
 
-  // Scheduled Lambda Function
+  // Scheduled Lambda Functions
   scheduledBetChecker: a
     .query()
     .arguments({
@@ -675,6 +676,15 @@ const schema = a.schema({
     })
     .returns(a.boolean())
     .handler(a.handler.function(scheduledBetChecker))
+    .authorization((allow) => [allow.authenticated()]),
+
+  scheduledSquaresChecker: a
+    .query()
+    .arguments({
+      triggerTime: a.string().required()  // ISO timestamp when triggered
+    })
+    .returns(a.boolean())
+    .handler(a.handler.function(scheduledSquaresChecker))
     .authorization((allow) => [allow.authenticated()]),
 
   // Push Notification Function
@@ -704,6 +714,7 @@ const schema = a.schema({
 }).authorization((allow) => [
   // Allow the Lambda functions to be invoked and access data
   allow.resource(scheduledBetChecker).to(["query", "listen", "mutate"]),
+  allow.resource(scheduledSquaresChecker).to(["query", "listen", "mutate"]),
   allow.resource(pushNotificationSender).to(["query", "listen", "mutate"]),
   allow.resource(eventFetcher).to(["query", "listen", "mutate"]),
   allow.resource(payoutProcessor).to(["query", "listen", "mutate"]),
