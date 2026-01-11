@@ -80,10 +80,10 @@ export const BettingHistoryScreen: React.FC<BettingHistoryScreenProps> = ({ onCl
         ALL: [],
         DEPOSITS: ['DEPOSIT'],
         WITHDRAWALS: ['WITHDRAWAL'],
-        BETS: ['BET_PLACED'],
-        WINNINGS: ['BET_WON'],
+        BETS: ['BET_PLACED', 'SQUARES_PURCHASE'],
+        WINNINGS: ['BET_WON', 'SQUARES_PAYOUT'],
         LOSSES: ['BET_LOST'],
-        REFUNDS: ['BET_CANCELLED', 'BET_REFUND'],
+        REFUNDS: ['BET_CANCELLED', 'BET_REFUND', 'SQUARES_REFUND'],
       };
 
       const types = typeMap[filter] || [];
@@ -187,6 +187,9 @@ const TransactionCard: React.FC<TransactionCardProps> = ({ transaction }) => {
       case 'BET_LOST': return 'close-circle';
       case 'BET_CANCELLED':
       case 'BET_REFUND': return 'refresh-circle';
+      case 'SQUARES_PURCHASE': return 'grid';
+      case 'SQUARES_PAYOUT': return 'trophy';
+      case 'SQUARES_REFUND': return 'refresh-circle';
       case 'ADMIN_ADJUSTMENT': return 'settings';
       default: return 'swap-horizontal';
     }
@@ -201,9 +204,12 @@ const TransactionCard: React.FC<TransactionCardProps> = ({ transaction }) => {
       case 'BET_WON':
       case 'BET_CANCELLED':
       case 'BET_REFUND':
+      case 'SQUARES_PAYOUT':
+      case 'SQUARES_REFUND':
         return colors.success;
       case 'WITHDRAWAL':
       case 'BET_PLACED':
+      case 'SQUARES_PURCHASE':
         return colors.error;
       case 'BET_LOST':
         return colors.textMuted; // Neutral color for lost bets (no balance change)
@@ -223,18 +229,26 @@ const TransactionCard: React.FC<TransactionCardProps> = ({ transaction }) => {
       case 'BET_LOST': return 'Bet Lost';
       case 'BET_CANCELLED': return 'Bet Cancelled';
       case 'BET_REFUND': return 'Refund';
+      case 'SQUARES_PURCHASE': return 'Squares Purchased';
+      case 'SQUARES_PAYOUT': return 'Squares Won';
+      case 'SQUARES_REFUND': return 'Squares Refund';
       case 'ADMIN_ADJUSTMENT': return 'Adjustment';
       default: return 'Transaction';
     }
   };
 
   const getTransactionDescription = () => {
-    if (transaction.notes) return transaction.notes;
+    // If notes field has content, use it (contains bet title or specific description)
+    if (transaction.notes && transaction.notes.trim()) {
+      // For bet transactions, notes contains the bet title or description
+      return transaction.notes;
+    }
 
+    // Fallback descriptions if notes is empty
     switch (transaction.type) {
       case 'DEPOSIT': {
         const baseName = transaction.venmoUsername
-          ? `From Venmo ${transaction.venmoUsername}`
+          ? `From Venmo @${transaction.venmoUsername}`
           : 'Deposit to account';
 
         // Show fee if actualAmount differs from requested amount
@@ -246,7 +260,7 @@ const TransactionCard: React.FC<TransactionCardProps> = ({ transaction }) => {
       }
       case 'WITHDRAWAL': {
         const baseName = transaction.venmoUsername
-          ? `To Venmo ${transaction.venmoUsername}`
+          ? `To Venmo @${transaction.venmoUsername}`
           : 'Withdrawal from account';
 
         // Show platform fee (2%) and Venmo fee if present
@@ -264,22 +278,43 @@ const TransactionCard: React.FC<TransactionCardProps> = ({ transaction }) => {
         return feeInfo ? `${baseName} (${feeInfo})` : baseName;
       }
       case 'BET_PLACED':
-        return 'Joined a bet';
+        // Show bet ID as fallback if no title in notes
+        return transaction.relatedBetId
+          ? `Bet ID: ${transaction.relatedBetId.substring(0, 8)}...`
+          : 'Joined a bet';
       case 'BET_WON': {
-        // Show platform fee if present
+        // Show bet ID and platform fee if present
+        let description = transaction.relatedBetId
+          ? `Bet ID: ${transaction.relatedBetId.substring(0, 8)}...`
+          : 'Winnings payout';
+
         if (transaction.platformFee && transaction.platformFee > 0) {
-          return `Winnings payout (Platform fee: ${formatCurrency(transaction.platformFee)})`;
+          description += ` (Fee: ${formatCurrency(transaction.platformFee)})`;
         }
-        return 'Winnings payout';
+        return description;
       }
       case 'BET_LOST':
-        return 'Lost bet - tracking record';
+        return transaction.relatedBetId
+          ? `Bet ID: ${transaction.relatedBetId.substring(0, 8)}...`
+          : 'Lost bet - tracking record';
       case 'BET_CANCELLED':
-        return 'Bet cancelled - refund';
+        return transaction.relatedBetId
+          ? `Bet ID: ${transaction.relatedBetId.substring(0, 8)}... - Refunded`
+          : 'Bet cancelled - refund';
       case 'BET_REFUND':
         return 'Manual refund';
       case 'ADMIN_ADJUSTMENT':
-        return 'Balance adjustment';
+        return 'Balance adjustment by admin';
+      case 'SQUARES_PURCHASE':
+        return transaction.relatedSquaresGameId
+          ? `Squares ID: ${transaction.relatedSquaresGameId.substring(0, 8)}...`
+          : 'Purchased squares';
+      case 'SQUARES_PAYOUT':
+        return transaction.relatedSquaresGameId
+          ? `Squares ID: ${transaction.relatedSquaresGameId.substring(0, 8)}...`
+          : 'Squares period winner';
+      case 'SQUARES_REFUND':
+        return 'Squares game cancelled - refund';
       default:
         return 'Transaction';
     }
@@ -326,7 +361,9 @@ const TransactionCard: React.FC<TransactionCardProps> = ({ transaction }) => {
     const isCredit = transaction.type === 'DEPOSIT' ||
                      transaction.type === 'BET_WON' ||
                      transaction.type === 'BET_CANCELLED' ||
-                     transaction.type === 'BET_REFUND';
+                     transaction.type === 'BET_REFUND' ||
+                     transaction.type === 'SQUARES_PAYOUT' ||
+                     transaction.type === 'SQUARES_REFUND';
 
     let displayAmount = transaction.amount;
 
@@ -354,7 +391,9 @@ const TransactionCard: React.FC<TransactionCardProps> = ({ transaction }) => {
   const isCredit = transaction.type === 'DEPOSIT' ||
                    transaction.type === 'BET_WON' ||
                    transaction.type === 'BET_CANCELLED' ||
-                   transaction.type === 'BET_REFUND';
+                   transaction.type === 'BET_REFUND' ||
+                   transaction.type === 'SQUARES_PAYOUT' ||
+                   transaction.type === 'SQUARES_REFUND';
 
   // BET_LOST is neutral (no balance change)
   const isNeutral = transaction.type === 'BET_LOST';
