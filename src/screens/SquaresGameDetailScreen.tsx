@@ -240,7 +240,11 @@ export const SquaresGameDetailScreen = ({ route, navigation }: any) => {
         {/* Payout Structure */}
         <View style={styles.payoutCard}>
           <Text style={styles.cardTitle}>Prize Breakdown</Text>
-          {Object.entries(game.payoutStructure).map(([period, percentage]: [string, any]) => {
+          {Object.entries(
+            typeof game.payoutStructure === 'string'
+              ? JSON.parse(game.payoutStructure)
+              : game.payoutStructure
+          ).map(([period, percentage]: [string, any]) => {
             const periodNum = parseInt(period.replace('period', ''));
             const amount = game.totalPot * percentage;
             const netAmount = amount * 0.97; // After 3% fee
