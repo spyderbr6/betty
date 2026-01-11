@@ -532,7 +532,8 @@ const schema = a.schema({
       createdAt: a.datetime(),
       updatedAt: a.datetime(),
       // Relations
-      checkIns: a.hasMany('EventCheckIn', 'eventId')
+      checkIns: a.hasMany('EventCheckIn', 'eventId'),
+      squaresGames: a.hasMany('SquaresGame', 'eventId')
     })
     .secondaryIndexes((index) => [
       index('status').sortKeys(['scheduledTime']).queryField('listEventsByStatusAndTime'),
