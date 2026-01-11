@@ -79,7 +79,7 @@ export class SquaresGameService {
         description,
         pricePerSquare,
         totalPot: 0,
-        payoutStructure: payoutStructure as any,
+        payoutStructure: JSON.stringify(payoutStructure), // Schema expects JSON string
         status: 'ACTIVE',
         squaresSold: 0,
         numbersAssigned: false,
