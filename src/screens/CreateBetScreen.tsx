@@ -554,6 +554,7 @@ export const CreateBetScreen: React.FC = () => {
         description: squaresDescription.trim() || undefined,
         pricePerSquare: price,
         payoutStructure,
+        isPrivate,
       });
 
       if (game?.id) {
@@ -577,6 +578,8 @@ export const CreateBetScreen: React.FC = () => {
         setPeriod2Payout(25);
         setPeriod3Payout(15);
         setPeriod4Payout(45);
+        setIsPrivate(false);
+        setSelectedFriends(new Set());
       } else {
         throw new Error('Game creation returned invalid response');
       }
@@ -1029,13 +1032,17 @@ export const CreateBetScreen: React.FC = () => {
           )}
         </View>
 
-        {/* Bet Settings */}
+          </>
+        )}
+        {/* End of conditional form */}
+
+        {/* Bet Settings - Shared by both bet types */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>BET SETTINGS</Text>
-          
+          <Text style={styles.sectionTitle}>SETTINGS</Text>
+
           <View style={styles.settingRow}>
             <View>
-              <Text style={styles.settingLabel}>Private Bet</Text>
+              <Text style={styles.settingLabel}>Private {selectedTemplate === 'squares' ? 'Game' : 'Bet'}</Text>
               <Text style={styles.settingDescription}>Only invited users can join</Text>
             </View>
             <Switch
@@ -1047,10 +1054,10 @@ export const CreateBetScreen: React.FC = () => {
           </View>
         </View>
 
-        {/* Friend Invitations Section */}
+        {/* Friend Invitations Section - Shared by both bet types */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>INVITE FRIENDS</Text>
-          <Text style={styles.sectionSubtitle}>Select friends to invite to this bet</Text>
+          <Text style={styles.sectionSubtitle}>Select friends to invite to this {selectedTemplate === 'squares' ? 'game' : 'bet'}</Text>
 
           {friends.length > 0 ? (
             <>
@@ -1101,13 +1108,10 @@ export const CreateBetScreen: React.FC = () => {
             <View style={styles.noFriendsContainer}>
               <Ionicons name="people-outline" size={32} color={colors.textMuted} />
               <Text style={styles.noFriendsText}>No friends to invite</Text>
-              <Text style={styles.noFriendsSubtext}>Add friends to invite them to your bets</Text>
+              <Text style={styles.noFriendsSubtext}>Add friends to invite them to your {selectedTemplate === 'squares' ? 'games' : 'bets'}</Text>
             </View>
           )}
         </View>
-          </>
-        )}
-        {/* End of conditional form */}
 
         {/* Create Button */}
         <View style={styles.createButtonContainer}>

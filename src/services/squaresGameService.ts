@@ -30,6 +30,7 @@ export interface CreateSquaresGameParams {
   description?: string;
   pricePerSquare: number;
   payoutStructure?: PayoutStructure;
+  isPrivate?: boolean;
 }
 
 export interface PurchaseSquaresParams {
@@ -57,6 +58,7 @@ export class SquaresGameService {
           period3: 0.15,
           period4: 0.45,
         },
+        isPrivate = false,
       } = params;
 
       // Validate payout structure totals 100%
@@ -82,6 +84,7 @@ export class SquaresGameService {
         payoutStructure: JSON.stringify(payoutStructure), // Schema expects JSON string
         status: 'ACTIVE',
         squaresSold: 0,
+        isPrivate,
         numbersAssigned: false,
         locksAt: event.scheduledTime, // Lock at game start time
         expiresAt: event.scheduledTime, // Will be updated when event finishes
