@@ -42,6 +42,9 @@ export type BetsStackParamList = {
   UserProfile: {
     userId: string;
   };
+  SquaresGameDetail: {
+    gameId: string;
+  };
 };
 
 // Live Stack Navigator (live betting screens)
@@ -140,6 +143,7 @@ export const SCREENS = {
   BET_DETAILS: 'BetDetails' as const,
   JOIN_BET: 'JoinBet' as const,
   USER_PROFILE: 'UserProfile' as const,
+  SQUARES_GAME_DETAIL: 'SquaresGameDetail' as const,
   
   // Live
   LIVE_EVENTS: 'LiveEvents' as const,
