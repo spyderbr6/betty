@@ -513,10 +513,23 @@ export const CreateBetScreen: React.FC = () => {
   const handleCreateSquares = async () => {
     if (!user) return;
 
+    // Validate selectedEvent
+    if (!selectedEvent?.id) {
+      showAlert('No Event Selected', 'Please select an event for your squares game.');
+      return;
+    }
+
     setIsCreating(true);
 
     try {
       const price = parseFloat(pricePerSquare);
+
+      // Validate price
+      if (isNaN(price) || price < 1 || price > 100) {
+        showAlert('Invalid Price', 'Price per square must be between $1 and $100.');
+        setIsCreating(false);
+        return;
+      }
 
       // Create payout structure (convert percentages to decimals)
       const payoutStructure = {
@@ -526,8 +539,15 @@ export const CreateBetScreen: React.FC = () => {
         period4: period4Payout / 100,
       };
 
-      // Create squares game
-      const gameId = await SquaresGameService.createSquaresGame({
+      console.log('[CreateSquares] Creating game with:', {
+        eventId: selectedEvent.id,
+        price,
+        payoutStructure,
+        eventTitle: `${selectedEvent.awayTeamCode || selectedEvent.awayTeam} @ ${selectedEvent.homeTeamCode || selectedEvent.homeTeam}`,
+      });
+
+      // Create squares game (service returns full game object)
+      const game = await SquaresGameService.createSquaresGame({
         creatorId: user.userId,
         eventId: selectedEvent.id,
         title: `${selectedEvent.awayTeamCode || selectedEvent.awayTeam} @ ${selectedEvent.homeTeamCode || selectedEvent.homeTeam} Squares`,
@@ -536,7 +556,9 @@ export const CreateBetScreen: React.FC = () => {
         payoutStructure,
       });
 
-      if (gameId) {
+      if (game?.id) {
+        console.log('[CreateSquares] Successfully created game:', game.id);
+
         // Scroll to top and show toast
         scrollRef.current?.scrollTo({ y: 0, animated: true });
 
@@ -555,12 +577,15 @@ export const CreateBetScreen: React.FC = () => {
         setPeriod2Payout(25);
         setPeriod3Payout(15);
         setPeriod4Payout(45);
+      } else {
+        throw new Error('Game creation returned invalid response');
       }
-    } catch (error) {
-      console.error('Error creating squares game:', error);
+    } catch (error: any) {
+      console.error('[CreateSquares] Error creating squares game:', error);
+      const errorMessage = error?.message || 'Unknown error occurred';
       showAlert(
         'Error',
-        'Failed to create squares game. Please try again.',
+        `Failed to create squares game: ${errorMessage}`,
         [{ text: 'OK' }]
       );
     } finally {
