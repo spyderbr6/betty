@@ -20,6 +20,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { commonStyles, colors, spacing, typography, textStyles } from '../styles';
 import { Header } from '../components/ui/Header';
 import { BetCard } from '../components/betting/BetCard';
+import { SquaresGameCard } from '../components/betting/SquaresGameCard';
 import { BetInviteModal } from '../components/ui/BetInviteModal';
 import { Bet, BetInvitation, BetInvitationStatus, User, ParticipantStatus } from '../types/betting';
 import { useAuth } from '../contexts/AuthContext';
@@ -72,10 +73,25 @@ const transformAmplifyBet = (bet: any): Bet | null => {
   };
 };
 
+interface SquaresGame {
+  id: string;
+  creatorId: string;
+  eventId: string;
+  title: string;
+  description?: string;
+  status: string;
+  pricePerSquare: number;
+  totalPot: number;
+  squaresSold: number;
+  numbersAssigned: boolean;
+  createdAt: string;
+}
+
 export const BetsScreen: React.FC = () => {
   const { user } = useAuth();
   const insets = useSafeAreaInsets();
   const [bets, setBets] = useState<Bet[]>([]);
+  const [squaresGames, setSquaresGames] = useState<SquaresGame[]>([]);
   const [betInvitations, setBetInvitations] = useState<BetInvitation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -90,9 +106,9 @@ export const BetsScreen: React.FC = () => {
   const [selectedBetForInvite, setSelectedBetForInvite] = useState<Bet | null>(null);
 
   useEffect(() => {
-    // Fetch initial bet data, bet invitations, and set up real-time subscriptions
+    // Fetch initial bet data, squares games, bet invitations, and set up real-time subscriptions
     const fetchData = async () => {
-      await Promise.all([fetchBets(), fetchBetInvitations()]);
+      await Promise.all([fetchBets(), fetchSquaresGames(), fetchBetInvitations()]);
     };
 
     if (user?.userId) {
@@ -251,6 +267,68 @@ export const BetsScreen: React.FC = () => {
       console.error('❌ Error bulk loading user bets:', error);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const fetchSquaresGames = async () => {
+    if (!user?.userId) return;
+
+    try {
+      // Fetch squares games where user is creator or has purchases
+      const [creatorGames, purchases] = await Promise.all([
+        client.models.SquaresGame.list({
+          filter: { creatorId: { eq: user.userId } }
+        }),
+        client.models.SquaresPurchase.list({
+          filter: { userId: { eq: user.userId } }
+        })
+      ]);
+
+      // Get unique game IDs from purchases
+      const purchasedGameIds = new Set(
+        (purchases.data || []).map(p => p.squaresGameId).filter(Boolean)
+      );
+
+      // Fetch games where user has purchases (excluding already loaded creator games)
+      const creatorGameIds = new Set((creatorGames.data || []).map(g => g.id));
+      const additionalGameIds = Array.from(purchasedGameIds).filter(
+        id => !creatorGameIds.has(id)
+      );
+
+      const additionalGames = await Promise.all(
+        additionalGameIds.map(id => client.models.SquaresGame.get({ id }))
+      );
+
+      // Combine all games
+      const allGames = [
+        ...(creatorGames.data || []),
+        ...additionalGames.map(g => g.data).filter(Boolean)
+      ];
+
+      // Transform and filter for ACTIVE, LOCKED, or LIVE games
+      const transformedGames: SquaresGame[] = allGames
+        .filter(game =>
+          game &&
+          (game.status === 'ACTIVE' || game.status === 'LOCKED' || game.status === 'LIVE')
+        )
+        .map(game => ({
+          id: game.id!,
+          creatorId: game.creatorId!,
+          eventId: game.eventId!,
+          title: game.title!,
+          description: game.description || undefined,
+          status: game.status!,
+          pricePerSquare: game.pricePerSquare || 0,
+          totalPot: game.totalPot || 0,
+          squaresSold: game.squaresSold || 0,
+          numbersAssigned: game.numbersAssigned || false,
+          createdAt: game.createdAt || new Date().toISOString(),
+        }))
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+      setSquaresGames(transformedGames);
+    } catch (error) {
+      console.error('❌ Error fetching squares games:', error);
     }
   };
 
@@ -497,10 +575,15 @@ export const BetsScreen: React.FC = () => {
       // Clear cache for fresh data on manual refresh
       clearBulkLoadingCache();
 
-      await Promise.all([fetchBets(), fetchBetInvitations()]);
+      await Promise.all([fetchBets(), fetchSquaresGames(), fetchBetInvitations()]);
     } finally {
       setRefreshing(false);
     }
+  };
+
+  const handleSquaresGamePress = (gameId: string) => {
+    // TODO: Navigate to SquaresGameDetailScreen
+    console.log('Navigate to squares game:', gameId);
   };
 
   // Set up real-time subscriptions with debouncing
@@ -695,37 +778,69 @@ export const BetsScreen: React.FC = () => {
         {isLoading ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={colors.primary} />
-            <Text style={styles.loadingText}>Loading bets...</Text>
+            <Text style={styles.loadingText}>Loading...</Text>
           </View>
-        ) : filteredBets.length > 0 ? (
-          filteredBets.map((bet) => (
-            <BetCard
-              key={bet.id}
-              bet={bet}
-              onPress={handleBetPress}
-              onJoinBet={handleJoinBet}
-              onInviteFriends={(bet) => {
-                setSelectedBetForInvite(bet);
-                setShowInviteModal(true);
-              }}
-              onEndBet={handleEndBet}
-            />
-          ))
         ) : (
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyTitle}>No Active Bets</Text>
-            <Text style={styles.emptyDescription}>
-              You don't have any active bets at the moment. Create or join a bet to get started!
-            </Text>
-          </View>
+          <>
+            {/* Squares Games Section */}
+            {squaresGames.length > 0 && (
+              <>
+                <View style={styles.sectionHeader}>
+                  <Text style={styles.sectionTitle}>BETTING SQUARES</Text>
+                </View>
+
+                {squaresGames.map((game) => (
+                  <SquaresGameCard
+                    key={game.id}
+                    game={game}
+                    onPress={() => handleSquaresGamePress(game.id)}
+                  />
+                ))}
+              </>
+            )}
+
+            {/* Bets Section */}
+            {filteredBets.length > 0 ? (
+              <>
+                {squaresGames.length > 0 && (
+                  <View style={styles.sectionHeader}>
+                    <Text style={styles.sectionTitle}>ACTIVE BETS</Text>
+                  </View>
+                )}
+                {filteredBets.map((bet) => (
+                  <BetCard
+                    key={bet.id}
+                    bet={bet}
+                    onPress={handleBetPress}
+                    onJoinBet={handleJoinBet}
+                    onInviteFriends={(bet) => {
+                      setSelectedBetForInvite(bet);
+                      setShowInviteModal(true);
+                    }}
+                    onEndBet={handleEndBet}
+                  />
+                ))}
+              </>
+            ) : null}
+
+            {/* Empty State - only show if no bets AND no squares */}
+            {filteredBets.length === 0 && squaresGames.length === 0 && (
+              <View style={styles.emptyContainer}>
+                <Text style={styles.emptyTitle}>No Active Games</Text>
+                <Text style={styles.emptyDescription}>
+                  You don't have any active bets or squares games at the moment. Create or join one to get started!
+                </Text>
+              </View>
+            )}
+          </>
         )}
 
         {/* Bottom Stats */}
         <View style={styles.bottomStatsContainer}>
           <View style={styles.statsRow}>
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>{filteredBets.length}</Text>
-              <Text style={styles.statLabel}>BETS</Text>
+              <Text style={styles.statValue}>{filteredBets.length + squaresGames.length}</Text>
+              <Text style={styles.statLabel}>ACTIVE</Text>
             </View>
 
             <View style={styles.statItem}>
