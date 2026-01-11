@@ -22,9 +22,15 @@ export const SquaresGameCard: React.FC<SquaresGameCardProps> = ({
   onPress,
   compact = false,
 }) => {
+  // Guard against undefined game data
+  if (!squaresGame) {
+    console.warn('[SquaresGameCard] Received undefined squaresGame prop');
+    return null;
+  }
+
   // Calculate availability
-  const squaresAvailable = 100 - squaresGame.squaresSold;
-  const percentageSold = (squaresGame.squaresSold / 100) * 100;
+  const squaresAvailable = 100 - (squaresGame.squaresSold || 0);
+  const percentageSold = ((squaresGame.squaresSold || 0) / 100) * 100;
 
   // Status badge color
   const getStatusColor = (status: string) => {

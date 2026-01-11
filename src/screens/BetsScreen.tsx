@@ -792,7 +792,7 @@ export const BetsScreen: React.FC = () => {
                 {squaresGames.map((game) => (
                   <SquaresGameCard
                     key={game.id}
-                    game={game}
+                    squaresGame={game}
                     onPress={() => handleSquaresGamePress(game.id)}
                   />
                 ))}
