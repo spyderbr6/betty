@@ -111,7 +111,7 @@ async function lockGridsReadyForLocking(): Promise<number> {
         squaresGameId: game.id
       });
 
-      const buyerIds = new Set(purchases?.map(p => p.userId) || []);
+      const buyerIds = new Set(purchases?.map((p: any) => p.userId) || []);
 
       // Send notifications to all buyers
       for (const buyerId of buyerIds) {
@@ -184,7 +184,7 @@ async function startGamesWhenEventLive(): Promise<number> {
         squaresGameId: game.id
       });
 
-      const buyerIds = new Set(purchases?.map(p => p.userId) || []);
+      const buyerIds = new Set(purchases?.map((p: any) => p.userId) || []);
 
       // Send notifications
       for (const buyerId of buyerIds) {
