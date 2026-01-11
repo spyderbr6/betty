@@ -44,6 +44,44 @@ export const formatPercentage = (
 };
 
 // Date and time formatting
+export const formatDateTime = (
+  date: string | Date,
+  format: 'full' | 'short' | 'date' | 'time' = 'full'
+): string => {
+  const d = typeof date === 'string' ? new Date(date) : date;
+
+  switch (format) {
+    case 'short':
+      return d.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+      });
+    case 'date':
+      return d.toLocaleDateString('en-US', {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      });
+    case 'time':
+      return d.toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+      });
+    case 'full':
+    default:
+      return d.toLocaleDateString('en-US', {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+      });
+  }
+};
+
 export const dateFormatting = {
   // Format date for betting deadlines
   formatDeadline: (date: string | Date): string => {
