@@ -17,17 +17,22 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
+import { StackNavigationProp } from '@react-navigation/stack';
 import { commonStyles, colors, spacing, typography, textStyles } from '../styles';
 import { Header } from '../components/ui/Header';
 import { BetCard } from '../components/betting/BetCard';
 import { SquaresGameCard } from '../components/betting/SquaresGameCard';
 import { BetInviteModal } from '../components/ui/BetInviteModal';
 import { Bet, BetInvitation, BetInvitationStatus, User, ParticipantStatus } from '../types/betting';
+import { BetsStackParamList } from '../types/navigation';
 import { useAuth } from '../contexts/AuthContext';
 import { NotificationService } from '../services/notificationService';
 import { TransactionService } from '../services/transactionService';
 import { bulkLoadUserBetsWithParticipants, clearBulkLoadingCache } from '../services/bulkLoadingService';
 import { showAlert } from '../components/ui/CustomAlert';
+
+type BetsScreenNavigationProp = StackNavigationProp<BetsStackParamList, 'BetsList'>;
 
 // Initialize GraphQL client
 const client = generateClient<Schema>();
@@ -89,6 +94,7 @@ interface SquaresGame {
 
 export const BetsScreen: React.FC = () => {
   const { user } = useAuth();
+  const navigation = useNavigation<BetsScreenNavigationProp>();
   const insets = useSafeAreaInsets();
   const [bets, setBets] = useState<Bet[]>([]);
   const [squaresGames, setSquaresGames] = useState<SquaresGame[]>([]);
@@ -582,8 +588,8 @@ export const BetsScreen: React.FC = () => {
   };
 
   const handleSquaresGamePress = (gameId: string) => {
-    // TODO: Navigate to SquaresGameDetailScreen
-    console.log('Navigate to squares game:', gameId);
+    console.log('[BetsScreen] Navigating to squares game:', gameId);
+    navigation.navigate('SquaresGameDetail', { gameId });
   };
 
   // Set up real-time subscriptions with debouncing
