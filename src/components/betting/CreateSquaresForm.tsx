@@ -119,18 +119,15 @@ export const CreateSquaresForm: React.FC<CreateSquaresFormProps> = ({
     try {
       const price = parseFloat(pricePerSquare);
 
-      // Create payout structure
+      // Create payout structure (convert percentages to decimals)
       const payoutStructure = {
-        period1: period1Payout,
-        period2: period2Payout,
-        period3: period3Payout,
-        period4: period4Payout,
+        period1: period1Payout / 100,
+        period2: period2Payout / 100,
+        period3: period3Payout / 100,
+        period4: period4Payout / 100,
       };
 
-      // Lock time defaults to game start (scheduledTime)
-      const locksAt = new Date(selectedEvent.scheduledTime);
-
-      // Create squares game
+      // Create squares game (locksAt is automatically set to event scheduledTime)
       const gameId = await SquaresGameService.createSquaresGame({
         creatorId: user.userId,
         eventId: selectedEvent.id,
@@ -138,7 +135,6 @@ export const CreateSquaresForm: React.FC<CreateSquaresFormProps> = ({
         description: description.trim() || undefined,
         pricePerSquare: price,
         payoutStructure,
-        locksAt,
       });
 
       if (gameId) {

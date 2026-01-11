@@ -3,6 +3,7 @@ import { generateClient } from 'aws-amplify/api';
 import type { Schema } from '../../data/resource';
 import { Amplify } from 'aws-amplify';
 import { getAmplifyDataClientConfig } from '@aws-amplify/backend/function/runtime';
+// @ts-ignore - Generated at build time by Amplify
 import { env } from '$amplify/env/payout-processor';
 
 const { resourceConfig, libraryOptions } = await getAmplifyDataClientConfig(env);
