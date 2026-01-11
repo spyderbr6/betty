@@ -30,6 +30,8 @@ import { TransactionService } from '../services/transactionService';
 import { getProfilePictureUrl } from '../services/imageUploadService';
 import { useEventCheckIn } from '../hooks/useEventCheckIn';
 import { showAlert } from '../components/ui/CustomAlert';
+import { SquaresGameService } from '../services/squaresGameService';
+import { EventPickerModal } from '../components/modals/EventPickerModal';
 
 interface BetTemplate {
   id: string;
@@ -80,6 +82,17 @@ export const CreateBetScreen: React.FC = () => {
   // Friend selection state
   const [friends, setFriends] = useState<User[]>([]);
   const [selectedFriends, setSelectedFriends] = useState<Set<string>>(new Set());
+
+  // Squares-specific state
+  const [selectedEvent, setSelectedEvent] = useState<any>(null);
+  const [showEventPicker, setShowEventPicker] = useState(false);
+  const [pricePerSquare, setPricePerSquare] = useState('10.00');
+  const [isPriceFocused, setIsPriceFocused] = useState(false);
+  const [squaresDescription, setSquaresDescription] = useState('');
+  const [period1Payout, setPeriod1Payout] = useState(15);
+  const [period2Payout, setPeriod2Payout] = useState(25);
+  const [period3Payout, setPeriod3Payout] = useState(15);
+  const [period4Payout, setPeriod4Payout] = useState(45);
 
   // Toast state
   const [showToast, setShowToast] = useState(false);
@@ -158,6 +171,16 @@ export const CreateBetScreen: React.FC = () => {
   );
 
   const betTemplates: BetTemplate[] = [
+    {
+      id: 'squares',
+      displayName: 'Betting Squares',
+      category: 'SPORTS',
+      icon: '🎲',
+      titlePlaceholder: '',
+      descriptionPlaceholder: '',
+      sideAPlaceholder: '',
+      sideBPlaceholder: '',
+    },
     {
       id: 'next-score',
       displayName: 'Next Score',
@@ -306,6 +329,12 @@ export const CreateBetScreen: React.FC = () => {
   })();
 
   const handleCreateBet = async () => {
+    // Branch based on bet type
+    if (selectedTemplate === 'squares') {
+      return handleCreateSquares();
+    }
+
+    // Standard bet validation
     if (!betTitle.trim() || !betDescription.trim() || !betAmount.trim()) {
       showAlert('Missing Information', 'Please fill in all required fields.');
       return;
@@ -481,6 +510,64 @@ export const CreateBetScreen: React.FC = () => {
     }
   };
 
+  const handleCreateSquares = async () => {
+    if (!user) return;
+
+    setIsCreating(true);
+
+    try {
+      const price = parseFloat(pricePerSquare);
+
+      // Create payout structure (convert percentages to decimals)
+      const payoutStructure = {
+        period1: period1Payout / 100,
+        period2: period2Payout / 100,
+        period3: period3Payout / 100,
+        period4: period4Payout / 100,
+      };
+
+      // Create squares game
+      const gameId = await SquaresGameService.createSquaresGame({
+        creatorId: user.userId,
+        eventId: selectedEvent.id,
+        title: `${selectedEvent.awayTeamCode || selectedEvent.awayTeam} @ ${selectedEvent.homeTeamCode || selectedEvent.homeTeam} Squares`,
+        description: squaresDescription.trim() || undefined,
+        pricePerSquare: price,
+        payoutStructure,
+      });
+
+      if (gameId) {
+        // Scroll to top and show toast
+        scrollRef.current?.scrollTo({ y: 0, animated: true });
+
+        setToastMessage('Squares game created! Start selling squares to fill the grid.');
+        setShowToast(true);
+
+        setTimeout(() => {
+          setShowToast(false);
+        }, 3000);
+
+        // Reset squares form
+        setSelectedEvent(null);
+        setPricePerSquare('10.00');
+        setSquaresDescription('');
+        setPeriod1Payout(15);
+        setPeriod2Payout(25);
+        setPeriod3Payout(15);
+        setPeriod4Payout(45);
+      }
+    } catch (error) {
+      console.error('Error creating squares game:', error);
+      showAlert(
+        'Error',
+        'Failed to create squares game. Please try again.',
+        [{ text: 'OK' }]
+      );
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
   const resetForm = () => {
     // Clear selection first so subsequent apply visibly re-selects the template
     setSelectedTemplate(null);
@@ -589,9 +676,162 @@ export const CreateBetScreen: React.FC = () => {
           </ScrollView>
         </View>
 
-        {/* Bet Details Form */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>BET DETAILS</Text>
+        {/* Conditional Form: Standard Bet or Betting Squares */}
+        {selectedTemplate === 'squares' ? (
+          /* ===== BETTING SQUARES FORM ===== */
+          <>
+            {/* Event Selection */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>SELECT EVENT</Text>
+              <Text style={styles.sectionSubtitle}>Choose a live event for your squares game</Text>
+
+              {selectedEvent ? (
+                <TouchableOpacity
+                  style={styles.selectedEventCard}
+                  onPress={() => setShowEventPicker(true)}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.eventCardContent}>
+                    <View style={styles.eventTeams}>
+                      <Text style={styles.eventTeamText}>
+                        {selectedEvent.awayTeamCode || selectedEvent.awayTeam}
+                      </Text>
+                      <Text style={styles.eventVsText}>@</Text>
+                      <Text style={styles.eventTeamText}>
+                        {selectedEvent.homeTeamCode || selectedEvent.homeTeam}
+                      </Text>
+                    </View>
+                    <Text style={styles.eventTime}>
+                      {new Date(selectedEvent.scheduledTime).toLocaleString('en-US', {
+                        weekday: 'short',
+                        month: 'short',
+                        day: 'numeric',
+                        hour: 'numeric',
+                        minute: '2-digit',
+                      })}
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  style={styles.selectEventButton}
+                  onPress={() => setShowEventPicker(true)}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="calendar" size={24} color={colors.primary} />
+                  <Text style={styles.selectEventText}>Tap to Select Event</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {/* Price Per Square */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>PRICE PER SQUARE</Text>
+              <Text style={styles.sectionSubtitle}>Set the price for each square ($5 - $100)</Text>
+
+              <TextInput
+                style={[styles.priceInput, styles.textInput]}
+                placeholder="$0.00"
+                placeholderTextColor={colors.textMuted}
+                value={isPriceFocused ? pricePerSquare : `$${parseFloat(pricePerSquare || '0').toFixed(2)}`}
+                onChangeText={(text) => {
+                  const numericValue = text.replace(/[^0-9.]/g, '');
+                  const parts = numericValue.split('.');
+                  const formattedValue = parts.length > 2 ? parts[0] + '.' + parts.slice(1).join('') : numericValue;
+                  setPricePerSquare(formattedValue);
+                }}
+                keyboardType="numeric"
+                onFocus={() => setIsPriceFocused(true)}
+                onBlur={() => {
+                  setIsPriceFocused(false);
+                  if (pricePerSquare) {
+                    const n = parseFloat(pricePerSquare);
+                    if (!isNaN(n)) setPricePerSquare(n.toFixed(2));
+                  }
+                }}
+              />
+              <Text style={styles.fieldHint}>
+                Total pot will be ${(parseFloat(pricePerSquare || '0') * 100).toFixed(2)} (100 squares)
+              </Text>
+            </View>
+
+            {/* Payout Structure */}
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <View>
+                  <Text style={styles.sectionTitle}>PAYOUT STRUCTURE</Text>
+                  <Text style={styles.sectionSubtitle}>Percentage for each period (must total 100%)</Text>
+                </View>
+                <View style={[
+                  styles.payoutTotalBadge,
+                  (period1Payout + period2Payout + period3Payout + period4Payout) === 100
+                    ? styles.payoutTotalValid
+                    : styles.payoutTotalInvalid
+                ]}>
+                  <Text style={styles.payoutTotalText}>
+                    {period1Payout + period2Payout + period3Payout + period4Payout}%
+                  </Text>
+                </View>
+              </View>
+
+              {[
+                { label: 'Period 1', value: period1Payout, setter: setPeriod1Payout },
+                { label: 'Period 2 (Halftime)', value: period2Payout, setter: setPeriod2Payout },
+                { label: 'Period 3', value: period3Payout, setter: setPeriod3Payout },
+                { label: 'Period 4 (Final)', value: period4Payout, setter: setPeriod4Payout },
+              ].map((period, index) => (
+                <View key={index} style={styles.payoutRow}>
+                  <Text style={styles.payoutLabel}>{period.label}: {period.value}%</Text>
+                  <View style={styles.payoutControls}>
+                    <TouchableOpacity
+                      style={styles.payoutButton}
+                      onPress={() => period.setter(Math.max(0, period.value - 5))}
+                    >
+                      <Ionicons name="remove" size={16} color={colors.primary} />
+                    </TouchableOpacity>
+                    <TextInput
+                      style={styles.payoutInput}
+                      value={period.value.toString()}
+                      onChangeText={(text) => {
+                        const val = parseInt(text) || 0;
+                        period.setter(Math.max(0, Math.min(100, val)));
+                      }}
+                      keyboardType="numeric"
+                      maxLength={3}
+                    />
+                    <TouchableOpacity
+                      style={styles.payoutButton}
+                      onPress={() => period.setter(Math.min(100, period.value + 5))}
+                    >
+                      <Ionicons name="add" size={16} color={colors.primary} />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ))}
+            </View>
+
+            {/* Optional Description */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>DESCRIPTION (OPTIONAL)</Text>
+              <TextInput
+                style={[styles.textInput, styles.textAreaInput]}
+                placeholder="Add any additional details or rules..."
+                placeholderTextColor={colors.textMuted}
+                value={squaresDescription}
+                onChangeText={setSquaresDescription}
+                multiline
+                numberOfLines={3}
+                maxLength={500}
+              />
+            </View>
+          </>
+        ) : (
+          /* ===== STANDARD BET FORM ===== */
+          <>
+            {/* Bet Details Form */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>BET DETAILS</Text>
           
           <View style={styles.formGroup}>
             <Text style={styles.fieldLabel}>Bet Title *</Text>
@@ -840,34 +1080,58 @@ export const CreateBetScreen: React.FC = () => {
             </View>
           )}
         </View>
+          </>
+        )}
+        {/* End of conditional form */}
 
         {/* Create Button */}
         <View style={styles.createButtonContainer}>
-          {/** Disable if creating or no side selected */}
-          {(() => { const disabled = isCreating || !selectedSide; return (
-          <TouchableOpacity
-            style={[
-              styles.createButton,
-              (disabled) && styles.createButtonDisabled
-            ]}
-            onPress={handleCreateBet}
-            disabled={disabled}
-            activeOpacity={disabled ? 1 : 0.7}
-          >
-            {isCreating ? (
-              <View style={styles.createButtonContent}>
-                <ActivityIndicator size="small" color={colors.background} />
-                <Text style={[styles.createButtonText, { marginLeft: spacing.sm }]}>
-                  CREATING...
-                </Text>
-              </View>
-            ) : (
-              <Text style={styles.createButtonText}>CREATE BET</Text>
-            )}
-          </TouchableOpacity>
-          ); })()}
+          {(() => {
+            const isSquaresMode = selectedTemplate === 'squares';
+            const disabled = isCreating || (
+              isSquaresMode
+                ? !selectedEvent || (period1Payout + period2Payout + period3Payout + period4Payout) !== 100
+                : !selectedSide
+            );
+            return (
+              <TouchableOpacity
+                style={[
+                  styles.createButton,
+                  disabled && styles.createButtonDisabled
+                ]}
+                onPress={handleCreateBet}
+                disabled={disabled}
+                activeOpacity={disabled ? 1 : 0.7}
+              >
+                {isCreating ? (
+                  <View style={styles.createButtonContent}>
+                    <ActivityIndicator size="small" color={colors.background} />
+                    <Text style={[styles.createButtonText, { marginLeft: spacing.sm }]}>
+                      CREATING...
+                    </Text>
+                  </View>
+                ) : (
+                  <Text style={styles.createButtonText}>
+                    {isSquaresMode ? 'CREATE SQUARES GAME' : 'CREATE BET'}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            );
+          })()}
         </View>
       </ScrollView>
+
+      {/* Event Picker Modal for Squares */}
+      {showEventPicker && (
+        <EventPickerModal
+          visible={showEventPicker}
+          onSelect={(event) => {
+            setSelectedEvent(event);
+            setShowEventPicker(false);
+          }}
+          onClose={() => setShowEventPicker(false)}
+        />
+      )}
     </SafeAreaView>
   );
 };
@@ -1259,5 +1523,118 @@ const styles = StyleSheet.create({
     fontWeight: typography.fontWeight.medium,
     textAlign: 'center',
     flex: 1,
+  },
+
+  // Squares-specific styles
+  selectedEventCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.surface,
+    borderRadius: spacing.radius.md,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.primary,
+  },
+  eventCardContent: {
+    flex: 1,
+  },
+  eventTeams: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.xs,
+  },
+  eventTeamText: {
+    ...textStyles.body,
+    color: colors.textPrimary,
+    fontWeight: typography.fontWeight.bold,
+  },
+  eventVsText: {
+    ...textStyles.body,
+    color: colors.textMuted,
+    marginHorizontal: spacing.xs,
+  },
+  eventTime: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+  },
+  selectEventButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: spacing.radius.md,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderStyle: 'dashed',
+  },
+  selectEventText: {
+    ...textStyles.body,
+    color: colors.primary,
+    marginLeft: spacing.sm,
+    fontWeight: typography.fontWeight.medium,
+  },
+  priceInput: {
+    fontSize: typography.fontSize.xl,
+    fontWeight: typography.fontWeight.bold,
+    textAlign: 'center',
+  },
+  payoutTotalBadge: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: spacing.radius.sm,
+    minWidth: 60,
+    alignItems: 'center',
+  },
+  payoutTotalValid: {
+    backgroundColor: colors.success,
+  },
+  payoutTotalInvalid: {
+    backgroundColor: colors.error,
+  },
+  payoutTotalText: {
+    ...textStyles.button,
+    color: colors.background,
+    fontWeight: typography.fontWeight.bold,
+  },
+  payoutRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  payoutLabel: {
+    ...textStyles.body,
+    color: colors.textPrimary,
+    fontWeight: typography.fontWeight.medium,
+    flex: 1,
+  },
+  payoutControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  payoutButton: {
+    backgroundColor: colors.surface,
+    borderRadius: spacing.radius.sm,
+    padding: spacing.xs,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  payoutInput: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: spacing.radius.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    marginHorizontal: spacing.sm,
+    width: 50,
+    textAlign: 'center',
+    color: colors.textPrimary,
+    fontSize: typography.fontSize.base,
+    fontWeight: typography.fontWeight.bold,
+    textAlignVertical: 'center',
   },
 });
