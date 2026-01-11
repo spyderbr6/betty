@@ -69,7 +69,10 @@ export const EventPickerModal: React.FC<EventPickerModalProps> = ({
       });
 
       if (data) {
-        // Sort by scheduled time (soonest first)
+        const now = new Date();
+        const sevenDaysFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+        // Filter and sort events
         const sortedEvents = data
           .map(event => ({
             id: event.id!,
@@ -82,8 +85,22 @@ export const EventPickerModal: React.FC<EventPickerModalProps> = ({
             sport: event.sport || undefined,
             league: event.league || undefined,
           }))
-          .sort((a, b) => new Date(a.scheduledTime).getTime() - new Date(b.scheduledTime).getTime());
+          // Filter: Only events within next 7 days or currently live
+          .filter(event => {
+            if (event.status === 'LIVE') return true;
+            const eventTime = new Date(event.scheduledTime);
+            return eventTime >= now && eventTime <= sevenDaysFromNow;
+          })
+          // Sort: LIVE events first, then by scheduled time (soonest first)
+          .sort((a, b) => {
+            // LIVE events always come first
+            if (a.status === 'LIVE' && b.status !== 'LIVE') return -1;
+            if (b.status === 'LIVE' && a.status !== 'LIVE') return 1;
+            // Both LIVE or both UPCOMING - sort by time
+            return new Date(a.scheduledTime).getTime() - new Date(b.scheduledTime).getTime();
+          });
 
+        console.log(`[EventPicker] Loaded ${sortedEvents.length} events (filtered to next 7 days)`);
         setEvents(sortedEvents);
       }
     } catch (error) {
