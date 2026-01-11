@@ -624,6 +624,7 @@ const schema = a.schema({
       // Relations
       buyer: a.belongsTo('User', 'userId'),
       squaresGame: a.belongsTo('SquaresGame', 'squaresGameId'),
+      payouts: a.hasMany('SquaresPayout', 'squaresPurchaseId'),
     })
     .secondaryIndexes((index) => [
       index('squaresGameId').sortKeys(['purchasedAt']).queryField('purchasesBySquaresGame'),
