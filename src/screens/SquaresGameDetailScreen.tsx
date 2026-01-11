@@ -367,7 +367,7 @@ export const SquaresGameDetailScreen = ({ route, navigation }: any) => {
         game={game}
         selectedSquares={selectedSquares}
         onConfirmPurchase={handleConfirmPurchase}
-        userDisplayName={user?.username}
+        userDisplayName={user?.displayName || user?.username}
       />
     </SafeAreaView>
   );

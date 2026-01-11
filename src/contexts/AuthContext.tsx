@@ -15,6 +15,7 @@ type UserRole = 'USER' | 'ADMIN' | 'SUPER_ADMIN';
 interface User {
   userId: string;
   username: string;
+  displayName?: string;
   role: UserRole;
   onboardingCompleted: boolean;
   onboardingStep: number;
@@ -80,6 +81,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const newUser = {
           userId: currentUser.userId,
           username: currentUser.username,
+          displayName: userData?.displayName ?? undefined,
           role: (userData?.role as UserRole) || 'USER', // Default to USER if role not set
           onboardingCompleted: userData?.onboardingCompleted ?? false,
           onboardingStep: userData?.onboardingStep ?? 0,
