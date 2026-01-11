@@ -1,5 +1,6 @@
 import { type ClientSchema, a, defineData } from "@aws-amplify/backend";
 import { scheduledBetChecker } from "../functions/scheduled-bet-checker/resource";
+import { scheduledSquaresChecker } from "../functions/scheduled-squares-checker/resource";
 import { pushNotificationSender } from "../functions/push-notification-sender/resource";
 import { eventFetcher } from "../functions/event-fetcher/resource";
 import { payoutProcessor } from "../functions/payout-processor/resource";
@@ -54,6 +55,9 @@ const schema = a.schema({
       paymentMethods: a.hasMany('PaymentMethod', 'userId'),
       transactions: a.hasMany('Transaction', 'userId'),
       eventCheckIns: a.hasMany('EventCheckIn', 'userId'),
+      squaresGamesCreated: a.hasMany('SquaresGame', 'creatorId'),
+      squaresPurchases: a.hasMany('SquaresPurchase', 'userId'),
+      squaresPayouts: a.hasMany('SquaresPayout', 'userId'),
     })
     .authorization((allow) => [
       allow.owner().to(['create', 'read', 'update', 'delete']),
@@ -82,7 +86,12 @@ const schema = a.schema({
         'WITHDRAWAL_COMPLETED',
         'WITHDRAWAL_FAILED',
         'PAYMENT_METHOD_VERIFIED',
-        'SYSTEM_ANNOUNCEMENT'
+        'SYSTEM_ANNOUNCEMENT',
+        'SQUARES_GRID_LOCKED',        // Grid filled, numbers assigned
+        'SQUARES_PERIOD_WINNER',      // You won a period!
+        'SQUARES_GAME_LIVE',          // Game starting soon
+        'SQUARES_GAME_CANCELLED',     // Game cancelled
+        'SQUARES_PURCHASE_CONFIRMED'  // Purchase confirmed
       ]),
       title: a.string().required(), // Short notification title
       message: a.string().required(), // Notification content
@@ -429,7 +438,10 @@ const schema = a.schema({
         'BET_LOST',         // Lost bet (zero amount, for tracking only)
         'BET_CANCELLED',    // Refund when bet cancelled
         'BET_REFUND',       // Manual refund by admin
-        'ADMIN_ADJUSTMENT'  // Admin balance correction
+        'ADMIN_ADJUSTMENT',  // Admin balance correction
+        'SQUARES_PURCHASE',  // Buying square(s)
+        'SQUARES_PAYOUT',    // Period winner payout
+        'SQUARES_REFUND'     // Game cancelled refund
       ]),
       status: a.enum(['PENDING', 'PROCESSING', 'COMPLETED', 'FAILED', 'CANCELLED']),
       amount: a.float().required(), // Requested amount (what user intended to deposit/withdraw)
@@ -446,6 +458,7 @@ const schema = a.schema({
       // Related entities
       relatedBetId: a.id(),
       relatedParticipantId: a.id(),
+      relatedSquaresGameId: a.id(), // For squares transactions
       // Transaction metadata
       notes: a.string(), // Admin notes or user description
       failureReason: a.string(), // Why transaction failed
@@ -550,7 +563,112 @@ const schema = a.schema({
       allow.authenticated().to(['read', 'create', 'update']) // Allow users to check in others (social features)
     ]),
 
-  // Scheduled Lambda Function
+  // Betting Squares Models
+  SquaresGame: a
+    .model({
+      id: a.id(),
+      title: a.string().required(),
+      description: a.string(),
+      eventId: a.id().required(), // FK to LiveEvent - for auto scoring
+      // Pricing & Pot
+      pricePerSquare: a.float().required(), // e.g., 10.00
+      totalPot: a.float().default(0), // calculated: squares sold * price
+      // Game Configuration
+      payoutStructure: a.json().required(), // { period1: 0.15, period2: 0.25, period3: 0.15, period4: 0.45 }
+      // Grid State
+      rowNumbers: a.integer().array(), // array[10]: 0-9 randomized AFTER grid fills
+      colNumbers: a.integer().array(), // array[10]: 0-9 randomized AFTER grid fills
+      numbersAssigned: a.boolean().default(false), // false until grid locks
+      // Status Flow
+      status: a.enum(['SETUP', 'ACTIVE', 'LOCKED', 'LIVE', 'PENDING_RESOLUTION', 'RESOLVED', 'CANCELLED']),
+      // Metadata
+      creatorId: a.id().required(),
+      squaresSold: a.integer().default(0), // denormalized count: 0-100
+      locksAt: a.datetime().required(), // when grid locks - typically game start time
+      expiresAt: a.datetime(), // game end time from LiveEvent
+      resolutionReason: a.string(), // Why game was cancelled/resolved
+      createdAt: a.datetime(),
+      updatedAt: a.datetime(),
+      // Relations
+      creator: a.belongsTo('User', 'creatorId'),
+      event: a.belongsTo('LiveEvent', 'eventId'),
+      purchases: a.hasMany('SquaresPurchase', 'squaresGameId'),
+      payouts: a.hasMany('SquaresPayout', 'squaresGameId'),
+    })
+    .secondaryIndexes((index) => [
+      index('status').sortKeys(['createdAt']).queryField('squaresGamesByStatus'),
+      index('eventId').queryField('squaresGamesByEvent'),
+      index('creatorId').sortKeys(['createdAt']).queryField('squaresGamesByCreator'),
+    ])
+    .authorization((allow) => [
+      allow.owner().to(['create', 'read', 'update', 'delete']),
+      allow.authenticated().to(['read', 'create', 'update'])
+    ]),
+
+  SquaresPurchase: a
+    .model({
+      id: a.id(),
+      squaresGameId: a.id().required(),
+      userId: a.id().required(), // who bought and paid - always has account
+      // Grid Position
+      gridRow: a.integer().required(), // 0-9
+      gridCol: a.integer().required(), // 0-9
+      // Owner Display
+      ownerName: a.string().required(), // display name - can be buyer or anyone else (e.g., "Mom", "Dave from work")
+      // Transaction
+      amount: a.float().required(), // price paid by userId
+      transactionId: a.id(),
+      // Metadata
+      purchasedAt: a.datetime(),
+      // Relations
+      buyer: a.belongsTo('User', 'userId'),
+      squaresGame: a.belongsTo('SquaresGame', 'squaresGameId'),
+    })
+    .secondaryIndexes((index) => [
+      index('squaresGameId').sortKeys(['purchasedAt']).queryField('purchasesBySquaresGame'),
+      index('userId').sortKeys(['purchasedAt']).queryField('purchasesByBuyer'),
+    ])
+    .authorization((allow) => [
+      allow.owner().to(['create', 'read', 'update', 'delete']),
+      allow.authenticated().to(['read', 'create', 'update'])
+    ]),
+
+  SquaresPayout: a
+    .model({
+      id: a.id(),
+      squaresGameId: a.id().required(),
+      squaresPurchaseId: a.id().required(), // which square won
+      userId: a.id().required(), // buyer who receives payout
+      ownerName: a.string().required(), // name displayed as winner
+      // Payout Details
+      period: a.enum(['PERIOD_1', 'PERIOD_2', 'PERIOD_3', 'PERIOD_4']),
+      amount: a.float().required(), // portion of pot after 3% platform fee
+      // Winning Score
+      homeScore: a.integer().required(), // last digit
+      awayScore: a.integer().required(), // last digit
+      homeScoreFull: a.integer().required(), // full score for display
+      awayScoreFull: a.integer().required(), // full score for display
+      // Transaction
+      transactionId: a.id(),
+      status: a.enum(['PENDING', 'COMPLETED', 'FAILED']),
+      // Metadata
+      createdAt: a.datetime(),
+      paidAt: a.datetime(),
+      // Relations
+      squaresGame: a.belongsTo('SquaresGame', 'squaresGameId'),
+      squaresPurchase: a.belongsTo('SquaresPurchase', 'squaresPurchaseId'),
+      winner: a.belongsTo('User', 'userId'),
+    })
+    .secondaryIndexes((index) => [
+      index('squaresGameId').sortKeys(['period']).queryField('payoutsBySquaresGame'),
+      index('userId').sortKeys(['createdAt']).queryField('payoutsByUser'),
+    ])
+    .authorization((allow) => [
+      allow.owner().to(['create', 'read']),
+      allow.authenticated().to(['read', 'create', 'update'])
+    ]),
+
+  // Scheduled Lambda Functions
   scheduledBetChecker: a
     .query()
     .arguments({
@@ -558,6 +676,15 @@ const schema = a.schema({
     })
     .returns(a.boolean())
     .handler(a.handler.function(scheduledBetChecker))
+    .authorization((allow) => [allow.authenticated()]),
+
+  scheduledSquaresChecker: a
+    .query()
+    .arguments({
+      triggerTime: a.string().required()  // ISO timestamp when triggered
+    })
+    .returns(a.boolean())
+    .handler(a.handler.function(scheduledSquaresChecker))
     .authorization((allow) => [allow.authenticated()]),
 
   // Push Notification Function
@@ -587,6 +714,7 @@ const schema = a.schema({
 }).authorization((allow) => [
   // Allow the Lambda functions to be invoked and access data
   allow.resource(scheduledBetChecker).to(["query", "listen", "mutate"]),
+  allow.resource(scheduledSquaresChecker).to(["query", "listen", "mutate"]),
   allow.resource(pushNotificationSender).to(["query", "listen", "mutate"]),
   allow.resource(eventFetcher).to(["query", "listen", "mutate"]),
   allow.resource(payoutProcessor).to(["query", "listen", "mutate"]),

@@ -3,6 +3,7 @@ import { auth } from './auth/resource';
 import { data } from './data/resource';
 import { storage } from './storage/resource';
 import { scheduledBetChecker } from './functions/scheduled-bet-checker/resource';
+import { scheduledSquaresChecker } from './functions/scheduled-squares-checker/resource';
 import { pushNotificationSender } from './functions/push-notification-sender/resource';
 import { eventFetcher } from './functions/event-fetcher/resource';
 import { payoutProcessor } from './functions/payout-processor/resource';
@@ -12,6 +13,7 @@ const backend = defineBackend({
   data,
   storage,
   scheduledBetChecker,
+  scheduledSquaresChecker,
   pushNotificationSender,
   eventFetcher,
   payoutProcessor,

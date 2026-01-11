@@ -19,7 +19,10 @@ export type TransactionType =
   | 'BET_LOST'
   | 'BET_CANCELLED'
   | 'BET_REFUND'
-  | 'ADMIN_ADJUSTMENT';
+  | 'ADMIN_ADJUSTMENT'
+  | 'SQUARES_PURCHASE'
+  | 'SQUARES_PAYOUT'
+  | 'SQUARES_REFUND';
 
 export type TransactionStatus =
   | 'PENDING'
@@ -62,6 +65,7 @@ export interface CreateTransactionParams {
   venmoUsername?: string;
   relatedBetId?: string;
   relatedParticipantId?: string;
+  relatedSquaresGameId?: string;
   notes?: string;
 }
 
@@ -99,7 +103,9 @@ export class TransactionService {
       const isCredit = params.type === 'DEPOSIT' ||
                        params.type === 'BET_WON' ||
                        params.type === 'BET_CANCELLED' ||
-                       params.type === 'BET_REFUND';
+                       params.type === 'BET_REFUND' ||
+                       params.type === 'SQUARES_PAYOUT' ||
+                       params.type === 'SQUARES_REFUND';
 
       if (isCredit) {
         balanceAfter = balanceBefore + amount;
@@ -131,6 +137,7 @@ export class TransactionService {
         venmoUsername: params.venmoUsername,
         relatedBetId: params.relatedBetId,
         relatedParticipantId: params.relatedParticipantId,
+        relatedSquaresGameId: params.relatedSquaresGameId,
         notes: params.notes,
         createdAt: new Date().toISOString(),
         completedAt: params.status === 'COMPLETED' ? new Date().toISOString() : undefined,
@@ -773,6 +780,68 @@ export class TransactionService {
       console.error('[Transaction] Error fetching transaction:', error);
       return null;
     }
+  }
+
+  /**
+   * Record squares purchase transaction
+   */
+  static async recordSquaresPurchase(
+    userId: string,
+    amount: number,
+    squaresGameId: string,
+    purchaseIds: string
+  ): Promise<Transaction | null> {
+    return await this.createTransaction({
+      userId,
+      type: 'SQUARES_PURCHASE',
+      amount,
+      status: 'COMPLETED',
+      relatedSquaresGameId: squaresGameId,
+      notes: `Purchased squares: ${purchaseIds}`,
+    });
+  }
+
+  /**
+   * Record squares payout (buyer receives winnings)
+   * Applies 3% platform fee to payout
+   */
+  static async recordSquaresPayout(
+    userId: string,
+    amount: number,
+    squaresGameId: string,
+    payoutId: string,
+    period: string
+  ): Promise<Transaction | null> {
+    // Platform fee already calculated in SquaresGameService
+    // Amount passed here is already net of fee
+    return await this.createTransaction({
+      userId,
+      type: 'SQUARES_PAYOUT',
+      amount, // Net amount after fee
+      platformFee: 0, // Fee already deducted
+      status: 'COMPLETED',
+      relatedSquaresGameId: squaresGameId,
+      notes: `${period} winner payout`,
+    });
+  }
+
+  /**
+   * Record squares refund (game cancelled)
+   */
+  static async recordSquaresRefund(
+    userId: string,
+    amount: number,
+    squaresGameId: string,
+    purchaseId: string
+  ): Promise<Transaction | null> {
+    return await this.createTransaction({
+      userId,
+      type: 'SQUARES_REFUND',
+      amount,
+      status: 'COMPLETED',
+      relatedSquaresGameId: squaresGameId,
+      notes: `Game cancelled - square refund`,
+    });
   }
 }
 
