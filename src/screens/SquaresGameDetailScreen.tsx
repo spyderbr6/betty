@@ -272,6 +272,54 @@ export const SquaresGameDetailScreen = ({ route, navigation }: any) => {
           awayTeamCode={event.awayTeamCode}
         />
 
+        {/* Period Scores (for LIVE/RESOLVED games) */}
+        {(game.status === 'LIVE' || game.status === 'RESOLVED') && event.homePeriodScores && event.awayPeriodScores && (
+          <View style={styles.periodScoresCard}>
+            <Text style={styles.cardTitle}>Period Scores</Text>
+            {(() => {
+              const homeScores = typeof event.homePeriodScores === 'string'
+                ? JSON.parse(event.homePeriodScores)
+                : event.homePeriodScores;
+              const awayScores = typeof event.awayPeriodScores === 'string'
+                ? JSON.parse(event.awayPeriodScores)
+                : event.awayPeriodScores;
+
+              const periods = Math.max(homeScores.length, awayScores.length);
+
+              return Array.from({ length: periods }, (_, i) => {
+                const periodNum = i + 1;
+                const homeScore = homeScores[i] || 0;
+                const awayScore = awayScores[i] || 0;
+                const periodLabel = getPeriodLabel(`PERIOD_${periodNum}`);
+
+                // Find if there's a payout for this period
+                const periodPayout = payouts.find((p) => p.period === `PERIOD_${periodNum}`);
+
+                return (
+                  <View key={i} style={styles.periodScoreRow}>
+                    <Text style={styles.periodScoreLabel}>{periodLabel}</Text>
+                    <View style={styles.scoreDisplay}>
+                      <Text style={styles.scoreTeam}>
+                        {event.awayTeamCode || event.awayTeam}: {awayScore}
+                      </Text>
+                      <Text style={styles.scoreTeam}>
+                        {event.homeTeamCode || event.homeTeam}: {homeScore}
+                      </Text>
+                    </View>
+                    {periodPayout && (
+                      <View style={styles.periodWinnerBadge}>
+                        <Text style={styles.periodWinnerText}>
+                          🏆 {periodPayout.ownerName}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                );
+              });
+            })()}
+          </View>
+        )}
+
         {/* My Squares Summary */}
         {myPurchases.length > 0 && (
           <View style={styles.mySquaresCard}>
@@ -491,6 +539,47 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     marginTop: spacing.xs,
     fontStyle: 'italic',
+  },
+  periodScoresCard: {
+    backgroundColor: colors.surface,
+    ...shadows.card,
+    borderRadius: spacing.radius.md,
+    padding: spacing.md,
+    marginTop: spacing.md,
+    marginBottom: spacing.md,
+  },
+  periodScoreRow: {
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  periodScoreLabel: {
+    ...textStyles.body,
+    color: colors.textPrimary,
+    fontWeight: typography.fontWeight.bold,
+    marginBottom: spacing.xs / 2,
+  },
+  scoreDisplay: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: spacing.xs / 2,
+  },
+  scoreTeam: {
+    ...textStyles.body,
+    color: colors.textSecondary,
+  },
+  periodWinnerBadge: {
+    backgroundColor: colors.success + '20',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs / 2,
+    borderRadius: spacing.radius.sm,
+    alignSelf: 'flex-start',
+    marginTop: spacing.xs / 2,
+  },
+  periodWinnerText: {
+    ...textStyles.caption,
+    color: colors.success,
+    fontWeight: typography.fontWeight.semibold,
   },
   mySquaresCard: {
     backgroundColor: colors.surface,

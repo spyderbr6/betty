@@ -96,6 +96,13 @@ export const SquaresGameCard: React.FC<SquaresGameCardProps> = ({
         </View>
       )}
 
+      {/* Description (if provided) */}
+      {squaresGame.description && (
+        <Text style={styles.description} numberOfLines={2}>
+          {squaresGame.description}
+        </Text>
+      )}
+
       {/* Progress Bar (if active) */}
       {(squaresGame.status === 'ACTIVE' || squaresGame.status === 'SETUP') && (
         <View style={styles.progressSection}>
@@ -189,6 +196,12 @@ const styles = StyleSheet.create({
   eventTime: {
     ...textStyles.caption,
     color: colors.textSecondary,
+  },
+  description: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    marginBottom: spacing.sm,
+    lineHeight: typography.fontSize.sm * 1.4,
   },
   progressSection: {
     marginBottom: spacing.sm,
