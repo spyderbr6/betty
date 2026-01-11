@@ -254,7 +254,7 @@ async function processPeriodScoresForLiveGames(): Promise<number> {
         squaresGameId: game.id
       });
 
-      const paidPeriods = new Set(existingPayouts?.map(p => p.period) || []);
+      const paidPeriods = new Set(existingPayouts?.map((p: any) => p.period) || []);
 
       // Process each period (1-4)
       for (let period = 1; period <= 4; period++) {
