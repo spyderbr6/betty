@@ -172,16 +172,6 @@ export const CreateBetScreen: React.FC = () => {
 
   const betTemplates: BetTemplate[] = [
     {
-      id: 'squares',
-      displayName: 'Betting Squares',
-      category: 'SPORTS',
-      icon: '🎲',
-      titlePlaceholder: '',
-      descriptionPlaceholder: '',
-      sideAPlaceholder: '',
-      sideBPlaceholder: '',
-    },
-    {
       id: 'next-score',
       displayName: 'Next Score',
       category: 'SPORTS',
@@ -192,6 +182,16 @@ export const CreateBetScreen: React.FC = () => {
       descriptionPlaceholder: 'Which team will score the next points?',
       sideAPlaceholder: 'Home Team',
       sideBPlaceholder: 'Away Team',
+    },
+    {
+      id: 'squares',
+      displayName: 'Betting Squares',
+      category: 'SPORTS',
+      icon: '🎲',
+      titlePlaceholder: '',
+      descriptionPlaceholder: '',
+      sideAPlaceholder: '',
+      sideBPlaceholder: '',
     },
     {
       id: 'player-prop',
