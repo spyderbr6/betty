@@ -154,6 +154,27 @@ export function getNotificationNavigationAction(
         modal: 'notifications',
       };
 
+    // Squares Game Notifications
+    case 'SQUARES_GRID_LOCKED':
+    case 'SQUARES_GAME_LIVE':
+    case 'SQUARES_PERIOD_WINNER':
+      return {
+        action: 'navigate',
+        screen: 'SquaresGameDetail',
+        params: {
+          gameId: data?.actionData?.squaresGameId,
+        },
+      };
+
+    case 'SQUARES_GAME_CANCELLED':
+      return {
+        action: 'navigate',
+        screen: 'MyBets',
+        params: {
+          tab: 'squares',
+        },
+      };
+
     default:
       console.warn(`[NotificationNavigation] Unknown notification type: ${type}`);
       return {
@@ -185,6 +206,10 @@ export function getNotificationActionDescription(type: NotificationType): string
     'WITHDRAWAL_FAILED': 'Tap to view transaction history',
     'PAYMENT_METHOD_VERIFIED': 'Tap to view payment methods',
     'SYSTEM_ANNOUNCEMENT': 'Tap to view details',
+    'SQUARES_GRID_LOCKED': 'Tap to view grid',
+    'SQUARES_PERIOD_WINNER': 'Tap to view game',
+    'SQUARES_GAME_LIVE': 'Tap to view game',
+    'SQUARES_GAME_CANCELLED': 'Tap to view your games',
   };
 
   return descriptions[type] || 'Tap to view notification';
