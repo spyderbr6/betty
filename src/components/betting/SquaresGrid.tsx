@@ -6,7 +6,7 @@
  */
 
 import React, { useMemo } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Dimensions, ScrollView } from 'react-native';
 import { colors, spacing, typography, textStyles } from '../../styles';
 
 interface SquaresGridProps {
@@ -30,6 +30,13 @@ export const SquaresGrid: React.FC<SquaresGridProps> = ({
   homeTeamCode,
   awayTeamCode,
 }) => {
+  // Calculate responsive cell size based on screen width
+  const screenWidth = Dimensions.get('window').width;
+  const PADDING = spacing.md * 2; // Account for screen padding
+  const HEADER_SIZE = 24;
+  const maxGridWidth = screenWidth - PADDING - HEADER_SIZE - 10; // Extra margin
+  const CELL_SIZE = Math.floor(maxGridWidth / 10);
+
   // Create 10x10 grid with ownership data
   const gridData = useMemo(() => {
     const grid: Array<Array<any>> = Array(10)
@@ -68,115 +75,130 @@ export const SquaresGrid: React.FC<SquaresGridProps> = ({
 
   return (
     <View style={styles.container}>
-      {/* Column Headers (Away Team Numbers) - shown after lock */}
+      {/* Team Axis Labels (only shown after numbers assigned) */}
       {game.numbersAssigned && (
-        <View style={styles.columnHeaders}>
-          <View style={styles.cornerCell}>
-            <Text style={styles.cornerText}>{awayTeamCode || 'Away'}</Text>
-          </View>
-          {game.colNumbers.map((num: number, col: number) => (
-            <View key={col} style={styles.headerCell}>
-              <Text style={styles.headerText}>{num}</Text>
-            </View>
-          ))}
+        <View style={styles.axisLabelsContainer}>
+          <Text style={styles.axisLabel}>
+            ↓ {homeTeamCode || 'Home'} (Rows)
+          </Text>
+          <Text style={styles.axisLabel}>
+            → {awayTeamCode || 'Away'} (Columns)
+          </Text>
         </View>
       )}
 
-      {/* Grid Rows */}
-      <View style={styles.gridRows}>
-        {/* Row Headers (Home Team) - shown after lock */}
-        {game.numbersAssigned && (
-          <View style={styles.rowHeadersContainer}>
-            {game.rowNumbers.map((num: number, row: number) => (
-              <View key={row} style={styles.rowHeader}>
-                <Text style={styles.headerText}>{num}</Text>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+      >
+        <View>
+          {/* Column Headers (Away Team Numbers) - shown after lock */}
+          {game.numbersAssigned && (
+            <View style={styles.columnHeaders}>
+              <View style={[styles.cornerCell, { width: HEADER_SIZE, height: HEADER_SIZE }]} />
+              {game.colNumbers.map((num: number, col: number) => (
+                <View key={col} style={[styles.headerCell, { width: CELL_SIZE, height: HEADER_SIZE }]}>
+                  <Text style={styles.headerText}>{num}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {/* Grid Rows */}
+          <View style={styles.gridRows}>
+            {/* Row Headers (Home Team) - shown after lock */}
+            {game.numbersAssigned && (
+              <View style={styles.rowHeadersContainer}>
+                {game.rowNumbers.map((num: number, row: number) => (
+                  <View key={row} style={[styles.rowHeader, { width: HEADER_SIZE, height: CELL_SIZE }]}>
+                    <Text style={styles.headerText}>{num}</Text>
+                  </View>
+                ))}
               </View>
-            ))}
-          </View>
-        )}
+            )}
 
-        {/* Grid Cells */}
-        <View style={styles.gridContainer}>
-          {gridData.map((row, rowIndex) => (
-            <View key={rowIndex} style={styles.gridRow}>
-              {row.map((cell, colIndex) => {
-                const isAvailable = cell === null;
-                const isSelected = isSquareSelected(rowIndex, colIndex);
-                const isUserBought = cell?.isUserBought || false;
+            {/* Grid Cells */}
+            <View style={styles.gridContainer}>
+              {gridData.map((row, rowIndex) => (
+                <View key={rowIndex} style={styles.gridRow}>
+                  {row.map((cell, colIndex) => {
+                    const isAvailable = cell === null;
+                    const isSelected = isSquareSelected(rowIndex, colIndex);
+                    const isUserBought = cell?.isUserBought || false;
 
-                return (
-                  <TouchableOpacity
-                    key={colIndex}
-                    style={[
-                      styles.gridCell,
-                      isAvailable && styles.availableCell,
-                      isSelected && styles.selectedCell,
-                      isUserBought && styles.userBoughtCell,
-                      !editable && styles.disabledCell,
-                    ]}
-                    onPress={() => editable && isAvailable && onSquarePress(rowIndex, colIndex)}
-                    disabled={!editable || !isAvailable}
-                    activeOpacity={editable && isAvailable ? 0.7 : 1}
-                  >
-                    {!isAvailable && (
-                      <View style={styles.cellContent}>
-                        <Text style={styles.ownerName} numberOfLines={1}>
-                          {truncateNameForGrid(cell.owner)}
-                        </Text>
-                        {isUserBought && <View style={styles.userDot} />}
-                      </View>
-                    )}
-                    {isSelected && (
-                      <View style={styles.checkmarkContainer}>
-                        <Text style={styles.checkmark}>✓</Text>
-                      </View>
-                    )}
-                  </TouchableOpacity>
-                );
-              })}
+                    return (
+                      <TouchableOpacity
+                        key={colIndex}
+                        style={[
+                          styles.gridCell,
+                          { width: CELL_SIZE, height: CELL_SIZE },
+                          isAvailable && styles.availableCell,
+                          isSelected && styles.selectedCell,
+                          isUserBought && styles.userBoughtCell,
+                          !editable && styles.disabledCell,
+                        ]}
+                        onPress={() => editable && isAvailable && onSquarePress(rowIndex, colIndex)}
+                        disabled={!editable || !isAvailable}
+                        activeOpacity={editable && isAvailable ? 0.7 : 1}
+                      >
+                        {!isAvailable && (
+                          <View style={styles.cellContent}>
+                            <Text style={[styles.ownerName, { fontSize: Math.max(8, CELL_SIZE / 5) }]} numberOfLines={1}>
+                              {truncateNameForGrid(cell.owner)}
+                            </Text>
+                            {isUserBought && <View style={styles.userDot} />}
+                          </View>
+                        )}
+                        {isSelected && (
+                          <View style={styles.checkmarkContainer}>
+                            <Text style={[styles.checkmark, { fontSize: CELL_SIZE / 2 }]}>✓</Text>
+                          </View>
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              ))}
             </View>
-          ))}
+          </View>
         </View>
-      </View>
-
-      {/* Home Team Label (Vertical) */}
-      {game.numbersAssigned && (
-        <View style={styles.homeTeamLabelContainer}>
-          <Text style={styles.homeTeamLabel}>{homeTeamCode || 'Home'}</Text>
-        </View>
-      )}
+      </ScrollView>
     </View>
   );
 };
 
-const CELL_SIZE = 35;
-const HEADER_SIZE = 30;
-
 const styles = StyleSheet.create({
   container: {
-    alignSelf: 'center',
     marginVertical: spacing.lg,
+  },
+  scrollContent: {
+    paddingHorizontal: spacing.md,
+  },
+  axisLabelsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.sm,
+    gap: spacing.md,
+  },
+  axisLabel: {
+    ...textStyles.caption,
+    fontSize: typography.fontSize.sm,
+    color: colors.textSecondary,
+    fontWeight: typography.fontWeight.bold,
+    textAlign: 'center',
   },
   columnHeaders: {
     flexDirection: 'row',
     marginBottom: 0,
   },
   cornerCell: {
-    width: HEADER_SIZE,
-    height: HEADER_SIZE,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: colors.surface,
-  },
-  cornerText: {
-    ...textStyles.caption,
-    fontSize: typography.fontSize.xs,
-    color: colors.textSecondary,
-    fontWeight: typography.fontWeight.bold,
+    backgroundColor: colors.background,
   },
   headerCell: {
-    width: CELL_SIZE,
-    height: HEADER_SIZE,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: colors.surfaceLight,
@@ -185,7 +207,7 @@ const styles = StyleSheet.create({
   },
   headerText: {
     ...textStyles.label,
-    fontSize: typography.fontSize.sm,
+    fontSize: typography.fontSize.xs,
     color: colors.textPrimary,
     fontWeight: typography.fontWeight.bold,
   },
@@ -196,8 +218,6 @@ const styles = StyleSheet.create({
     marginRight: 0,
   },
   rowHeader: {
-    width: HEADER_SIZE,
-    height: CELL_SIZE,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: colors.surfaceLight,
@@ -211,8 +231,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
   },
   gridCell: {
-    width: CELL_SIZE,
-    height: CELL_SIZE,
     borderWidth: 1,
     borderColor: colors.border,
     justifyContent: 'center',
@@ -243,7 +261,6 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   ownerName: {
-    fontSize: typography.fontSize.xs,
     color: colors.textPrimary,
     fontWeight: typography.fontWeight.semibold,
     textAlign: 'center',
@@ -268,18 +285,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   checkmark: {
-    fontSize: typography.fontSize.xl,
     color: colors.textInverse,
-    fontWeight: typography.fontWeight.bold,
-  },
-  homeTeamLabelContainer: {
-    marginTop: spacing.xs,
-    alignItems: 'center',
-  },
-  homeTeamLabel: {
-    ...textStyles.caption,
-    fontSize: typography.fontSize.xs,
-    color: colors.textSecondary,
     fontWeight: typography.fontWeight.bold,
   },
 });
