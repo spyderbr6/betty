@@ -66,7 +66,7 @@ export const CreateBetScreen: React.FC = () => {
   const [betAmount, setBetAmount] = useState('1');
   const [isAmountFocused, setIsAmountFocused] = useState(false);
   const [deadline, setDeadline] = useState('30');
-  const [isPrivate, setIsPrivate] = useState(false);
+  const [isPrivate, setIsPrivate] = useState(true); // Default to private for squares
   const [selectedCategory, setSelectedCategory] = useState('CUSTOM'); // Default to CUSTOM, set by templates
   const [sideAName, setSideAName] = useState('Yes');
   const [sideBName, setSideBName] = useState('No');

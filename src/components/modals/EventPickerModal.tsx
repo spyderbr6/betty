@@ -85,10 +85,18 @@ export const EventPickerModal: React.FC<EventPickerModalProps> = ({
             sport: event.sport || undefined,
             league: event.league || undefined,
           }))
-          // Filter: Only events within next 7 days or currently live
+          // Filter: Only events within next 7 days or currently live (and not stale)
           .filter(event => {
-            if (event.status === 'LIVE') return true;
             const eventTime = new Date(event.scheduledTime);
+
+            // For LIVE events: Filter out stale games (scheduled >6 hours ago)
+            if (event.status === 'LIVE') {
+              const hoursAgo = (now.getTime() - eventTime.getTime()) / (1000 * 60 * 60);
+              // Only show LIVE events that started within last 6 hours (typical game duration)
+              return hoursAgo <= 6;
+            }
+
+            // For UPCOMING events: Only show events within next 7 days
             return eventTime >= now && eventTime <= sevenDaysFromNow;
           })
           // Sort: LIVE events first, then by scheduled time (soonest first)

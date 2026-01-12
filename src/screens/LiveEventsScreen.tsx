@@ -21,6 +21,7 @@ import type { Schema } from '../../amplify/data/resource';
 import { colors, commonStyles, textStyles, spacing, typography } from '../styles';
 import { Header } from '../components/ui/Header';
 import { BetCard } from '../components/betting/BetCard';
+import { SquaresGameCard } from '../components/betting/SquaresGameCard';
 import { BetInviteModal } from '../components/ui/BetInviteModal';
 import { Bet } from '../types/betting';
 import { useAuth } from '../contexts/AuthContext';
@@ -29,6 +30,9 @@ import { QRScannerModal } from '../components/ui/QRScannerModal';
 import { getUpcomingEventsFromCache } from '../services/eventCacheService';
 import type { LiveEventData } from '../services/eventService';
 import { formatTeamName } from '../utils/formatting';
+import { useNavigation } from '@react-navigation/native';
+import { StackNavigationProp } from '@react-navigation/stack';
+import { BetsStackParamList } from '../types/navigation';
 
 // Initialize GraphQL client
 const client = generateClient<Schema>();
@@ -113,15 +117,35 @@ const mockLiveBets: Bet[] = [
   },
 ];
 
+interface SquaresGame {
+  id: string;
+  creatorId: string;
+  eventId: string;
+  title: string;
+  description?: string;
+  status: string;
+  pricePerSquare: number;
+  totalPot: number;
+  squaresSold: number;
+  numbersAssigned: boolean;
+  isPrivate?: boolean;
+  createdAt: string;
+}
+
+type BetsScreenNavigationProp = StackNavigationProp<BetsStackParamList, 'BetsList'>;
+
 export const LiveEventsScreen: React.FC = () => {
   const { user } = useAuth();
+  const navigation = useNavigation<BetsScreenNavigationProp>();
   const insets = useSafeAreaInsets();
   const [liveBets, setLiveBets] = useState<Bet[]>([]);
+  const [squaresGames, setSquaresGames] = useState<SquaresGame[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearch, setShowSearch] = useState(false);
   const [viewMode, setViewMode] = useState<'friends' | 'all'>('friends');
+  const [contentType, setContentType] = useState<'bets' | 'squares'>('bets');
 
   // Invite modal state
   const [showInviteModal, setShowInviteModal] = useState(false);
@@ -177,8 +201,63 @@ export const LiveEventsScreen: React.FC = () => {
       }
     };
 
+    const fetchJoinableSquaresGames = async () => {
+      if (!user?.userId) return;
+
+      try {
+        console.log('🎯 Fetching joinable squares games');
+
+        // Get user's purchases to filter out games they already joined
+        const { data: userPurchases } = await client.models.SquaresPurchase.list({
+          filter: { userId: { eq: user.userId } }
+        });
+
+        const joinedGameIds = new Set(
+          (userPurchases || []).map(p => p.squaresGameId).filter(Boolean)
+        );
+
+        // Fetch all ACTIVE squares games
+        const { data: games } = await client.models.SquaresGame.list({
+          filter: {
+            status: { eq: 'ACTIVE' }
+          }
+        });
+
+        // Filter to joinable games (not creator, not already purchased, not private unless invited)
+        // TODO: Add invitation logic for private games
+        const joinableGames: SquaresGame[] = (games || [])
+          .filter(game =>
+            game &&
+            game.creatorId !== user.userId && // Not creator
+            !joinedGameIds.has(game.id!) && // Haven't purchased squares
+            !game.isPrivate // Not private (TODO: or invited)
+          )
+          .map(game => ({
+            id: game.id!,
+            creatorId: game.creatorId!,
+            eventId: game.eventId!,
+            title: game.title!,
+            description: game.description || undefined,
+            status: game.status!,
+            pricePerSquare: game.pricePerSquare || 0,
+            totalPot: game.totalPot || 0,
+            squaresSold: game.squaresSold || 0,
+            numbersAssigned: game.numbersAssigned || false,
+            isPrivate: game.isPrivate || false,
+            createdAt: game.createdAt || new Date().toISOString(),
+          }))
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+        console.log(`✅ Loaded ${joinableGames.length} joinable squares games`);
+        setSquaresGames(joinableGames);
+      } catch (error) {
+        console.error('❌ Error fetching joinable squares games:', error);
+      }
+    };
+
     fetchJoinableBets();
     fetchRecommendedEvents();
+    fetchJoinableSquaresGames();
 
     // Set up real-time subscription for bet changes
     const betSubscription = client.models.Bet.observeQuery({
@@ -222,9 +301,9 @@ export const LiveEventsScreen: React.FC = () => {
       setRefreshing(true);
       if (!user) return;
 
-      console.log(`🔄 Refreshing ${viewMode} bets with force refresh`);
+      console.log(`🔄 Refreshing content (type: ${contentType}, view: ${viewMode})`);
 
-      // Use appropriate bulk loading service with force refresh to bypass cache
+      // Refresh bets
       const joinableBets = viewMode === 'friends'
         ? await bulkLoadFriendsBetsWithParticipants(user.userId, {
             limit: 50,
@@ -238,10 +317,49 @@ export const LiveEventsScreen: React.FC = () => {
       console.log(`✅ Refreshed ${joinableBets.length} ${viewMode} bets`);
       setLiveBets(joinableBets);
 
+      // Refresh squares games
+      const { data: userPurchases } = await client.models.SquaresPurchase.list({
+        filter: { userId: { eq: user.userId } }
+      });
+
+      const joinedGameIds = new Set(
+        (userPurchases || []).map(p => p.squaresGameId).filter(Boolean)
+      );
+
+      const { data: games } = await client.models.SquaresGame.list({
+        filter: { status: { eq: 'ACTIVE' } }
+      });
+
+      const joinableGames: SquaresGame[] = (games || [])
+        .filter(game =>
+          game &&
+          game.creatorId !== user.userId &&
+          !joinedGameIds.has(game.id!) &&
+          !game.isPrivate
+        )
+        .map(game => ({
+          id: game.id!,
+          creatorId: game.creatorId!,
+          eventId: game.eventId!,
+          title: game.title!,
+          description: game.description || undefined,
+          status: game.status!,
+          pricePerSquare: game.pricePerSquare || 0,
+          totalPot: game.totalPot || 0,
+          squaresSold: game.squaresSold || 0,
+          numbersAssigned: game.numbersAssigned || false,
+          isPrivate: game.isPrivate || false,
+          createdAt: game.createdAt || new Date().toISOString(),
+        }))
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+      console.log(`✅ Refreshed ${joinableGames.length} joinable squares games`);
+      setSquaresGames(joinableGames);
+
       // Note: Recommended events use 24h cache and won't refresh on pull-to-refresh
       // This is intentional to avoid excessive API calls
     } catch (error) {
-      console.error(`❌ Error refreshing ${viewMode} bets:`, error);
+      console.error(`❌ Error refreshing content:`, error);
     } finally {
       setRefreshing(false);
     }
@@ -250,6 +368,11 @@ export const LiveEventsScreen: React.FC = () => {
   const handleBetPress = (bet: Bet) => {
     console.log('Joinable bet pressed:', bet.title);
     // Navigate to bet details
+  };
+
+  const handleSquaresGamePress = (game: SquaresGame) => {
+    console.log('Squares game pressed:', game.title);
+    navigation.navigate('SquaresGameDetail', { squaresGameId: game.id });
   };
 
   const handleJoinBet = (betId: string, side: string, amount: number) => {
@@ -298,6 +421,17 @@ export const LiveEventsScreen: React.FC = () => {
     return true;
   });
 
+  // Filter squaresGames by search query
+  const filteredSquaresGames = squaresGames.filter(game => {
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim();
+      const titleMatch = game.title.toLowerCase().includes(query);
+      const descriptionMatch = game.description?.toLowerCase().includes(query);
+      return titleMatch || descriptionMatch;
+    }
+    return true;
+  });
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <Header
@@ -319,6 +453,40 @@ export const LiveEventsScreen: React.FC = () => {
           />
         }
       >
+        {/* Content Type Filter */}
+        <View style={styles.contentTypeFilterContainer}>
+          <TouchableOpacity
+            style={[
+              styles.contentTypeButton,
+              contentType === 'bets' && styles.contentTypeButtonActive
+            ]}
+            onPress={() => setContentType('bets')}
+            activeOpacity={0.7}
+          >
+            <Text style={[
+              styles.contentTypeButtonText,
+              contentType === 'bets' && styles.contentTypeButtonTextActive
+            ]}>
+              Bets
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.contentTypeButton,
+              contentType === 'squares' && styles.contentTypeButtonActive
+            ]}
+            onPress={() => setContentType('squares')}
+            activeOpacity={0.7}
+          >
+            <Text style={[
+              styles.contentTypeButtonText,
+              contentType === 'squares' && styles.contentTypeButtonTextActive
+            ]}>
+              Squares
+            </Text>
+          </TouchableOpacity>
+        </View>
+
         {/* Friends' Bets Section */}
         <View style={styles.liveBetsSection}>
           <View style={styles.sectionHeader}>
@@ -396,7 +564,7 @@ export const LiveEventsScreen: React.FC = () => {
             </View>
 
             <Text style={styles.sectionSubtitle}>
-              {liveBets.length} available to join • Real-time updates
+              {contentType === 'bets' ? liveBets.length : squaresGames.length} available to join • Real-time updates
             </Text>
           </View>
 
@@ -412,7 +580,9 @@ export const LiveEventsScreen: React.FC = () => {
                 />
                 <TextInput
                   style={styles.searchInput}
-                  placeholder={viewMode === 'friends' ? "Search friends' bets..." : "Search all bets..."}
+                  placeholder={contentType === 'bets'
+                    ? (viewMode === 'friends' ? "Search friends' bets..." : "Search all bets...")
+                    : "Search squares games..."}
                   placeholderTextColor={colors.textMuted}
                   value={searchQuery}
                   onChangeText={handleSearchChange}
@@ -437,35 +607,59 @@ export const LiveEventsScreen: React.FC = () => {
           {isLoading ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color={colors.primary} />
-              <Text style={styles.loadingText}>Loading joinable bets...</Text>
+              <Text style={styles.loadingText}>Loading joinable {contentType}...</Text>
             </View>
-          ) : filteredLiveBets.length > 0 ? (
-            filteredLiveBets.map((bet) => (
-              <BetCard
-                key={bet.id}
-                bet={bet}
-                onPress={handleBetPress}
-                onJoinBet={handleJoinBet}
-                onInviteFriends={(bet) => {
-                  setSelectedBetForInvite(bet);
-                  setShowInviteModal(true);
-                }}
-              />
-            ))
+          ) : contentType === 'bets' ? (
+            filteredLiveBets.length > 0 ? (
+              filteredLiveBets.map((bet) => (
+                <BetCard
+                  key={bet.id}
+                  bet={bet}
+                  onPress={handleBetPress}
+                  onJoinBet={handleJoinBet}
+                  onInviteFriends={(bet) => {
+                    setSelectedBetForInvite(bet);
+                    setShowInviteModal(true);
+                  }}
+                />
+              ))
+            ) : (
+              <View style={styles.emptyContainer}>
+                <Text style={styles.emptyTitle}>
+                  {searchQuery.trim() ? 'No Matching Bets' : viewMode === 'friends' ? 'No Friends\' Bets' : 'No Joinable Bets'}
+                </Text>
+                <Text style={styles.emptyDescription}>
+                  {searchQuery.trim()
+                    ? `No bets match "${searchQuery}". Try a different search term.`
+                    : viewMode === 'friends'
+                      ? 'Your friends haven\'t created any bets you can join yet. Try switching to "All" to see bets from everyone!'
+                      : 'All current bets are either yours or you\'ve already joined them. Check back later for new opportunities!'
+                  }
+                </Text>
+              </View>
+            )
           ) : (
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyTitle}>
-                {searchQuery.trim() ? 'No Matching Bets' : viewMode === 'friends' ? 'No Friends\' Bets' : 'No Joinable Bets'}
-              </Text>
-              <Text style={styles.emptyDescription}>
-                {searchQuery.trim()
-                  ? `No bets match "${searchQuery}". Try a different search term.`
-                  : viewMode === 'friends'
-                    ? 'Your friends haven\'t created any bets you can join yet. Try switching to "All" to see bets from everyone!'
-                    : 'All current bets are either yours or you\'ve already joined them. Check back later for new opportunities!'
-                }
-              </Text>
-            </View>
+            filteredSquaresGames.length > 0 ? (
+              filteredSquaresGames.map((game) => (
+                <SquaresGameCard
+                  key={game.id}
+                  squaresGame={game}
+                  onPress={() => handleSquaresGamePress(game)}
+                />
+              ))
+            ) : (
+              <View style={styles.emptyContainer}>
+                <Text style={styles.emptyTitle}>
+                  {searchQuery.trim() ? 'No Matching Squares' : 'No Joinable Squares'}
+                </Text>
+                <Text style={styles.emptyDescription}>
+                  {searchQuery.trim()
+                    ? `No squares games match "${searchQuery}". Try a different search term.`
+                    : 'All current squares games are either yours or you\'ve already purchased squares. Check back later for new games!'
+                  }
+                </Text>
+              </View>
+            )
           )}
         </View>
 
@@ -615,8 +809,40 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
   },
-  
-  
+
+  // Content Type Filter
+  contentTypeFilterContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.sm,
+    gap: spacing.sm,
+  },
+  contentTypeButton: {
+    flex: 1,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    backgroundColor: colors.surface,
+    borderRadius: spacing.radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  contentTypeButtonActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  contentTypeButtonText: {
+    ...textStyles.body,
+    color: colors.textSecondary,
+    fontWeight: typography.fontWeight.semibold,
+    fontSize: 14,
+  },
+  contentTypeButtonTextActive: {
+    color: colors.background,
+  },
+
   // Sections
   liveBetsSection: {
     padding: spacing.md,
