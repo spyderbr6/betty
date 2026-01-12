@@ -26,9 +26,11 @@ import { useAuth } from '../contexts/AuthContext';
 import { formatCurrency } from '../utils/formatting';
 import { TransactionService } from '../services/transactionService';
 import type { Transaction } from '../services/transactionService';
+import { SquaresGameService } from '../services/squaresGameService';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
 import { showAlert } from '../components/ui/CustomAlert';
+import { formatDateTime } from '../utils/formatting';
 
 const client = generateClient<Schema>();
 
@@ -44,10 +46,12 @@ interface UserDetails {
 export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onClose }) => {
   const { user } = useAuth();
   const [pendingTransactions, setPendingTransactions] = useState<Transaction[]>([]);
+  const [squaresGames, setSquaresGames] = useState<any[]>([]);
   const [userDetails, setUserDetails] = useState<Map<string, UserDetails>>(new Map());
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [processingId, setProcessingId] = useState<string | null>(null);
+  const [section, setSection] = useState<'TRANSACTIONS' | 'SQUARES'>('TRANSACTIONS');
   const [filter, setFilter] = useState<'ALL' | 'DEPOSITS' | 'WITHDRAWALS'>('ALL');
   const [rejectModalVisible, setRejectModalVisible] = useState(false);
   const [rejectTransaction, setRejectTransaction] = useState<Transaction | null>(null);
@@ -56,6 +60,9 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
   const [approvalTransaction, setApprovalTransaction] = useState<Transaction | null>(null);
   const [verificationCode, setVerificationCode] = useState('');
   const [actualAmountReceived, setActualAmountReceived] = useState('');
+  const [cancelGameModalVisible, setCancelGameModalVisible] = useState(false);
+  const [gameToCancel, setGameToCancel] = useState<any | null>(null);
+  const [cancelReason, setCancelReason] = useState('');
 
   // Check admin role on mount
   useEffect(() => {
@@ -67,8 +74,12 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
       );
       return;
     }
-    loadPendingTransactions();
+    loadData();
   }, []);
+
+  const loadData = async () => {
+    await Promise.all([loadPendingTransactions(), loadSquaresGames()]);
+  };
 
   const loadPendingTransactions = async () => {
     try {
@@ -110,9 +121,37 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
     }
   };
 
+  const loadSquaresGames = async () => {
+    try {
+      console.log('[AdminDashboard] Loading squares games...');
+
+      // Load all active and locked squares games
+      const { data: activeGames } = await client.models.SquaresGame.list({
+        filter: {
+          or: [
+            { status: { eq: 'ACTIVE' } },
+            { status: { eq: 'LOCKED' } },
+            { status: { eq: 'LIVE' } },
+          ]
+        }
+      });
+
+      if (activeGames) {
+        // Sort by creation date (newest first)
+        const sortedGames = activeGames.sort((a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        );
+        setSquaresGames(sortedGames);
+        console.log('[AdminDashboard] Loaded', sortedGames.length, 'squares games');
+      }
+    } catch (error) {
+      console.error('[AdminDashboard] Error loading squares games:', error);
+    }
+  };
+
   const handleRefresh = async () => {
     setRefreshing(true);
-    await loadPendingTransactions();
+    await loadData();
     setRefreshing(false);
   };
 
@@ -261,6 +300,40 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
     }
   };
 
+  const handleCancelGame = (game: any) => {
+    setGameToCancel(game);
+    setCancelReason('');
+    setCancelGameModalVisible(true);
+  };
+
+  const handleConfirmCancelGame = async () => {
+    if (!user?.userId || !gameToCancel) return;
+
+    if (!cancelReason.trim()) {
+      showAlert('Reason Required', 'Please enter a reason for cancelling this game');
+      return;
+    }
+
+    try {
+      console.log('[AdminDashboard] Cancelling game:', gameToCancel.id);
+      setCancelGameModalVisible(false);
+      setProcessingId(gameToCancel.id);
+
+      await SquaresGameService.cancelSquaresGame(gameToCancel.id, cancelReason.trim());
+
+      showAlert('Success', 'Game cancelled and all participants have been refunded');
+      console.log('[AdminDashboard] Reloading games after cancellation...');
+      await loadSquaresGames();
+    } catch (error) {
+      console.error('[AdminDashboard] Error cancelling game:', error);
+      showAlert('Error', 'Failed to cancel game');
+    } finally {
+      setProcessingId(null);
+      setGameToCancel(null);
+      setCancelReason('');
+    }
+  };
+
   const getFilteredTransactions = () => {
     if (filter === 'ALL') return pendingTransactions;
     if (filter === 'DEPOSITS') return pendingTransactions.filter(t => t.type === 'DEPOSIT');
@@ -366,6 +439,76 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
     );
   };
 
+  const renderSquaresGame = (game: any) => {
+    const isProcessing = processingId === game.id;
+
+    return (
+      <View key={game.id} style={styles.transactionCard}>
+        <View style={styles.transactionHeader}>
+          <View style={[
+            styles.transactionIcon,
+            { backgroundColor: colors.primary + '20' }
+          ]}>
+            <Ionicons
+              name="grid"
+              size={24}
+              color={colors.primary}
+            />
+          </View>
+
+          <View style={styles.transactionInfo}>
+            <Text style={styles.transactionType} numberOfLines={2}>
+              {game.title}
+            </Text>
+            <Text style={styles.transactionAmount}>
+              {formatCurrency(game.totalPot)} pot
+            </Text>
+            <Text style={styles.transactionDate}>
+              {formatDateTime(game.createdAt)}
+            </Text>
+          </View>
+
+          <View style={styles.transactionActions}>
+            <TouchableOpacity
+              style={[styles.actionButton, styles.rejectButton]}
+              onPress={() => handleCancelGame(game)}
+              disabled={isProcessing}
+              activeOpacity={0.7}
+            >
+              {isProcessing ? (
+                <ActivityIndicator size="small" color={colors.background} />
+              ) : (
+                <Ionicons name="close-circle" size={20} color={colors.background} />
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        <View style={styles.transactionDetails}>
+          <View style={styles.detailRow}>
+            <Text style={styles.detailLabel}>Status:</Text>
+            <Text style={styles.detailValue}>{game.status}</Text>
+          </View>
+
+          <View style={styles.detailRow}>
+            <Text style={styles.detailLabel}>Price/Square:</Text>
+            <Text style={styles.detailValue}>{formatCurrency(game.pricePerSquare)}</Text>
+          </View>
+
+          <View style={styles.detailRow}>
+            <Text style={styles.detailLabel}>Squares Sold:</Text>
+            <Text style={styles.detailValue}>{game.squaresSold}/100</Text>
+          </View>
+
+          <View style={styles.detailRow}>
+            <Text style={styles.detailLabel}>Creator:</Text>
+            <Text style={styles.detailValue}>{getUserDisplayName(game.creatorId)}</Text>
+          </View>
+        </View>
+      </View>
+    );
+  };
+
   if (isLoading) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
@@ -387,61 +530,111 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
       {/* Warning Banner */}
       <View style={styles.warningBanner}>
         <Ionicons name="shield-checkmark" size={20} color={colors.warning} />
-        <Text style={styles.warningText}>Admin Mode - Transaction Approval</Text>
+        <Text style={styles.warningText}>Admin Mode - Management</Text>
       </View>
 
-      {/* Stats Summary */}
-      <View style={styles.statsContainer}>
-        <View style={styles.statCard}>
-          <Text style={styles.statValue}>{pendingTransactions.length}</Text>
-          <Text style={styles.statLabel}>Pending</Text>
-        </View>
-        <View style={styles.statCard}>
-          <Text style={styles.statValue}>
-            {pendingTransactions.filter(t => t.type === 'DEPOSIT').length}
-          </Text>
-          <Text style={styles.statLabel}>Deposits</Text>
-        </View>
-        <View style={styles.statCard}>
-          <Text style={styles.statValue}>
-            {pendingTransactions.filter(t => t.type === 'WITHDRAWAL').length}
-          </Text>
-          <Text style={styles.statLabel}>Withdrawals</Text>
-        </View>
-      </View>
-
-      {/* Filters */}
+      {/* Section Switcher */}
       <View style={styles.filtersContainer}>
         <TouchableOpacity
-          style={[styles.filterButton, filter === 'ALL' && styles.filterButtonActive]}
-          onPress={() => setFilter('ALL')}
+          style={[styles.filterButton, section === 'TRANSACTIONS' && styles.filterButtonActive]}
+          onPress={() => setSection('TRANSACTIONS')}
           activeOpacity={0.7}
         >
-          <Text style={[styles.filterButtonText, filter === 'ALL' && styles.filterButtonTextActive]}>
-            All
+          <Text style={[styles.filterButtonText, section === 'TRANSACTIONS' && styles.filterButtonTextActive]}>
+            Transactions
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.filterButton, filter === 'DEPOSITS' && styles.filterButtonActive]}
-          onPress={() => setFilter('DEPOSITS')}
+          style={[styles.filterButton, section === 'SQUARES' && styles.filterButtonActive]}
+          onPress={() => setSection('SQUARES')}
           activeOpacity={0.7}
         >
-          <Text style={[styles.filterButtonText, filter === 'DEPOSITS' && styles.filterButtonTextActive]}>
-            Deposits
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.filterButton, filter === 'WITHDRAWALS' && styles.filterButtonActive]}
-          onPress={() => setFilter('WITHDRAWALS')}
-          activeOpacity={0.7}
-        >
-          <Text style={[styles.filterButtonText, filter === 'WITHDRAWALS' && styles.filterButtonTextActive]}>
-            Withdrawals
+          <Text style={[styles.filterButtonText, section === 'SQUARES' && styles.filterButtonTextActive]}>
+            Squares Games
           </Text>
         </TouchableOpacity>
       </View>
 
-      {/* Transactions List */}
+      {section === 'TRANSACTIONS' && (
+        <>
+          {/* Stats Summary */}
+          <View style={styles.statsContainer}>
+            <View style={styles.statCard}>
+              <Text style={styles.statValue}>{pendingTransactions.length}</Text>
+              <Text style={styles.statLabel}>Pending</Text>
+            </View>
+            <View style={styles.statCard}>
+              <Text style={styles.statValue}>
+                {pendingTransactions.filter(t => t.type === 'DEPOSIT').length}
+              </Text>
+              <Text style={styles.statLabel}>Deposits</Text>
+            </View>
+            <View style={styles.statCard}>
+              <Text style={styles.statValue}>
+                {pendingTransactions.filter(t => t.type === 'WITHDRAWAL').length}
+              </Text>
+              <Text style={styles.statLabel}>Withdrawals</Text>
+            </View>
+          </View>
+
+          {/* Filters */}
+          <View style={styles.filtersContainer}>
+            <TouchableOpacity
+              style={[styles.filterButton, filter === 'ALL' && styles.filterButtonActive]}
+              onPress={() => setFilter('ALL')}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.filterButtonText, filter === 'ALL' && styles.filterButtonTextActive]}>
+                All
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.filterButton, filter === 'DEPOSITS' && styles.filterButtonActive]}
+              onPress={() => setFilter('DEPOSITS')}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.filterButtonText, filter === 'DEPOSITS' && styles.filterButtonTextActive]}>
+                Deposits
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.filterButton, filter === 'WITHDRAWALS' && styles.filterButtonActive]}
+              onPress={() => setFilter('WITHDRAWALS')}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.filterButtonText, filter === 'WITHDRAWALS' && styles.filterButtonTextActive]}>
+                Withdrawals
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </>
+      )}
+
+      {section === 'SQUARES' && (
+        <>
+          {/* Stats Summary */}
+          <View style={styles.statsContainer}>
+            <View style={styles.statCard}>
+              <Text style={styles.statValue}>{squaresGames.length}</Text>
+              <Text style={styles.statLabel}>Active Games</Text>
+            </View>
+            <View style={styles.statCard}>
+              <Text style={styles.statValue}>
+                {squaresGames.reduce((sum, g) => sum + g.squaresSold, 0)}
+              </Text>
+              <Text style={styles.statLabel}>Total Squares</Text>
+            </View>
+            <View style={styles.statCard}>
+              <Text style={styles.statValue}>
+                {formatCurrency(squaresGames.reduce((sum, g) => sum + g.totalPot, 0))}
+              </Text>
+              <Text style={styles.statLabel}>Total Pot</Text>
+            </View>
+          </View>
+        </>
+      )}
+
+      {/* Content List */}
       <ScrollView
         style={styles.content}
         showsVerticalScrollIndicator={false}
@@ -449,16 +642,30 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.primary} />
         }
       >
-        {filteredTransactions.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Ionicons name="checkmark-done-circle-outline" size={64} color={colors.success} />
-            <Text style={styles.emptyTitle}>All Clear!</Text>
-            <Text style={styles.emptyDescription}>
-              No pending {filter === 'ALL' ? 'transactions' : filter.toLowerCase()} at the moment
-            </Text>
-          </View>
+        {section === 'TRANSACTIONS' ? (
+          filteredTransactions.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Ionicons name="checkmark-done-circle-outline" size={64} color={colors.success} />
+              <Text style={styles.emptyTitle}>All Clear!</Text>
+              <Text style={styles.emptyDescription}>
+                No pending {filter === 'ALL' ? 'transactions' : filter.toLowerCase()} at the moment
+              </Text>
+            </View>
+          ) : (
+            filteredTransactions.map(renderTransaction)
+          )
         ) : (
-          filteredTransactions.map(renderTransaction)
+          squaresGames.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Ionicons name="grid-outline" size={64} color={colors.primary} />
+              <Text style={styles.emptyTitle}>No Active Games</Text>
+              <Text style={styles.emptyDescription}>
+                No active squares games require admin attention
+              </Text>
+            </View>
+          ) : (
+            squaresGames.map(renderSquaresGame)
+          )
         )}
       </ScrollView>
 
@@ -644,6 +851,84 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
                   >
                     <Ionicons name="close" size={20} color={colors.background} />
                     <Text style={styles.rejectModalConfirmText}>Reject Transaction</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Cancel Game Modal */}
+      <Modal
+        visible={cancelGameModalVisible}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setCancelGameModalVisible(false)}
+      >
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <TouchableOpacity
+            style={styles.modalBackdrop}
+            activeOpacity={1}
+            onPress={() => setCancelGameModalVisible(false)}
+          >
+            <TouchableOpacity activeOpacity={1} onPress={(e) => e.stopPropagation()}>
+              <View style={styles.rejectModal}>
+                <View style={styles.rejectModalHeader}>
+                  <Ionicons name="close-circle" size={32} color={colors.error} />
+                  <Text style={styles.rejectModalTitle}>Cancel Squares Game</Text>
+                </View>
+
+                {gameToCancel && (
+                  <View style={styles.rejectModalInfo}>
+                    <Text style={styles.rejectModalInfoText} numberOfLines={2}>
+                      {gameToCancel.title}
+                    </Text>
+                    <Text style={styles.rejectModalInfoSubtext}>
+                      Pot: {formatCurrency(gameToCancel.totalPot)} | Squares: {gameToCancel.squaresSold}/100
+                    </Text>
+                    <Text style={[styles.rejectModalInfoSubtext, { color: colors.warning, marginTop: spacing.xs }]}>
+                      This will refund all participants
+                    </Text>
+                  </View>
+                )}
+
+                <Text style={styles.rejectModalLabel}>Reason for Cancellation</Text>
+                <TextInput
+                  style={styles.rejectModalInput}
+                  placeholder="Enter reason (e.g., Event cancelled, Technical issue)"
+                  placeholderTextColor={colors.textMuted}
+                  value={cancelReason}
+                  onChangeText={setCancelReason}
+                  multiline
+                  numberOfLines={3}
+                  textAlignVertical="top"
+                  autoFocus
+                />
+
+                <View style={styles.rejectModalActions}>
+                  <TouchableOpacity
+                    style={styles.rejectModalCancelButton}
+                    onPress={() => setCancelGameModalVisible(false)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.rejectModalCancelText}>Keep Game</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.rejectModalConfirmButton,
+                      !cancelReason.trim() && styles.rejectModalConfirmButtonDisabled
+                    ]}
+                    onPress={handleConfirmCancelGame}
+                    disabled={!cancelReason.trim()}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="close" size={20} color={colors.background} />
+                    <Text style={styles.rejectModalConfirmText}>Cancel Game</Text>
                   </TouchableOpacity>
                 </View>
               </View>

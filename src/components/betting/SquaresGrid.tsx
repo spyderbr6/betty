@@ -37,6 +37,31 @@ export const SquaresGrid: React.FC<SquaresGridProps> = ({
   const maxGridWidth = screenWidth - PADDING - HEADER_SIZE - 10; // Extra margin
   const CELL_SIZE = Math.floor(maxGridWidth / 10);
 
+  // Calculate relative luminance for color (WCAG formula)
+  const getRelativeLuminance = (hex: string): number => {
+    // Convert hex to RGB
+    const r = parseInt(hex.slice(1, 3), 16) / 255;
+    const g = parseInt(hex.slice(3, 5), 16) / 255;
+    const b = parseInt(hex.slice(5, 7), 16) / 255;
+
+    // Apply gamma correction
+    const rsRGB = r <= 0.03928 ? r / 12.92 : Math.pow((r + 0.055) / 1.055, 2.4);
+    const gsRGB = g <= 0.03928 ? g / 12.92 : Math.pow((g + 0.055) / 1.055, 2.4);
+    const bsRGB = b <= 0.03928 ? b / 12.92 : Math.pow((b + 0.055) / 1.055, 2.4);
+
+    // Calculate relative luminance
+    return 0.2126 * rsRGB + 0.7152 * gsRGB + 0.0722 * bsRGB;
+  };
+
+  // Determine if white or black text provides better contrast
+  const getTextColorForBackground = (bgColor: string): string => {
+    const luminance = getRelativeLuminance(bgColor);
+    // If background is light (luminance > 0.5), use dark text
+    // If background is dark (luminance <= 0.5), use white text
+    // This ensures contrast ratio meets WCAG AA standard (4.5:1+)
+    return luminance > 0.5 ? '#1A1A1A' : '#FFFFFF';
+  };
+
   // Generate consistent color for owner name (deterministic hash-based)
   const getColorForOwner = (ownerName: string): string => {
     // Simple hash function to generate consistent color
@@ -45,23 +70,23 @@ export const SquaresGrid: React.FC<SquaresGridProps> = ({
       hash = ownerName.charCodeAt(i) + ((hash << 5) - hash);
     }
 
-    // Predefined palette of pleasant, distinct colors
+    // Predefined palette of pleasant, distinct colors with better contrast
     const colorPalette = [
-      '#FF6B6B', // Coral Red
-      '#4ECDC4', // Turquoise
-      '#45B7D1', // Sky Blue
-      '#FFA07A', // Light Salmon
-      '#98D8C8', // Mint
-      '#F7DC6F', // Soft Yellow
-      '#BB8FCE', // Lavender
-      '#85C1E2', // Light Blue
-      '#F8B88B', // Peach
-      '#A8E6CF', // Light Green
-      '#FFD3B6', // Apricot
-      '#AAAAFF', // Periwinkle
-      '#FFB3BA', // Pink
-      '#BAFFC9', // Light Mint
-      '#BAE1FF', // Baby Blue
+      '#E63946', // Red (darker for better contrast)
+      '#2A9D8F', // Teal
+      '#3A86FF', // Blue
+      '#FF6B35', // Orange
+      '#06A77D', // Green
+      '#F77F00', // Dark Orange
+      '#9D4EDD', // Purple
+      '#0077B6', // Dark Blue
+      '#EF476F', // Pink Red
+      '#06D6A0', // Mint Green
+      '#FB8500', // Dark Yellow-Orange
+      '#8338EC', // Violet
+      '#D90429', // Crimson
+      '#06FFA5', // Bright Green
+      '#118AB2', // Cerulean
     ];
 
     const index = Math.abs(hash) % colorPalette.length;
@@ -76,10 +101,12 @@ export const SquaresGrid: React.FC<SquaresGridProps> = ({
 
     purchases.forEach((purchase) => {
       const ownerColor = getColorForOwner(purchase.ownerName);
+      const textColor = getTextColorForBackground(ownerColor);
       grid[purchase.gridRow][purchase.gridCol] = {
         purchase,
         owner: purchase.ownerName,
         ownerColor,
+        textColor,
         isUserBought: purchase.userId === currentUserId,
       };
     });
@@ -179,7 +206,16 @@ export const SquaresGrid: React.FC<SquaresGridProps> = ({
                       >
                         {!isAvailable && (
                           <View style={styles.cellContent}>
-                            <Text style={[styles.ownerName, { fontSize: Math.max(8, CELL_SIZE / 5) }]} numberOfLines={1}>
+                            <Text
+                              style={[
+                                styles.ownerName,
+                                {
+                                  fontSize: Math.max(8, CELL_SIZE / 5),
+                                  color: cell.textColor || '#1A1A1A' // Use calculated text color
+                                }
+                              ]}
+                              numberOfLines={1}
+                            >
                               {truncateNameForGrid(cell.owner)}
                             </Text>
                             {isUserBought && <View style={styles.userDot} />}
@@ -297,7 +333,7 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   ownerName: {
-    color: '#1A1A1A', // Dark text for contrast on colored backgrounds
+    // Color is set dynamically based on background luminance for optimal contrast
     fontWeight: typography.fontWeight.bold,
     textAlign: 'center',
     includeFontPadding: false, // Android-specific
