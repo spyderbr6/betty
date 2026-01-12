@@ -585,7 +585,7 @@ const schema = a.schema({
       // Metadata
       creatorId: a.id().required(),
       squaresSold: a.integer().default(0), // denormalized count: 0-100
-      isPrivate: a.boolean().default(false), // Private games only visible to invited users
+      isPrivate: a.boolean().default(true), // Private games only visible to invited users (default to private)
       locksAt: a.datetime().required(), // when grid locks - typically game start time
       expiresAt: a.datetime(), // game end time from LiveEvent
       resolutionReason: a.string(), // Why game was cancelled/resolved

@@ -1,9 +1,10 @@
 /**
  * Event Picker Modal
- * Modal for selecting a live event for squares games
+ * Modal for selecting upcoming events for squares games
+ * Based on EventDiscoveryModal design, shows only UPCOMING events
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -12,31 +13,21 @@ import {
   FlatList,
   TouchableOpacity,
   ActivityIndicator,
+  RefreshControl,
+  TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { generateClient } from 'aws-amplify/data';
-import type { Schema } from '../../../amplify/data/resource';
+import { Ionicons } from '@expo/vector-icons';
 import { colors, textStyles, spacing, typography } from '../../styles';
 import { ModalHeader } from '../ui/ModalHeader';
-import { Ionicons } from '@expo/vector-icons';
-
-const client = generateClient<Schema>();
-
-interface LiveEvent {
-  id: string;
-  homeTeam: string;
-  awayTeam: string;
-  homeTeamCode?: string;
-  awayTeamCode?: string;
-  scheduledTime: string;
-  status: string;
-  sport?: string;
-  league?: string;
-}
+import { EventBadge } from '../ui/EventBadge';
+import { getAllEventsFromCache } from '../../services/eventCacheService';
+import type { LiveEvent, SportType } from '../../types/events';
+import { showAlert } from '../ui/CustomAlert';
 
 interface EventPickerModalProps {
   visible: boolean;
-  onSelect: (event: LiveEvent) => void;
+  onSelect: (event: any) => void;
   onClose: () => void;
 }
 
@@ -46,121 +37,198 @@ export const EventPickerModal: React.FC<EventPickerModalProps> = ({
   onClose,
 }) => {
   const [events, setEvents] = useState<LiveEvent[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [selectedSport, setSelectedSport] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     if (visible) {
-      loadEvents();
+      loadEvents(false);
+    } else {
+      // Reset state when modal closes
+      setSearchQuery('');
     }
   }, [visible]);
 
-  const loadEvents = async () => {
-    setLoading(true);
+  const loadEvents = async (forceRefresh: boolean) => {
     try {
-      // Fetch upcoming and live events
-      const { data } = await client.models.LiveEvent.list({
-        filter: {
-          or: [
-            { status: { eq: 'UPCOMING' } },
-            { status: { eq: 'LIVE' } },
-          ],
-        },
+      setLoading(true);
+      console.log(`[EventPickerModal] Loading upcoming events (forceRefresh: ${forceRefresh})`);
+
+      // Fetch from cache (will use cached data unless expired or forceRefresh=true)
+      const { upcomingEvents } = await getAllEventsFromCache(forceRefresh);
+
+      // Filter to next 7 days only (not too far out)
+      const now = new Date();
+      const sevenDaysFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+      const filteredEvents = upcomingEvents.filter(event => {
+        const eventTime = new Date(event.scheduledTime);
+        return eventTime >= now && eventTime <= sevenDaysFromNow;
       });
 
-      if (data) {
-        const now = new Date();
-        const sevenDaysFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-
-        // Filter and sort events
-        const sortedEvents = data
-          .map(event => ({
-            id: event.id!,
-            homeTeam: event.homeTeam!,
-            awayTeam: event.awayTeam!,
-            homeTeamCode: event.homeTeamCode || undefined,
-            awayTeamCode: event.awayTeamCode || undefined,
-            scheduledTime: event.scheduledTime!,
-            status: event.status!,
-            sport: event.sport || undefined,
-            league: event.league || undefined,
-          }))
-          // Filter: Only events within next 7 days or currently live
-          .filter(event => {
-            if (event.status === 'LIVE') return true;
-            const eventTime = new Date(event.scheduledTime);
-            return eventTime >= now && eventTime <= sevenDaysFromNow;
-          })
-          // Sort: LIVE events first, then by scheduled time (soonest first)
-          .sort((a, b) => {
-            // LIVE events always come first
-            if (a.status === 'LIVE' && b.status !== 'LIVE') return -1;
-            if (b.status === 'LIVE' && a.status !== 'LIVE') return 1;
-            // Both LIVE or both UPCOMING - sort by time
-            return new Date(a.scheduledTime).getTime() - new Date(b.scheduledTime).getTime();
-          });
-
-        console.log(`[EventPicker] Loaded ${sortedEvents.length} events (filtered to next 7 days)`);
-        setEvents(sortedEvents);
-      }
+      setEvents(filteredEvents);
+      console.log(`[EventPickerModal] Loaded ${filteredEvents.length} upcoming events (next 7 days)`);
     } catch (error) {
-      console.error('Error loading events:', error);
+      console.error('[EventPickerModal] Error loading events:', error);
+      showAlert('Error', 'Failed to load events. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  const filteredEvents = selectedSport
-    ? events.filter(e => e.sport === selectedSport)
-    : events;
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await loadEvents(true); // Force refresh on pull-to-refresh
+    setRefreshing(false);
+  };
 
-  const uniqueSports = Array.from(new Set(events.map(e => e.sport).filter(Boolean)));
+  // Filter events based on search query
+  const filteredEvents = useMemo(() => {
+    if (!searchQuery.trim()) {
+      return events;
+    }
 
-  const renderEvent = ({ item }: { item: LiveEvent }) => {
-    const eventDate = new Date(item.scheduledTime);
-    const isToday = eventDate.toDateString() === new Date().toDateString();
+    const query = searchQuery.toLowerCase();
+    return events.filter(
+      (event) =>
+        event.homeTeam.toLowerCase().includes(query) ||
+        event.awayTeam.toLowerCase().includes(query) ||
+        event.homeTeamCode?.toLowerCase().includes(query) ||
+        event.awayTeamCode?.toLowerCase().includes(query) ||
+        event.venue?.toLowerCase().includes(query) ||
+        event.sport.toLowerCase().includes(query) ||
+        event.league?.toLowerCase().includes(query)
+    );
+  }, [events, searchQuery]);
 
+  const formatEventTime = (scheduledTime: string): string => {
+    const date = new Date(scheduledTime);
+    const now = new Date();
+
+    // Check if it's today
+    const isToday =
+      date.getDate() === now.getDate() &&
+      date.getMonth() === now.getMonth() &&
+      date.getFullYear() === now.getFullYear();
+
+    if (isToday) {
+      return `Today ${date.toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true,
+      })}`;
+    }
+
+    // Tomorrow
+    const tomorrow = new Date(now);
+    tomorrow.setDate(now.getDate() + 1);
+    const isTomorrow =
+      date.getDate() === tomorrow.getDate() &&
+      date.getMonth() === tomorrow.getMonth() &&
+      date.getFullYear() === tomorrow.getFullYear();
+
+    if (isTomorrow) {
+      return `Tomorrow ${date.toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true,
+      })}`;
+    }
+
+    // Other dates
+    return date.toLocaleDateString('en-US', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    });
+  };
+
+  const handleEventSelect = (event: LiveEvent) => {
+    // Transform to match expected format
+    onSelect({
+      id: event.id,
+      homeTeam: event.homeTeam,
+      awayTeam: event.awayTeam,
+      homeTeamCode: event.homeTeamCode,
+      awayTeamCode: event.awayTeamCode,
+      scheduledTime: event.scheduledTime,
+      status: event.status,
+      sport: event.sport,
+      league: event.league,
+    });
+    onClose();
+  };
+
+  const renderEventItem = ({ item }: { item: LiveEvent }) => {
     return (
       <TouchableOpacity
         style={styles.eventCard}
-        onPress={() => onSelect(item)}
+        onPress={() => handleEventSelect(item)}
         activeOpacity={0.7}
       >
         <View style={styles.eventHeader}>
-          {item.sport && (
-            <View style={styles.sportBadge}>
-              <Text style={styles.sportBadgeText}>{item.sport}</Text>
-            </View>
-          )}
-          {item.status === 'LIVE' && (
-            <View style={styles.liveBadge}>
-              <View style={styles.liveIndicator} />
-              <Text style={styles.liveBadgeText}>LIVE</Text>
-            </View>
-          )}
+          <EventBadge
+            sport={item.sport as SportType}
+            checkInCount={item.checkInCount}
+            size="small"
+          />
+          <View style={styles.timeContainer}>
+            <Ionicons name="time-outline" size={14} color={colors.textMuted} />
+            <Text style={styles.timeText}>{formatEventTime(item.scheduledTime)}</Text>
+          </View>
         </View>
 
-        <View style={styles.eventTeams}>
-          <Text style={styles.eventTeamText}>
-            {item.awayTeamCode || item.awayTeam}
-          </Text>
-          <Text style={styles.eventVsText}>@</Text>
-          <Text style={styles.eventTeamText}>
-            {item.homeTeamCode || item.homeTeam}
-          </Text>
+        <View style={styles.teamsContainer}>
+          <View style={styles.teamRow}>
+            <Text style={styles.teamCode}>{item.awayTeamCode || item.awayTeam.slice(0, 3).toUpperCase()}</Text>
+            <Text style={styles.teamName} numberOfLines={1}>
+              {item.awayTeam}
+            </Text>
+          </View>
+
+          <View style={styles.teamRow}>
+            <Text style={styles.teamCode}>{item.homeTeamCode || item.homeTeam.slice(0, 3).toUpperCase()}</Text>
+            <Text style={styles.teamName} numberOfLines={1}>
+              {item.homeTeam}
+            </Text>
+          </View>
         </View>
 
-        <View style={styles.eventFooter}>
-          <Ionicons name="calendar-outline" size={14} color={colors.textMuted} />
-          <Text style={styles.eventTime}>
-            {isToday ? 'Today' : eventDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-            {' • '}
-            {eventDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+        {item.venue && (
+          <Text style={styles.venue} numberOfLines={1}>
+            📍 {item.venue}
           </Text>
-        </View>
+        )}
       </TouchableOpacity>
     );
   };
+
+  const renderEmptyState = () => (
+    <View style={styles.emptyContainer}>
+      <Ionicons name="calendar-outline" size={64} color={colors.textMuted} />
+      <Text style={styles.emptyTitle}>
+        {searchQuery.trim() ? 'No Matching Events' : 'No Upcoming Events'}
+      </Text>
+      <Text style={styles.emptyText}>
+        {searchQuery.trim()
+          ? 'No events match your search. Try different terms.'
+          : 'No upcoming events in the next 7 days.'}
+      </Text>
+      {searchQuery.trim() ? (
+        <TouchableOpacity onPress={() => setSearchQuery('')} style={styles.refreshButton}>
+          <Text style={styles.refreshButtonText}>Clear Search</Text>
+        </TouchableOpacity>
+      ) : (
+        <TouchableOpacity onPress={handleRefresh} style={styles.refreshButton}>
+          <Text style={styles.refreshButtonText}>Refresh</Text>
+        </TouchableOpacity>
+      )}
+    </View>
+  );
 
   return (
     <Modal
@@ -172,64 +240,56 @@ export const EventPickerModal: React.FC<EventPickerModalProps> = ({
       <SafeAreaView style={styles.container} edges={['top']}>
         <ModalHeader title="Select Event" onClose={onClose} />
 
-        {/* Sport Filter */}
-        {uniqueSports.length > 1 && (
-          <View style={styles.filterContainer}>
-            <TouchableOpacity
-              style={[
-                styles.filterChip,
-                !selectedSport && styles.filterChipActive,
-              ]}
-              onPress={() => setSelectedSport(null)}
-            >
-              <Text style={[
-                styles.filterChipText,
-                !selectedSport && styles.filterChipTextActive,
-              ]}>
-                All
-              </Text>
-            </TouchableOpacity>
-
-            {uniqueSports.map(sport => (
+        {/* Search Bar */}
+        <View style={styles.searchContainer}>
+          <View style={styles.searchInputContainer}>
+            <Ionicons
+              name="search"
+              size={18}
+              color={colors.textMuted}
+              style={styles.searchIcon}
+            />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search events..."
+              placeholderTextColor={colors.textMuted}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            {searchQuery.length > 0 && (
               <TouchableOpacity
-                key={sport}
-                style={[
-                  styles.filterChip,
-                  selectedSport === sport && styles.filterChipActive,
-                ]}
-                onPress={() => setSelectedSport(sport as string)}
+                onPress={() => setSearchQuery('')}
+                style={styles.clearButton}
               >
-                <Text style={[
-                  styles.filterChipText,
-                  selectedSport === sport && styles.filterChipTextActive,
-                ]}>
-                  {sport}
-                </Text>
+                <Ionicons name="close-circle" size={18} color={colors.textMuted} />
               </TouchableOpacity>
-            ))}
+            )}
           </View>
-        )}
+        </View>
 
         {loading ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={colors.primary} />
             <Text style={styles.loadingText}>Loading events...</Text>
           </View>
-        ) : filteredEvents.length === 0 ? (
-          <View style={styles.emptyContainer}>
-            <Ionicons name="calendar-outline" size={64} color={colors.textMuted} />
-            <Text style={styles.emptyTitle}>No Events Available</Text>
-            <Text style={styles.emptySubtitle}>
-              There are no upcoming or live events at the moment.
-            </Text>
-          </View>
         ) : (
           <FlatList
             data={filteredEvents}
-            renderItem={renderEvent}
-            keyExtractor={item => item.id}
+            renderItem={renderEventItem}
+            keyExtractor={(item) => item.id}
             contentContainerStyle={styles.listContainer}
             showsVerticalScrollIndicator={false}
+            ListEmptyComponent={renderEmptyState}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={handleRefresh}
+                tintColor={colors.primary}
+                colors={[colors.primary]}
+              />
+            }
           />
         )}
       </SafeAreaView>
@@ -243,34 +303,33 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
 
-  // Filter
-  filterContainer: {
-    flexDirection: 'row',
+  // Search
+  searchContainer: {
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
-  filterChip: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderRadius: spacing.radius.md,
+  searchInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: colors.surface,
-    marginRight: spacing.xs,
     borderWidth: 1,
     borderColor: colors.border,
+    borderRadius: spacing.radius.md,
+    paddingHorizontal: spacing.sm,
   },
-  filterChipActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
+  searchIcon: {
+    marginRight: spacing.xs,
   },
-  filterChipText: {
-    ...textStyles.caption,
-    color: colors.textSecondary,
-    fontWeight: typography.fontWeight.medium,
+  searchInput: {
+    flex: 1,
+    paddingVertical: spacing.sm,
+    ...textStyles.body,
+    color: colors.textPrimary,
   },
-  filterChipTextActive: {
-    color: colors.background,
+  clearButton: {
+    padding: spacing.xs / 2,
   },
 
   // List
@@ -290,67 +349,45 @@ const styles = StyleSheet.create({
   eventHeader: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: spacing.sm,
   },
-  sportBadge: {
-    backgroundColor: colors.background,
-    borderRadius: spacing.radius.sm,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs / 2,
-    marginRight: spacing.xs,
-  },
-  sportBadgeText: {
-    ...textStyles.caption,
-    color: colors.textSecondary,
-    fontSize: 10,
-    fontWeight: typography.fontWeight.bold,
-  },
-  liveBadge: {
+  timeContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.error,
-    borderRadius: spacing.radius.sm,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs / 2,
+    gap: spacing.xs / 2,
   },
-  liveIndicator: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: colors.background,
-    marginRight: spacing.xs / 2,
-  },
-  liveBadgeText: {
+  timeText: {
     ...textStyles.caption,
-    color: colors.background,
-    fontSize: 10,
-    fontWeight: typography.fontWeight.bold,
+    color: colors.textMuted,
+    fontSize: 12,
   },
-  eventTeams: {
+  teamsContainer: {
+    marginBottom: spacing.xs,
+  },
+  teamRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: spacing.sm,
+    paddingVertical: spacing.xs / 2,
   },
-  eventTeamText: {
-    ...textStyles.h4,
-    color: colors.textPrimary,
-    fontWeight: typography.fontWeight.bold,
-  },
-  eventVsText: {
+  teamCode: {
     ...textStyles.body,
-    color: colors.textMuted,
-    marginHorizontal: spacing.sm,
+    color: colors.textSecondary,
+    fontWeight: typography.fontWeight.bold,
+    fontSize: 12,
+    width: 40,
   },
-  eventFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+  teamName: {
+    ...textStyles.body,
+    color: colors.textPrimary,
+    flex: 1,
+    fontWeight: typography.fontWeight.semibold,
   },
-  eventTime: {
+  venue: {
     ...textStyles.caption,
     color: colors.textMuted,
-    marginLeft: spacing.xs,
+    fontSize: 11,
+    marginTop: spacing.xs / 2,
   },
 
   // Loading
@@ -368,10 +405,10 @@ const styles = StyleSheet.create({
 
   // Empty State
   emptyContainer: {
-    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     padding: spacing.xl,
+    paddingTop: spacing.xl * 2,
   },
   emptyTitle: {
     ...textStyles.h3,
@@ -379,10 +416,22 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
     fontWeight: typography.fontWeight.bold,
   },
-  emptySubtitle: {
+  emptyText: {
     ...textStyles.body,
     color: colors.textMuted,
     marginTop: spacing.xs,
     textAlign: 'center',
+  },
+  refreshButton: {
+    marginTop: spacing.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    backgroundColor: colors.primary,
+    borderRadius: spacing.radius.md,
+  },
+  refreshButtonText: {
+    ...textStyles.body,
+    color: colors.background,
+    fontWeight: typography.fontWeight.semibold,
   },
 });
