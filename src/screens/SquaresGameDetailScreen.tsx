@@ -138,6 +138,31 @@ export const SquaresGameDetailScreen = ({ route, navigation }: any) => {
     }
   };
 
+  const handleCancelGame = () => {
+    showAlert(
+      'Cancel Game?',
+      'This will cancel the game and refund all participants. This action cannot be undone.',
+      [
+        { text: 'Keep Game', style: 'cancel' },
+        {
+          text: 'Cancel Game',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const reason = 'Game cancelled by creator';
+              await SquaresGameService.cancelSquaresGame(game.id, reason);
+              showAlert('Game Cancelled', 'The game has been cancelled and all participants have been refunded.');
+              navigation.goBack();
+            } catch (error) {
+              console.error('Error cancelling game:', error);
+              showAlert('Error', 'Failed to cancel game. Please try again.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const myPurchases = purchases.filter((p) => p.userId === user?.userId);
 
   // Group purchases by owner name
@@ -405,6 +430,20 @@ export const SquaresGameDetailScreen = ({ route, navigation }: any) => {
                 : 'Select Squares to Purchase'}
             </Text>
           </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Creator Cancel Button */}
+      {user && game.creatorId === user.userId && game.status !== 'RESOLVED' && game.status !== 'CANCELLED' && (
+        <View style={styles.creatorActions}>
+          <TouchableOpacity style={styles.cancelButton} onPress={handleCancelGame}>
+            <Text style={styles.cancelButtonText}>Cancel Game & Refund All</Text>
+          </TouchableOpacity>
+          <Text style={styles.cancelHint}>
+            {purchases.length > 0
+              ? `This will refund ${purchases.length} purchase${purchases.length > 1 ? 's' : ''}`
+              : 'Cancel this game if it cannot proceed'}
+          </Text>
         </View>
       )}
 
@@ -712,5 +751,28 @@ const styles = StyleSheet.create({
     ...textStyles.button,
     color: colors.textInverse,
     fontWeight: typography.fontWeight.bold,
+  },
+  creatorActions: {
+    padding: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  cancelButton: {
+    backgroundColor: colors.error,
+    paddingVertical: spacing.sm,
+    borderRadius: spacing.radius.sm,
+    alignItems: 'center',
+    marginBottom: spacing.xs,
+  },
+  cancelButtonText: {
+    ...textStyles.body,
+    color: colors.textInverse,
+    fontWeight: typography.fontWeight.semibold,
+  },
+  cancelHint: {
+    ...textStyles.caption,
+    color: colors.textMuted,
+    textAlign: 'center',
   },
 });
