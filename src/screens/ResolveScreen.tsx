@@ -19,12 +19,18 @@ import type { Schema } from '../../amplify/data/resource';
 import { colors, commonStyles, textStyles, spacing, typography } from '../styles';
 import { Header } from '../components/ui/Header';
 import { BetCard } from '../components/betting/BetCard';
+import { SquaresGameCard } from '../components/betting/SquaresGameCard';
 import { Bet } from '../types/betting';
 import { useAuth } from '../contexts/AuthContext';
 import { formatCurrency } from '../utils/formatting';
 import { NotificationService } from '../services/notificationService';
 import { TransactionService } from '../services/transactionService';
 import { showAlert } from '../components/ui/CustomAlert';
+import { useNavigation } from '@react-navigation/native';
+import { StackNavigationProp } from '@react-navigation/stack';
+import { BetsStackParamList } from '../types/navigation';
+
+type ResolveScreenNavigationProp = StackNavigationProp<BetsStackParamList, 'BetsList'>;
 
 // Initialize GraphQL client
 const client = generateClient<Schema>();
@@ -70,10 +76,26 @@ const transformAmplifyBet = (bet: any): Bet | null => {
   };
 };
 
+interface SquaresGame {
+  id: string;
+  creatorId: string;
+  eventId: string;
+  title: string;
+  description?: string;
+  status: string;
+  pricePerSquare: number;
+  totalPot: number;
+  squaresSold: number;
+  numbersAssigned: boolean;
+  createdAt: string;
+}
+
 export const ResolveScreen: React.FC = () => {
   const { user } = useAuth();
+  const navigation = useNavigation<ResolveScreenNavigationProp>();
   const insets = useSafeAreaInsets();
   const [pendingBets, setPendingBets] = useState<Bet[]>([]);
+  const [resolvedSquares, setResolvedSquares] = useState<SquaresGame[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isResolving, setIsResolving] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -85,7 +107,7 @@ export const ResolveScreen: React.FC = () => {
     const fetchPendingBets = async () => {
       try {
         setIsLoading(true);
-        console.log('Fetching bets pending resolution for user:', user.userId);
+        console.log('Fetching bets pending resolution and resolved squares for user:', user.userId);
 
         // Fetch all PENDING_RESOLUTION bets (for everyone, not just creators)
         const { data: betsData } = await client.models.Bet.list({
@@ -149,8 +171,45 @@ export const ResolveScreen: React.FC = () => {
           console.log('Found pending resolution bets:', sortedBets.length);
           setPendingBets(sortedBets);
         }
+
+        // Fetch RESOLVED squares games where user has purchases
+        const { data: userPurchases } = await client.models.SquaresPurchase.list({
+          filter: { userId: { eq: user.userId } }
+        });
+
+        if (userPurchases && userPurchases.length > 0) {
+          const squaresGameIds = [...new Set(userPurchases.map(p => p.squaresGameId).filter(Boolean))];
+
+          // Fetch all the games
+          const gamesPromises = squaresGameIds.map(id =>
+            client.models.SquaresGame.get({ id: id! })
+          );
+          const gamesResults = await Promise.all(gamesPromises);
+
+          // Filter to only RESOLVED games and transform
+          const resolvedGames: SquaresGame[] = gamesResults
+            .map(result => result.data)
+            .filter(game => game && game.status === 'RESOLVED')
+            .map(game => ({
+              id: game!.id!,
+              creatorId: game!.creatorId!,
+              eventId: game!.eventId!,
+              title: game!.title!,
+              description: game!.description || undefined,
+              status: game!.status!,
+              pricePerSquare: game!.pricePerSquare || 0,
+              totalPot: game!.totalPot || 0,
+              squaresSold: game!.squaresSold || 0,
+              numbersAssigned: game!.numbersAssigned || false,
+              createdAt: game!.createdAt || new Date().toISOString(),
+            }))
+            .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+          console.log('Found resolved squares games:', resolvedGames.length);
+          setResolvedSquares(resolvedGames);
+        }
       } catch (error) {
-        console.error('Error fetching pending bets:', error);
+        console.error('Error fetching pending bets and resolved squares:', error);
       } finally {
         setIsLoading(false);
       }
@@ -243,8 +302,44 @@ export const ResolveScreen: React.FC = () => {
 
         setPendingBets(sortedBets);
       }
+
+      // Refresh RESOLVED squares games where user has purchases
+      const { data: userPurchases } = await client.models.SquaresPurchase.list({
+        filter: { userId: { eq: user.userId } }
+      });
+
+      if (userPurchases && userPurchases.length > 0) {
+        const squaresGameIds = [...new Set(userPurchases.map(p => p.squaresGameId).filter(Boolean))];
+
+        const gamesPromises = squaresGameIds.map(id =>
+          client.models.SquaresGame.get({ id: id! })
+        );
+        const gamesResults = await Promise.all(gamesPromises);
+
+        const resolvedGames: SquaresGame[] = gamesResults
+          .map(result => result.data)
+          .filter(game => game && game.status === 'RESOLVED')
+          .map(game => ({
+            id: game!.id!,
+            creatorId: game!.creatorId!,
+            eventId: game!.eventId!,
+            title: game!.title!,
+            description: game!.description || undefined,
+            status: game!.status!,
+            pricePerSquare: game!.pricePerSquare || 0,
+            totalPot: game!.totalPot || 0,
+            squaresSold: game!.squaresSold || 0,
+            numbersAssigned: game!.numbersAssigned || false,
+            createdAt: game!.createdAt || new Date().toISOString(),
+          }))
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+        setResolvedSquares(resolvedGames);
+      } else {
+        setResolvedSquares([]);
+      }
     } catch (error) {
-      console.error('Error refreshing pending bets:', error);
+      console.error('Error refreshing pending bets and resolved squares:', error);
     } finally {
       setRefreshing(false);
     }
@@ -497,8 +592,10 @@ export const ResolveScreen: React.FC = () => {
             <ActivityIndicator size="large" color={colors.primary} />
             <Text style={styles.loadingText}>Loading pending bets...</Text>
           </View>
-        ) : pendingBets.length > 0 ? (
-          pendingBets.map((bet) => (
+        ) : pendingBets.length > 0 || resolvedSquares.length > 0 ? (
+          <>
+            {/* Pending Resolution Bets */}
+            {pendingBets.map((bet) => (
             <View key={bet.id} style={styles.betContainer}>
               <BetCard
                 bet={bet}
@@ -596,7 +693,24 @@ export const ResolveScreen: React.FC = () => {
                 </View>
               )}
             </View>
-          ))
+            ))}
+
+            {/* Resolved Squares Games */}
+            {resolvedSquares.length > 0 && (
+              <View style={styles.squaresSection}>
+                {pendingBets.length > 0 && (
+                  <Text style={styles.sectionTitle}>COMPLETED SQUARES</Text>
+                )}
+                {resolvedSquares.map((game) => (
+                  <SquaresGameCard
+                    key={game.id}
+                    squaresGame={game}
+                    onPress={() => navigation.navigate('SquaresGameDetail', { gameId: game.id })}
+                  />
+                ))}
+              </View>
+            )}
+          </>
         ) : (
           <View style={styles.emptyContainer}>
             <Text style={styles.emptyTitle}>No Pending Resolutions</Text>
@@ -777,5 +891,18 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: typography.fontSize.xs,
     textAlign: 'center',
+  },
+
+  // Squares Section
+  squaresSection: {
+    marginTop: spacing.md,
+  },
+  sectionTitle: {
+    ...textStyles.h4,
+    color: colors.textSecondary,
+    marginBottom: spacing.sm,
+    marginHorizontal: spacing.md,
+    fontWeight: typography.fontWeight.bold,
+    letterSpacing: 0.5,
   },
 });
