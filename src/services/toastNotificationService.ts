@@ -312,6 +312,10 @@ class ToastNotificationService {
       'WITHDRAWAL_FAILED': 'failed withdrawals',
       'PAYMENT_METHOD_VERIFIED': 'payment verifications',
       'SYSTEM_ANNOUNCEMENT': 'announcements',
+      'SQUARES_GRID_LOCKED': 'grid locks',
+      'SQUARES_PERIOD_WINNER': 'period wins',
+      'SQUARES_GAME_LIVE': 'live games',
+      'SQUARES_GAME_CANCELLED': 'game cancellations',
     };
     return labels[type] || 'notifications';
   }

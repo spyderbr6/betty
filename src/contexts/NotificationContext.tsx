@@ -9,6 +9,7 @@ import { AppState, AppStateStatus } from 'react-native';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
 import { NotificationService } from '../services/notificationService';
+import ToastNotificationService from '../services/toastNotificationService';
 import { useAuth } from './AuthContext';
 
 const client = generateClient<Schema>();
@@ -121,6 +122,32 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         // Only increment if notification is unread
         if (!notification.isRead) {
           setUnreadCount(prev => prev + 1);
+        }
+
+        // Show in-app toast for new notifications (from Lambda or other sources)
+        if (notification.priority !== 'LOW') {
+          try {
+            // Parse actionData if it's a JSON string
+            let parsedActionData = notification.actionData;
+            if (typeof notification.actionData === 'string') {
+              try {
+                parsedActionData = JSON.parse(notification.actionData);
+              } catch {
+                // If parsing fails, use as-is
+              }
+            }
+
+            // Show toast
+            ToastNotificationService.showToast(
+              notification.type,
+              notification.title,
+              notification.message,
+              notification.priority,
+              parsedActionData
+            );
+          } catch (toastError) {
+            console.warn('[NotificationContext] Failed to show toast for new notification:', toastError);
+          }
         }
       },
       error: (error) => {
