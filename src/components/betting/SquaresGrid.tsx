@@ -37,16 +37,49 @@ export const SquaresGrid: React.FC<SquaresGridProps> = ({
   const maxGridWidth = screenWidth - PADDING - HEADER_SIZE - 10; // Extra margin
   const CELL_SIZE = Math.floor(maxGridWidth / 10);
 
-  // Create 10x10 grid with ownership data
+  // Generate consistent color for owner name (deterministic hash-based)
+  const getColorForOwner = (ownerName: string): string => {
+    // Simple hash function to generate consistent color
+    let hash = 0;
+    for (let i = 0; i < ownerName.length; i++) {
+      hash = ownerName.charCodeAt(i) + ((hash << 5) - hash);
+    }
+
+    // Predefined palette of pleasant, distinct colors
+    const colorPalette = [
+      '#FF6B6B', // Coral Red
+      '#4ECDC4', // Turquoise
+      '#45B7D1', // Sky Blue
+      '#FFA07A', // Light Salmon
+      '#98D8C8', // Mint
+      '#F7DC6F', // Soft Yellow
+      '#BB8FCE', // Lavender
+      '#85C1E2', // Light Blue
+      '#F8B88B', // Peach
+      '#A8E6CF', // Light Green
+      '#FFD3B6', // Apricot
+      '#AAAAFF', // Periwinkle
+      '#FFB3BA', // Pink
+      '#BAFFC9', // Light Mint
+      '#BAE1FF', // Baby Blue
+    ];
+
+    const index = Math.abs(hash) % colorPalette.length;
+    return colorPalette[index];
+  };
+
+  // Create 10x10 grid with ownership data and colors
   const gridData = useMemo(() => {
     const grid: Array<Array<any>> = Array(10)
       .fill(null)
       .map(() => Array(10).fill(null));
 
     purchases.forEach((purchase) => {
+      const ownerColor = getColorForOwner(purchase.ownerName);
       grid[purchase.gridRow][purchase.gridCol] = {
         purchase,
         owner: purchase.ownerName,
+        ownerColor,
         isUserBought: purchase.userId === currentUserId,
       };
     });
@@ -137,6 +170,8 @@ export const SquaresGrid: React.FC<SquaresGridProps> = ({
                           isSelected && styles.selectedCell,
                           isUserBought && styles.userBoughtCell,
                           !editable && styles.disabledCell,
+                          // Apply owner color to owned squares
+                          !isAvailable && cell.ownerColor && { backgroundColor: cell.ownerColor + '40' }, // 40 = 25% opacity
                         ]}
                         onPress={() => editable && isAvailable && onSquarePress(rowIndex, colIndex)}
                         disabled={!editable || !isAvailable}
@@ -247,9 +282,10 @@ const styles = StyleSheet.create({
     borderWidth: 2,
   },
   userBoughtCell: {
-    backgroundColor: colors.secondary + '30', // 30% opacity
+    // Remove background - will use owner color instead
+    // Keep strong border to highlight user's squares
     borderColor: colors.secondary,
-    borderWidth: 1.5,
+    borderWidth: 3,
   },
   disabledCell: {
     opacity: 0.8,
@@ -261,8 +297,8 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   ownerName: {
-    color: colors.textPrimary,
-    fontWeight: typography.fontWeight.semibold,
+    color: '#1A1A1A', // Dark text for contrast on colored backgrounds
+    fontWeight: typography.fontWeight.bold,
     textAlign: 'center',
     includeFontPadding: false, // Android-specific
   },
