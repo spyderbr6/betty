@@ -32,6 +32,7 @@ import { useEventCheckIn } from '../hooks/useEventCheckIn';
 import { showAlert } from '../components/ui/CustomAlert';
 import { SquaresGameService } from '../services/squaresGameService';
 import { EventPickerModal } from '../components/modals/EventPickerModal';
+import { FriendSelector } from '../components/ui/FriendSelector';
 
 interface BetTemplate {
   id: string;
@@ -636,21 +637,6 @@ export const CreateBetScreen: React.FC = () => {
     });
   };
 
-  const generateAvatarInitials = (friend: User) => {
-    const nameForAvatar = friend.displayName || friend.username || friend.email.split('@')[0];
-    return nameForAvatar
-      .split(/[\s_.]/)
-      .map(part => part[0]?.toUpperCase())
-      .filter(Boolean)
-      .join('')
-      .slice(0, 2) || '??';
-  };
-
-  const getTopFriends = () => {
-    // Return top 4 friends for quick selection
-    return friends.slice(0, 4);
-  };
-
   // Get current template for dynamic placeholders
   const currentTemplate = betTemplates.find(t => t.id === selectedTemplate) || betTemplates[0];
 
@@ -1055,63 +1041,14 @@ export const CreateBetScreen: React.FC = () => {
         </View>
 
         {/* Friend Invitations Section - Shared by both bet types */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>INVITE FRIENDS</Text>
-          <Text style={styles.sectionSubtitle}>Select friends to invite to this {selectedTemplate === 'squares' ? 'game' : 'bet'}</Text>
-
-          {friends.length > 0 ? (
-            <>
-              {/* Top Friends Quick Selection */}
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.friendsScroll}>
-                {getTopFriends().map((friend) => (
-                  <TouchableOpacity
-                    key={friend.id}
-                    style={[
-                      styles.friendAvatar,
-                      selectedFriends.has(friend.id) && styles.friendAvatarSelected
-                    ]}
-                    onPress={() => toggleFriendSelection(friend.id)}
-                    activeOpacity={0.7}
-                  >
-                    {friend.profilePictureUrl ? (
-                      <Image source={{ uri: friend.profilePictureUrl }} style={styles.friendImage} resizeMode="cover" />
-                    ) : (
-                      <View style={[styles.friendPlaceholder, selectedFriends.has(friend.id) && styles.friendPlaceholderSelected]}>
-                        <Text style={[styles.friendInitials, selectedFriends.has(friend.id) && styles.friendInitialsSelected]}>
-                          {generateAvatarInitials(friend)}
-                        </Text>
-                      </View>
-                    )}
-                    {selectedFriends.has(friend.id) && (
-                      <View style={styles.friendSelectedBadge}>
-                        <Ionicons name="checkmark" size={12} color={colors.background} />
-                      </View>
-                    )}
-                    <Text style={styles.friendName} numberOfLines={1}>
-                      {friend.displayName || friend.username || friend.email.split('@')[0]}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-
-              {/* Selected Friends Count */}
-              {selectedFriends.size > 0 && (
-                <View style={styles.selectedFriendsInfo}>
-                  <Ionicons name="people" size={16} color={colors.primary} />
-                  <Text style={styles.selectedFriendsText}>
-                    {selectedFriends.size} friend{selectedFriends.size !== 1 ? 's' : ''} selected
-                  </Text>
-                </View>
-              )}
-            </>
-          ) : (
-            <View style={styles.noFriendsContainer}>
-              <Ionicons name="people-outline" size={32} color={colors.textMuted} />
-              <Text style={styles.noFriendsText}>No friends to invite</Text>
-              <Text style={styles.noFriendsSubtext}>Add friends to invite them to your {selectedTemplate === 'squares' ? 'games' : 'bets'}</Text>
-            </View>
-          )}
-        </View>
+        <FriendSelector
+          friends={friends}
+          selectedFriends={selectedFriends}
+          onToggleFriend={toggleFriendSelection}
+          maxDisplay={10}
+          label="INVITE FRIENDS"
+          sublabel={`Select friends to invite to this ${selectedTemplate === 'squares' ? 'game' : 'bet'}`}
+        />
 
         {/* Create Button */}
         <View style={styles.createButtonContainer}>
@@ -1412,124 +1349,6 @@ const styles = StyleSheet.create({
   sideHint: {
     ...textStyles.caption,
     color: colors.warning,
-    marginTop: spacing.xs,
-    textAlign: 'center',
-  },
-
-  // Friend Selection Styles
-  friendsScroll: {
-    marginTop: spacing.md,
-  },
-  friendAvatar: {
-    alignItems: 'center',
-    marginRight: spacing.md,
-    width: 60,
-  },
-  friendAvatarSelected: {
-    // No additional styling needed, handled by badge
-  },
-  friendImage: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    borderWidth: 2,
-    borderColor: colors.border,
-  },
-  friendPlaceholder: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: colors.border,
-  },
-  friendPlaceholderSelected: {
-    borderColor: colors.primary,
-    borderWidth: 3,
-  },
-  friendInitials: {
-    ...textStyles.button,
-    color: colors.background,
-    fontWeight: typography.fontWeight.bold,
-    fontSize: 14,
-  },
-  friendInitialsSelected: {
-    color: colors.background,
-  },
-  friendSelectedBadge: {
-    position: 'absolute',
-    top: -2,
-    right: 5,
-    backgroundColor: colors.success,
-    borderRadius: 10,
-    width: 20,
-    height: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: colors.background,
-  },
-  friendName: {
-    ...textStyles.caption,
-    color: colors.textSecondary,
-    marginTop: spacing.xs,
-    textAlign: 'center',
-    maxWidth: 60,
-  },
-  seeMoreButton: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: spacing.md,
-    width: 60,
-  },
-  seeMoreIcon: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderStyle: 'dashed',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  seeMoreText: {
-    ...textStyles.caption,
-    color: colors.textSecondary,
-    marginTop: spacing.xs,
-    textAlign: 'center',
-    maxWidth: 60,
-  },
-  selectedFriendsInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: spacing.md,
-    padding: spacing.sm,
-    backgroundColor: colors.surface,
-    borderRadius: spacing.radius.sm,
-  },
-  selectedFriendsText: {
-    ...textStyles.caption,
-    color: colors.primary,
-    marginLeft: spacing.xs,
-    fontWeight: typography.fontWeight.medium,
-  },
-  noFriendsContainer: {
-    alignItems: 'center',
-    padding: spacing.lg,
-    marginTop: spacing.md,
-  },
-  noFriendsText: {
-    ...textStyles.button,
-    color: colors.textMuted,
-    marginTop: spacing.sm,
-    fontWeight: typography.fontWeight.medium,
-  },
-  noFriendsSubtext: {
-    ...textStyles.caption,
-    color: colors.textMuted,
     marginTop: spacing.xs,
     textAlign: 'center',
   },
