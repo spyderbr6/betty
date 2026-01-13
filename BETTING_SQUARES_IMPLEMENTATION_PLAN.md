@@ -15,7 +15,7 @@ Implement a betting squares system where users can buy spots on a 10x10 grid tie
 ✅ **Bug Fixes (JSON, formatDateTime, params)** - COMPLETED
 ✅ **UX Improvements (Contrast, Admin Controls, Ordering)** - COMPLETED
 ✅ **Squares Invitation System (Database & Shared UI)** - COMPLETED
-🔲 **Squares Invitation System (Form & Discovery)** - IN PROGRESS
+✅ **Squares Invitation System (Form & Discovery)** - COMPLETED
 🔲 **Phase 5: Polish & Features** - PENDING
 
 ## Current Status Summary
