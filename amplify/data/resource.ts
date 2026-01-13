@@ -58,6 +58,8 @@ const schema = a.schema({
       squaresGamesCreated: a.hasMany('SquaresGame', 'creatorId'),
       squaresPurchases: a.hasMany('SquaresPurchase', 'userId'),
       squaresPayouts: a.hasMany('SquaresPayout', 'userId'),
+      sentSquaresInvitations: a.hasMany('SquaresInvitation', 'fromUserId'),
+      receivedSquaresInvitations: a.hasMany('SquaresInvitation', 'toUserId'),
     })
     .authorization((allow) => [
       allow.owner().to(['create', 'read', 'update', 'delete']),
@@ -91,7 +93,10 @@ const schema = a.schema({
         'SQUARES_PERIOD_WINNER',      // You won a period!
         'SQUARES_GAME_LIVE',          // Game starting soon
         'SQUARES_GAME_CANCELLED',     // Game cancelled
-        'SQUARES_PURCHASE_CONFIRMED'  // Purchase confirmed
+        'SQUARES_PURCHASE_CONFIRMED', // Purchase confirmed
+        'SQUARES_INVITATION_RECEIVED', // Friend invited you to squares game
+        'SQUARES_INVITATION_ACCEPTED', // Friend accepted your squares invite
+        'SQUARES_INVITATION_DECLINED'  // Friend declined your squares invite
       ]),
       title: a.string().required(), // Short notification title
       message: a.string().required(), // Notification content
@@ -596,6 +601,7 @@ const schema = a.schema({
       event: a.belongsTo('LiveEvent', 'eventId'),
       purchases: a.hasMany('SquaresPurchase', 'squaresGameId'),
       payouts: a.hasMany('SquaresPayout', 'squaresGameId'),
+      invitations: a.hasMany('SquaresInvitation', 'squaresGameId'),
     })
     .secondaryIndexes((index) => [
       index('status').sortKeys(['createdAt']).queryField('squaresGamesByStatus'),
@@ -668,6 +674,32 @@ const schema = a.schema({
     ])
     .authorization((allow) => [
       allow.owner().to(['create', 'read']),
+      allow.authenticated().to(['read', 'create', 'update'])
+    ]),
+
+  SquaresInvitation: a
+    .model({
+      id: a.id(),
+      squaresGameId: a.id().required(),
+      fromUserId: a.id().required(), // Creator who sent the invitation
+      toUserId: a.id().required(), // Friend who received the invitation
+      status: a.enum(['PENDING', 'ACCEPTED', 'DECLINED', 'EXPIRED']),
+      message: a.string(), // Optional message with the invitation
+      createdAt: a.datetime(),
+      updatedAt: a.datetime(),
+      expiresAt: a.datetime(), // When invitation expires (typically game.locksAt)
+      // Relations
+      squaresGame: a.belongsTo('SquaresGame', 'squaresGameId'),
+      fromUser: a.belongsTo('User', 'fromUserId'),
+      toUser: a.belongsTo('User', 'toUserId'),
+    })
+    .secondaryIndexes((index) => [
+      index('toUserId').sortKeys(['createdAt']).queryField('squaresInvitationsByToUser'),
+      index('squaresGameId').queryField('squaresInvitationsByGame'),
+      index('fromUserId').sortKeys(['createdAt']).queryField('squaresInvitationsByFromUser'),
+    ])
+    .authorization((allow) => [
+      allow.owner(),
       allow.authenticated().to(['read', 'create', 'update'])
     ]),
 

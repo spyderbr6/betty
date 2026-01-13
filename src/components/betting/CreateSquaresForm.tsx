@@ -3,7 +3,7 @@
  * Form component for creating new betting squares games
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -19,6 +19,12 @@ import { SquaresGameService } from '../../services/squaresGameService';
 import { useAuth } from '../../contexts/AuthContext';
 import { showAlert } from '../ui/CustomAlert';
 import { EventPickerModal } from '../modals/EventPickerModal';
+import { FriendSelector } from '../ui/FriendSelector';
+import { generateClient } from 'aws-amplify/data';
+import type { Schema } from '../../../amplify/data/resource';
+import { User } from '../../types/betting';
+
+const client = generateClient<Schema>();
 
 interface LiveEvent {
   id: string;
@@ -55,6 +61,10 @@ export const CreateSquaresForm: React.FC<CreateSquaresFormProps> = ({
   const [period3Payout, setPeriod3Payout] = useState(15);
   const [period4Payout, setPeriod4Payout] = useState(45);
 
+  // Friend selection state
+  const [friends, setFriends] = useState<User[]>([]);
+  const [selectedFriends, setSelectedFriends] = useState<Set<string>>(new Set());
+
   // Validate payout structure totals 100%
   const payoutTotal = period1Payout + period2Payout + period3Payout + period4Payout;
   const isPayoutValid = payoutTotal === 100;
@@ -90,6 +100,91 @@ export const CreateSquaresForm: React.FC<CreateSquaresFormProps> = ({
       maximumFractionDigits: 2,
     }).format(n);
   })();
+
+  // Friend fetching logic
+  const fetchFriends = useCallback(async () => {
+    if (!user?.userId) return;
+
+    try {
+      // Get user's friendships
+      const [friendships1, friendships2] = await Promise.all([
+        client.models.Friendship.list({
+          filter: { user1Id: { eq: user.userId } }
+        }),
+        client.models.Friendship.list({
+          filter: { user2Id: { eq: user.userId } }
+        })
+      ]);
+
+      const allFriendships = [
+        ...(friendships1.data || []),
+        ...(friendships2.data || [])
+      ];
+
+      // Get friend user IDs
+      const friendIds = allFriendships.map(friendship =>
+        friendship.user1Id === user.userId ? friendship.user2Id : friendship.user1Id
+      ).filter(Boolean) as string[];
+
+      if (friendIds.length === 0) {
+        setFriends([]);
+        return;
+      }
+
+      // Fetch friend user details
+      const friendUsers = await Promise.all(
+        friendIds.map(async (friendId) => {
+          try {
+            const { data: userData } = await client.models.User.get({ id: friendId });
+            if (userData) {
+              return {
+                id: userData.id!,
+                username: userData.username!,
+                email: userData.email!,
+                displayName: userData.displayName || undefined,
+                profilePictureUrl: userData.profilePictureUrl || undefined,
+                balance: userData.balance || 0,
+                trustScore: userData.trustScore || 5.0,
+                totalBets: userData.totalBets || 0,
+                totalWinnings: userData.totalWinnings || 0,
+                winRate: userData.winRate || 0,
+                createdAt: userData.createdAt || new Date().toISOString(),
+                updatedAt: userData.updatedAt || new Date().toISOString(),
+              } as User;
+            }
+            return null;
+          } catch (error) {
+            console.error(`Error fetching friend ${friendId}:`, error);
+            return null;
+          }
+        })
+      );
+
+      const validFriends = friendUsers.filter((friend): friend is User => friend !== null);
+      setFriends(validFriends);
+    } catch (error) {
+      console.error('Error fetching friends:', error);
+    }
+  }, [user?.userId]);
+
+  const toggleFriendSelection = (friendId: string) => {
+    setSelectedFriends(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(friendId)) {
+        newSet.delete(friendId);
+      } else {
+        newSet.add(friendId);
+      }
+      return newSet;
+    });
+  };
+
+  // Fetch friends on mount
+  useEffect(() => {
+    if (user) {
+      fetchFriends();
+    }
+  }, [fetchFriends]);
 
   const handlePayoutChange = (period: number, value: number) => {
     // Clamp value between 0 and 100
@@ -138,9 +233,60 @@ export const CreateSquaresForm: React.FC<CreateSquaresFormProps> = ({
       });
 
       if (gameId) {
+        // Send invitations to selected friends
+        if (selectedFriends.size > 0) {
+          try {
+            // Get squares game data for expiry
+            const { data: gameData } = await client.models.SquaresGame.get({ id: gameId });
+
+            // Get current user's display name
+            const { data: currentUserData } = await client.models.User.get({ id: user.userId });
+            const currentUserDisplayName = currentUserData?.displayName || currentUserData?.username || user.username;
+
+            const invitationPromises = Array.from(selectedFriends).map(async (friendId) => {
+              try {
+                // Create squares invitation
+                await client.models.SquaresInvitation.create({
+                  squaresGameId: gameId,
+                  fromUserId: user.userId,
+                  toUserId: friendId,
+                  status: 'PENDING',
+                  createdAt: new Date().toISOString(),
+                  updatedAt: new Date().toISOString(),
+                  expiresAt: gameData?.locksAt || undefined,
+                });
+
+                // Create notification for invited friend
+                await client.models.Notification.create({
+                  userId: friendId,
+                  type: 'SQUARES_INVITATION_RECEIVED',
+                  title: 'Squares Game Invitation',
+                  message: `${currentUserDisplayName} invited you to join their squares game!`,
+                  priority: 'HIGH',
+                  isRead: false,
+                  actionData: JSON.stringify({ squaresGameId: gameId }),
+                  createdAt: new Date().toISOString(),
+                });
+
+                console.log(`Sent squares invitation to friend: ${friendId}`);
+              } catch (error) {
+                console.error(`Error sending invitation to ${friendId}:`, error);
+              }
+            });
+
+            await Promise.all(invitationPromises);
+            console.log(`Sent ${selectedFriends.size} squares invitations`);
+          } catch (error) {
+            console.error('Error sending friend invitations:', error);
+            // Don't block the success flow if invitations fail
+          }
+        }
+
         showAlert(
           'Squares Game Created!',
-          'Your betting squares game has been created. Start selling squares to fill the grid!'
+          selectedFriends.size > 0
+            ? `Your betting squares game has been created and ${selectedFriends.size} friend${selectedFriends.size !== 1 ? 's have' : ' has'} been invited!`
+            : 'Your betting squares game has been created. Start selling squares to fill the grid!'
         );
 
         if (onSuccess) {
@@ -409,6 +555,16 @@ export const CreateSquaresForm: React.FC<CreateSquaresFormProps> = ({
           maxLength={500}
         />
       </View>
+
+      {/* Friend Invitations */}
+      <FriendSelector
+        friends={friends}
+        selectedFriends={selectedFriends}
+        onToggleFriend={toggleFriendSelection}
+        maxDisplay={10}
+        label="INVITE FRIENDS (OPTIONAL)"
+        sublabel="Select friends to invite to your squares game"
+      />
 
       {/* Action Buttons */}
       <View style={styles.buttonContainer}>

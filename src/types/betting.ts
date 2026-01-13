@@ -281,7 +281,10 @@ export type NotificationType =
   | 'SQUARES_PERIOD_WINNER'
   | 'SQUARES_GAME_LIVE'
   | 'SQUARES_GAME_CANCELLED'
-  | 'SQUARES_PURCHASE_CONFIRMED';
+  | 'SQUARES_PURCHASE_CONFIRMED'
+  | 'SQUARES_INVITATION_RECEIVED'
+  | 'SQUARES_INVITATION_ACCEPTED'
+  | 'SQUARES_INVITATION_DECLINED';
 
 export type NotificationPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
 
@@ -327,4 +330,20 @@ export interface NotificationPreferences {
 
   createdAt: string;
   updatedAt: string;
+}
+// Squares Game Types
+export interface SquaresInvitation {
+  id: string;
+  squaresGameId: string;
+  fromUserId: string;
+  toUserId: string;
+  status: 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'EXPIRED';
+  message?: string;
+  createdAt: string;
+  updatedAt: string;
+  expiresAt?: string;
+  // Relations
+  squaresGame?: any;
+  fromUser?: User;
+  toUser?: User;
 }

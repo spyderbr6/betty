@@ -154,6 +154,26 @@ export function getNotificationNavigationAction(
         modal: 'notifications',
       };
 
+    // Squares Invitation Notifications
+    case 'SQUARES_INVITATION_RECEIVED':
+      return {
+        action: 'navigate',
+        screen: 'SquaresGameDetail',
+        params: {
+          gameId: data?.actionData?.squaresGameId,
+        },
+      };
+
+    case 'SQUARES_INVITATION_ACCEPTED':
+    case 'SQUARES_INVITATION_DECLINED':
+      return {
+        action: 'navigate',
+        screen: 'SquaresGameDetail',
+        params: {
+          gameId: data?.actionData?.squaresGameId,
+        },
+      };
+
     // Squares Game Notifications
     case 'SQUARES_GRID_LOCKED':
     case 'SQUARES_GAME_LIVE':
@@ -206,6 +226,9 @@ export function getNotificationActionDescription(type: NotificationType): string
     'WITHDRAWAL_FAILED': 'Tap to view transaction history',
     'PAYMENT_METHOD_VERIFIED': 'Tap to view payment methods',
     'SYSTEM_ANNOUNCEMENT': 'Tap to view details',
+    'SQUARES_INVITATION_RECEIVED': 'Tap to view invitation',
+    'SQUARES_INVITATION_ACCEPTED': 'Tap to view game',
+    'SQUARES_INVITATION_DECLINED': 'Tap to view game',
     'SQUARES_GRID_LOCKED': 'Tap to view grid',
     'SQUARES_PERIOD_WINNER': 'Tap to view game',
     'SQUARES_GAME_LIVE': 'Tap to view game',

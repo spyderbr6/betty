@@ -129,6 +129,7 @@ interface SquaresGame {
   squaresSold: number;
   numbersAssigned: boolean;
   isPrivate?: boolean;
+  isInvited?: boolean;
   createdAt: string;
 }
 
@@ -205,7 +206,7 @@ export const LiveEventsScreen: React.FC = () => {
       if (!user?.userId) return;
 
       try {
-        console.log('🎯 Fetching joinable squares games');
+        console.log(`🎯 Fetching joinable squares games (viewMode: ${viewMode})`);
 
         // Get user's purchases to filter out games they already joined
         const { data: userPurchases } = await client.models.SquaresPurchase.list({
@@ -216,6 +217,53 @@ export const LiveEventsScreen: React.FC = () => {
           (userPurchases || []).map(p => p.squaresGameId).filter(Boolean)
         );
 
+        // Get user's pending invitations
+        const { data: userInvitations } = await client.models.SquaresInvitation.list({
+          filter: {
+            toUserId: { eq: user.userId },
+            status: { eq: 'PENDING' }
+          }
+        });
+
+        const invitedGameIds = new Set(
+          (userInvitations || []).map(inv => inv.squaresGameId).filter(Boolean)
+        );
+
+        console.log(`✅ Found ${invitedGameIds.size} pending invitations`);
+
+        // If friends mode, get friend IDs first
+        let friendUserIds: string[] = [];
+        if (viewMode === 'friends') {
+          const [friendships1, friendships2] = await Promise.all([
+            client.models.Friendship.list({
+              filter: { user1Id: { eq: user.userId } }
+            }),
+            client.models.Friendship.list({
+              filter: { user2Id: { eq: user.userId } }
+            })
+          ]);
+
+          const allFriendships = [
+            ...(friendships1.data || []),
+            ...(friendships2.data || [])
+          ];
+
+          friendUserIds = allFriendships.map(friendship =>
+            friendship.user1Id === user.userId
+              ? friendship.user2Id
+              : friendship.user1Id
+          ).filter(Boolean) as string[];
+
+          console.log(`✅ Found ${friendUserIds.length} friends`);
+
+          if (friendUserIds.length === 0) {
+            // No friends, no games to show
+            console.log('No friends found, skipping squares games fetch');
+            setSquaresGames([]);
+            return;
+          }
+        }
+
         // Fetch all ACTIVE squares games
         const { data: games } = await client.models.SquaresGame.list({
           filter: {
@@ -223,15 +271,29 @@ export const LiveEventsScreen: React.FC = () => {
           }
         });
 
-        // Filter to joinable games (not creator, not already purchased, not private unless invited)
-        // TODO: Add invitation logic for private games
+        // Filter to joinable games
         const joinableGames: SquaresGame[] = (games || [])
-          .filter(game =>
-            game &&
-            game.creatorId !== user.userId && // Not creator
-            !joinedGameIds.has(game.id!) && // Haven't purchased squares
-            !game.isPrivate // Not private (TODO: or invited)
-          )
+          .filter(game => {
+            if (!game) return false;
+
+            // Must not be creator
+            if (game.creatorId === user.userId) return false;
+
+            // Must not have already purchased squares
+            if (joinedGameIds.has(game.id!)) return false;
+
+            // If friends mode, must be created by a friend
+            if (viewMode === 'friends' && !friendUserIds.includes(game.creatorId!)) {
+              return false;
+            }
+
+            // Include private games ONLY if user is invited
+            if (game.isPrivate && !invitedGameIds.has(game.id!)) {
+              return false;
+            }
+
+            return true;
+          })
           .map(game => ({
             id: game.id!,
             creatorId: game.creatorId!,
@@ -244,6 +306,7 @@ export const LiveEventsScreen: React.FC = () => {
             squaresSold: game.squaresSold || 0,
             numbersAssigned: game.numbersAssigned || false,
             isPrivate: game.isPrivate || false,
+            isInvited: invitedGameIds.has(game.id!),
             createdAt: game.createdAt || new Date().toISOString(),
           }))
           .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
@@ -326,17 +389,65 @@ export const LiveEventsScreen: React.FC = () => {
         (userPurchases || []).map(p => p.squaresGameId).filter(Boolean)
       );
 
+      // Get user's pending invitations
+      const { data: userInvitations } = await client.models.SquaresInvitation.list({
+        filter: {
+          toUserId: { eq: user.userId },
+          status: { eq: 'PENDING' }
+        }
+      });
+
+      const invitedGameIds = new Set(
+        (userInvitations || []).map(inv => inv.squaresGameId).filter(Boolean)
+      );
+
+      // If friends mode, get friend IDs first
+      let friendUserIds: string[] = [];
+      if (viewMode === 'friends') {
+        const [friendships1, friendships2] = await Promise.all([
+          client.models.Friendship.list({
+            filter: { user1Id: { eq: user.userId } }
+          }),
+          client.models.Friendship.list({
+            filter: { user2Id: { eq: user.userId } }
+          })
+        ]);
+
+        const allFriendships = [
+          ...(friendships1.data || []),
+          ...(friendships2.data || [])
+        ];
+
+        friendUserIds = allFriendships.map(friendship =>
+          friendship.user1Id === user.userId
+            ? friendship.user2Id
+            : friendship.user1Id
+        ).filter(Boolean) as string[];
+
+        if (friendUserIds.length === 0) {
+          setSquaresGames([]);
+          return;
+        }
+      }
+
       const { data: games } = await client.models.SquaresGame.list({
         filter: { status: { eq: 'ACTIVE' } }
       });
 
       const joinableGames: SquaresGame[] = (games || [])
-        .filter(game =>
-          game &&
-          game.creatorId !== user.userId &&
-          !joinedGameIds.has(game.id!) &&
-          !game.isPrivate
-        )
+        .filter(game => {
+          if (!game) return false;
+          if (game.creatorId === user.userId) return false;
+          if (joinedGameIds.has(game.id!)) return false;
+          if (viewMode === 'friends' && !friendUserIds.includes(game.creatorId!)) {
+            return false;
+          }
+          // Include private games ONLY if user is invited
+          if (game.isPrivate && !invitedGameIds.has(game.id!)) {
+            return false;
+          }
+          return true;
+        })
         .map(game => ({
           id: game.id!,
           creatorId: game.creatorId!,
@@ -349,6 +460,7 @@ export const LiveEventsScreen: React.FC = () => {
           squaresSold: game.squaresSold || 0,
           numbersAssigned: game.numbersAssigned || false,
           isPrivate: game.isPrivate || false,
+          isInvited: invitedGameIds.has(game.id!),
           createdAt: game.createdAt || new Date().toISOString(),
         }))
         .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
