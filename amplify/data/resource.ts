@@ -546,7 +546,8 @@ const schema = a.schema({
       index('isActive').sortKeys(['scheduledTime']).queryField('activeEventsByTime'),
     ])
     .authorization((allow) => [
-      allow.authenticated().to(['read', 'create', 'update']) // All authenticated users can read, Lambda functions can create/update
+      allow.authenticated().to(['read', 'create', 'update']), // All authenticated users can read/create/update
+      allow.resource(eventFetcher).to(['read', 'create', 'update']) // Event-fetcher Lambda can update scores
     ]),
 
   EventCheckIn: a
