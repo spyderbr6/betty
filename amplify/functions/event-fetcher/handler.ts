@@ -239,9 +239,9 @@ async function upsertEvent(event: ESPNEvent, league: string): Promise<void> {
       return;
     }
 
-    // Check if event already exists using externalId filter (more reliable than GSI query)
-    const { data: existingEvents, errors: queryErrors } = await client.models.LiveEvent.list({
-      filter: { externalId: { eq: event.id } },
+    // Check if event already exists using the externalId GSI
+    const { data: existingEvents, errors: queryErrors } = await client.models.LiveEvent.listEventsByExternalId({
+      externalId: event.id,
       limit: 100 // Get all potential duplicates
     });
 
@@ -296,7 +296,7 @@ async function upsertEvent(event: ESPNEvent, league: string): Promise<void> {
           console.error(`❌ Error updating event ${event.id}:`, updateResult.errors);
           console.error(`❌ Update error details:`, JSON.stringify(updateResult.errors, null, 2));
         } else {
-          console.log(`✅ Updated: ${awayCompetitor.team.abbreviation} @ ${homeCompetitor.team.abbreviation} (id: ${existingEvent.id}, status: ${status}, scores: ${awayScore}-${homeScore})`);
+          console.log(`✅ Updated: ${awayCompetitor.team.abbreviation} @ ${homeCompetitor.team.abbreviation} (id: ${existingEvent.id}, status: ${status}, scores: ${eventData.awayScore}-${eventData.homeScore})`);
           // Log period scores if available
           if (eventData.homePeriodScores && eventData.awayPeriodScores) {
             console.log(`   📊 Period scores - Away: [${eventData.awayPeriodScores.join(', ')}], Home: [${eventData.homePeriodScores.join(', ')}]`);
