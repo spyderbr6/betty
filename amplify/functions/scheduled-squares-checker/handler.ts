@@ -90,6 +90,34 @@ async function lockGridsReadyForLocking(): Promise<number> {
 
       if (!shouldLock) continue;
 
+      // If no squares were sold, cancel the game instead of locking
+      if (game.squaresSold === 0) {
+        console.log(`❌ Cancelling game ${game.id} - no squares purchased`);
+
+        await client.models.SquaresGame.update({
+          id: game.id,
+          status: 'CANCELLED',
+          resolutionReason: 'No squares purchased',
+          updatedAt: new Date().toISOString(),
+        });
+
+        // Notify creator
+        await client.models.Notification.create({
+          userId: game.creatorId,
+          type: 'SQUARES_GAME_CANCELLED',
+          title: 'Game Cancelled',
+          message: `"${game.title}" was cancelled because no squares were purchased.`,
+          priority: 'MEDIUM',
+          actionData: JSON.stringify({ squaresGameId: game.id }),
+          isRead: false,
+          createdAt: new Date().toISOString(),
+        });
+
+        console.log(`✅ Cancelled game ${game.id}, notified creator`);
+        lockedCount++; // Count as an action taken
+        continue;
+      }
+
       console.log(`🔒 Locking grid for game: ${game.id} (${game.squaresSold}/100 squares)`);
 
       // Generate random numbers
@@ -140,7 +168,7 @@ async function lockGridsReadyForLocking(): Promise<number> {
 
 /**
  * STEP 2: Start games when event goes live
- * Conditions: LOCKED status AND event.status = LIVE
+ * Conditions: LOCKED status AND (event.status = LIVE OR event time has passed)
  */
 async function startGamesWhenEventLive(): Promise<number> {
   try {
@@ -156,6 +184,7 @@ async function startGamesWhenEventLive(): Promise<number> {
 
     console.log(`Found ${lockedGames.length} LOCKED games`);
 
+    const now = new Date();
     let startedCount = 0;
 
     for (const game of lockedGames) {
@@ -163,45 +192,58 @@ async function startGamesWhenEventLive(): Promise<number> {
       const { data: event } = await client.models.LiveEvent.get({ id: game.eventId });
 
       if (!event) {
-        console.log(`Event ${game.eventId} not found for game ${game.id}`);
+        console.log(`⚠️  Event ${game.eventId} not found for game ${game.id} - cancelling game`);
+        await client.models.SquaresGame.update({
+          id: game.id,
+          status: 'CANCELLED',
+          resolutionReason: 'Event not found',
+          updatedAt: new Date().toISOString(),
+        });
         continue;
       }
 
       // Check if event is LIVE
-      if (event.status !== 'LIVE') continue;
+      const isEventLive = event.status === 'LIVE';
 
-      console.log(`🎮 Starting game: ${game.id} (event is LIVE)`);
+      // FALLBACK: If event time has passed by more than 2 hours, start the game anyway
+      const eventTime = new Date(event.scheduledTime);
+      const hoursSinceEventTime = (now.getTime() - eventTime.getTime()) / (1000 * 60 * 60);
+      const shouldStartByTime = hoursSinceEventTime >= 2;
 
-      // Update game status
-      await client.models.SquaresGame.update({
-        id: game.id,
-        status: 'LIVE',
-        updatedAt: new Date().toISOString(),
-      });
+      if (isEventLive || shouldStartByTime) {
+        console.log(`🎮 Starting game: ${game.id} (${isEventLive ? 'event is LIVE' : `${hoursSinceEventTime.toFixed(1)}h since event time`})`);
 
-      // Get all buyers
-      const { data: purchases } = await client.models.SquaresPurchase.purchasesBySquaresGame({
-        squaresGameId: game.id
-      });
-
-      const buyerIds = new Set(purchases?.map((p: any) => p.userId) || []);
-
-      // Send notifications
-      for (const buyerId of buyerIds) {
-        await client.models.Notification.create({
-          userId: buyerId,
-          type: 'SQUARES_GAME_LIVE',
-          title: 'Game is LIVE!',
-          message: `"${game.title}" has started. Watch the scores!`,
-          priority: 'HIGH',
-          actionData: JSON.stringify({ squaresGameId: game.id }),
-          isRead: false,
-          createdAt: new Date().toISOString(),
+        // Update game status
+        await client.models.SquaresGame.update({
+          id: game.id,
+          status: 'LIVE',
+          updatedAt: new Date().toISOString(),
         });
-      }
 
-      console.log(`✅ Started game ${game.id}, notified ${buyerIds.size} buyers`);
-      startedCount++;
+        // Get all buyers
+        const { data: purchases } = await client.models.SquaresPurchase.purchasesBySquaresGame({
+          squaresGameId: game.id
+        });
+
+        const buyerIds = new Set(purchases?.map((p: any) => p.userId) || []);
+
+        // Send notifications
+        for (const buyerId of buyerIds) {
+          await client.models.Notification.create({
+            userId: buyerId,
+            type: 'SQUARES_GAME_LIVE',
+            title: 'Game is LIVE!',
+            message: `"${game.title}" has started. Watch the scores!`,
+            priority: 'HIGH',
+            actionData: JSON.stringify({ squaresGameId: game.id }),
+            isRead: false,
+            createdAt: new Date().toISOString(),
+          });
+        }
+
+        console.log(`✅ Started game ${game.id}, notified ${buyerIds.size} buyers`);
+        startedCount++;
+      }
     }
 
     return startedCount;
@@ -290,6 +332,39 @@ async function processPeriodScoresForLiveGames(): Promise<number> {
 
         if (!winningPurchase) {
           console.log(`No owner for winning square - house wins Period ${period}`);
+
+          // Create house win payout record for tracking
+          const now = new Date().toISOString();
+          await client.models.SquaresPayout.create({
+            squaresGameId: game.id,
+            squaresPurchaseId: null, // No purchase for unsold square
+            userId: game.creatorId, // Track under creator for notification purposes
+            ownerName: 'HOUSE',
+            period: periodEnum,
+            amount: 0, // No payout to anyone
+            homeScore: homeScore % 10,
+            awayScore: awayScore % 10,
+            homeScoreFull: homeScore,
+            awayScoreFull: awayScore,
+            status: 'COMPLETED', // Mark as completed so resolution counts it
+            createdAt: now,
+            paidAt: now,
+          });
+
+          // Notify creator that house won this period
+          await client.models.Notification.create({
+            userId: game.creatorId,
+            type: 'SQUARES_PERIOD_WINNER',
+            title: 'Unsold Square Won',
+            message: `Period ${period} in "${game.title}" won by unsold square (${awayScore % 10}-${homeScore % 10}). No payout issued.`,
+            priority: 'MEDIUM',
+            actionData: JSON.stringify({ squaresGameId: game.id }),
+            isRead: false,
+            createdAt: now,
+          });
+
+          console.log(`✅ Recorded house win for Period ${period}, notified creator`);
+          payoutsCreated++;
           continue;
         }
 
@@ -377,7 +452,7 @@ async function processPeriodScoresForLiveGames(): Promise<number> {
 
 /**
  * STEP 4: Resolve games when all periods are paid
- * Conditions: LIVE status AND event.status = FINISHED AND 4 payouts exist
+ * Conditions: LIVE status AND (event.status = FINISHED OR game is old)
  */
 async function resolveCompletedGames(): Promise<number> {
   try {
@@ -393,52 +468,63 @@ async function resolveCompletedGames(): Promise<number> {
 
     console.log(`Found ${liveGames.length} LIVE games`);
 
+    const now = new Date();
     let resolvedCount = 0;
 
     for (const game of liveGames) {
       // Get event
       const { data: event } = await client.models.LiveEvent.get({ id: game.eventId });
 
+      // FALLBACK: If event doesn't exist or game is old, mark as PENDING_RESOLUTION
       if (!event) {
-        console.log(`Event ${game.eventId} not found for game ${game.id}`);
+        console.log(`⚠️  Event ${game.eventId} not found for game ${game.id} - marking PENDING_RESOLUTION`);
+        await client.models.SquaresGame.update({
+          id: game.id,
+          status: 'PENDING_RESOLUTION',
+          resolutionReason: 'Event not found',
+          updatedAt: now.toISOString(),
+        });
         continue;
       }
 
-      // Check if event is FINISHED
-      if (event.status !== 'FINISHED') continue;
+      // FALLBACK: If game has been LIVE for more than 7 days, force resolution
+      const daysSinceLocked = (now.getTime() - new Date(game.locksAt).getTime()) / (1000 * 60 * 60 * 24);
+      const isOldGame = daysSinceLocked > 7;
 
-      // Count payouts
-      const { data: payouts } = await client.models.SquaresPayout.payoutsBySquaresGame({
-        squaresGameId: game.id
-      });
+      // Check if event is FINISHED or game is old
+      const isEventFinished = event.status === 'FINISHED';
 
-      const payoutCount = payouts?.length || 0;
-
-      if (payoutCount === 4) {
-        // All 4 periods paid - resolve game
-        console.log(`✅ Resolving game ${game.id} (all 4 periods paid)`);
-
-        await client.models.SquaresGame.update({
-          id: game.id,
-          status: 'RESOLVED',
-          updatedAt: new Date().toISOString(),
+      if (isEventFinished || isOldGame) {
+        // Count payouts
+        const { data: payouts } = await client.models.SquaresPayout.payoutsBySquaresGame({
+          squaresGameId: game.id
         });
 
-        resolvedCount++;
-      } else {
-        // Missing period data - wait or escalate
-        const hoursSinceFinish = (Date.now() - new Date(event.endTime || event.scheduledTime).getTime()) / (1000 * 60 * 60);
+        const payoutCount = payouts?.length || 0;
 
-        if (hoursSinceFinish > 24) {
-          // After 24 hours, mark as PENDING_RESOLUTION
-          console.log(`⚠️  Game ${game.id} missing period data after 24h (${payoutCount}/4 periods)`);
+        if (payoutCount === 4) {
+          // All 4 periods paid - resolve game
+          console.log(`✅ Resolving game ${game.id} (all 4 periods paid)`);
+
+          await client.models.SquaresGame.update({
+            id: game.id,
+            status: 'RESOLVED',
+            updatedAt: now.toISOString(),
+          });
+
+          resolvedCount++;
+        } else {
+          // Missing period data
+          console.log(`⚠️  Game ${game.id} missing period data (${payoutCount}/4 periods) - ${isOldGame ? 'old game' : 'event finished'}`);
 
           await client.models.SquaresGame.update({
             id: game.id,
             status: 'PENDING_RESOLUTION',
             resolutionReason: `Missing period score data (${payoutCount}/4 periods)`,
-            updatedAt: new Date().toISOString(),
+            updatedAt: now.toISOString(),
           });
+
+          resolvedCount++;
         }
       }
     }
