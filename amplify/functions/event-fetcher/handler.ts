@@ -239,14 +239,15 @@ async function upsertEvent(event: ESPNEvent, league: string): Promise<void> {
       return;
     }
 
-    // Check if event already exists using the externalId GSI
-    const { data: existingEvents, errors: queryErrors } = await client.models.LiveEvent.listEventsByExternalId({
-      externalId: event.id,
+    // Check if event already exists using externalId filter (more reliable than GSI query)
+    const { data: existingEvents, errors: queryErrors } = await client.models.LiveEvent.list({
+      filter: { externalId: { eq: event.id } },
       limit: 100 // Get all potential duplicates
     });
 
     if (queryErrors) {
       console.error(`❌ Error querying for existing event ${event.id}:`, queryErrors);
+      console.error(`❌ Error details:`, JSON.stringify(queryErrors, null, 2));
       return;
     }
 
@@ -286,11 +287,25 @@ async function upsertEvent(event: ESPNEvent, league: string): Promise<void> {
     if (existingEvents && existingEvents.length > 0) {
       // Update the first existing event
       const existingEvent = existingEvents[0];
-      await client.models.LiveEvent.update({
-        id: existingEvent.id,
-        ...eventData,
-      });
-      console.log(`✅ Updated: ${awayCompetitor.team.abbreviation} @ ${homeCompetitor.team.abbreviation} (id: ${existingEvent.id})`);
+      try {
+        const updateResult = await client.models.LiveEvent.update({
+          id: existingEvent.id,
+          ...eventData,
+        });
+        if (updateResult.errors) {
+          console.error(`❌ Error updating event ${event.id}:`, updateResult.errors);
+          console.error(`❌ Update error details:`, JSON.stringify(updateResult.errors, null, 2));
+        } else {
+          console.log(`✅ Updated: ${awayCompetitor.team.abbreviation} @ ${homeCompetitor.team.abbreviation} (id: ${existingEvent.id}, status: ${status}, scores: ${awayScore}-${homeScore})`);
+          // Log period scores if available
+          if (eventData.homePeriodScores && eventData.awayPeriodScores) {
+            console.log(`   📊 Period scores - Away: [${eventData.awayPeriodScores.join(', ')}], Home: [${eventData.homePeriodScores.join(', ')}]`);
+          }
+        }
+      } catch (updateError) {
+        console.error(`❌ Exception updating event ${event.id}:`, updateError);
+        console.error(`❌ Exception details:`, updateError instanceof Error ? updateError.message : String(updateError));
+      }
 
       // If there are duplicates, delete them
       if (existingEvents.length > 1) {
