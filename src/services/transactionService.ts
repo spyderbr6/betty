@@ -789,15 +789,28 @@ export class TransactionService {
     userId: string,
     amount: number,
     squaresGameId: string,
-    purchaseIds: string
+    purchaseIds: string,
+    gameTitle?: string,
+    squarePositions?: string
   ): Promise<Transaction | null> {
+    // Build descriptive notes
+    let notes = 'Squares purchase';
+    if (gameTitle) {
+      notes = `${gameTitle}`;
+      if (squarePositions) {
+        notes += ` - ${squarePositions}`;
+      }
+    } else if (purchaseIds) {
+      notes += `: ${purchaseIds}`;
+    }
+
     return await this.createTransaction({
       userId,
       type: 'SQUARES_PURCHASE',
       amount,
       status: 'COMPLETED',
       relatedSquaresGameId: squaresGameId,
-      notes: `Purchased squares: ${purchaseIds}`,
+      notes,
     });
   }
 

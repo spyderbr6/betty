@@ -487,9 +487,9 @@ async function resolveCompletedGames(): Promise<number> {
         continue;
       }
 
-      // FALLBACK: If game has been LIVE for more than 7 days, force resolution
+      // FALLBACK: If game has been LIVE for more than 2 days, force resolution
       const daysSinceLocked = (now.getTime() - new Date(game.locksAt).getTime()) / (1000 * 60 * 60 * 24);
-      const isOldGame = daysSinceLocked > 7;
+      const isOldGame = daysSinceLocked > 2;
 
       // Check if event is FINISHED or game is old
       const isEventFinished = event.status === 'FINISHED';

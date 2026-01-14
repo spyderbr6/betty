@@ -182,11 +182,23 @@ export class SquaresGameService {
       }
 
       // Deduct from buyer's balance
+      // Build square positions string: "3 squares (A3, B5, C7)"
+      const squareCount = purchases.length;
+      const squarePositionsString = squareCount <= 3
+        ? purchases.map(p => {
+            const rowLabel = String.fromCharCode(65 + p.gridRow); // A-J
+            const colLabel = p.gridCol + 1; // 1-10
+            return `${rowLabel}${colLabel}`;
+          }).join(', ')
+        : `${squareCount} squares`;
+
       const transaction = await TransactionService.recordSquaresPurchase(
         userId,
         totalCost,
         squaresGameId,
-        purchases.map((p) => p.id).join(',')
+        purchases.map((p) => p.id).join(','),
+        game.title,
+        squarePositionsString
       );
 
       // Update transaction IDs on purchases
