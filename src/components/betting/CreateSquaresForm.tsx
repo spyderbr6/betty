@@ -230,6 +230,7 @@ export const CreateSquaresForm: React.FC<CreateSquaresFormProps> = ({
         description: description.trim() || undefined,
         pricePerSquare: price,
         payoutStructure,
+        isPrivate: selectedFriends.size > 0, // Set private if friends are invited
       });
 
       if (gameId) {

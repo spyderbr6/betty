@@ -311,7 +311,7 @@ export const BetsScreen: React.FC = () => {
         ...additionalGames.map(g => g.data).filter(Boolean)
       ];
 
-      // Transform and filter for ACTIVE, LOCKED, or LIVE games
+      // Transform and filter for ACTIVE, LOCKED, or LIVE games only
       const transformedGames: SquaresGame[] = allGames
         .filter(game =>
           game &&

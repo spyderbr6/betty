@@ -484,7 +484,7 @@ export const LiveEventsScreen: React.FC = () => {
 
   const handleSquaresGamePress = (game: SquaresGame) => {
     console.log('Squares game pressed:', game.title);
-    navigation.navigate('SquaresGameDetail', { squaresGameId: game.id });
+    navigation.navigate('SquaresGameDetail', { gameId: game.id });
   };
 
   const handleJoinBet = (betId: string, side: string, amount: number) => {
