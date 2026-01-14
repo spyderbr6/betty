@@ -90,6 +90,34 @@ async function lockGridsReadyForLocking(): Promise<number> {
 
       if (!shouldLock) continue;
 
+      // If no squares were sold, cancel the game instead of locking
+      if (game.squaresSold === 0) {
+        console.log(`❌ Cancelling game ${game.id} - no squares purchased`);
+
+        await client.models.SquaresGame.update({
+          id: game.id,
+          status: 'CANCELLED',
+          resolutionReason: 'No squares purchased',
+          updatedAt: new Date().toISOString(),
+        });
+
+        // Notify creator
+        await client.models.Notification.create({
+          userId: game.creatorId,
+          type: 'SQUARES_GAME_CANCELLED',
+          title: 'Game Cancelled',
+          message: `"${game.title}" was cancelled because no squares were purchased.`,
+          priority: 'MEDIUM',
+          actionData: JSON.stringify({ squaresGameId: game.id }),
+          isRead: false,
+          createdAt: new Date().toISOString(),
+        });
+
+        console.log(`✅ Cancelled game ${game.id}, notified creator`);
+        lockedCount++; // Count as an action taken
+        continue;
+      }
+
       console.log(`🔒 Locking grid for game: ${game.id} (${game.squaresSold}/100 squares)`);
 
       // Generate random numbers
@@ -304,6 +332,39 @@ async function processPeriodScoresForLiveGames(): Promise<number> {
 
         if (!winningPurchase) {
           console.log(`No owner for winning square - house wins Period ${period}`);
+
+          // Create house win payout record for tracking
+          const now = new Date().toISOString();
+          await client.models.SquaresPayout.create({
+            squaresGameId: game.id,
+            squaresPurchaseId: null, // No purchase for unsold square
+            userId: game.creatorId, // Track under creator for notification purposes
+            ownerName: 'HOUSE',
+            period: periodEnum,
+            amount: 0, // No payout to anyone
+            homeScore: homeScore % 10,
+            awayScore: awayScore % 10,
+            homeScoreFull: homeScore,
+            awayScoreFull: awayScore,
+            status: 'COMPLETED', // Mark as completed so resolution counts it
+            createdAt: now,
+            paidAt: now,
+          });
+
+          // Notify creator that house won this period
+          await client.models.Notification.create({
+            userId: game.creatorId,
+            type: 'SQUARES_PERIOD_WINNER',
+            title: 'Unsold Square Won',
+            message: `Period ${period} in "${game.title}" won by unsold square (${awayScore % 10}-${homeScore % 10}). No payout issued.`,
+            priority: 'MEDIUM',
+            actionData: JSON.stringify({ squaresGameId: game.id }),
+            isRead: false,
+            createdAt: now,
+          });
+
+          console.log(`✅ Recorded house win for Period ${period}, notified creator`);
+          payoutsCreated++;
           continue;
         }
 
