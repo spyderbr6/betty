@@ -544,9 +544,13 @@ const schema = a.schema({
       index('status').sortKeys(['scheduledTime']).queryField('listEventsByStatusAndTime'),
       index('externalId').queryField('listEventsByExternalId'),
       index('isActive').sortKeys(['scheduledTime']).queryField('activeEventsByTime'),
+    ])
+    .authorization((allow) => [
+      // The eventFetcher Lambda needs full CRUD access to manage live events
+      allow.handler(eventFetcher).to(['create', 'read', 'update', 'delete']),
+      // All authenticated users should be able to read event data for display
+      allow.authenticated().to(['read']),
     ]),
-    // NOTE: No model-level authorization - inherits from schema-level auth
-    // This allows both authenticated users AND eventFetcher Lambda to update scores
 
   EventCheckIn: a
     .model({
