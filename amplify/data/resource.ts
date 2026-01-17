@@ -547,7 +547,7 @@ const schema = a.schema({
     ])
     .authorization((allow) => [
       // The eventFetcher Lambda needs full CRUD access to manage live events
-      allow.handler(eventFetcher).to(['create', 'read', 'update', 'delete']),
+      allow.resource(eventFetcher).to(['create', 'read', 'update', 'delete']),
       // All authenticated users should be able to read event data for display
       allow.authenticated().to(['read']),
     ]),

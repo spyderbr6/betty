@@ -273,8 +273,8 @@ async function upsertEvent(event: ESPNEvent, league: string): Promise<void> {
       country: undefined, // ESPN doesn't provide country in this endpoint
       homeScore: parseInt(homeCompetitor.score) || 0,
       awayScore: parseInt(awayCompetitor.score) || 0,
-      homePeriodScores: homeCompetitor.linescores ? JSON.stringify(homeCompetitor.linescores.map(ls => ls.value)) : undefined,
-      awayPeriodScores: awayCompetitor.linescores ? JSON.stringify(awayCompetitor.linescores.map(ls => ls.value)) : undefined,
+      homePeriodScores: homeCompetitor.linescores?.map(ls => ls.value) || undefined,
+      awayPeriodScores: awayCompetitor.linescores?.map(ls => ls.value) || undefined,
       status: status,
       isActive: isActive, // Lifecycle state managed by Lambda for efficient querying (1=active, 0=inactive)
       quarter: competition.status.period ? `Period ${competition.status.period}` : undefined,
@@ -298,10 +298,8 @@ async function upsertEvent(event: ESPNEvent, league: string): Promise<void> {
         } else {
           console.log(`✅ Updated: ${awayCompetitor.team.abbreviation} @ ${homeCompetitor.team.abbreviation} (id: ${existingEvent.id}, status: ${status}, scores: ${eventData.awayScore}-${eventData.homeScore})`);
           // Log period scores if available
-          const homeScores = eventData.homePeriodScores ? JSON.parse(eventData.homePeriodScores) : [];
-          const awayScores = eventData.awayPeriodScores ? JSON.parse(eventData.awayPeriodScores) : [];
-          if (homeScores.length > 0 || awayScores.length > 0) {
-            console.log(`   📊 Period scores - Away: [${awayScores.join(', ')}], Home: [${homeScores.join(', ')}]`);
+          if (eventData.homePeriodScores && eventData.awayPeriodScores) {
+            console.log(`   📊 Period scores - Away: [${eventData.awayPeriodScores.join(', ')}], Home: [${eventData.homePeriodScores.join(', ')}]`);
           }
         }
       } catch (updateError) {
