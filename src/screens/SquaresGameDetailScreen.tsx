@@ -273,7 +273,7 @@ export const SquaresGameDetailScreen = ({ route, navigation }: any) => {
         />
 
         {/* Period Scores (for LIVE/RESOLVED games) */}
-        {(game.status === 'LIVE' || game.status === 'RESOLVED') && event.homePeriodScores && event.awayPeriodScores && (
+        {(game.status === 'LIVE' || game.status === 'RESOLVED' || game.status === 'PENDING_RESOLUTION') && event.homePeriodScores && event.awayPeriodScores && (
           <View style={styles.periodScoresCard}>
             <Text style={styles.cardTitle}>Period Scores</Text>
             {(() => {

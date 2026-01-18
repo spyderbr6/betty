@@ -154,7 +154,7 @@ export const ResolveScreen: React.FC = () => {
           const userBets = validBets.filter(bet => {
             const isCreator = bet.creatorId === user.userId;
             const isParticipant = bet.participants?.some(p => p.userId === user.userId);
-            const isRecent = new Date(bet.createdAt) > cutoffDate;
+            const isRecent = new Date(bet.updatedAt) > cutoffDate;
 
             return (isCreator || isParticipant) && isRecent;
           });
@@ -199,7 +199,7 @@ export const ResolveScreen: React.FC = () => {
             .filter(game =>
               game &&
               userGameIds.has(game.id) &&
-              new Date(game.createdAt || '') > cutoffDate
+              new Date(game.updatedAt || game.createdAt || '') > cutoffDate
             )
             .map(game => ({
               id: game.id!,
@@ -322,7 +322,7 @@ export const ResolveScreen: React.FC = () => {
         const userBets = validBets.filter(bet => {
           const isCreator = bet.creatorId === user.userId;
           const isParticipant = bet.participants?.some(p => p.userId === user.userId);
-          const isRecent = new Date(bet.createdAt) > cutoffDate;
+          const isRecent = new Date(bet.updatedAt) > cutoffDate;
 
           return (isCreator || isParticipant) && isRecent;
         });
@@ -366,7 +366,7 @@ export const ResolveScreen: React.FC = () => {
           .filter(game =>
             game &&
             userGameIds.has(game.id) &&
-            new Date(game.createdAt || '') > cutoffDate
+            new Date(game.updatedAt || game.createdAt || '') > cutoffDate
           )
           .map(game => ({
             id: game.id!,
