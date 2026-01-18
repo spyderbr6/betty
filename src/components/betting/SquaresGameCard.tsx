@@ -42,6 +42,8 @@ export const SquaresGameCard: React.FC<SquaresGameCardProps> = ({
         return colors.warning;
       case 'LIVE':
         return colors.live;
+      case 'PENDING_RESOLUTION':
+        return colors.warning;
       case 'RESOLVED':
         return colors.textSecondary;
       case 'CANCELLED':
@@ -61,6 +63,8 @@ export const SquaresGameCard: React.FC<SquaresGameCardProps> = ({
         return 'Locked';
       case 'LIVE':
         return 'LIVE';
+      case 'PENDING_RESOLUTION':
+        return 'Pending';
       case 'RESOLVED':
         return 'Complete';
       case 'CANCELLED':

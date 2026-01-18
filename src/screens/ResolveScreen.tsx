@@ -172,7 +172,7 @@ export const ResolveScreen: React.FC = () => {
           setPendingBets(sortedBets);
         }
 
-        // Fetch RESOLVED squares games where user has purchases
+        // Fetch RESOLVED and PENDING_RESOLUTION squares games where user has purchases
         const { data: userPurchases } = await client.models.SquaresPurchase.list({
           filter: { userId: { eq: user.userId } }
         });
@@ -186,10 +186,10 @@ export const ResolveScreen: React.FC = () => {
           );
           const gamesResults = await Promise.all(gamesPromises);
 
-          // Filter to only RESOLVED games and transform
+          // Filter to RESOLVED or PENDING_RESOLUTION games and transform
           const resolvedGames: SquaresGame[] = gamesResults
             .map(result => result.data)
-            .filter(game => game && game.status === 'RESOLVED')
+            .filter(game => game && (game.status === 'RESOLVED' || game.status === 'PENDING_RESOLUTION'))
             .map(game => ({
               id: game!.id!,
               creatorId: game!.creatorId!,
@@ -205,7 +205,7 @@ export const ResolveScreen: React.FC = () => {
             }))
             .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-          console.log('Found resolved squares games:', resolvedGames.length);
+          console.log('Found resolved/pending squares games:', resolvedGames.length);
           setResolvedSquares(resolvedGames);
         }
       } catch (error) {
@@ -235,8 +235,27 @@ export const ResolveScreen: React.FC = () => {
       }
     });
 
+    // Set up real-time subscription for squares game resolution changes
+    const squaresSubscription = client.models.SquaresGame.observeQuery({
+      filter: {
+        or: [
+          { status: { eq: 'PENDING_RESOLUTION' } },
+          { status: { eq: 'RESOLVED' } }
+        ]
+      }
+    }).subscribe({
+      next: async (data) => {
+        console.log('Real-time squares game resolution update:', data);
+        await fetchPendingBets(); // This also fetches squares games
+      },
+      error: (error) => {
+        console.error('Real-time squares game subscription error:', error);
+      }
+    });
+
     return () => {
       betSubscription.unsubscribe();
+      squaresSubscription.unsubscribe();
     };
   }, [user]);
 
@@ -303,7 +322,7 @@ export const ResolveScreen: React.FC = () => {
         setPendingBets(sortedBets);
       }
 
-      // Refresh RESOLVED squares games where user has purchases
+      // Refresh RESOLVED and PENDING_RESOLUTION squares games where user has purchases
       const { data: userPurchases } = await client.models.SquaresPurchase.list({
         filter: { userId: { eq: user.userId } }
       });
@@ -318,7 +337,7 @@ export const ResolveScreen: React.FC = () => {
 
         const resolvedGames: SquaresGame[] = gamesResults
           .map(result => result.data)
-          .filter(game => game && game.status === 'RESOLVED')
+          .filter(game => game && (game.status === 'RESOLVED' || game.status === 'PENDING_RESOLUTION'))
           .map(game => ({
             id: game!.id!,
             creatorId: game!.creatorId!,
@@ -695,11 +714,11 @@ export const ResolveScreen: React.FC = () => {
             </View>
             ))}
 
-            {/* Resolved Squares Games */}
+            {/* Resolved & Pending Resolution Squares Games */}
             {resolvedSquares.length > 0 && (
               <View style={styles.squaresSection}>
                 {pendingBets.length > 0 && (
-                  <Text style={styles.sectionTitle}>COMPLETED SQUARES</Text>
+                  <Text style={styles.sectionTitle}>SQUARES GAMES</Text>
                 )}
                 {resolvedSquares.map((game) => (
                   <SquaresGameCard
