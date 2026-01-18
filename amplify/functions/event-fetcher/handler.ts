@@ -364,9 +364,16 @@ async function upsertEvent(event: ESPNEvent, league: string): Promise<void> {
 /**
  * Main handler function
  *
- * Two operating modes:
+ * Operating modes:
  * 1. LIVE UPDATE MODE (every 15 min): Fetch yesterday/today/tomorrow for live scores (handles UTC/ET timezone differences)
  * 2. WEEKLY DISCOVERY MODE (once daily at 6am UTC): Fetch next 7 days for planning visibility
+ * 3. MANUAL MODE: Pass custom startDate/endDate in event payload for manual invocations
+ *
+ * Manual invocation example (AWS Lambda console):
+ * {
+ *   "startDate": "2026-01-13",
+ *   "endDate": "2026-01-13"
+ * }
  */
 export const handler: EventBridgeHandler<"Scheduled Event", null, boolean> = async (event) => {
   console.log('Event Fetcher triggered:', JSON.stringify(event, null, 2));
@@ -375,35 +382,53 @@ export const handler: EventBridgeHandler<"Scheduled Event", null, boolean> = asy
     const now = new Date();
     const currentHour = now.getUTCHours();
 
-    // Determine which mode to run
-    // Weekly discovery mode: Run at 6am UTC (1am ET / 10pm PT)
-    const isWeeklyFetchTime = currentHour === 6;
+    // Check for manual date overrides in event payload
+    const manualStartDate = (event as any).startDate;
+    const manualEndDate = (event as any).endDate;
 
     let startDate: string;
     let endDate: string;
     let mode: string;
 
-    if (isWeeklyFetchTime) {
-      // WEEKLY DISCOVERY MODE: Fetch next 7 days for game planning
-      mode = '🗓️  WEEKLY DISCOVERY';
-      const start = new Date(now);
-      const end = new Date(now);
-      end.setDate(now.getDate() + 6); // 7 days total (today + 6)
-
-      startDate = start.toISOString().split('T')[0];
-      endDate = end.toISOString().split('T')[0];
+    if (manualStartDate && manualEndDate) {
+      // MANUAL MODE: Use custom date range from event payload
+      mode = '🎯 MANUAL OVERRIDE';
+      startDate = manualStartDate;
+      endDate = manualEndDate;
+      console.log(`📅 Manual date override: ${startDate} to ${endDate}`);
+    } else if ((event as any)['detail-type'] !== 'Scheduled Event' && manualStartDate) {
+      // Single date override (for convenience)
+      mode = '🎯 MANUAL OVERRIDE (SINGLE DATE)';
+      startDate = manualStartDate;
+      endDate = manualStartDate;
+      console.log(`📅 Manual date override: ${startDate}`);
     } else {
-      // LIVE UPDATE MODE: Fetch yesterday, today, and tomorrow for live scores
-      // This handles UTC timezone edge cases since ESPN uses ET for game dates
-      // (Example: 8pm ET game on Nov 17 runs into Nov 18 UTC, so we need both dates)
-      mode = '🔴 LIVE UPDATE';
-      const start = new Date(now);
-      start.setDate(now.getDate() - 1); // Start with yesterday
-      const end = new Date(now);
-      end.setDate(now.getDate() + 1); // End with tomorrow
+      // Determine which mode to run
+      // Weekly discovery mode: Run at 6am UTC (1am ET / 10pm PT)
+      const isWeeklyFetchTime = currentHour === 6;
 
-      startDate = start.toISOString().split('T')[0];
-      endDate = end.toISOString().split('T')[0];
+      if (isWeeklyFetchTime) {
+        // WEEKLY DISCOVERY MODE: Fetch next 7 days for game planning
+        mode = '🗓️  WEEKLY DISCOVERY';
+        const start = new Date(now);
+        const end = new Date(now);
+        end.setDate(now.getDate() + 6); // 7 days total (today + 6)
+
+        startDate = start.toISOString().split('T')[0];
+        endDate = end.toISOString().split('T')[0];
+      } else {
+        // LIVE UPDATE MODE: Fetch yesterday, today, and tomorrow for live scores
+        // This handles UTC timezone edge cases since ESPN uses ET for game dates
+        // (Example: 8pm ET game on Nov 17 runs into Nov 18 UTC, so we need both dates)
+        mode = '🔴 LIVE UPDATE';
+        const start = new Date(now);
+        start.setDate(now.getDate() - 1); // Start with yesterday
+        const end = new Date(now);
+        end.setDate(now.getDate() + 1); // End with tomorrow
+
+        startDate = start.toISOString().split('T')[0];
+        endDate = end.toISOString().split('T')[0];
+      }
     }
 
     console.log(`${mode} MODE - Date range: ${startDate} to ${endDate}`);
