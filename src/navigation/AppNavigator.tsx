@@ -8,7 +8,7 @@ import { NavigationContainer, NavigationContainerRef } from '@react-navigation/n
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
 import { colors } from '../styles';
-import { AppTabParamList, BetsStackParamList } from '../types/navigation';
+import { AppTabParamList, BetsStackParamList, ResolveStackParamList } from '../types/navigation';
 import { TabBar } from '../components/ui/TabBar';
 import ToastNotificationService from '../services/toastNotificationService';
 import { setPushNavigationCallback } from '../services/pushNotificationConfig';
@@ -28,6 +28,7 @@ import { SquaresGameDetailScreen } from '../screens/SquaresGameDetailScreen';
 // Create navigators
 const Tab = createBottomTabNavigator<AppTabParamList>();
 const BetsStack = createStackNavigator<BetsStackParamList>();
+const ResolveStack = createStackNavigator<ResolveStackParamList>();
 
 // Bets Stack Navigator
 const BetsStackNavigator = () => {
@@ -58,6 +59,35 @@ const BetsStackNavigator = () => {
   );
 };
 
+// Resolve Stack Navigator
+const ResolveStackNavigator = () => {
+  return (
+    <ResolveStack.Navigator
+      screenOptions={{
+        headerStyle: {
+          backgroundColor: colors.surface,
+          borderBottomColor: colors.border,
+        },
+        headerTintColor: colors.textPrimary,
+        headerTitleStyle: {
+          fontWeight: '600',
+        },
+      }}
+    >
+      <ResolveStack.Screen
+        name="ResolutionList"
+        component={ResolveScreen}
+        options={{ headerShown: false }} // We'll use custom header
+      />
+      <ResolveStack.Screen
+        name="SquaresGameDetail"
+        component={SquaresGameDetailScreen}
+        options={{ headerShown: false }} // SquaresGameDetailScreen has custom header
+      />
+    </ResolveStack.Navigator>
+  );
+};
+
 // Main Tab Navigator
 const TabNavigator = () => {
   return (
@@ -77,7 +107,7 @@ const TabNavigator = () => {
       />
       <Tab.Screen
         name="Resolve"
-        component={ResolveScreen}
+        component={ResolveStackNavigator}
         options={{
           tabBarLabel: 'Results',
         }}

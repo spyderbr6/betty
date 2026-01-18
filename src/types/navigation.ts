@@ -79,6 +79,9 @@ export type ResolveStackParamList = {
   DisputeResolution: {
     betId: string;
   };
+  SquaresGameDetail: {
+    gameId: string;
+  };
 };
 
 // Account Stack Navigator (user profile and settings)

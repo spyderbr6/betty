@@ -28,9 +28,9 @@ import { TransactionService } from '../services/transactionService';
 import { showAlert } from '../components/ui/CustomAlert';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
-import { BetsStackParamList } from '../types/navigation';
+import { ResolveStackParamList } from '../types/navigation';
 
-type ResolveScreenNavigationProp = StackNavigationProp<BetsStackParamList, 'BetsList'>;
+type ResolveScreenNavigationProp = StackNavigationProp<ResolveStackParamList, 'ResolutionList'>;
 
 // Initialize GraphQL client
 const client = generateClient<Schema>();
@@ -109,16 +109,22 @@ export const ResolveScreen: React.FC = () => {
         setIsLoading(true);
         console.log('Fetching bets pending resolution and resolved squares for user:', user.userId);
 
-        // Fetch all PENDING_RESOLUTION bets (for everyone, not just creators)
-        const { data: betsData } = await client.models.Bet.list({
-          filter: {
-            status: { eq: 'PENDING_RESOLUTION' }
-          },
-        });
+        // Calculate 3-day cutoff date
+        const cutoffDate = new Date();
+        cutoffDate.setDate(cutoffDate.getDate() - 3);
 
-        if (betsData) {
+        // Fetch PENDING_RESOLUTION and RESOLVED bets using GSI (indexed queries)
+        const [pendingBetsData, resolvedBetsData] = await Promise.all([
+          client.models.Bet.betsByStatus({ status: 'PENDING_RESOLUTION' }),
+          client.models.Bet.betsByStatus({ status: 'RESOLVED' })
+        ]);
+
+        // Combine and filter by 3-day cutoff + user involvement
+        const allBetsData = [...(pendingBetsData.data || []), ...(resolvedBetsData.data || [])];
+
+        if (allBetsData.length > 0) {
           const betsWithParticipants = await Promise.all(
-            betsData.map(async (bet) => {
+            allBetsData.map(async (bet) => {
               const { data: participants } = await client.models.Participant.list({
                 filter: { betId: { eq: bet.id! } }
               });
@@ -144,13 +150,13 @@ export const ResolveScreen: React.FC = () => {
 
           const validBets = betsWithParticipants.filter((bet): bet is Bet => bet !== null);
 
-          // Filter to only show bets where user is involved (creator or participant)
+          // Client-side filtering: 3-day limit + user involvement
           const userBets = validBets.filter(bet => {
             const isCreator = bet.creatorId === user.userId;
             const isParticipant = bet.participants?.some(p => p.userId === user.userId);
+            const isRecent = new Date(bet.createdAt) > cutoffDate;
 
-            // Show all PENDING_RESOLUTION bets where user is involved
-            return isCreator || isParticipant;
+            return (isCreator || isParticipant) && isRecent;
           });
 
           // Priority sorting: creator's bets needing resolution FIRST (no winningSide), then all others by creation date
@@ -168,45 +174,52 @@ export const ResolveScreen: React.FC = () => {
             return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
           });
 
-          console.log('Found pending resolution bets:', sortedBets.length);
+          console.log('Found pending/resolved bets (last 3 days):', sortedBets.length);
           setPendingBets(sortedBets);
         }
 
-        // Fetch RESOLVED and PENDING_RESOLUTION squares games where user has purchases
+        // Fetch PENDING_RESOLUTION and RESOLVED squares games using GSI
+        const [pendingSquaresData, resolvedSquaresData] = await Promise.all([
+          client.models.SquaresGame.squaresGamesByStatus({ status: 'PENDING_RESOLUTION' }),
+          client.models.SquaresGame.squaresGamesByStatus({ status: 'RESOLVED' })
+        ]);
+
+        const allSquaresData = [...(pendingSquaresData.data || []), ...(resolvedSquaresData.data || [])];
+
+        // Get user's game IDs from purchases
         const { data: userPurchases } = await client.models.SquaresPurchase.list({
           filter: { userId: { eq: user.userId } }
         });
 
-        if (userPurchases && userPurchases.length > 0) {
-          const squaresGameIds = [...new Set(userPurchases.map(p => p.squaresGameId).filter(Boolean))];
+        if (userPurchases && userPurchases.length > 0 && allSquaresData.length > 0) {
+          const userGameIds = new Set(userPurchases.map(p => p.squaresGameId).filter(Boolean));
 
-          // Fetch all the games
-          const gamesPromises = squaresGameIds.map(id =>
-            client.models.SquaresGame.get({ id: id! })
-          );
-          const gamesResults = await Promise.all(gamesPromises);
-
-          // Filter to RESOLVED or PENDING_RESOLUTION games and transform
-          const resolvedGames: SquaresGame[] = gamesResults
-            .map(result => result.data)
-            .filter(game => game && (game.status === 'RESOLVED' || game.status === 'PENDING_RESOLUTION'))
+          // Client-side filtering: user's games + 3-day limit
+          const recentUserSquares: SquaresGame[] = allSquaresData
+            .filter(game =>
+              game &&
+              userGameIds.has(game.id) &&
+              new Date(game.createdAt || '') > cutoffDate
+            )
             .map(game => ({
-              id: game!.id!,
-              creatorId: game!.creatorId!,
-              eventId: game!.eventId!,
-              title: game!.title!,
-              description: game!.description || undefined,
-              status: game!.status!,
-              pricePerSquare: game!.pricePerSquare || 0,
-              totalPot: game!.totalPot || 0,
-              squaresSold: game!.squaresSold || 0,
-              numbersAssigned: game!.numbersAssigned || false,
-              createdAt: game!.createdAt || new Date().toISOString(),
+              id: game.id!,
+              creatorId: game.creatorId!,
+              eventId: game.eventId!,
+              title: game.title!,
+              description: game.description || undefined,
+              status: game.status!,
+              pricePerSquare: game.pricePerSquare || 0,
+              totalPot: game.totalPot || 0,
+              squaresSold: game.squaresSold || 0,
+              numbersAssigned: game.numbersAssigned || false,
+              createdAt: game.createdAt || new Date().toISOString(),
             }))
             .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-          console.log('Found resolved/pending squares games:', resolvedGames.length);
-          setResolvedSquares(resolvedGames);
+          console.log('Found resolved/pending squares games (last 3 days):', recentUserSquares.length);
+          setResolvedSquares(recentUserSquares);
+        } else {
+          setResolvedSquares([]);
         }
       } catch (error) {
         console.error('Error fetching pending bets and resolved squares:', error);
@@ -264,25 +277,22 @@ export const ResolveScreen: React.FC = () => {
       setRefreshing(true);
       if (!user) return;
 
-      // Re-run the pending bets query
-      const { data: betsData } = await client.models.Bet.list({
-        filter: {
-          or: [
-            { status: { eq: 'PENDING_RESOLUTION' } },
-            {
-              and: [
-                { status: { eq: 'ACTIVE' } },
-                { creatorId: { eq: user.userId } },
-                { deadline: { lt: new Date().toISOString() } }
-              ]
-            }
-          ]
-        },
-      });
+      // Calculate 3-day cutoff date
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - 3);
 
-      if (betsData) {
+      // Fetch PENDING_RESOLUTION and RESOLVED bets using GSI (indexed queries)
+      const [pendingBetsData, resolvedBetsData] = await Promise.all([
+        client.models.Bet.betsByStatus({ status: 'PENDING_RESOLUTION' }),
+        client.models.Bet.betsByStatus({ status: 'RESOLVED' })
+      ]);
+
+      // Combine and filter by 3-day cutoff + user involvement
+      const allBetsData = [...(pendingBetsData.data || []), ...(resolvedBetsData.data || [])];
+
+      if (allBetsData.length > 0) {
         const betsWithParticipants = await Promise.all(
-          betsData.map(async (bet) => {
+          allBetsData.map(async (bet) => {
             const { data: participants } = await client.models.Participant.list({
               filter: { betId: { eq: bet.id! } }
             });
@@ -307,53 +317,73 @@ export const ResolveScreen: React.FC = () => {
         );
 
         const validBets = betsWithParticipants.filter((bet): bet is Bet => bet !== null);
-        const resolvableBets = validBets.filter(bet => {
+
+        // Client-side filtering: 3-day limit + user involvement
+        const userBets = validBets.filter(bet => {
           const isCreator = bet.creatorId === user.userId;
           const isParticipant = bet.participants?.some(p => p.userId === user.userId);
-          const hasParticipants = bet.participants && bet.participants.length > 0;
-          return hasParticipants && (isCreator || isParticipant);
+          const isRecent = new Date(bet.createdAt) > cutoffDate;
+
+          return (isCreator || isParticipant) && isRecent;
         });
 
-        // Sort by creation date (newest first)
-        const sortedBets = resolvableBets.sort((a, b) =>
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-        );
+        // Priority sorting: creator's bets needing resolution FIRST (no winningSide), then all others by creation date
+        const sortedBets = userBets.sort((a, b) => {
+          const aIsCreator = a.creatorId === user.userId;
+          const bIsCreator = b.creatorId === user.userId;
+          const aNeedsResolution = aIsCreator && !a.winningSide;
+          const bNeedsResolution = bIsCreator && !b.winningSide;
+
+          // Priority 1: Bets needing resolution (creator's bets without winningSide) go first
+          if (aNeedsResolution && !bNeedsResolution) return -1;
+          if (!aNeedsResolution && bNeedsResolution) return 1;
+
+          // Priority 2: Sort by creation date (newest first)
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        });
 
         setPendingBets(sortedBets);
       }
 
-      // Refresh RESOLVED and PENDING_RESOLUTION squares games where user has purchases
+      // Fetch PENDING_RESOLUTION and RESOLVED squares games using GSI
+      const [pendingSquaresData, resolvedSquaresData] = await Promise.all([
+        client.models.SquaresGame.squaresGamesByStatus({ status: 'PENDING_RESOLUTION' }),
+        client.models.SquaresGame.squaresGamesByStatus({ status: 'RESOLVED' })
+      ]);
+
+      const allSquaresData = [...(pendingSquaresData.data || []), ...(resolvedSquaresData.data || [])];
+
+      // Get user's game IDs from purchases
       const { data: userPurchases } = await client.models.SquaresPurchase.list({
         filter: { userId: { eq: user.userId } }
       });
 
-      if (userPurchases && userPurchases.length > 0) {
-        const squaresGameIds = [...new Set(userPurchases.map(p => p.squaresGameId).filter(Boolean))];
+      if (userPurchases && userPurchases.length > 0 && allSquaresData.length > 0) {
+        const userGameIds = new Set(userPurchases.map(p => p.squaresGameId).filter(Boolean));
 
-        const gamesPromises = squaresGameIds.map(id =>
-          client.models.SquaresGame.get({ id: id! })
-        );
-        const gamesResults = await Promise.all(gamesPromises);
-
-        const resolvedGames: SquaresGame[] = gamesResults
-          .map(result => result.data)
-          .filter(game => game && (game.status === 'RESOLVED' || game.status === 'PENDING_RESOLUTION'))
+        // Client-side filtering: user's games + 3-day limit
+        const recentUserSquares: SquaresGame[] = allSquaresData
+          .filter(game =>
+            game &&
+            userGameIds.has(game.id) &&
+            new Date(game.createdAt || '') > cutoffDate
+          )
           .map(game => ({
-            id: game!.id!,
-            creatorId: game!.creatorId!,
-            eventId: game!.eventId!,
-            title: game!.title!,
-            description: game!.description || undefined,
-            status: game!.status!,
-            pricePerSquare: game!.pricePerSquare || 0,
-            totalPot: game!.totalPot || 0,
-            squaresSold: game!.squaresSold || 0,
-            numbersAssigned: game!.numbersAssigned || false,
-            createdAt: game!.createdAt || new Date().toISOString(),
+            id: game.id!,
+            creatorId: game.creatorId!,
+            eventId: game.eventId!,
+            title: game.title!,
+            description: game.description || undefined,
+            status: game.status!,
+            pricePerSquare: game.pricePerSquare || 0,
+            totalPot: game.totalPot || 0,
+            squaresSold: game.squaresSold || 0,
+            numbersAssigned: game.numbersAssigned || false,
+            createdAt: game.createdAt || new Date().toISOString(),
           }))
           .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-        setResolvedSquares(resolvedGames);
+        setResolvedSquares(recentUserSquares);
       } else {
         setResolvedSquares([]);
       }
