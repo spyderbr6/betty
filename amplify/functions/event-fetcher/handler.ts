@@ -56,6 +56,7 @@ interface ESPNVenue {
   address?: {
     city?: string;
     state?: string;
+    country?: string;
   };
 }
 
@@ -270,11 +271,11 @@ async function upsertEvent(event: ESPNEvent, league: string): Promise<void> {
       awayTeamCode: awayCompetitor.team.abbreviation,
       venue: competition.venue?.fullName || undefined,
       city: competition.venue?.address?.city || undefined,
-      country: undefined, // ESPN doesn't provide country in this endpoint
+      country: competition.venue?.address?.country || undefined,
       homeScore: parseInt(homeCompetitor.score) || 0,
       awayScore: parseInt(awayCompetitor.score) || 0,
-      homePeriodScores: homeCompetitor.linescores?.map(ls => ls.value) || undefined,
-      awayPeriodScores: awayCompetitor.linescores?.map(ls => ls.value) || undefined,
+      homePeriodScores: homeCompetitor.linescores?.map(ls => Math.floor(ls.value)) || undefined,
+      awayPeriodScores: awayCompetitor.linescores?.map(ls => Math.floor(ls.value)) || undefined,
       status: status,
       isActive: isActive, // Lifecycle state managed by Lambda for efficient querying (1=active, 0=inactive)
       quarter: competition.status.period ? `Period ${competition.status.period}` : undefined,
