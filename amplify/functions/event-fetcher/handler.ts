@@ -310,11 +310,16 @@ async function upsertEvent(event: ESPNEvent, league: string): Promise<void> {
     // Add period scores only if they exist (convert incremental to cumulative)
     // ESPN API returns [Q1_points, Q2_points, Q3_points, Q4_points]
     // We need [Q1_total, Q2_total, Q3_total, Q4_total] for squares matching
+    // IMPORTANT: Amplify's a.json() type requires JSON strings, not JavaScript arrays
     if (homeCompetitor.linescores && homeCompetitor.linescores.length > 0) {
-      eventData.homePeriodScores = calculateCumulativeScores(homeCompetitor.linescores.map(ls => Math.floor(ls.value)));
+      const cumulativeScores = calculateCumulativeScores(homeCompetitor.linescores.map(ls => Math.floor(ls.value)));
+      // Stringify array for a.json() field type
+      eventData.homePeriodScores = JSON.stringify(cumulativeScores);
     }
     if (awayCompetitor.linescores && awayCompetitor.linescores.length > 0) {
-      eventData.awayPeriodScores = calculateCumulativeScores(awayCompetitor.linescores.map(ls => Math.floor(ls.value)));
+      const cumulativeScores = calculateCumulativeScores(awayCompetitor.linescores.map(ls => Math.floor(ls.value)));
+      // Stringify array for a.json() field type
+      eventData.awayPeriodScores = JSON.stringify(cumulativeScores);
     }
 
     // Add quarter/time info only if available
@@ -334,6 +339,16 @@ async function upsertEvent(event: ESPNEvent, league: string): Promise<void> {
       // Update the first existing event
       const existingEvent = existingEvents[0];
       try {
+        // Debug: Log what we're trying to update (only when period scores exist)
+        if (eventData.homePeriodScores || eventData.awayPeriodScores) {
+          console.log(`🔍 DEBUG - Event ${event.id} period scores (stringified for a.json()):`, {
+            homePeriodScores: eventData.homePeriodScores,
+            awayPeriodScores: eventData.awayPeriodScores,
+            homeType: typeof eventData.homePeriodScores,
+            awayType: typeof eventData.awayPeriodScores,
+          });
+        }
+
         const updateResult = await client.models.LiveEvent.update({
           id: existingEvent.id,
           ...eventData,
@@ -341,11 +356,15 @@ async function upsertEvent(event: ESPNEvent, league: string): Promise<void> {
         if (updateResult.errors) {
           console.error(`❌ Error updating event ${event.id}:`, updateResult.errors);
           console.error(`❌ Update error details:`, JSON.stringify(updateResult.errors, null, 2));
+          console.error(`❌ Attempted update data:`, JSON.stringify(eventData, null, 2));
         } else {
           console.log(`✅ Updated: ${awayCompetitor.team.abbreviation} @ ${homeCompetitor.team.abbreviation} (id: ${existingEvent.id}, status: ${status}, scores: ${eventData.awayScore}-${eventData.homeScore})`);
           // Log period scores if available (cumulative totals for squares matching)
           if (eventData.homePeriodScores && eventData.awayPeriodScores) {
-            console.log(`   📊 Cumulative period scores - Away: [${eventData.awayPeriodScores.join(', ')}], Home: [${eventData.homePeriodScores.join(', ')}]`);
+            // Parse JSON strings for logging
+            const homeScoresArray = JSON.parse(eventData.homePeriodScores);
+            const awayScoresArray = JSON.parse(eventData.awayPeriodScores);
+            console.log(`   📊 Cumulative period scores - Away: [${awayScoresArray.join(', ')}], Home: [${homeScoresArray.join(', ')}]`);
           }
         }
       } catch (updateError) {

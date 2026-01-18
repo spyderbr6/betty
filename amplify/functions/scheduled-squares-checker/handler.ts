@@ -288,8 +288,13 @@ async function processPeriodScoresForLiveGames(): Promise<number> {
         continue;
       }
 
-      const homePeriodScores = event.homePeriodScores as number[];
-      const awayPeriodScores = event.awayPeriodScores as number[];
+      // Parse JSON strings to arrays (a.json() fields store data as JSON strings)
+      const homePeriodScores = typeof event.homePeriodScores === 'string'
+        ? JSON.parse(event.homePeriodScores) as number[]
+        : event.homePeriodScores as number[];
+      const awayPeriodScores = typeof event.awayPeriodScores === 'string'
+        ? JSON.parse(event.awayPeriodScores) as number[]
+        : event.awayPeriodScores as number[];
 
       // Get existing payouts to avoid duplicates
       const { data: existingPayouts } = await client.models.SquaresPayout.payoutsBySquaresGame({
