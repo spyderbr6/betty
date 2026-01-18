@@ -278,7 +278,8 @@ async function upsertEvent(event: ESPNEvent, league: string): Promise<void> {
     // Use 1 for active (true), 0 for inactive (false) - integer required for DynamoDB GSI
     const isActive = (status === 'UPCOMING' || status === 'LIVE' || status === 'HALFTIME') ? 1 : 0;
 
-    const eventData = {
+    // Build event data object, only including fields with actual values
+    const eventData: any = {
       externalId: event.id,
       sport: mapLeagueToSportType(league),
       league: league,
@@ -288,24 +289,46 @@ async function upsertEvent(event: ESPNEvent, league: string): Promise<void> {
       awayTeamShortName: awayCompetitor.team.name, // Short name (e.g., "Browns")
       homeTeamCode: homeCompetitor.team.abbreviation,
       awayTeamCode: awayCompetitor.team.abbreviation,
-      venue: competition.venue?.fullName || undefined,
-      city: competition.venue?.address?.city || undefined,
-      country: competition.venue?.address?.country || undefined,
       homeScore: parseInt(homeCompetitor.score) || 0,
       awayScore: parseInt(awayCompetitor.score) || 0,
-      // Convert incremental period scores to cumulative totals for squares calculation
-      // ESPN API returns [Q1_points, Q2_points, Q3_points, Q4_points]
-      // We need [Q1_total, Q2_total, Q3_total, Q4_total] for squares matching
-      homePeriodScores: homeCompetitor.linescores ? calculateCumulativeScores(homeCompetitor.linescores.map(ls => Math.floor(ls.value))) : undefined,
-      awayPeriodScores: awayCompetitor.linescores ? calculateCumulativeScores(awayCompetitor.linescores.map(ls => Math.floor(ls.value))) : undefined,
       status: status,
       isActive: isActive, // Lifecycle state managed by Lambda for efficient querying (1=active, 0=inactive)
-      quarter: competition.status.period ? `Period ${competition.status.period}` : undefined,
-      timeLeft: competition.status.displayClock || undefined,
       scheduledTime: new Date(competition.date).toISOString(),
-      season: event.season?.year?.toString() || undefined,
-      round: undefined, // ESPN doesn't provide round in scoreboard endpoint
     };
+
+    // Add optional venue fields only if they exist
+    if (competition.venue?.fullName) {
+      eventData.venue = competition.venue.fullName;
+    }
+    if (competition.venue?.address?.city) {
+      eventData.city = competition.venue.address.city;
+    }
+    if (competition.venue?.address?.country) {
+      eventData.country = competition.venue.address.country;
+    }
+
+    // Add period scores only if they exist (convert incremental to cumulative)
+    // ESPN API returns [Q1_points, Q2_points, Q3_points, Q4_points]
+    // We need [Q1_total, Q2_total, Q3_total, Q4_total] for squares matching
+    if (homeCompetitor.linescores && homeCompetitor.linescores.length > 0) {
+      eventData.homePeriodScores = calculateCumulativeScores(homeCompetitor.linescores.map(ls => Math.floor(ls.value)));
+    }
+    if (awayCompetitor.linescores && awayCompetitor.linescores.length > 0) {
+      eventData.awayPeriodScores = calculateCumulativeScores(awayCompetitor.linescores.map(ls => Math.floor(ls.value)));
+    }
+
+    // Add quarter/time info only if available
+    if (competition.status.period) {
+      eventData.quarter = `Period ${competition.status.period}`;
+    }
+    if (competition.status.displayClock) {
+      eventData.timeLeft = competition.status.displayClock;
+    }
+
+    // Add season if available
+    if (event.season?.year) {
+      eventData.season = event.season.year.toString();
+    }
 
     if (existingEvents && existingEvents.length > 0) {
       // Update the first existing event
