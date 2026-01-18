@@ -93,6 +93,25 @@ const LEAGUE_ENDPOINTS: Record<string, string> = {
 };
 
 /**
+ * Convert incremental period scores to cumulative totals
+ * ESPN API returns [Q1_points, Q2_points, Q3_points, Q4_points]
+ * We need [Q1_total, Q2_total, Q3_total, Q4_total] for squares matching
+ *
+ * Example: [3, 7, 0, 20] → [3, 10, 10, 30]
+ */
+function calculateCumulativeScores(incrementalScores: number[]): number[] {
+  const cumulative: number[] = [];
+  let runningTotal = 0;
+
+  for (const score of incrementalScores) {
+    runningTotal += score;
+    cumulative.push(runningTotal);
+  }
+
+  return cumulative;
+}
+
+/**
  * Fetch events from ESPN API using date range
  * @param league - League name (NBA, NFL)
  * @param startDate - Start date in YYYY-MM-DD format
@@ -274,8 +293,11 @@ async function upsertEvent(event: ESPNEvent, league: string): Promise<void> {
       country: competition.venue?.address?.country || undefined,
       homeScore: parseInt(homeCompetitor.score) || 0,
       awayScore: parseInt(awayCompetitor.score) || 0,
-      homePeriodScores: homeCompetitor.linescores?.map(ls => Math.floor(ls.value)) || undefined,
-      awayPeriodScores: awayCompetitor.linescores?.map(ls => Math.floor(ls.value)) || undefined,
+      // Convert incremental period scores to cumulative totals for squares calculation
+      // ESPN API returns [Q1_points, Q2_points, Q3_points, Q4_points]
+      // We need [Q1_total, Q2_total, Q3_total, Q4_total] for squares matching
+      homePeriodScores: homeCompetitor.linescores ? calculateCumulativeScores(homeCompetitor.linescores.map(ls => Math.floor(ls.value))) : undefined,
+      awayPeriodScores: awayCompetitor.linescores ? calculateCumulativeScores(awayCompetitor.linescores.map(ls => Math.floor(ls.value))) : undefined,
       status: status,
       isActive: isActive, // Lifecycle state managed by Lambda for efficient querying (1=active, 0=inactive)
       quarter: competition.status.period ? `Period ${competition.status.period}` : undefined,
@@ -298,9 +320,9 @@ async function upsertEvent(event: ESPNEvent, league: string): Promise<void> {
           console.error(`❌ Update error details:`, JSON.stringify(updateResult.errors, null, 2));
         } else {
           console.log(`✅ Updated: ${awayCompetitor.team.abbreviation} @ ${homeCompetitor.team.abbreviation} (id: ${existingEvent.id}, status: ${status}, scores: ${eventData.awayScore}-${eventData.homeScore})`);
-          // Log period scores if available
+          // Log period scores if available (cumulative totals for squares matching)
           if (eventData.homePeriodScores && eventData.awayPeriodScores) {
-            console.log(`   📊 Period scores - Away: [${eventData.awayPeriodScores.join(', ')}], Home: [${eventData.homePeriodScores.join(', ')}]`);
+            console.log(`   📊 Cumulative period scores - Away: [${eventData.awayPeriodScores.join(', ')}], Home: [${eventData.homePeriodScores.join(', ')}]`);
           }
         }
       } catch (updateError) {
