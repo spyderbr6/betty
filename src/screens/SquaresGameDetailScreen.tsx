@@ -162,6 +162,10 @@ export const SquaresGameDetailScreen = ({ route, navigation }: any) => {
         return 'Period 3';
       case 'PERIOD_4':
         return 'Final';
+      case 'PERIOD_5':
+        return 'Overtime';
+      case 'PERIOD_6':
+        return '2nd OT';
       default:
         return period;
     }

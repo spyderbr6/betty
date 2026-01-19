@@ -289,12 +289,27 @@ async function processPeriodScoresForLiveGames(): Promise<number> {
       }
 
       // Parse JSON strings to arrays (a.json() fields store data as JSON strings)
-      const homePeriodScores = typeof event.homePeriodScores === 'string'
-        ? JSON.parse(event.homePeriodScores) as number[]
-        : event.homePeriodScores as number[];
-      const awayPeriodScores = typeof event.awayPeriodScores === 'string'
-        ? JSON.parse(event.awayPeriodScores) as number[]
-        : event.awayPeriodScores as number[];
+      let homePeriodScores: number[];
+      let awayPeriodScores: number[];
+
+      try {
+        homePeriodScores = typeof event.homePeriodScores === 'string'
+          ? JSON.parse(event.homePeriodScores) as number[]
+          : event.homePeriodScores as number[];
+        awayPeriodScores = typeof event.awayPeriodScores === 'string'
+          ? JSON.parse(event.awayPeriodScores) as number[]
+          : event.awayPeriodScores as number[];
+
+        // Validate that scores are arrays
+        if (!Array.isArray(homePeriodScores) || !Array.isArray(awayPeriodScores)) {
+          console.error(`Invalid period scores format for game ${game.id}: homeScores=${typeof homePeriodScores}, awayScores=${typeof awayPeriodScores}`);
+          continue;
+        }
+      } catch (parseError) {
+        console.error(`Failed to parse period scores for game ${game.id}:`, parseError);
+        console.error(`Raw data: homeScores=${event.homePeriodScores}, awayScores=${event.awayPeriodScores}`);
+        continue;
+      }
 
       // Get existing payouts to avoid duplicates
       const { data: existingPayouts } = await client.models.SquaresPayout.payoutsBySquaresGame({
@@ -303,9 +318,19 @@ async function processPeriodScoresForLiveGames(): Promise<number> {
 
       const paidPeriods = new Set(existingPayouts?.map((p: any) => p.period) || []);
 
-      // Process each period (1-4)
-      for (let period = 1; period <= 4; period++) {
-        const periodEnum = `PERIOD_${period}` as 'PERIOD_1' | 'PERIOD_2' | 'PERIOD_3' | 'PERIOD_4';
+      // Determine max periods to process (up to 6 for double overtime)
+      // Standard: 4 periods (Q1, Q2, Q3, Q4)
+      // Overtime: 5 periods (Q1, Q2, Q3, Q4, OT)
+      // Double OT: 6 periods (Q1, Q2, Q3, Q4, OT1, OT2)
+      const maxPeriods = Math.min(Math.max(homePeriodScores.length, awayPeriodScores.length), 6);
+
+      if (maxPeriods > 4) {
+        console.log(`⚠️  Game ${game.id} has ${maxPeriods} periods (overtime detected)`);
+      }
+
+      // Process each available period dynamically
+      for (let period = 1; period <= maxPeriods; period++) {
+        const periodEnum = `PERIOD_${period}` as 'PERIOD_1' | 'PERIOD_2' | 'PERIOD_3' | 'PERIOD_4' | 'PERIOD_5' | 'PERIOD_6';
 
         // Skip if already paid
         if (paidPeriods.has(periodEnum)) continue;
@@ -339,63 +364,85 @@ async function processPeriodScoresForLiveGames(): Promise<number> {
           console.log(`No owner for winning square - house wins Period ${period}`);
 
           // Create house win payout record for tracking
-          const now = new Date().toISOString();
-          await client.models.SquaresPayout.create({
-            squaresGameId: game.id,
-            squaresPurchaseId: null, // No purchase for unsold square
-            userId: game.creatorId, // Track under creator for notification purposes
-            ownerName: 'HOUSE',
-            period: periodEnum,
-            amount: 0, // No payout to anyone
-            homeScore: homeScore % 10,
-            awayScore: awayScore % 10,
-            homeScoreFull: homeScore,
-            awayScoreFull: awayScore,
-            status: 'COMPLETED', // Mark as completed so resolution counts it
-            createdAt: now,
-            paidAt: now,
-          });
+          try {
+            const now = new Date().toISOString();
+            const { data: housePayout, errors: housePayoutErrors } = await client.models.SquaresPayout.create({
+              squaresGameId: game.id,
+              squaresPurchaseId: null, // No purchase for unsold square
+              userId: game.creatorId, // Track under creator for notification purposes
+              ownerName: 'HOUSE',
+              period: periodEnum,
+              amount: 0, // No payout to anyone
+              homeScore: homeScore % 10,
+              awayScore: awayScore % 10,
+              homeScoreFull: homeScore,
+              awayScoreFull: awayScore,
+              status: 'COMPLETED', // Mark as completed so resolution counts it
+              createdAt: now,
+              paidAt: now,
+            });
 
-          // Notify creator that house won this period
-          await client.models.Notification.create({
-            userId: game.creatorId,
-            type: 'SQUARES_PERIOD_WINNER',
-            title: 'Unsold Square Won',
-            message: `Period ${period} in "${game.title}" won by unsold square (${awayScore % 10}-${homeScore % 10}). No payout issued.`,
-            priority: 'MEDIUM',
-            actionData: JSON.stringify({ squaresGameId: game.id }),
-            isRead: false,
-            createdAt: now,
-          });
+            if (housePayoutErrors || !housePayout) {
+              console.error(`❌ Failed to create house win payout for Period ${period}:`, housePayoutErrors);
+              console.error(`Payout data: gameId=${game.id}, period=${periodEnum}, scores=${awayScore % 10}-${homeScore % 10}`);
+              continue;
+            }
 
-          console.log(`✅ Recorded house win for Period ${period}, notified creator`);
-          payoutsCreated++;
+            // Notify creator that house won this period
+            await client.models.Notification.create({
+              userId: game.creatorId,
+              type: 'SQUARES_PERIOD_WINNER',
+              title: 'Unsold Square Won',
+              message: `Period ${period} in "${game.title}" won by unsold square (${awayScore % 10}-${homeScore % 10}). No payout issued.`,
+              priority: 'MEDIUM',
+              actionData: JSON.stringify({ squaresGameId: game.id }),
+              isRead: false,
+              createdAt: now,
+            });
+
+            console.log(`✅ Recorded house win for Period ${period}, notified creator`);
+            payoutsCreated++;
+          } catch (housePayoutError) {
+            console.error(`❌ Exception creating house win payout for Period ${period}:`, housePayoutError);
+            console.error(`Game: ${game.id}, Period: ${periodEnum}, Scores: ${awayScore}-${homeScore}`);
+          }
           continue;
         }
 
         // Calculate payout
         const payoutAmount = calculatePayout(period, game.totalPot, game.payoutStructure);
 
-        // Create payout record
+        // Create payout record with proper error handling
         const now = new Date().toISOString();
-        const { data: payout } = await client.models.SquaresPayout.create({
-          squaresGameId: game.id,
-          squaresPurchaseId: winningPurchase.id,
-          userId: winningPurchase.userId,
-          ownerName: winningPurchase.ownerName,
-          period: periodEnum,
-          amount: payoutAmount,
-          homeScore: homeScore % 10,
-          awayScore: awayScore % 10,
-          homeScoreFull: homeScore,
-          awayScoreFull: awayScore,
-          status: 'COMPLETED',
-          createdAt: now,
-          paidAt: now,
-        });
+        let payout: any;
 
-        if (!payout) {
-          console.error(`Failed to create payout for Period ${period}`);
+        try {
+          const { data: payoutData, errors: payoutErrors } = await client.models.SquaresPayout.create({
+            squaresGameId: game.id,
+            squaresPurchaseId: winningPurchase.id,
+            userId: winningPurchase.userId,
+            ownerName: winningPurchase.ownerName,
+            period: periodEnum,
+            amount: payoutAmount,
+            homeScore: homeScore % 10,
+            awayScore: awayScore % 10,
+            homeScoreFull: homeScore,
+            awayScoreFull: awayScore,
+            status: 'COMPLETED',
+            createdAt: now,
+            paidAt: now,
+          });
+
+          if (payoutErrors || !payoutData) {
+            console.error(`❌ Failed to create payout for Period ${period}:`, payoutErrors);
+            console.error(`Payout data: gameId=${game.id}, purchaseId=${winningPurchase.id}, userId=${winningPurchase.userId}, period=${periodEnum}, amount=${payoutAmount}, scores=${awayScore % 10}-${homeScore % 10}`);
+            continue;
+          }
+
+          payout = payoutData;
+        } catch (payoutError) {
+          console.error(`❌ Exception creating payout for Period ${period}:`, payoutError);
+          console.error(`Game: ${game.id}, Winner: ${winningPurchase.ownerName}, Period: ${periodEnum}, Amount: ${payoutAmount}`);
           continue;
         }
 
@@ -500,6 +547,27 @@ async function resolveCompletedGames(): Promise<number> {
       const isEventFinished = event.status === 'FINISHED';
 
       if (isEventFinished || isOldGame) {
+        // Determine expected number of periods from event data
+        let expectedPeriods = 4; // Default to 4 periods
+
+        if (event.homePeriodScores && event.awayPeriodScores) {
+          try {
+            const homePeriodScores = typeof event.homePeriodScores === 'string'
+              ? JSON.parse(event.homePeriodScores) as number[]
+              : event.homePeriodScores as number[];
+            const awayPeriodScores = typeof event.awayPeriodScores === 'string'
+              ? JSON.parse(event.awayPeriodScores) as number[]
+              : event.awayPeriodScores as number[];
+
+            // Calculate expected periods (up to 6 for double OT)
+            if (Array.isArray(homePeriodScores) && Array.isArray(awayPeriodScores)) {
+              expectedPeriods = Math.min(Math.max(homePeriodScores.length, awayPeriodScores.length), 6);
+            }
+          } catch (parseError) {
+            console.log(`⚠️  Could not parse period scores for game ${game.id}, defaulting to 4 periods`);
+          }
+        }
+
         // Count payouts
         const { data: payouts } = await client.models.SquaresPayout.payoutsBySquaresGame({
           squaresGameId: game.id
@@ -507,9 +575,9 @@ async function resolveCompletedGames(): Promise<number> {
 
         const payoutCount = payouts?.length || 0;
 
-        if (payoutCount === 4) {
-          // All 4 periods paid - resolve game
-          console.log(`✅ Resolving game ${game.id} (all 4 periods paid)`);
+        if (payoutCount >= expectedPeriods) {
+          // All periods paid - resolve game
+          console.log(`✅ Resolving game ${game.id} (all ${expectedPeriods} periods paid)`);
 
           await client.models.SquaresGame.update({
             id: game.id,
@@ -520,12 +588,12 @@ async function resolveCompletedGames(): Promise<number> {
           resolvedCount++;
         } else {
           // Missing period data
-          console.log(`⚠️  Game ${game.id} missing period data (${payoutCount}/4 periods) - ${isOldGame ? 'old game' : 'event finished'}`);
+          console.log(`⚠️  Game ${game.id} missing period data (${payoutCount}/${expectedPeriods} periods) - ${isOldGame ? 'old game' : 'event finished'}`);
 
           await client.models.SquaresGame.update({
             id: game.id,
             status: 'PENDING_RESOLUTION',
-            resolutionReason: `Missing period score data (${payoutCount}/4 periods)`,
+            resolutionReason: `Missing period score data (${payoutCount}/${expectedPeriods} periods)`,
             updatedAt: now.toISOString(),
           });
 
@@ -690,6 +758,8 @@ function findWinningSquare(game: any, purchases: any[], homeScore: number, awayS
 
 /**
  * Calculate payout for a period
+ * Supports up to 6 periods (Q1-Q4 + double OT)
+ * Overtime periods (5-6) use period4's percentage as they represent final score
  */
 function calculatePayout(period: number, totalPot: number, payoutStructure: any): number {
   const percentages = [
@@ -697,9 +767,17 @@ function calculatePayout(period: number, totalPot: number, payoutStructure: any)
     payoutStructure.period2, // Period 2 (halftime)
     payoutStructure.period3, // Period 3
     payoutStructure.period4, // Period 4 (final)
+    payoutStructure.period4, // Period 5 (OT - use final period percentage)
+    payoutStructure.period4, // Period 6 (2nd OT - use final period percentage)
   ];
 
   const percentage = percentages[period - 1];
+
+  if (!percentage || percentage === undefined) {
+    console.error(`No payout percentage defined for period ${period}`);
+    return 0;
+  }
+
   const grossPayout = totalPot * percentage;
 
   // Apply 3% platform fee

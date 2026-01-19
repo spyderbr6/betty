@@ -316,7 +316,7 @@ export class SquaresGameService {
       }
 
       // Check if period already paid
-      const periodEnum = `PERIOD_${period}` as 'PERIOD_1' | 'PERIOD_2' | 'PERIOD_3' | 'PERIOD_4';
+      const periodEnum = `PERIOD_${period}` as 'PERIOD_1' | 'PERIOD_2' | 'PERIOD_3' | 'PERIOD_4' | 'PERIOD_5' | 'PERIOD_6';
       const { data: existingPayouts } = await client.models.SquaresPayout.list({
         filter: {
           squaresGameId: { eq: squaresGameId },
@@ -571,6 +571,8 @@ export class SquaresGameService {
 
   /**
    * Calculate payout for a period
+   * Supports up to 6 periods (Q1-Q4 + double OT)
+   * Overtime periods (5-6) use period4's percentage as they represent final score
    */
   private static calculatePayout(period: number, totalPot: number, payoutStructure: any): number {
     const percentages = [
@@ -578,9 +580,17 @@ export class SquaresGameService {
       payoutStructure.period2, // Period 2 (halftime)
       payoutStructure.period3, // Period 3
       payoutStructure.period4, // Period 4 (final)
+      payoutStructure.period4, // Period 5 (OT - use final period percentage)
+      payoutStructure.period4, // Period 6 (2nd OT - use final period percentage)
     ];
 
     const percentage = percentages[period - 1];
+
+    if (!percentage || percentage === undefined) {
+      console.error(`No payout percentage defined for period ${period}`);
+      return 0;
+    }
+
     const grossPayout = totalPot * percentage;
 
     // Apply 3% platform fee (consistent with bet winnings)

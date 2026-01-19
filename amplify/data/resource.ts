@@ -646,11 +646,11 @@ const schema = a.schema({
     .model({
       id: a.id(),
       squaresGameId: a.id().required(),
-      squaresPurchaseId: a.id().required(), // which square won
+      squaresPurchaseId: a.id(), // which square won (null for house wins on unsold squares)
       userId: a.id().required(), // buyer who receives payout
       ownerName: a.string().required(), // name displayed as winner
       // Payout Details
-      period: a.enum(['PERIOD_1', 'PERIOD_2', 'PERIOD_3', 'PERIOD_4']),
+      period: a.enum(['PERIOD_1', 'PERIOD_2', 'PERIOD_3', 'PERIOD_4', 'PERIOD_5', 'PERIOD_6']), // Support overtime periods
       amount: a.float().required(), // portion of pot after 3% platform fee
       // Winning Score
       homeScore: a.integer().required(), // last digit
