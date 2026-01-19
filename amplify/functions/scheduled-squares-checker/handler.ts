@@ -275,15 +275,25 @@ async function processPeriodScoresForLiveGames(): Promise<number> {
 
     for (const game of liveGames) {
       console.log(`\n🎲 Processing LIVE game: ${game.id} - "${game.title}"`);
-      console.log(`   Total pot: $${game.totalPot}`);
-      console.log(`   Payout structure type: ${typeof game.payoutStructure}`);
-      console.log(`   Payout structure value:`, game.payoutStructure);
+
+      // CRITICAL: Re-fetch full game data to ensure all fields are loaded
+      // Secondary index queries may not return all fields (especially a.json() fields)
+      const { data: fullGame } = await client.models.SquaresGame.get({ id: game.id });
+
+      if (!fullGame) {
+        console.log(`Failed to fetch full game data for ${game.id}`);
+        continue;
+      }
+
+      console.log(`   Total pot: $${fullGame.totalPot}`);
+      console.log(`   Payout structure type: ${typeof fullGame.payoutStructure}`);
+      console.log(`   Payout structure value:`, fullGame.payoutStructure);
 
       // Get event
-      const { data: event } = await client.models.LiveEvent.get({ id: game.eventId });
+      const { data: event } = await client.models.LiveEvent.get({ id: fullGame.eventId });
 
       if (!event) {
-        console.log(`Event ${game.eventId} not found for game ${game.id}`);
+        console.log(`Event ${fullGame.eventId} not found for game ${fullGame.id}`);
         continue;
       }
 
@@ -316,7 +326,7 @@ async function processPeriodScoresForLiveGames(): Promise<number> {
 
         // Validate that scores are arrays
         if (!Array.isArray(homePeriodScores) || !Array.isArray(awayPeriodScores)) {
-          console.error(`Invalid period scores format for game ${game.id}: homeScores=${typeof homePeriodScores}, awayScores=${typeof awayPeriodScores}`);
+          console.error(`Invalid period scores format for game ${fullGame.id}: homeScores=${typeof homePeriodScores}, awayScores=${typeof awayPeriodScores}`);
           continue;
         }
 
@@ -326,14 +336,14 @@ async function processPeriodScoresForLiveGames(): Promise<number> {
 
         console.log(`✅ Parsed period scores - home: [${homePeriodScores.join(', ')}], away: [${awayPeriodScores.join(', ')}]`);
       } catch (parseError) {
-        console.error(`Failed to parse period scores for game ${game.id}:`, parseError);
+        console.error(`Failed to parse period scores for game ${fullGame.id}:`, parseError);
         console.error(`Raw data: homeScores=${event.homePeriodScores}, awayScores=${event.awayPeriodScores}`);
         continue;
       }
 
       // Get existing payouts to avoid duplicates
       const { data: existingPayouts } = await client.models.SquaresPayout.payoutsBySquaresGame({
-        squaresGameId: game.id
+        squaresGameId: fullGame.id
       });
 
       const paidPeriods = new Set(existingPayouts?.map((p: any) => p.period) || []);
@@ -344,10 +354,10 @@ async function processPeriodScoresForLiveGames(): Promise<number> {
       // Double OT: 6 periods (Q1, Q2, Q3, Q4, OT1, OT2)
       const maxPeriods = Math.min(Math.max(homePeriodScores.length, awayPeriodScores.length), 6);
 
-      console.log(`🔍 Game ${game.id}: Will process ${maxPeriods} periods (already paid: ${paidPeriods.size})`);
+      console.log(`🔍 Game ${fullGame.id}: Will process ${maxPeriods} periods (already paid: ${paidPeriods.size})`);
 
       if (maxPeriods > 4) {
-        console.log(`⚠️  Game ${game.id} has ${maxPeriods} periods (overtime detected)`);
+        console.log(`⚠️  Game ${fullGame.id} has ${maxPeriods} periods (overtime detected)`);
       }
 
       // Process each available period dynamically
@@ -360,29 +370,29 @@ async function processPeriodScoresForLiveGames(): Promise<number> {
         // Check if period score is available
         const periodIndex = period - 1;
         if (periodIndex >= homePeriodScores.length || periodIndex >= awayPeriodScores.length) {
-          console.log(`Period ${period} scores not available yet for game ${game.id}`);
+          console.log(`Period ${period} scores not available yet for game ${fullGame.id}`);
           continue;
         }
 
         const homeScore = homePeriodScores[periodIndex];
         const awayScore = awayPeriodScores[periodIndex];
 
-        console.log(`🏆 Processing Period ${period} for game ${game.id}: ${awayScore}-${homeScore} (last digits: ${awayScore % 10}-${homeScore % 10})`);
+        console.log(`🏆 Processing Period ${period} for game ${fullGame.id}: ${awayScore}-${homeScore} (last digits: ${awayScore % 10}-${homeScore % 10})`);
 
         // Get all purchases
         const { data: purchases } = await client.models.SquaresPurchase.purchasesBySquaresGame({
-          squaresGameId: game.id
+          squaresGameId: fullGame.id
         });
 
         if (!purchases || purchases.length === 0) {
-          console.log(`❌ No purchases found for game ${game.id} - skipping period ${period}`);
+          console.log(`❌ No purchases found for game ${fullGame.id} - skipping period ${period}`);
           continue;
         }
 
-        console.log(`   Found ${purchases.length} purchases for game ${game.id}`);
+        console.log(`   Found ${purchases.length} purchases for game ${fullGame.id}`);
 
         // Find winner
-        const winningPurchase = findWinningSquare(game, purchases, homeScore, awayScore);
+        const winningPurchase = findWinningSquare(fullGame, purchases, homeScore, awayScore);
         console.log(`   Winning purchase for ${awayScore % 10}-${homeScore % 10}:`, winningPurchase ? `${winningPurchase.ownerName} (user: ${winningPurchase.userId})` : 'NONE (house wins)');
 
         if (!winningPurchase) {
@@ -392,9 +402,9 @@ async function processPeriodScoresForLiveGames(): Promise<number> {
           try {
             const now = new Date().toISOString();
             const { data: housePayout, errors: housePayoutErrors } = await client.models.SquaresPayout.create({
-              squaresGameId: game.id,
-              squaresPurchaseId: null, // No purchase for unsold square
-              userId: game.creatorId, // Track under creator for notification purposes
+              squaresGameId: fullGame.id,
+              squaresPurchaseId: 'HOUSE_WIN', // Sentinel value (cannot use null due to GSI constraint)
+              userId: fullGame.creatorId, // Track under creator for notification purposes
               ownerName: 'HOUSE',
               period: periodEnum,
               amount: 0, // No payout to anyone
@@ -409,18 +419,18 @@ async function processPeriodScoresForLiveGames(): Promise<number> {
 
             if (housePayoutErrors || !housePayout) {
               console.error(`❌ Failed to create house win payout for Period ${period}:`, housePayoutErrors);
-              console.error(`Payout data: gameId=${game.id}, period=${periodEnum}, scores=${awayScore % 10}-${homeScore % 10}`);
+              console.error(`Payout data: gameId=${fullGame.id}, period=${periodEnum}, scores=${awayScore % 10}-${homeScore % 10}`);
               continue;
             }
 
             // Notify creator that house won this period
             await client.models.Notification.create({
-              userId: game.creatorId,
+              userId: fullGame.creatorId,
               type: 'SQUARES_PERIOD_WINNER',
               title: 'Unsold Square Won',
-              message: `Period ${period} in "${game.title}" won by unsold square (${awayScore % 10}-${homeScore % 10}). No payout issued.`,
+              message: `Period ${period} in "${fullGame.title}" won by unsold square (${awayScore % 10}-${homeScore % 10}). No payout issued.`,
               priority: 'MEDIUM',
-              actionData: JSON.stringify({ squaresGameId: game.id }),
+              actionData: JSON.stringify({ squaresGameId: fullGame.id }),
               isRead: false,
               createdAt: now,
             });
@@ -429,7 +439,7 @@ async function processPeriodScoresForLiveGames(): Promise<number> {
             payoutsCreated++;
           } catch (housePayoutError) {
             console.error(`❌ Exception creating house win payout for Period ${period}:`, housePayoutError);
-            console.error(`Game: ${game.id}, Period: ${periodEnum}, Scores: ${awayScore}-${homeScore}`);
+            console.error(`Game: ${fullGame.id}, Period: ${periodEnum}, Scores: ${awayScore}-${homeScore}`);
           }
           continue;
         }
@@ -437,19 +447,31 @@ async function processPeriodScoresForLiveGames(): Promise<number> {
         // Parse payoutStructure (a.json() field - may be string or object)
         let payoutStructure: any;
         try {
-          payoutStructure = typeof game.payoutStructure === 'string'
-            ? JSON.parse(game.payoutStructure)
-            : game.payoutStructure;
+          payoutStructure = typeof fullGame.payoutStructure === 'string'
+            ? JSON.parse(fullGame.payoutStructure)
+            : fullGame.payoutStructure;
 
           console.log(`   Payout structure:`, payoutStructure);
         } catch (parseError) {
           console.error(`❌ Failed to parse payout structure:`, parseError);
-          console.error(`   Raw payoutStructure:`, game.payoutStructure);
+          console.error(`   Raw payoutStructure:`, fullGame.payoutStructure);
           continue;
         }
 
         // Calculate payout
-        const payoutAmount = calculatePayout(period, game.totalPot, payoutStructure);
+        const payoutAmount = calculatePayout(period, fullGame.totalPot, payoutStructure);
+
+        // CRITICAL: Prevent zero or negative payouts
+        if (payoutAmount <= 0) {
+          console.error(`❌ INVALID PAYOUT AMOUNT: $${payoutAmount} for Period ${period}`);
+          console.error(`   Game: ${fullGame.id}, Total Pot: $${fullGame.totalPot}`);
+          console.error(`   Payout Structure:`, payoutStructure);
+          console.error(`   Winner: ${winningPurchase.ownerName} (${winningPurchase.userId})`);
+          console.error(`   SKIPPING PAYOUT CREATION - fix payout structure or total pot`);
+          continue; // Skip this period, do not create a $0 payout
+        }
+
+        console.log(`   💰 Calculated payout: $${payoutAmount}`);
 
         // Create payout record with proper error handling
         const now = new Date().toISOString();
@@ -457,7 +479,7 @@ async function processPeriodScoresForLiveGames(): Promise<number> {
 
         try {
           const { data: payoutData, errors: payoutErrors } = await client.models.SquaresPayout.create({
-            squaresGameId: game.id,
+            squaresGameId: fullGame.id,
             squaresPurchaseId: winningPurchase.id,
             userId: winningPurchase.userId,
             ownerName: winningPurchase.ownerName,
@@ -474,14 +496,14 @@ async function processPeriodScoresForLiveGames(): Promise<number> {
 
           if (payoutErrors || !payoutData) {
             console.error(`❌ Failed to create payout for Period ${period}:`, payoutErrors);
-            console.error(`Payout data: gameId=${game.id}, purchaseId=${winningPurchase.id}, userId=${winningPurchase.userId}, period=${periodEnum}, amount=${payoutAmount}, scores=${awayScore % 10}-${homeScore % 10}`);
+            console.error(`Payout data: gameId=${fullGame.id}, purchaseId=${winningPurchase.id}, userId=${winningPurchase.userId}, period=${periodEnum}, amount=${payoutAmount}, scores=${awayScore % 10}-${homeScore % 10}`);
             continue;
           }
 
           payout = payoutData;
         } catch (payoutError) {
           console.error(`❌ Exception creating payout for Period ${period}:`, payoutError);
-          console.error(`Game: ${game.id}, Winner: ${winningPurchase.ownerName}, Period: ${periodEnum}, Amount: ${payoutAmount}`);
+          console.error(`Game: ${fullGame.id}, Winner: ${winningPurchase.ownerName}, Period: ${periodEnum}, Amount: ${payoutAmount}`);
           continue;
         }
 
@@ -503,7 +525,7 @@ async function processPeriodScoresForLiveGames(): Promise<number> {
             platformFee: 0, // Already deducted
             balanceBefore: user.balance,
             balanceAfter: newBalance,
-            relatedSquaresGameId: game.id,
+            relatedSquaresGameId: fullGame.id,
             notes: `${periodEnum} winner payout`,
             createdAt: now,
             completedAt: now,
@@ -524,7 +546,7 @@ async function processPeriodScoresForLiveGames(): Promise<number> {
           title: '🎉 Winner!',
           message: notificationMessage,
           priority: 'HIGH',
-          actionData: JSON.stringify({ squaresGameId: game.id, payoutId: payout.id }),
+          actionData: JSON.stringify({ squaresGameId: fullGame.id, payoutId: payout.id }),
           isRead: false,
           createdAt: now,
         });
