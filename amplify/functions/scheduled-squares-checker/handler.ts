@@ -274,6 +274,8 @@ async function processPeriodScoresForLiveGames(): Promise<number> {
     let payoutsCreated = 0;
 
     for (const game of liveGames) {
+      console.log(`\n🎲 Processing LIVE game: ${game.id} - "${game.title}"`);
+
       // Get event
       const { data: event } = await client.models.LiveEvent.get({ id: game.eventId });
 
@@ -281,6 +283,15 @@ async function processPeriodScoresForLiveGames(): Promise<number> {
         console.log(`Event ${game.eventId} not found for game ${game.id}`);
         continue;
       }
+
+      // Debug logging: Check what we actually received
+      console.log(`📊 Event ${event.id} data check:`);
+      console.log(`   homePeriodScores type: ${typeof event.homePeriodScores}`);
+      console.log(`   homePeriodScores value:`, event.homePeriodScores);
+      console.log(`   awayPeriodScores type: ${typeof event.awayPeriodScores}`);
+      console.log(`   awayPeriodScores value:`, event.awayPeriodScores);
+      console.log(`   isArray home: ${Array.isArray(event.homePeriodScores)}`);
+      console.log(`   isArray away: ${Array.isArray(event.awayPeriodScores)}`);
 
       // Check if event has period scores
       if (!event.homePeriodScores || !event.awayPeriodScores) {
@@ -305,6 +316,12 @@ async function processPeriodScoresForLiveGames(): Promise<number> {
           console.error(`Invalid period scores format for game ${game.id}: homeScores=${typeof homePeriodScores}, awayScores=${typeof awayPeriodScores}`);
           continue;
         }
+
+        // Convert array elements to numbers if they're strings
+        homePeriodScores = homePeriodScores.map(score => typeof score === 'string' ? parseInt(score, 10) : score);
+        awayPeriodScores = awayPeriodScores.map(score => typeof score === 'string' ? parseInt(score, 10) : score);
+
+        console.log(`✅ Parsed period scores - home: [${homePeriodScores.join(', ')}], away: [${awayPeriodScores.join(', ')}]`);
       } catch (parseError) {
         console.error(`Failed to parse period scores for game ${game.id}:`, parseError);
         console.error(`Raw data: homeScores=${event.homePeriodScores}, awayScores=${event.awayPeriodScores}`);
@@ -323,6 +340,8 @@ async function processPeriodScoresForLiveGames(): Promise<number> {
       // Overtime: 5 periods (Q1, Q2, Q3, Q4, OT)
       // Double OT: 6 periods (Q1, Q2, Q3, Q4, OT1, OT2)
       const maxPeriods = Math.min(Math.max(homePeriodScores.length, awayPeriodScores.length), 6);
+
+      console.log(`🔍 Game ${game.id}: Will process ${maxPeriods} periods (already paid: ${paidPeriods.size})`);
 
       if (maxPeriods > 4) {
         console.log(`⚠️  Game ${game.id} has ${maxPeriods} periods (overtime detected)`);
@@ -345,7 +364,7 @@ async function processPeriodScoresForLiveGames(): Promise<number> {
         const homeScore = homePeriodScores[periodIndex];
         const awayScore = awayPeriodScores[periodIndex];
 
-        console.log(`🏆 Processing Period ${period} for game ${game.id}: ${awayScore}-${homeScore}`);
+        console.log(`🏆 Processing Period ${period} for game ${game.id}: ${awayScore}-${homeScore} (last digits: ${awayScore % 10}-${homeScore % 10})`);
 
         // Get all purchases
         const { data: purchases } = await client.models.SquaresPurchase.purchasesBySquaresGame({
@@ -353,12 +372,15 @@ async function processPeriodScoresForLiveGames(): Promise<number> {
         });
 
         if (!purchases || purchases.length === 0) {
-          console.log(`No purchases found for game ${game.id}`);
+          console.log(`❌ No purchases found for game ${game.id} - skipping period ${period}`);
           continue;
         }
 
+        console.log(`   Found ${purchases.length} purchases for game ${game.id}`);
+
         // Find winner
         const winningPurchase = findWinningSquare(game, purchases, homeScore, awayScore);
+        console.log(`   Winning purchase for ${awayScore % 10}-${homeScore % 10}:`, winningPurchase ? `${winningPurchase.ownerName} (user: ${winningPurchase.userId})` : 'NONE (house wins)');
 
         if (!winningPurchase) {
           console.log(`No owner for winning square - house wins Period ${period}`);
@@ -735,6 +757,7 @@ async function cancelGamesForCancelledEvents(): Promise<number> {
  */
 function findWinningSquare(game: any, purchases: any[], homeScore: number, awayScore: number): any | null {
   if (!game.numbersAssigned || !game.rowNumbers || !game.colNumbers) {
+    console.log(`     ⚠️  Game ${game.id} - numbers not assigned yet`);
     return null;
   }
 
@@ -742,18 +765,28 @@ function findWinningSquare(game: any, purchases: any[], homeScore: number, awayS
   const homeDigit = homeScore % 10;
   const awayDigit = awayScore % 10;
 
+  console.log(`     Looking for: homeDigit=${homeDigit}, awayDigit=${awayDigit}`);
+  console.log(`     rowNumbers: [${game.rowNumbers?.join(', ')}]`);
+  console.log(`     colNumbers: [${game.colNumbers?.join(', ')}]`);
+
   // Find column index where colNumbers[col] === awayDigit
   const col = game.colNumbers.indexOf(awayDigit);
 
   // Find row index where rowNumbers[row] === homeDigit
   const row = game.rowNumbers.indexOf(homeDigit);
 
+  console.log(`     Found col=${col} (for away ${awayDigit}), row=${row} (for home ${homeDigit})`);
+
   if (col === -1 || row === -1) {
+    console.log(`     ⚠️  Could not find digit in grid numbers (col=${col}, row=${row})`);
     return null;
   }
 
   // Find purchase at (row, col)
-  return purchases.find(p => p.gridRow === row && p.gridCol === col) || null;
+  const winner = purchases.find(p => p.gridRow === row && p.gridCol === col) || null;
+  console.log(`     Purchase at (${row}, ${col}):`, winner ? `Found - ${winner.ownerName}` : 'Not found (unsold)');
+
+  return winner;
 }
 
 /**
