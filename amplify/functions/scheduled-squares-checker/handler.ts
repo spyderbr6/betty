@@ -275,6 +275,9 @@ async function processPeriodScoresForLiveGames(): Promise<number> {
 
     for (const game of liveGames) {
       console.log(`\n🎲 Processing LIVE game: ${game.id} - "${game.title}"`);
+      console.log(`   Total pot: $${game.totalPot}`);
+      console.log(`   Payout structure type: ${typeof game.payoutStructure}`);
+      console.log(`   Payout structure value:`, game.payoutStructure);
 
       // Get event
       const { data: event } = await client.models.LiveEvent.get({ id: game.eventId });
@@ -431,8 +434,22 @@ async function processPeriodScoresForLiveGames(): Promise<number> {
           continue;
         }
 
+        // Parse payoutStructure (a.json() field - may be string or object)
+        let payoutStructure: any;
+        try {
+          payoutStructure = typeof game.payoutStructure === 'string'
+            ? JSON.parse(game.payoutStructure)
+            : game.payoutStructure;
+
+          console.log(`   Payout structure:`, payoutStructure);
+        } catch (parseError) {
+          console.error(`❌ Failed to parse payout structure:`, parseError);
+          console.error(`   Raw payoutStructure:`, game.payoutStructure);
+          continue;
+        }
+
         // Calculate payout
-        const payoutAmount = calculatePayout(period, game.totalPot, game.payoutStructure);
+        const payoutAmount = calculatePayout(period, game.totalPot, payoutStructure);
 
         // Create payout record with proper error handling
         const now = new Date().toISOString();
@@ -795,6 +812,13 @@ function findWinningSquare(game: any, purchases: any[], homeScore: number, awayS
  * Overtime periods (5-6) use period4's percentage as they represent final score
  */
 function calculatePayout(period: number, totalPot: number, payoutStructure: any): number {
+  console.log(`       calculatePayout called: period=${period}, totalPot=${totalPot}, payoutStructure=`, payoutStructure);
+
+  if (!payoutStructure) {
+    console.error(`       ❌ payoutStructure is null/undefined`);
+    return 0;
+  }
+
   const percentages = [
     payoutStructure.period1, // Period 1
     payoutStructure.period2, // Period 2 (halftime)
@@ -804,10 +828,14 @@ function calculatePayout(period: number, totalPot: number, payoutStructure: any)
     payoutStructure.period4, // Period 6 (2nd OT - use final period percentage)
   ];
 
+  console.log(`       Percentages array:`, percentages);
+
   const percentage = percentages[period - 1];
 
   if (!percentage || percentage === undefined) {
-    console.error(`No payout percentage defined for period ${period}`);
+    console.error(`       ❌ No payout percentage defined for period ${period}`);
+    console.error(`       payoutStructure keys:`, Object.keys(payoutStructure || {}));
+    console.error(`       payoutStructure.period1:`, payoutStructure?.period1);
     return 0;
   }
 
