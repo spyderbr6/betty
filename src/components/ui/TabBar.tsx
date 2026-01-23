@@ -35,63 +35,87 @@ export const TabBar: React.FC<BottomTabBarProps> = ({
     notifications: 0,
   });
 
-  // Fetch real counts for badges
+  // Fetch real counts for badges (including squares games)
   useEffect(() => {
     const fetchTabCounts = async () => {
       if (!user?.userId) return;
 
       try {
-        // Fetch user's active bets (My Bets count)
-        const { data: allBets } = await client.models.Bet.list({
-          filter: {
-            or: [
-              { status: { eq: 'ACTIVE' } },
-              { status: { eq: 'LIVE' } },
-              { status: { eq: 'PENDING_RESOLUTION' } }
-            ]
-          }
+        // Fetch user's active bets and squares games in parallel
+        const [
+          { data: allBets },
+          { data: allSquaresGames },
+          { data: userPurchases }
+        ] = await Promise.all([
+          client.models.Bet.list({
+            filter: {
+              or: [
+                { status: { eq: 'ACTIVE' } },
+                { status: { eq: 'LIVE' } },
+                { status: { eq: 'PENDING_RESOLUTION' } }
+              ]
+            }
+          }),
+          client.models.SquaresGame.list({
+            filter: {
+              or: [
+                { status: { eq: 'ACTIVE' } },
+                { status: { eq: 'LOCKED' } },
+                { status: { eq: 'LIVE' } }
+              ]
+            }
+          }),
+          client.models.SquaresPurchase.list({
+            filter: { userId: { eq: user.userId } }
+          })
+        ]);
+
+        // Get participants for filtering bets
+        const betsWithParticipants = await Promise.all(
+          (allBets || []).map(async (bet) => {
+            const { data: participants } = await client.models.Participant.list({
+              filter: { betId: { eq: bet.id! } }
+            });
+            return { bet, participants: participants || [] };
+          })
+        );
+
+        // Count user's bets (creator or participant) - exclude PENDING_RESOLUTION
+        const myBetsCount = betsWithParticipants.filter(({ bet, participants }) => {
+          const isCreator = bet.creatorId === user.userId;
+          const isParticipant = participants.some(p => p.userId === user.userId);
+          const isActiveBet = bet.status === 'ACTIVE' || bet.status === 'LIVE';
+          return (isCreator || isParticipant) && isActiveBet;
+        }).length;
+
+        // Count user's squares games (creator or has purchases)
+        const purchasedGameIds = new Set(
+          (userPurchases || []).map(p => p.squaresGameId).filter(Boolean)
+        );
+        const mySquaresCount = (allSquaresGames || []).filter(game =>
+          game.creatorId === user.userId || purchasedGameIds.has(game.id)
+        ).length;
+
+        // Count joinable bets (not creator, not participant)
+        const joinableBetsCount = betsWithParticipants.filter(({ bet, participants }) => {
+          const isCreator = bet.creatorId === user.userId;
+          const isParticipant = participants.some(p => p.userId === user.userId);
+          return !isCreator && !isParticipant && bet.status === 'ACTIVE';
+        }).length;
+
+        // Count pending resolutions (user is creator)
+        const pendingResolutionsCount = betsWithParticipants.filter(({ bet, participants }) => {
+          const isCreator = bet.creatorId === user.userId;
+          const hasParticipants = participants.length > 0;
+          return isCreator && hasParticipants && bet.status === 'PENDING_RESOLUTION';
+        }).length;
+
+        setTabCounts({
+          myBets: myBetsCount + mySquaresCount, // Include both bets and squares
+          joinableBets: joinableBetsCount,
+          pendingResolutions: pendingResolutionsCount,
+          notifications: 0, // TODO: Implement notifications system
         });
-
-        if (allBets) {
-          // Get participants for filtering
-          const betsWithParticipants = await Promise.all(
-            allBets.map(async (bet) => {
-              const { data: participants } = await client.models.Participant.list({
-                filter: { betId: { eq: bet.id! } }
-              });
-              return { bet, participants: participants || [] };
-            })
-          );
-
-          // Count user's bets (creator or participant) - exclude PENDING_RESOLUTION
-          const myBetsCount = betsWithParticipants.filter(({ bet, participants }) => {
-            const isCreator = bet.creatorId === user.userId;
-            const isParticipant = participants.some(p => p.userId === user.userId);
-            const isActiveBet = bet.status === 'ACTIVE' || bet.status === 'LIVE';
-            return (isCreator || isParticipant) && isActiveBet;
-          }).length;
-
-          // Count joinable bets (not creator, not participant)
-          const joinableBetsCount = betsWithParticipants.filter(({ bet, participants }) => {
-            const isCreator = bet.creatorId === user.userId;
-            const isParticipant = participants.some(p => p.userId === user.userId);
-            return !isCreator && !isParticipant && bet.status === 'ACTIVE';
-          }).length;
-
-          // Count pending resolutions (user is creator)
-          const pendingResolutionsCount = betsWithParticipants.filter(({ bet, participants }) => {
-            const isCreator = bet.creatorId === user.userId;
-            const hasParticipants = participants.length > 0;
-            return isCreator && hasParticipants && bet.status === 'PENDING_RESOLUTION';
-          }).length;
-
-          setTabCounts({
-            myBets: myBetsCount,
-            joinableBets: joinableBetsCount,
-            pendingResolutions: pendingResolutionsCount,
-            notifications: 0, // TODO: Implement notifications system
-          });
-        }
       } catch (error) {
         console.error('Error fetching tab counts:', error);
       }
@@ -99,13 +123,13 @@ export const TabBar: React.FC<BottomTabBarProps> = ({
 
     fetchTabCounts();
 
-    // Set up subscription for real-time updates
+    // Set up subscriptions for real-time updates
     const betSubscription = client.models.Bet.observeQuery().subscribe({
       next: () => {
         fetchTabCounts();
       },
       error: (error) => {
-        console.error('Tab count subscription error:', error);
+        console.error('Tab bet subscription error:', error);
       }
     });
 
@@ -118,9 +142,29 @@ export const TabBar: React.FC<BottomTabBarProps> = ({
       }
     });
 
+    const squaresGameSubscription = client.models.SquaresGame.observeQuery().subscribe({
+      next: () => {
+        fetchTabCounts();
+      },
+      error: (error) => {
+        console.error('Tab squares game subscription error:', error);
+      }
+    });
+
+    const squaresPurchaseSubscription = client.models.SquaresPurchase.observeQuery().subscribe({
+      next: () => {
+        fetchTabCounts();
+      },
+      error: (error) => {
+        console.error('Tab squares purchase subscription error:', error);
+      }
+    });
+
     return () => {
       betSubscription.unsubscribe();
       participantSubscription.unsubscribe();
+      squaresGameSubscription.unsubscribe();
+      squaresPurchaseSubscription.unsubscribe();
     };
   }, [user]);
 
