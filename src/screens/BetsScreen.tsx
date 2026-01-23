@@ -592,28 +592,13 @@ export const BetsScreen: React.FC = () => {
     navigation.navigate('SquaresGameDetail', { gameId });
   };
 
-  // Set up real-time subscriptions with debouncing
+  // Set up real-time subscriptions using pushed data directly (no refetching)
   useEffect(() => {
     if (!user?.userId) return;
 
-    let debounceTimer: NodeJS.Timeout | null = null;
+    console.log('📡 Setting up real-time subscriptions for user:', user.userId);
 
-    // Debounced refetch function to prevent rapid successive queries
-    const debouncedRefetch = () => {
-      if (debounceTimer) {
-        clearTimeout(debounceTimer);
-      }
-
-      debounceTimer = setTimeout(async () => {
-        console.log('📡 Real-time update triggered, refetching bets...');
-        // Only clear cache and refetch on debounced update
-        clearBulkLoadingCache();
-        await fetchBets();
-      }, 1000); // 1 second debounce
-    };
-
-    // Set up real-time subscription for bet changes (only actionable bets)
-    // This will catch bet status changes, new bets, etc.
+    // 1. Bet subscription - use pushed data directly
     const betSubscription = client.models.Bet.observeQuery({
       filter: {
         or: [
@@ -622,25 +607,210 @@ export const BetsScreen: React.FC = () => {
         ]
       }
     }).subscribe({
-      next: (_data) => {
-        // Use debounced refetch to avoid excessive queries
-        debouncedRefetch();
+      next: async ({ items }) => {
+        console.log('📡 Bet subscription update received:', items.length, 'bets');
+
+        // Fetch participants for all bets in parallel
+        const betsWithParticipants = await Promise.all(
+          items.map(async (bet) => {
+            try {
+              const { data: participants } = await client.models.Participant.list({
+                filter: { betId: { eq: bet.id } }
+              });
+
+              const transformedBet = transformAmplifyBet(bet);
+              if (transformedBet && participants) {
+                transformedBet.participants = participants
+                  .filter(p => p.userId && p.side)
+                  .map(p => ({
+                    id: p.id!,
+                    betId: p.betId!,
+                    userId: p.userId!,
+                    side: p.side!,
+                    amount: p.amount || 0,
+                    status: p.status as ParticipantStatus || 'ACCEPTED',
+                    payout: p.payout || 0,
+                    joinedAt: p.joinedAt || p.createdAt || new Date().toISOString(),
+                  }));
+              }
+              return transformedBet;
+            } catch (error) {
+              console.error('Error fetching participants for bet:', bet.id, error);
+              return transformAmplifyBet(bet);
+            }
+          })
+        );
+
+        // Filter for user's bets (creator or participant)
+        const userBets = betsWithParticipants.filter((bet): bet is Bet => {
+          if (!bet) return false;
+          const isCreator = bet.creatorId === user.userId;
+          const isParticipant = bet.participants?.some(p => p.userId === user.userId);
+          return isCreator || isParticipant;
+        });
+
+        // Sort by createdAt descending (newest first)
+        userBets.sort((a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        );
+
+        setBets(userBets);
       },
       error: (error) => {
         console.error('❌ Real-time bet subscription error:', error);
       }
     });
 
-    // Note: Removed global participant subscription to reduce query load
-    // Bet subscription is sufficient to catch participant changes since
-    // bet updates (totalPot, etc.) are triggered when participants join
+    // 2. SquaresGame subscription - listen for games user is involved in
+    const squaresSubscription = client.models.SquaresGame.observeQuery({
+      filter: {
+        or: [
+          { status: { eq: 'ACTIVE' } },
+          { status: { eq: 'LOCKED' } },
+          { status: { eq: 'LIVE' } }
+        ]
+      }
+    }).subscribe({
+      next: async ({ items }) => {
+        console.log('📡 SquaresGame subscription update received:', items.length, 'games');
+
+        // Get user's purchases to identify games they're in
+        const { data: userPurchases } = await client.models.SquaresPurchase.list({
+          filter: { userId: { eq: user.userId } }
+        });
+
+        const purchasedGameIds = new Set(
+          (userPurchases || []).map(p => p.squaresGameId).filter(Boolean)
+        );
+
+        // Filter for games where user is creator or has purchases
+        const userGames = items.filter(game =>
+          game.creatorId === user.userId || purchasedGameIds.has(game.id)
+        );
+
+        // Transform and sort
+        const transformedGames: SquaresGame[] = userGames
+          .map(game => ({
+            id: game.id!,
+            creatorId: game.creatorId!,
+            eventId: game.eventId!,
+            title: game.title!,
+            description: game.description || undefined,
+            status: game.status!,
+            pricePerSquare: game.pricePerSquare || 0,
+            totalPot: game.totalPot || 0,
+            squaresSold: game.squaresSold || 0,
+            numbersAssigned: game.numbersAssigned || false,
+            createdAt: game.createdAt || new Date().toISOString(),
+          }))
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+        setSquaresGames(transformedGames);
+      },
+      error: (error) => {
+        console.error('❌ Real-time squares subscription error:', error);
+      }
+    });
+
+    // 3. BetInvitation subscription - listen for pending invitations
+    const invitationSubscription = client.models.BetInvitation.observeQuery({
+      filter: {
+        and: [
+          { toUserId: { eq: user.userId } },
+          { status: { eq: 'PENDING' } }
+        ]
+      }
+    }).subscribe({
+      next: async ({ items }) => {
+        console.log('📡 BetInvitation subscription update received:', items.length, 'invitations');
+
+        // Fetch bet and user details for each invitation
+        const invitationsWithDetails = await Promise.all(
+          items.map(async (invitation) => {
+            try {
+              const [betResult, fromUserResult, participantsResult] = await Promise.all([
+                client.models.Bet.get({ id: invitation.betId }),
+                client.models.User.get({ id: invitation.fromUserId }),
+                client.models.Participant.list({
+                  filter: { betId: { eq: invitation.betId } }
+                })
+              ]);
+
+              if (betResult.data && fromUserResult.data) {
+                const transformedBet = transformAmplifyBet(betResult.data);
+
+                // Populate participants
+                if (transformedBet && participantsResult.data) {
+                  transformedBet.participants = participantsResult.data
+                    .filter(p => p.userId && p.side)
+                    .map(p => ({
+                      id: p.id!,
+                      betId: p.betId!,
+                      userId: p.userId!,
+                      side: p.side!,
+                      amount: p.amount || 0,
+                      status: p.status as ParticipantStatus || 'ACCEPTED',
+                      payout: p.payout || 0,
+                      joinedAt: p.joinedAt || p.createdAt || new Date().toISOString(),
+                    }));
+                }
+
+                // Only include if bet is still ACTIVE
+                if (transformedBet && transformedBet.status === 'ACTIVE') {
+                  return {
+                    id: invitation.id!,
+                    betId: invitation.betId!,
+                    fromUserId: invitation.fromUserId!,
+                    toUserId: invitation.toUserId!,
+                    status: invitation.status as BetInvitationStatus,
+                    message: invitation.message || undefined,
+                    invitedSide: invitation.invitedSide!,
+                    createdAt: invitation.createdAt || new Date().toISOString(),
+                    updatedAt: invitation.updatedAt || new Date().toISOString(),
+                    expiresAt: invitation.expiresAt || new Date().toISOString(),
+                    bet: transformedBet,
+                    fromUser: {
+                      id: fromUserResult.data.id!,
+                      username: fromUserResult.data.username!,
+                      email: fromUserResult.data.email!,
+                      displayName: fromUserResult.data.displayName || undefined,
+                      profilePictureUrl: fromUserResult.data.profilePictureUrl || undefined,
+                      balance: fromUserResult.data.balance || 0,
+                      trustScore: fromUserResult.data.trustScore || 5.0,
+                      totalBets: fromUserResult.data.totalBets || 0,
+                      totalWinnings: fromUserResult.data.totalWinnings || 0,
+                      winRate: fromUserResult.data.winRate || 0,
+                      createdAt: fromUserResult.data.createdAt || new Date().toISOString(),
+                      updatedAt: fromUserResult.data.updatedAt || new Date().toISOString(),
+                    }
+                  };
+                }
+              }
+              return null;
+            } catch (error) {
+              console.error('Error fetching invitation details:', error);
+              return null;
+            }
+          })
+        );
+
+        const validInvitations = invitationsWithDetails.filter(
+          (inv): inv is BetInvitation => inv !== null
+        );
+
+        setBetInvitations(validInvitations);
+      },
+      error: (error) => {
+        console.error('❌ Real-time invitation subscription error:', error);
+      }
+    });
 
     // Cleanup subscriptions on unmount
     return () => {
-      if (debounceTimer) {
-        clearTimeout(debounceTimer);
-      }
+      console.log('📡 Cleaning up real-time subscriptions');
       betSubscription.unsubscribe();
+      squaresSubscription.unsubscribe();
+      invitationSubscription.unsubscribe();
     };
   }, [user?.userId]);
 
