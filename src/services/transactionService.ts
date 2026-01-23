@@ -46,6 +46,7 @@ export interface Transaction {
   venmoUsername?: string;
   relatedBetId?: string;
   relatedParticipantId?: string;
+  relatedSquaresGameId?: string; // For squares game transactions
   notes?: string;
   failureReason?: string;
   processedBy?: string;
