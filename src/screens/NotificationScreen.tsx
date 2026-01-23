@@ -241,12 +241,7 @@ export const NotificationScreen: React.FC<NotificationScreenProps> = ({ onClose,
       return;
     }
 
-    // Close modal before navigating
-    if (onClose) {
-      onClose();
-    }
-
-    // Handle navigation based on action type
+    // Handle navigation based on action type (navigate BEFORE closing modal)
     if (navigationAction.action === 'navigate') {
       const { screen, params } = navigationAction;
 
@@ -296,6 +291,11 @@ export const NotificationScreen: React.FC<NotificationScreenProps> = ({ onClose,
       } else {
         console.log('[NotificationScreen] Unknown modal:', modal);
       }
+    }
+
+    // Close modal after navigation starts (with small delay to ensure navigation completes)
+    if (onClose) {
+      setTimeout(() => onClose(), 100);
     }
   }, [navigation, onClose]);
 
