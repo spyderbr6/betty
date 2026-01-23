@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
 import { colors, typography, spacing, textStyles, shadows } from '../../styles';
 import { UserBalance } from './UserBalance';
 import { LiveGameBanner } from './LiveGameBanner';
@@ -42,6 +43,7 @@ export const Header: React.FC<HeaderProps> = ({
   notificationCount, // Remove default value, we'll fetch it
 }) => {
   const insets = useSafeAreaInsets();
+  const navigation = useNavigation();
   const { user } = useAuth();
   const { unreadCount, refreshUnreadCount } = useNotifications();
   const [showNotificationModal, setShowNotificationModal] = useState(false);
@@ -146,6 +148,7 @@ export const Header: React.FC<HeaderProps> = ({
           // Refresh notification count when modal closes
           refreshUnreadCount();
         }}
+        navigation={navigation}
       />
 
       {/* Event Discovery Modal */}

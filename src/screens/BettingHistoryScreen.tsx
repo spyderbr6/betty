@@ -24,11 +24,12 @@ import type { Transaction, TransactionType } from '../services/transactionServic
 
 interface BettingHistoryScreenProps {
   onClose: () => void;
+  navigation?: any; // Navigation prop for deep linking to bet/squares details
 }
 
 type FilterType = 'ALL' | 'DEPOSITS' | 'WITHDRAWALS' | 'BETS' | 'WINNINGS' | 'LOSSES' | 'REFUNDS';
 
-export const BettingHistoryScreen: React.FC<BettingHistoryScreenProps> = ({ onClose }) => {
+export const BettingHistoryScreen: React.FC<BettingHistoryScreenProps> = ({ onClose, navigation }) => {
   const { user } = useAuth();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [filteredTransactions, setFilteredTransactions] = useState<Transaction[]>([]);
@@ -36,6 +37,33 @@ export const BettingHistoryScreen: React.FC<BettingHistoryScreenProps> = ({ onCl
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<FilterType>('ALL');
   const [currentBalance, setCurrentBalance] = useState(0);
+
+  // Handler for navigating to bet/squares details
+  const handleTransactionPress = (transaction: Transaction) => {
+    if (!navigation) return;
+
+    // Navigate to squares game detail if it's a squares transaction
+    if (transaction.relatedSquaresGameId) {
+      onClose(); // Close the modal first
+      // Navigate to Bets tab, then to SquaresGameDetail
+      navigation.navigate('Bets', {
+        screen: 'SquaresGameDetail',
+        params: { gameId: transaction.relatedSquaresGameId }
+      });
+      return;
+    }
+
+    // Navigate to bet details if it's a bet transaction
+    if (transaction.relatedBetId) {
+      onClose(); // Close the modal first
+      // Navigate to Bets tab, then to BetDetails
+      navigation.navigate('Bets', {
+        screen: 'BetDetails',
+        params: { betId: transaction.relatedBetId }
+      });
+      return;
+    }
+  };
 
   const fetchTransactions = async () => {
     if (!user?.userId) return;
@@ -164,7 +192,11 @@ export const BettingHistoryScreen: React.FC<BettingHistoryScreenProps> = ({ onCl
           </View>
         ) : (
           filteredTransactions.map((transaction) => (
-            <TransactionCard key={transaction.id} transaction={transaction} />
+            <TransactionCard
+              key={transaction.id}
+              transaction={transaction}
+              onPress={handleTransactionPress}
+            />
           ))
         )}
       </ScrollView>
@@ -175,9 +207,12 @@ export const BettingHistoryScreen: React.FC<BettingHistoryScreenProps> = ({ onCl
 // Transaction Card Component
 interface TransactionCardProps {
   transaction: Transaction;
+  onPress: (transaction: Transaction) => void;
 }
 
-const TransactionCard: React.FC<TransactionCardProps> = ({ transaction }) => {
+const TransactionCard: React.FC<TransactionCardProps> = ({ transaction, onPress }) => {
+  // Check if transaction is clickable (has related bet or squares game)
+  const isClickable = !!(transaction.relatedBetId || transaction.relatedSquaresGameId);
   const getTransactionIcon = (): keyof typeof Ionicons.glyphMap => {
     switch (transaction.type) {
       case 'DEPOSIT': return 'arrow-down-circle';
@@ -398,8 +433,8 @@ const TransactionCard: React.FC<TransactionCardProps> = ({ transaction }) => {
   // BET_LOST is neutral (no balance change)
   const isNeutral = transaction.type === 'BET_LOST';
 
-  return (
-    <View style={[styles.transactionCard, { borderLeftColor: getTransactionColor() }]}>
+  const cardContent = (
+    <>
       <View style={styles.transactionHeader}>
         <View style={[styles.transactionIconContainer, { backgroundColor: getTransactionColor() + '20' }]}>
           <Ionicons name={getTransactionIcon()} size={20} color={getTransactionColor()} />
@@ -431,8 +466,34 @@ const TransactionCard: React.FC<TransactionCardProps> = ({ transaction }) => {
           <Text style={styles.transactionBalance}>
             Bal: {formatCurrency(transaction.balanceAfter)}
           </Text>
+          {isClickable && (
+            <Ionicons
+              name="chevron-forward"
+              size={20}
+              color={colors.textMuted}
+              style={{ marginTop: spacing.xs / 2 }}
+            />
+          )}
         </View>
       </View>
+    </>
+  );
+
+  if (isClickable) {
+    return (
+      <TouchableOpacity
+        style={[styles.transactionCard, { borderLeftColor: getTransactionColor() }]}
+        onPress={() => onPress(transaction)}
+        activeOpacity={0.7}
+      >
+        {cardContent}
+      </TouchableOpacity>
+    );
+  }
+
+  return (
+    <View style={[styles.transactionCard, { borderLeftColor: getTransactionColor() }]}>
+      {cardContent}
     </View>
   );
 };

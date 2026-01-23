@@ -18,6 +18,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
 import { generateClient } from 'aws-amplify/data';
 import { fetchUserAttributes } from 'aws-amplify/auth';
 import type { Schema } from '../../amplify/data/resource';
@@ -53,6 +54,7 @@ interface UserProfile extends User {
 export const AccountScreen: React.FC = () => {
   const { user, signOut } = useAuth();
   const insets = useSafeAreaInsets();
+  const navigation = useNavigation();
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -664,7 +666,10 @@ export const AccountScreen: React.FC = () => {
         presentationStyle="fullScreen"
         onRequestClose={() => setShowBettingHistory(false)}
       >
-        <BettingHistoryScreen onClose={() => setShowBettingHistory(false)} />
+        <BettingHistoryScreen
+          onClose={() => setShowBettingHistory(false)}
+          navigation={navigation}
+        />
       </Modal>
 
       {/* Payment Methods Modal */}

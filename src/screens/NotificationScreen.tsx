@@ -24,6 +24,7 @@ import { showAlert } from '../components/ui/CustomAlert';
 import { useAuth } from '../contexts/AuthContext';
 import { NotificationService } from '../services/notificationService';
 import { Notification, NotificationType } from '../types/betting';
+import { getNotificationNavigationAction } from '../utils/notificationNavigationHandler';
 
 // Client not needed - using NotificationService instead
 
@@ -161,11 +162,12 @@ const NotificationItem: React.FC<NotificationItemProps> = ({
 
 interface NotificationScreenProps {
   onClose?: () => void;
+  navigation?: any; // Navigation prop for deep linking to screens
 }
 
 const NOTIFICATIONS_PER_PAGE = 20;
 
-export const NotificationScreen: React.FC<NotificationScreenProps> = ({ onClose }) => {
+export const NotificationScreen: React.FC<NotificationScreenProps> = ({ onClose, navigation }) => {
   const { user } = useAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -224,30 +226,78 @@ export const NotificationScreen: React.FC<NotificationScreenProps> = ({ onClose 
       handleMarkAsRead(notification.id);
     }
 
-    // Handle deep linking based on actionType
-    if (notification.actionType) {
-      switch (notification.actionType) {
-        case 'view_bet':
-          // TODO: Navigate to bet details
-          console.log('Navigate to bet:', notification.relatedBetId);
+    // Get navigation action from utility
+    const navigationAction = getNotificationNavigationAction(notification.type, {
+      notificationId: notification.id,
+      actionType: notification.actionType,
+      actionData: notification.actionData,
+      relatedBetId: notification.relatedBetId,
+      relatedUserId: notification.relatedUserId,
+    });
+
+    // Only navigate if navigation prop is provided
+    if (!navigation) {
+      console.log('[NotificationScreen] Navigation prop not provided, cannot navigate');
+      return;
+    }
+
+    // Close modal before navigating
+    if (onClose) {
+      onClose();
+    }
+
+    // Handle navigation based on action type
+    if (navigationAction.action === 'navigate') {
+      const { screen, params } = navigationAction;
+
+      // Map screen names to navigation calls
+      switch (screen) {
+        case 'SquaresGameDetail':
+          // Navigate to Bets tab, then to SquaresGameDetail
+          navigation.navigate('Bets', {
+            screen: 'SquaresGameDetail',
+            params: { gameId: params?.gameId }
+          });
           break;
-        case 'view_friend_requests':
-          // TODO: Navigate to friend requests
-          console.log('Navigate to friend requests');
+
+        case 'MyBets':
+          // Navigate to Bets tab
+          navigation.navigate('Bets');
           break;
-        case 'view_friends':
-          // TODO: Navigate to friends screen
-          console.log('Navigate to friends');
+
+        case 'Friends':
+          // Navigate to Account tab (Friends screen is a modal from Account)
+          navigation.navigate('Account');
           break;
-        case 'view_bet_invitation':
-          // TODO: Navigate to bet invitation
-          console.log('Navigate to bet invitation:', notification.actionData);
+
+        case 'Account':
+          // Navigate to Account tab
+          navigation.navigate('Account');
           break;
+
         default:
-          console.log('Unknown action type:', notification.actionType);
+          console.log('[NotificationScreen] Unknown screen:', screen);
+      }
+    } else if (navigationAction.action === 'open_modal') {
+      // For modal actions like bet_details, navigate to Bets tab with params
+      const { modal, params } = navigationAction;
+
+      if (modal === 'bet_details' && params?.betId) {
+        navigation.navigate('Bets', {
+          screen: 'BetDetails',
+          params: { betId: params.betId }
+        });
+      } else if (modal === 'bet_invitation' && params?.betId) {
+        // Navigate to bet details (user can see invitation there)
+        navigation.navigate('Bets', {
+          screen: 'BetDetails',
+          params: { betId: params.betId }
+        });
+      } else {
+        console.log('[NotificationScreen] Unknown modal:', modal);
       }
     }
-  }, []);
+  }, [navigation, onClose]);
 
   const handleMarkAsRead = useCallback(async (notificationId: string) => {
     try {
