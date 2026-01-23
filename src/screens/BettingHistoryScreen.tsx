@@ -44,23 +44,25 @@ export const BettingHistoryScreen: React.FC<BettingHistoryScreenProps> = ({ onCl
 
     // Navigate to squares game detail if it's a squares transaction
     if (transaction.relatedSquaresGameId) {
-      onClose(); // Close the modal first
-      // Navigate to Bets tab, then to SquaresGameDetail
+      // Navigate first, then close modal with delay to ensure navigation completes
       navigation.navigate('Bets', {
         screen: 'SquaresGameDetail',
         params: { gameId: transaction.relatedSquaresGameId }
       });
+      // Close modal after a brief delay to let navigation start
+      setTimeout(() => onClose(), 100);
       return;
     }
 
     // Navigate to bet details if it's a bet transaction
     if (transaction.relatedBetId) {
-      onClose(); // Close the modal first
-      // Navigate to Bets tab, then to BetDetails
+      // Navigate first, then close modal with delay to ensure navigation completes
       navigation.navigate('Bets', {
         screen: 'BetDetails',
         params: { betId: transaction.relatedBetId }
       });
+      // Close modal after a brief delay to let navigation start
+      setTimeout(() => onClose(), 100);
       return;
     }
   };
