@@ -11,11 +11,13 @@ import { colors } from '../../styles';
 interface NotificationModalProps {
   visible: boolean;
   onClose: () => void;
+  navigation?: any; // Navigation prop for deep linking
 }
 
 export const NotificationModal: React.FC<NotificationModalProps> = ({
   visible,
   onClose,
+  navigation,
 }) => {
   return (
     <Modal
@@ -28,7 +30,7 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
         barStyle="light-content"
         backgroundColor={colors.surface}
       />
-      <NotificationScreen onClose={onClose} />
+      <NotificationScreen onClose={onClose} navigation={navigation} />
     </Modal>
   );
 };
