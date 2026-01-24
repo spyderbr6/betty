@@ -490,23 +490,7 @@ export const BetsScreen: React.FC = () => {
       clearBulkLoadingCache();
       await fetchBets();
 
-      // Get side name for success message
-      const parseBetOdds = (odds: any) => {
-        try {
-          const parsedOdds = typeof odds === 'string' ? JSON.parse(odds) : odds;
-          return {
-            sideAName: parsedOdds?.sideAName || 'Side A',
-            sideBName: parsedOdds?.sideBName || 'Side B',
-          };
-        } catch {
-          return { sideAName: 'Side A', sideBName: 'Side B' };
-        }
-      };
-
-      const betOdds = parseBetOdds(invitation.bet.odds);
-      const joinedSideName = selectedSide === 'A' ? betOdds.sideAName : betOdds.sideBName;
-
-      // Show toast notification
+      // Show toast notification (joinedSideName already calculated above)
       setToastMessage(`Joined "${invitation.bet.title}" on ${joinedSideName}! $${betAmount.toFixed(2)} deducted.`);
       setShowToast(true);
 
