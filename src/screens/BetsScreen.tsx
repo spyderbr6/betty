@@ -444,11 +444,15 @@ export const BetsScreen: React.FC = () => {
 
       // Record transaction for bet placement (this handles balance deduction automatically)
       const participantId = participantResult.data.id || '';
+      const betOdds = currentBet.odds ? JSON.parse(currentBet.odds) : { sideAName: 'Side A', sideBName: 'Side B' };
+      const joinedSideName = selectedSide === 'A' ? (betOdds.sideAName || 'Side A') : (betOdds.sideBName || 'Side B');
       const transaction = await TransactionService.recordBetPlacement(
         user.userId,
         betAmount,
         invitation.betId,
-        participantId
+        participantId,
+        currentBet.title || 'Bet',
+        joinedSideName
       );
 
       if (!transaction) {

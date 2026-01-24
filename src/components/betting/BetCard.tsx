@@ -254,11 +254,14 @@ export const BetCard: React.FC<BetCardProps> = ({
 
       if (result.data) {
         const participantId = result.data.id || '';
+        const sideName = side === 'A' ? (bet.odds.sideAName || 'Side A') : (bet.odds.sideBName || 'Side B');
         const transaction = await TransactionService.recordBetPlacement(
           user.userId,
           amount,
           bet.id,
-          participantId
+          participantId,
+          bet.title,
+          sideName
         );
 
         if (!transaction) {

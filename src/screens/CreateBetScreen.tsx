@@ -417,11 +417,14 @@ export const CreateBetScreen: React.FC = () => {
 
           if (participantResult.data) {
             // Record transaction for bet placement (this handles balance deduction automatically)
+            const creatorSideName = selectedSide === 'A' ? sideAName.trim() : sideBName.trim();
             const transaction = await TransactionService.recordBetPlacement(
               user.userId,
               amount,
               result.data.id!,
-              participantResult.data.id
+              participantResult.data.id,
+              betTitle.trim(),
+              creatorSideName
             );
 
             if (!transaction) {

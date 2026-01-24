@@ -285,8 +285,19 @@ export class TransactionService {
     userId: string,
     amount: number,
     betId: string,
-    participantId?: string
+    participantId?: string,
+    betTitle?: string,
+    betSide?: string
   ): Promise<Transaction | null> {
+    // Build descriptive notes
+    let notes = 'Bet placed';
+    if (betTitle) {
+      notes = betTitle;
+      if (betSide) {
+        notes += ` - You bet on ${betSide}`;
+      }
+    }
+
     return await this.createTransaction({
       userId,
       type: 'BET_PLACED',
@@ -294,7 +305,7 @@ export class TransactionService {
       status: 'COMPLETED',
       relatedBetId: betId,
       relatedParticipantId: participantId,
-      notes: 'Bet placed',
+      notes,
     });
   }
 
@@ -306,7 +317,9 @@ export class TransactionService {
     userId: string,
     amount: number,
     betId: string,
-    participantId?: string
+    participantId?: string,
+    betTitle?: string,
+    winningSide?: string
   ): Promise<Transaction | null> {
     // Calculate platform fee (3% of winnings)
     const platformFee = Math.round(amount * 0.03 * 100) / 100; // Round to 2 decimal places
@@ -318,6 +331,15 @@ export class TransactionService {
       netAmount
     });
 
+    // Build descriptive notes
+    let notes = 'Bet winnings';
+    if (betTitle) {
+      notes = betTitle;
+      if (winningSide) {
+        notes += ` - ${winningSide} won`;
+      }
+    }
+
     const transaction = await this.createTransaction({
       userId,
       type: 'BET_WON',
@@ -326,7 +348,7 @@ export class TransactionService {
       status: 'COMPLETED',
       relatedBetId: betId,
       relatedParticipantId: participantId,
-      notes: 'Bet winnings',
+      notes,
     });
 
     // Send notification about winnings (show net amount)
@@ -350,8 +372,19 @@ export class TransactionService {
   static async recordBetLoss(
     userId: string,
     betId: string,
-    participantId?: string
+    participantId?: string,
+    betTitle?: string,
+    winningSide?: string
   ): Promise<Transaction | null> {
+    // Build descriptive notes
+    let notes = 'Bet lost';
+    if (betTitle) {
+      notes = betTitle;
+      if (winningSide) {
+        notes += ` - ${winningSide} won`;
+      }
+    }
+
     return await this.createTransaction({
       userId,
       type: 'BET_LOST',
@@ -359,7 +392,7 @@ export class TransactionService {
       status: 'COMPLETED',
       relatedBetId: betId,
       relatedParticipantId: participantId,
-      notes: 'Bet lost',
+      notes,
     });
   }
 
@@ -370,8 +403,15 @@ export class TransactionService {
     userId: string,
     amount: number,
     betId: string,
-    participantId?: string
+    participantId?: string,
+    betTitle?: string
   ): Promise<Transaction | null> {
+    // Build descriptive notes
+    let notes = 'Bet cancelled - refund';
+    if (betTitle) {
+      notes = `${betTitle} - Bet cancelled`;
+    }
+
     return await this.createTransaction({
       userId,
       type: 'BET_CANCELLED',
@@ -379,7 +419,7 @@ export class TransactionService {
       status: 'COMPLETED',
       relatedBetId: betId,
       relatedParticipantId: participantId,
-      notes: 'Bet cancelled - refund',
+      notes,
     });
   }
 

@@ -489,10 +489,13 @@ export const ResolveScreen: React.FC = () => {
               });
             } else if (!isWinner) {
               // Record lost bet transaction (zero amount, for tracking/dispute)
+              const winningSideName = winningSide === 'A' ? bet.odds.sideAName : bet.odds.sideBName;
               await TransactionService.recordBetLoss(
                 participant.userId,
                 bet.id,
-                participant.id
+                participant.id,
+                bet.title,
+                winningSideName
               );
             }
 
