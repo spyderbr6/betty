@@ -20,6 +20,7 @@ import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
 import { useAuth } from '../contexts/AuthContext';
 import { SquaresGrid } from '../components/betting/SquaresGrid';
+import { PeriodResultsCard } from '../components/betting/PeriodResultsCard';
 import { PurchaseSquaresModal } from '../components/modals/PurchaseSquaresModal';
 import { colors, spacing, typography, textStyles, shadows } from '../styles';
 import { formatCurrency, formatDateTime } from '../utils/formatting';
@@ -152,25 +153,6 @@ export const SquaresGameDetailScreen = ({ route, navigation }: any) => {
     return grouped;
   };
 
-  const getPeriodLabel = (period: string) => {
-    switch (period) {
-      case 'PERIOD_1':
-        return 'Period 1';
-      case 'PERIOD_2':
-        return 'Halftime';
-      case 'PERIOD_3':
-        return 'Period 3';
-      case 'PERIOD_4':
-        return 'Final';
-      case 'PERIOD_5':
-        return 'Overtime';
-      case 'PERIOD_6':
-        return '2nd OT';
-      default:
-        return period;
-    }
-  };
-
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -241,28 +223,13 @@ export const SquaresGameDetailScreen = ({ route, navigation }: any) => {
           </View>
         </View>
 
-        {/* Payout Structure */}
-        <View style={styles.payoutCard}>
-          <Text style={styles.cardTitle}>Prize Breakdown</Text>
-          {Object.entries(
-            typeof game.payoutStructure === 'string'
-              ? JSON.parse(game.payoutStructure)
-              : game.payoutStructure
-          ).map(([period, percentage]: [string, any]) => {
-            const periodNum = parseInt(period.replace('period', ''));
-            const amount = game.totalPot * percentage;
-            const netAmount = amount * 0.97; // After 3% fee
-
-            return (
-              <View key={period} style={styles.payoutRow}>
-                <Text style={styles.payoutPeriod}>{getPeriodLabel(`PERIOD_${periodNum}`)}</Text>
-                <Text style={styles.payoutPercentage}>{(percentage * 100).toFixed(0)}%</Text>
-                <Text style={styles.payoutAmount}>{formatCurrency(netAmount)}</Text>
-              </View>
-            );
-          })}
-          <Text style={styles.feeNote}>* Amounts shown after 3% platform fee</Text>
-        </View>
+        {/* Period Results - Consolidated view of prizes, scores, and winners */}
+        <PeriodResultsCard
+          game={game}
+          event={event}
+          payouts={payouts}
+          currentUserId={user?.userId}
+        />
 
         {/* THE GRID */}
         <SquaresGrid
@@ -276,53 +243,6 @@ export const SquaresGameDetailScreen = ({ route, navigation }: any) => {
           awayTeamCode={event.awayTeamCode}
         />
 
-        {/* Period Scores (for LIVE/RESOLVED games) */}
-        {(game.status === 'LIVE' || game.status === 'RESOLVED' || game.status === 'PENDING_RESOLUTION') && event.homePeriodScores && event.awayPeriodScores && (
-          <View style={styles.periodScoresCard}>
-            <Text style={styles.cardTitle}>Period Scores</Text>
-            {(() => {
-              const homeScores = typeof event.homePeriodScores === 'string'
-                ? JSON.parse(event.homePeriodScores)
-                : event.homePeriodScores;
-              const awayScores = typeof event.awayPeriodScores === 'string'
-                ? JSON.parse(event.awayPeriodScores)
-                : event.awayPeriodScores;
-
-              const periods = Math.max(homeScores.length, awayScores.length);
-
-              return Array.from({ length: periods }, (_, i) => {
-                const periodNum = i + 1;
-                const homeScore = homeScores[i] || 0;
-                const awayScore = awayScores[i] || 0;
-                const periodLabel = getPeriodLabel(`PERIOD_${periodNum}`);
-
-                // Find if there's a payout for this period
-                const periodPayout = payouts.find((p) => p.period === `PERIOD_${periodNum}`);
-
-                return (
-                  <View key={i} style={styles.periodScoreRow}>
-                    <Text style={styles.periodScoreLabel}>{periodLabel}</Text>
-                    <View style={styles.scoreDisplay}>
-                      <Text style={styles.scoreTeam}>
-                        {event.awayTeamCode || event.awayTeam}: {awayScore}
-                      </Text>
-                      <Text style={styles.scoreTeam}>
-                        {event.homeTeamCode || event.homeTeam}: {homeScore}
-                      </Text>
-                    </View>
-                    {periodPayout && (
-                      <View style={styles.periodWinnerBadge}>
-                        <Text style={styles.periodWinnerText}>
-                          🏆 {periodPayout.ownerName}
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-                );
-              });
-            })()}
-          </View>
-        )}
 
         {/* My Squares Summary */}
         {myPurchases.length > 0 && (
@@ -357,33 +277,6 @@ export const SquaresGameDetailScreen = ({ route, navigation }: any) => {
           </View>
         )}
 
-        {/* Period Winners */}
-        {payouts.length > 0 && (
-          <View style={styles.winnersCard}>
-            <Text style={styles.cardTitle}>Winners</Text>
-            {payouts.map((payout) => {
-              const isSelfOwned = payout.userId === user?.userId;
-
-              return (
-                <View key={payout.id} style={styles.winnerRow}>
-                  <View style={styles.winnerPeriod}>
-                    <Text style={styles.periodLabel}>{getPeriodLabel(payout.period)}</Text>
-                    <Text style={styles.scoreLabel}>
-                      {payout.awayScoreFull} - {payout.homeScoreFull}
-                    </Text>
-                  </View>
-
-                  <View style={styles.winnerDetails}>
-                    <Text style={styles.winnerName}>{payout.ownerName}</Text>
-                    {isSelfOwned && <Text style={styles.yourSquareBadge}>You bought this</Text>}
-                  </View>
-
-                  <Text style={styles.winnerAmount}>{formatCurrency(payout.amount)}</Text>
-                </View>
-              );
-            })}
-          </View>
-        )}
       </ScrollView>
 
       {/* Action Buttons */}
@@ -505,85 +398,10 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontWeight: typography.fontWeight.bold,
   },
-  payoutCard: {
-    backgroundColor: colors.surface,
-    ...shadows.card,
-    borderRadius: spacing.radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-  },
   cardTitle: {
     ...textStyles.h4,
     color: colors.textPrimary,
     marginBottom: spacing.sm,
-  },
-  payoutRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: spacing.xs,
-  },
-  payoutPeriod: {
-    ...textStyles.body,
-    color: colors.textPrimary,
-    flex: 1,
-  },
-  payoutPercentage: {
-    ...textStyles.body,
-    color: colors.textSecondary,
-    marginHorizontal: spacing.sm,
-  },
-  payoutAmount: {
-    ...textStyles.body,
-    color: colors.textPrimary,
-    fontWeight: typography.fontWeight.bold,
-  },
-  feeNote: {
-    ...textStyles.caption,
-    color: colors.textMuted,
-    marginTop: spacing.xs,
-    fontStyle: 'italic',
-  },
-  periodScoresCard: {
-    backgroundColor: colors.surface,
-    ...shadows.card,
-    borderRadius: spacing.radius.md,
-    padding: spacing.md,
-    marginTop: spacing.md,
-    marginBottom: spacing.md,
-  },
-  periodScoreRow: {
-    paddingVertical: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  periodScoreLabel: {
-    ...textStyles.body,
-    color: colors.textPrimary,
-    fontWeight: typography.fontWeight.bold,
-    marginBottom: spacing.xs / 2,
-  },
-  scoreDisplay: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: spacing.xs / 2,
-  },
-  scoreTeam: {
-    ...textStyles.body,
-    color: colors.textSecondary,
-  },
-  periodWinnerBadge: {
-    backgroundColor: colors.success + '20',
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs / 2,
-    borderRadius: spacing.radius.sm,
-    alignSelf: 'flex-start',
-    marginTop: spacing.xs / 2,
-  },
-  periodWinnerText: {
-    ...textStyles.caption,
-    color: colors.success,
-    fontWeight: typography.fontWeight.semibold,
   },
   mySquaresCard: {
     backgroundColor: colors.surface,
@@ -634,51 +452,6 @@ const styles = StyleSheet.create({
   investmentAmount: {
     ...textStyles.h4,
     color: colors.textPrimary,
-    fontWeight: typography.fontWeight.bold,
-  },
-  winnersCard: {
-    backgroundColor: colors.surface,
-    ...shadows.card,
-    borderRadius: spacing.radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-  },
-  winnerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  winnerPeriod: {
-    flex: 1,
-  },
-  periodLabel: {
-    ...textStyles.body,
-    color: colors.textPrimary,
-    fontWeight: typography.fontWeight.semibold,
-  },
-  scoreLabel: {
-    ...textStyles.caption,
-    color: colors.textSecondary,
-  },
-  winnerDetails: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  winnerName: {
-    ...textStyles.body,
-    color: colors.textPrimary,
-  },
-  yourSquareBadge: {
-    ...textStyles.caption,
-    color: colors.success,
-    fontSize: typography.fontSize.xs,
-  },
-  winnerAmount: {
-    ...textStyles.h4,
-    color: colors.success,
     fontWeight: typography.fontWeight.bold,
   },
   footer: {
