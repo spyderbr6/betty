@@ -163,7 +163,12 @@ export const PeriodResultsCard: React.FC<PeriodResultsCardProps> = ({
             {/* Winner */}
             <View style={[styles.winnerCol, styles.winnerContainer]}>
               {hasPayout ? (
-                <View style={styles.winnerContent}>
+                <View
+                  style={[
+                    styles.winnerNameBox,
+                    period.isCurrentUser && styles.winnerNameBoxYou,
+                  ]}
+                >
                   <Text
                     style={[
                       styles.winnerText,
@@ -173,9 +178,6 @@ export const PeriodResultsCard: React.FC<PeriodResultsCardProps> = ({
                   >
                     {period.payout!.ownerName}
                   </Text>
-                  {period.isCurrentUser && (
-                    <Text style={styles.youBadge}>You</Text>
-                  )}
                 </View>
               ) : (
                 <Text style={styles.emptyText}>—</Text>
@@ -277,30 +279,24 @@ const styles = StyleSheet.create({
   winnerContainer: {
     justifyContent: 'center',
   },
-  winnerContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  winnerNameBox: {
+    paddingHorizontal: spacing.xs,
+    paddingVertical: 4,
+    borderRadius: spacing.radius.sm,
+    alignSelf: 'flex-start',
+  },
+  winnerNameBoxYou: {
+    borderWidth: 2,
+    borderColor: colors.success,
+    backgroundColor: colors.success + '15',
   },
   winnerText: {
     ...textStyles.body,
     color: colors.textPrimary,
-    flexShrink: 1,
   },
   winnerTextHighlight: {
     color: colors.success,
     fontWeight: typography.fontWeight.semibold,
-  },
-  youBadge: {
-    ...textStyles.caption,
-    color: colors.success,
-    backgroundColor: colors.success + '20',
-    paddingHorizontal: spacing.xs,
-    paddingVertical: 2,
-    borderRadius: spacing.radius.xs,
-    marginLeft: spacing.xs,
-    fontSize: typography.fontSize.xs,
-    fontWeight: typography.fontWeight.semibold,
-    overflow: 'hidden',
   },
   // Prize
   prizeContainer: {
