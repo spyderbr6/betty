@@ -245,10 +245,18 @@ export const NotificationScreen: React.FC<NotificationScreenProps> = ({ onClose,
     if (navigationAction.action === 'navigate') {
       const { screen, params } = navigationAction;
 
+      console.log('[NotificationScreen] Navigation action:', {
+        screen,
+        params,
+        notificationType: notification.type,
+        actionData: notification.actionData,
+      });
+
       // Map screen names to navigation calls
       switch (screen) {
         case 'SquaresGameDetail':
           // Navigate to Bets tab, then to SquaresGameDetail
+          console.log('[NotificationScreen] Navigating to SquaresGameDetail with gameId:', params?.gameId);
           navigation.navigate('Bets', {
             screen: 'SquaresGameDetail',
             params: { gameId: params?.gameId }

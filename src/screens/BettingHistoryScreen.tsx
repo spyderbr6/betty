@@ -44,6 +44,7 @@ export const BettingHistoryScreen: React.FC<BettingHistoryScreenProps> = ({ onCl
 
     // Navigate to squares game detail if it's a squares transaction
     if (transaction.relatedSquaresGameId) {
+      console.log('[BettingHistory] Navigating to SquaresGameDetail with gameId:', transaction.relatedSquaresGameId);
       // Navigate first, then close modal with delay to ensure navigation completes
       navigation.navigate('Bets', {
         screen: 'SquaresGameDetail',

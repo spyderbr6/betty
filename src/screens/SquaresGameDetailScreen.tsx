@@ -30,6 +30,7 @@ const client = generateClient<Schema>();
 
 export const SquaresGameDetailScreen = ({ route, navigation }: any) => {
   const { gameId } = route.params; // Changed from squaresGameId to match navigation
+  console.log('[SquaresGameDetail] Screen opened with gameId:', gameId, 'route.params:', route.params);
   const { user } = useAuth();
 
   const [game, setGame] = useState<any>(null);
@@ -44,9 +45,12 @@ export const SquaresGameDetailScreen = ({ route, navigation }: any) => {
   // Load game data
   const loadGameData = useCallback(async () => {
     try {
+      console.log('[SquaresGameDetail] Loading game data for gameId:', gameId);
       // Get game
       const { data: gameData } = await client.models.SquaresGame.get({ id: gameId });
+      console.log('[SquaresGameDetail] Game data loaded:', gameData ? 'Found' : 'Not found', gameData?.id);
       if (!gameData) {
+        console.error('[SquaresGameDetail] Game not found in database for gameId:', gameId);
         showAlert('Game Not Found', 'This squares game could not be found.');
         navigation.goBack();
         return;
