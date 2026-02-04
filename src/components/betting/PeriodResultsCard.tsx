@@ -2,7 +2,7 @@
  * PeriodResultsCard
  *
  * Consolidated component showing period-by-period results for squares games.
- * Combines prize breakdown, scores, and winners into a single unified table.
+ * Combines prize breakdown, scores, and winners into a single unified list.
  */
 
 import React from 'react';
@@ -119,86 +119,67 @@ export const PeriodResultsCard: React.FC<PeriodResultsCardProps> = ({
     };
   });
 
-  const awayTeam = event.awayTeamCode || event.awayTeam || 'Away';
-  const homeTeam = event.homeTeamCode || event.homeTeam || 'Home';
-
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Period Results</Text>
 
-      {/* Table Header */}
-      <View style={styles.headerRow}>
-        <Text style={[styles.headerCell, styles.periodCol]}>Period</Text>
-        <Text style={[styles.headerCell, styles.scoreCol]}>Score</Text>
-        <Text style={[styles.headerCell, styles.winnerCol]}>Winner</Text>
-        <Text style={[styles.headerCell, styles.prizeCol]}>Prize</Text>
-      </View>
-
-      {/* Table Rows */}
+      {/* Period Rows */}
       {periods.map((period, index) => {
         const isLastRow = index === periods.length - 1;
         const hasPayout = !!period.payout;
+        const hasScore = period.homeScore !== null && period.awayScore !== null;
 
         return (
           <View
             key={period.periodKey}
-            style={[styles.dataRow, !isLastRow && styles.dataRowBorder]}
+            style={[
+              styles.periodRow,
+              !isLastRow && styles.periodRowBorder,
+              period.isCurrentUser && styles.periodRowYou,
+            ]}
           >
-            {/* Period */}
-            <Text style={[styles.dataCell, styles.periodCol, styles.periodText]}>
-              {period.label}
-            </Text>
-
-            {/* Score */}
-            <View style={[styles.scoreCol, styles.scoreContainer]}>
-              {period.homeScore !== null && period.awayScore !== null ? (
-                <Text style={styles.scoreText}>
-                  {period.awayScore}-{period.homeScore}
-                </Text>
-              ) : (
-                <Text style={styles.emptyText}>—</Text>
-              )}
-            </View>
-
-            {/* Winner */}
-            <View style={[styles.winnerCol, styles.winnerContainer]}>
-              {hasPayout ? (
-                <View
-                  style={[
-                    styles.winnerNameBox,
-                    period.isCurrentUser && styles.winnerNameBoxYou,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.winnerText,
-                      period.isCurrentUser && styles.winnerTextHighlight,
-                    ]}
-                    numberOfLines={1}
-                  >
-                    {period.payout!.ownerName}
-                  </Text>
-                </View>
-              ) : (
-                <Text style={styles.emptyText}>—</Text>
-              )}
-            </View>
-
-            {/* Prize */}
-            <View style={[styles.prizeCol, styles.prizeContainer]}>
+            {/* Top Line: Period · Winner + Prize */}
+            <View style={styles.topLine}>
+              <View style={styles.periodAndWinner}>
+                <Text style={styles.periodLabel}>{period.label}</Text>
+                {hasPayout && (
+                  <>
+                    <Text style={styles.dotSeparator}>·</Text>
+                    <Text
+                      style={[
+                        styles.winnerName,
+                        period.isCurrentUser && styles.winnerNameYou,
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {period.payout!.ownerName}
+                    </Text>
+                  </>
+                )}
+                {!hasPayout && !hasScore && (
+                  <>
+                    <Text style={styles.dotSeparator}>·</Text>
+                    <Text style={styles.pendingText}>Pending</Text>
+                  </>
+                )}
+              </View>
               <Text
                 style={[
-                  styles.prizeText,
-                  hasPayout && styles.prizeTextPaid,
+                  styles.prizeAmount,
+                  hasPayout && styles.prizeAmountPaid,
                 ]}
               >
                 {formatCurrency(period.prizeAmount)}
               </Text>
-              {!hasPayout && (
-                <Text style={styles.percentageText}>
-                  {(period.percentage * 100).toFixed(0)}%
-                </Text>
-              )}
+            </View>
+
+            {/* Bottom Line: Score + Status */}
+            <View style={styles.bottomLine}>
+              <Text style={styles.scoreText}>
+                {hasScore
+                  ? `Score: ${period.awayScore}-${period.homeScore}`
+                  : `${(period.percentage * 100).toFixed(0)}% of pot`}
+              </Text>
               {hasPayout && <Text style={styles.paidBadge}>Paid</Text>}
             </View>
           </View>
@@ -221,108 +202,80 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     marginBottom: spacing.sm,
   },
-  headerRow: {
-    flexDirection: 'row',
-    paddingVertical: spacing.xs,
-    borderBottomWidth: 2,
-    borderBottomColor: colors.border,
-    marginBottom: spacing.xs,
-  },
-  headerCell: {
-    ...textStyles.caption,
-    color: colors.textSecondary,
-    fontWeight: typography.fontWeight.semibold,
-    textTransform: 'uppercase',
-  },
-  dataRow: {
-    flexDirection: 'row',
+  // Period row
+  periodRow: {
     paddingVertical: spacing.sm,
-    alignItems: 'center',
   },
-  dataRowBorder: {
+  periodRowBorder: {
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
-  dataCell: {
+  periodRowYou: {
+    backgroundColor: colors.success + '10',
+    marginHorizontal: -spacing.sm,
+    paddingHorizontal: spacing.sm,
+    borderRadius: spacing.radius.sm,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.success,
+  },
+  // Top line
+  topLine: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.xs / 2,
+  },
+  periodAndWinner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    marginRight: spacing.sm,
+  },
+  periodLabel: {
     ...textStyles.body,
     color: colors.textPrimary,
+    fontWeight: typography.fontWeight.bold,
   },
-  // Column widths
-  periodCol: {
-    width: 50,
-  },
-  scoreCol: {
-    width: 60,
-  },
-  winnerCol: {
-    flex: 1,
+  dotSeparator: {
+    ...textStyles.body,
+    color: colors.textMuted,
     marginHorizontal: spacing.xs,
   },
-  prizeCol: {
-    width: 70,
-    alignItems: 'flex-end',
+  winnerName: {
+    ...textStyles.body,
+    color: colors.textPrimary,
+    flex: 1,
   },
-  // Period
-  periodText: {
+  winnerNameYou: {
+    color: colors.success,
     fontWeight: typography.fontWeight.semibold,
   },
-  // Score
-  scoreContainer: {
-    justifyContent: 'center',
+  pendingText: {
+    ...textStyles.body,
+    color: colors.textMuted,
+    fontStyle: 'italic',
+  },
+  prizeAmount: {
+    ...textStyles.body,
+    color: colors.textPrimary,
+    fontWeight: typography.fontWeight.bold,
+  },
+  prizeAmountPaid: {
+    color: colors.success,
+  },
+  // Bottom line
+  bottomLine: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   scoreText: {
-    ...textStyles.body,
-    color: colors.textPrimary,
-    fontFamily: typography.fontFamily.mono,
-  },
-  // Winner
-  winnerContainer: {
-    justifyContent: 'center',
-  },
-  winnerNameBox: {
-    paddingHorizontal: spacing.xs,
-    paddingVertical: 4,
-    borderRadius: spacing.radius.sm,
-    alignSelf: 'flex-start',
-  },
-  winnerNameBoxYou: {
-    borderWidth: 2,
-    borderColor: colors.success,
-    backgroundColor: colors.success + '15',
-  },
-  winnerText: {
-    ...textStyles.body,
-    color: colors.textPrimary,
-  },
-  winnerTextHighlight: {
-    color: colors.success,
-    fontWeight: typography.fontWeight.semibold,
-  },
-  // Prize
-  prizeContainer: {
-    alignItems: 'flex-end',
-  },
-  prizeText: {
-    ...textStyles.body,
-    color: colors.textPrimary,
-    fontWeight: typography.fontWeight.semibold,
-  },
-  prizeTextPaid: {
-    color: colors.success,
-  },
-  percentageText: {
     ...textStyles.caption,
-    color: colors.textMuted,
-    fontSize: typography.fontSize.xs,
+    color: colors.textSecondary,
   },
   paidBadge: {
     ...textStyles.caption,
     color: colors.success,
-    fontSize: typography.fontSize.xs,
-  },
-  // Empty state
-  emptyText: {
-    ...textStyles.body,
-    color: colors.textMuted,
+    fontWeight: typography.fontWeight.semibold,
   },
 });
