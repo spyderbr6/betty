@@ -101,6 +101,8 @@ export const BetCard: React.FC<BetCardProps> = ({
     side: 'A' | 'B' | null;
     amount: number;
   }>({ hasJoined: false, side: null, amount: 0 });
+  // Track if user joined locally (to prevent stale prop from resetting state)
+  const [locallyJoined, setLocallyJoined] = useState(false);
   const [timeRemaining, setTimeRemaining] = useState<string>('');
   const [showDisputeModal, setShowDisputeModal] = useState(false);
   const [isAccepting, setIsAccepting] = useState(false);
@@ -120,11 +122,15 @@ export const BetCard: React.FC<BetCardProps> = ({
           side: userParticipant.side as 'A' | 'B',
           amount: userParticipant.amount,
         });
-      } else {
+        // Sync locallyJoined with server data
+        setLocallyJoined(true);
+      } else if (!locallyJoined) {
+        // Only reset if we haven't locally confirmed a join
+        // This prevents stale props from overwriting successful local joins
         setUserParticipation({ hasJoined: false, side: null, amount: 0 });
       }
     }
-  }, [user, bet.participants]);
+  }, [user, bet.participants, locallyJoined]);
 
   // Update countdown timer for ACTIVE bets
   useEffect(() => {
@@ -208,7 +214,8 @@ export const BetCard: React.FC<BetCardProps> = ({
   };
 
   const handleJoinBet = async (side: 'A' | 'B') => {
-    if (isJoining) return;
+    // Prevent join if already joining or already joined
+    if (isJoining || userParticipation.hasJoined) return;
 
     const betAmount = bet.betAmount || 10;
     const sideName = side === 'A' ? (bet.odds.sideAName || 'Side A') : (bet.odds.sideBName || 'Side B');
@@ -229,6 +236,30 @@ export const BetCard: React.FC<BetCardProps> = ({
 
     try {
       const user = await getCurrentUser();
+
+      // Check if user already joined this bet (server-side validation)
+      const { data: existingParticipants } = await client.models.Participant.list({
+        filter: {
+          betId: { eq: bet.id },
+          userId: { eq: user.userId }
+        }
+      });
+
+      if (existingParticipants && existingParticipants.length > 0) {
+        // User already joined - update local state to reflect this
+        const existingParticipant = existingParticipants[0];
+        setLocallyJoined(true);
+        setUserParticipation({
+          hasJoined: true,
+          side: existingParticipant.side as 'A' | 'B',
+          amount: existingParticipant.amount,
+        });
+        showAlert(
+          'Already Joined',
+          'You have already joined this bet.'
+        );
+        return;
+      }
 
       // Check user balance
       const { data: userData } = await client.models.User.get({ id: user.userId });
@@ -306,7 +337,9 @@ export const BetCard: React.FC<BetCardProps> = ({
 
         onJoinBet?.(bet.id, side, amount);
 
-        // Update local participation state
+        // Update local participation state and mark as locally joined
+        // This prevents stale props from resetting the UI
+        setLocallyJoined(true);
         setUserParticipation({
           hasJoined: true,
           side: side,
