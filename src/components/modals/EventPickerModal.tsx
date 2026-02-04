@@ -21,7 +21,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors, textStyles, spacing, typography } from '../../styles';
 import { ModalHeader } from '../ui/ModalHeader';
 import { EventBadge } from '../ui/EventBadge';
-import { getAllEventsFromCache } from '../../services/eventCacheService';
+import { getUpcomingEventsForSquaresFromCache } from '../../services/eventCacheService';
 import type { LiveEvent, SportType } from '../../types/events';
 import { showAlert } from '../ui/CustomAlert';
 
@@ -53,22 +53,13 @@ export const EventPickerModal: React.FC<EventPickerModalProps> = ({
   const loadEvents = async (forceRefresh: boolean) => {
     try {
       setLoading(true);
-      console.log(`[EventPickerModal] Loading upcoming events (forceRefresh: ${forceRefresh})`);
+      console.log(`[EventPickerModal] Loading upcoming events for squares (forceRefresh: ${forceRefresh})`);
 
-      // Fetch from cache (will use cached data unless expired or forceRefresh=true)
-      const { upcomingEvents } = await getAllEventsFromCache(forceRefresh);
+      // Fetch from cache with extended 14-day window for squares
+      const upcomingEvents = await getUpcomingEventsForSquaresFromCache(forceRefresh);
 
-      // Filter to next 7 days only (not too far out)
-      const now = new Date();
-      const sevenDaysFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-
-      const filteredEvents = upcomingEvents.filter(event => {
-        const eventTime = new Date(event.scheduledTime);
-        return eventTime >= now && eventTime <= sevenDaysFromNow;
-      });
-
-      setEvents(filteredEvents);
-      console.log(`[EventPickerModal] Loaded ${filteredEvents.length} upcoming events (next 7 days)`);
+      setEvents(upcomingEvents);
+      console.log(`[EventPickerModal] Loaded ${upcomingEvents.length} upcoming events (next 14 days)`);
     } catch (error) {
       console.error('[EventPickerModal] Error loading events:', error);
       showAlert('Error', 'Failed to load events. Please try again.');
@@ -216,7 +207,7 @@ export const EventPickerModal: React.FC<EventPickerModalProps> = ({
       <Text style={styles.emptyText}>
         {searchQuery.trim()
           ? 'No events match your search. Try different terms.'
-          : 'No upcoming events in the next 7 days.'}
+          : 'No upcoming events in the next 14 days.'}
       </Text>
       {searchQuery.trim() ? (
         <TouchableOpacity onPress={() => setSearchQuery('')} style={styles.refreshButton}>
