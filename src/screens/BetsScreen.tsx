@@ -843,10 +843,7 @@ export const BetsScreen: React.FC = () => {
   // Real user stats state
   const [userStats, setUserStats] = useState({
     winRate: 0,
-    totalBets: 0,
-    totalWinnings: 0,
     trustScore: 0,
-    balance: 0,
   });
 
   // Fetch real user stats
@@ -858,10 +855,7 @@ export const BetsScreen: React.FC = () => {
           if (userData) {
             setUserStats({
               winRate: userData.winRate || 0,
-              totalBets: userData.totalBets || 0,
-              totalWinnings: userData.totalWinnings || 0,
               trustScore: userData.trustScore || 0,
-              balance: userData.balance || 0,
             });
           }
         } catch (error) {
@@ -989,11 +983,32 @@ export const BetsScreen: React.FC = () => {
 
             {/* Empty State - only show if no bets AND no squares */}
             {filteredBets.length === 0 && squaresGames.length === 0 && (
-              <View style={styles.emptyContainer}>
+              <View style={styles.emptyStateCard}>
+                <View style={styles.emptyIconContainer}>
+                  <Ionicons name="dice-outline" size={48} color={colors.primary} />
+                </View>
                 <Text style={styles.emptyTitle}>No Active Games</Text>
                 <Text style={styles.emptyDescription}>
-                  You don't have any active bets or squares games at the moment. Create or join one to get started!
+                  You don't have any active bets or squares games yet. Get started by creating your own bet or finding one to join!
                 </Text>
+                <View style={styles.emptyActionButtons}>
+                  <TouchableOpacity
+                    style={styles.emptyActionButton}
+                    onPress={() => navigation.getParent()?.navigate('Create')}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="add-circle-outline" size={20} color={colors.background} />
+                    <Text style={styles.emptyActionButtonText}>Create a Bet</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.emptyActionButton, styles.emptyActionButtonSecondary]}
+                    onPress={() => navigation.getParent()?.navigate('Live')}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="search-outline" size={20} color={colors.primary} />
+                    <Text style={[styles.emptyActionButtonText, styles.emptyActionButtonTextSecondary]}>Find Bets to Join</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             )}
           </>
@@ -1010,11 +1025,6 @@ export const BetsScreen: React.FC = () => {
             <View style={styles.statItem}>
               <Text style={styles.statValue}>{userStats.winRate.toFixed(1)}%</Text>
               <Text style={styles.statLabel}>WIN RATE</Text>
-            </View>
-
-            <View style={styles.statItem}>
-              <Text style={styles.statValue}>{userStats.totalBets}</Text>
-              <Text style={styles.statLabel}>TOTAL BETS</Text>
             </View>
 
             <View style={styles.statItem}>
@@ -1292,24 +1302,66 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     marginTop: spacing.md,
   },
-  emptyContainer: {
-    flex: 1,
+  emptyStateCard: {
+    backgroundColor: colors.surface,
+    borderRadius: spacing.radius.lg,
+    marginHorizontal: spacing.md,
+    marginVertical: spacing.lg,
+    padding: spacing.lg,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  emptyIconContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: colors.primary + '15',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: spacing.xl,
-    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.md,
   },
   emptyTitle: {
     ...textStyles.h3,
     color: colors.textPrimary,
-    marginBottom: spacing.sm,
+    marginBottom: spacing.xs,
     textAlign: 'center',
   },
   emptyDescription: {
     ...textStyles.body,
-    color: colors.textMuted,
+    color: colors.textSecondary,
     textAlign: 'center',
     lineHeight: 22,
+    marginBottom: spacing.lg,
+    paddingHorizontal: spacing.sm,
+  },
+  emptyActionButtons: {
+    width: '100%',
+  },
+  emptyActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primary,
+    paddingVertical: spacing.sm + 2,
+    paddingHorizontal: spacing.lg,
+    borderRadius: spacing.radius.md,
+    marginBottom: spacing.sm,
+  },
+  emptyActionButtonSecondary: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: colors.primary,
+    marginBottom: 0,
+  },
+  emptyActionButtonText: {
+    ...textStyles.button,
+    color: colors.background,
+    fontWeight: typography.fontWeight.semibold,
+    marginLeft: spacing.xs,
+  },
+  emptyActionButtonTextSecondary: {
+    color: colors.primary,
   },
 
   // Bottom Stats
