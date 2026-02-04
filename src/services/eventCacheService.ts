@@ -55,6 +55,23 @@ export function isEventUpcoming(event: LiveEventData): boolean {
 }
 
 /**
+ * Determine if an event is "upcoming" for squares bet creation
+ * Extended window: scheduled in next 14 days and status is UPCOMING
+ * This allows users to create squares games for events further out
+ */
+export function isEventUpcomingForSquares(event: LiveEventData): boolean {
+  const now = new Date();
+  const scheduledTime = new Date(event.scheduledTime);
+  const next14Days = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
+
+  // Event is upcoming for squares if:
+  // 1. Scheduled time is in the future (after now)
+  // 2. Scheduled time is within next 14 days
+  // 3. Status is UPCOMING
+  return scheduledTime > now && scheduledTime <= next14Days && event.status === 'UPCOMING';
+}
+
+/**
  * Fetch all events from database
  * This is the only place that actually queries DynamoDB for events
  *
@@ -188,6 +205,23 @@ export async function getUpcomingEventsFromCache(forceRefresh: boolean = false):
   });
 
   console.log(`[EventCache] Filtered ${upcomingEvents.length} upcoming events from ${allEvents.length} cached events`);
+  return upcomingEvents;
+}
+
+/**
+ * Get upcoming events for squares bet creation (extended 14-day window)
+ * Uses isEventUpcomingForSquares which has a longer lookahead window
+ */
+export async function getUpcomingEventsForSquaresFromCache(forceRefresh: boolean = false): Promise<LiveEventData[]> {
+  const allEvents = await getCachedEvents(forceRefresh);
+  const upcomingEvents = allEvents.filter(isEventUpcomingForSquares);
+
+  // Sort by scheduled time (soonest first)
+  upcomingEvents.sort((a, b) => {
+    return new Date(a.scheduledTime).getTime() - new Date(b.scheduledTime).getTime();
+  });
+
+  console.log(`[EventCache] Filtered ${upcomingEvents.length} upcoming events (14-day window) from ${allEvents.length} cached events`);
   return upcomingEvents;
 }
 
