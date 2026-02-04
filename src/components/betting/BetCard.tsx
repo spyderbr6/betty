@@ -465,15 +465,12 @@ export const BetCard: React.FC<BetCardProps> = ({
       {/* Sides Display - Horizontal */}
       <View style={styles.sidesContainer}>
         {/* Side A */}
-        <TouchableOpacity
+        <View
           style={[
             styles.sideBox,
             userParticipation.hasJoined && userParticipation.side === 'A' && styles.sideBoxSelected,
             isJoining && selectedSide === 'A' && styles.sideBoxLoading,
           ]}
-          onPress={() => canJoin && handleJoinBet('A')}
-          disabled={!canJoin || isJoining}
-          activeOpacity={canJoin ? 0.7 : 1}
         >
           {isJoining && selectedSide === 'A' ? (
             <ActivityIndicator size="small" color={colors.primary} />
@@ -496,9 +493,27 @@ export const BetCard: React.FC<BetCardProps> = ({
                   </View>
                 )}
               </View>
+              {/* Join button for Side A */}
+              {canJoin && (
+                <TouchableOpacity
+                  style={styles.sideJoinButton}
+                  onPress={() => handleJoinBet('A')}
+                  activeOpacity={0.7}
+                  disabled={isJoining}
+                >
+                  <Text style={styles.sideJoinButtonText}>Join ${bet.betAmount || 10}</Text>
+                </TouchableOpacity>
+              )}
+              {/* Joined indicator */}
+              {userParticipation.hasJoined && userParticipation.side === 'A' && (
+                <View style={styles.joinedIndicator}>
+                  <Ionicons name="checkmark-circle" size={14} color={colors.primary} />
+                  <Text style={styles.joinedIndicatorText}>JOINED</Text>
+                </View>
+              )}
             </>
           )}
-        </TouchableOpacity>
+        </View>
 
         {/* VS Divider */}
         <View style={styles.vsDivider}>
@@ -506,15 +521,12 @@ export const BetCard: React.FC<BetCardProps> = ({
         </View>
 
         {/* Side B */}
-        <TouchableOpacity
+        <View
           style={[
             styles.sideBox,
             userParticipation.hasJoined && userParticipation.side === 'B' && styles.sideBoxSelected,
             isJoining && selectedSide === 'B' && styles.sideBoxLoading,
           ]}
-          onPress={() => canJoin && handleJoinBet('B')}
-          disabled={!canJoin || isJoining}
-          activeOpacity={canJoin ? 0.7 : 1}
         >
           {isJoining && selectedSide === 'B' ? (
             <ActivityIndicator size="small" color={colors.primary} />
@@ -537,9 +549,27 @@ export const BetCard: React.FC<BetCardProps> = ({
                   </View>
                 )}
               </View>
+              {/* Join button for Side B */}
+              {canJoin && (
+                <TouchableOpacity
+                  style={styles.sideJoinButton}
+                  onPress={() => handleJoinBet('B')}
+                  activeOpacity={0.7}
+                  disabled={isJoining}
+                >
+                  <Text style={styles.sideJoinButtonText}>Join ${bet.betAmount || 10}</Text>
+                </TouchableOpacity>
+              )}
+              {/* Joined indicator */}
+              {userParticipation.hasJoined && userParticipation.side === 'B' && (
+                <View style={styles.joinedIndicator}>
+                  <Ionicons name="checkmark-circle" size={14} color={colors.primary} />
+                  <Text style={styles.joinedIndicatorText}>JOINED</Text>
+                </View>
+              )}
             </>
           )}
-        </TouchableOpacity>
+        </View>
       </View>
 
       {/* PENDING_RESOLUTION: Two states based on winningSide */}
@@ -663,39 +693,17 @@ export const BetCard: React.FC<BetCardProps> = ({
       )}
 
       {/* Action Buttons - Only for ACTIVE bets */}
-      {isActive && (
+      {isActive && (onInviteFriends || (isCreator && onEndBet)) && (
         <View style={styles.actionRow}>
-          {/* Join Button - Only for non-participants */}
-          {canJoin && (
-            <TouchableOpacity
-              style={[styles.actionButton, styles.primaryAction]}
-              onPress={() => handleJoinBet('A')} // Will show alert for side selection
-              activeOpacity={0.7}
-              disabled={isJoining}
-            >
-              <Ionicons name="add-circle-outline" size={18} color={colors.background} />
-              <Text style={styles.primaryActionText}>Join ${bet.betAmount || 10}</Text>
-            </TouchableOpacity>
-          )}
-
           {/* Invite Friends - Always show for ACTIVE bets */}
           {onInviteFriends && (
             <TouchableOpacity
-              style={[
-                styles.actionButton,
-                canJoin ? styles.secondaryAction : styles.primaryAction,
-              ]}
+              style={[styles.actionButton, styles.primaryAction]}
               onPress={() => onInviteFriends(bet)}
               activeOpacity={0.7}
             >
-              <Ionicons 
-                name="person-add-outline" 
-                size={18} 
-                color={canJoin ? colors.primary : colors.background}
-              />
-              <Text style={canJoin ? styles.secondaryActionText : styles.primaryActionText}>
-                Invite Friends
-              </Text>
+              <Ionicons name="person-add-outline" size={18} color={colors.background} />
+              <Text style={styles.primaryActionText}>Invite Friends</Text>
             </TouchableOpacity>
           )}
 
@@ -843,7 +851,7 @@ const styles = StyleSheet.create({
     padding: spacing.sm,
     borderWidth: 1.5,
     borderColor: colors.border,
-    minHeight: 60,
+    minHeight: 80,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -885,6 +893,33 @@ const styles = StyleSheet.create({
     ...textStyles.caption,
     color: colors.textSecondary,
     fontSize: 11,
+    marginLeft: 2,
+  },
+  sideJoinButton: {
+    backgroundColor: colors.primary,
+    borderRadius: spacing.radius.sm,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    marginTop: spacing.xs,
+    alignSelf: 'stretch',
+    alignItems: 'center',
+  },
+  sideJoinButtonText: {
+    ...textStyles.button,
+    color: colors.background,
+    fontSize: typography.fontSize.xs,
+    fontWeight: typography.fontWeight.bold,
+  },
+  joinedIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: spacing.xs,
+  },
+  joinedIndicatorText: {
+    ...textStyles.caption,
+    color: colors.primary,
+    fontSize: 10,
+    fontWeight: typography.fontWeight.bold,
     marginLeft: 2,
   },
   vsDivider: {
