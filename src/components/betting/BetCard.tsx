@@ -22,6 +22,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { NotificationService } from '../../services/notificationService';
 import { TransactionService } from '../../services/transactionService';
 import { BetAcceptanceService } from '../../services/betAcceptanceService';
+import { clearBulkLoadingCache } from '../../services/bulkLoadingService';
 import { FileDisputeModal } from '../ui/FileDisputeModal';
 import { showAlert } from '../ui/CustomAlert';
 
@@ -334,6 +335,10 @@ export const BetCard: React.FC<BetCardProps> = ({
           'Joined Successfully!',
           `You've joined the bet with $${amount}. Your new balance is $${(currentBalance - amount).toFixed(2)}.`
         );
+
+        // Clear the bulk loading cache to ensure fresh data on next fetch
+        // This fixes the issue where cached bet data shows stale participant counts
+        clearBulkLoadingCache();
 
         onJoinBet?.(bet.id, side, amount);
 
