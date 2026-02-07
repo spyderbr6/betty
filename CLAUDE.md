@@ -33,11 +33,12 @@ src/
 │   ├── Login.tsx        # Authentication forms
 │   └── SignUp.tsx
 ├── contexts/
-│   └── AuthContext.tsx  # User authentication state
+│   ├── AuthContext.tsx   # User authentication state
+│   └── BetDataContext.tsx # Centralized bet/squares state with real-time subscriptions
 ├── navigation/
 │   └── AppNavigator.tsx # Bottom tab navigation
 ├── screens/             # Main app screens
-├── services/            # API integrations (bulk loading, notifications, image upload)
+├── services/            # API integrations (notifications, transactions, image upload)
 ├── styles/              # Design system tokens
 ├── types/               # TypeScript definitions
 └── utils/               # Helper functions
@@ -93,13 +94,13 @@ showAlert('Confirm Action', 'Are you sure?', [
 The `CustomAlertController` is already mounted in `App.tsx` - no additional setup needed.
 
 ### Backend Integration
-- **GraphQL API**: Real-time queries with `observeQuery()` for live updates
-- **Bulk Loading**: Optimized data fetching with `bulkLoadingService` to reduce N+1 queries
+- **GraphQL API**: Targeted `onCreate`/`onUpdate`/`onDelete` subscriptions for real-time updates
+- **State Management**: Centralized `BetDataContext` with `useMemo` derived views for bets, squares, and invitations
 - **Authentication**: AWS Cognito with secure token management
-- **Database**: DynamoDB with optimized query patterns and client-side sorting
+- **Database**: DynamoDB with GSI query patterns (`betsByStatus`, `squaresGamesByStatus`) and denormalized participant counts
 - **File Storage**: S3 with entity-based access controls
-- **Real-time**: GraphQL subscriptions for live betting data
-- **Caching**: In-memory caching with TTL for improved performance
+- **Real-time**: Targeted GraphQL subscriptions (not `observeQuery`) for incremental state updates
+- **Optimistic Updates**: Immediate UI feedback on bet joins with server confirmation and rollback on failure
 
 ### Scheduled Lambda Functions
 The app uses AWS Lambda functions with EventBridge schedules for automated background tasks:
@@ -224,11 +225,11 @@ async function yourMainFunction() {
 
 ### Core Betting System
 - **Bet Creation**: Template-based betting with custom side names
-- **Bet Joining**: Real balance validation and deduction
+- **Bet Joining**: Real balance validation and deduction with optimistic UI updates
 - **Bet Resolution**: Creator-initiated resolution with automatic payouts
-- **Real-time Updates**: Live participant counts and balance synchronization
+- **Real-time Updates**: Targeted subscriptions via BetDataContext with denormalized participant counts (`sideACount`, `sideBCount`, `participantUserIds`) on the Bet record
 - **Bet Sorting**: Automatic sorting by creation time (newest first) with status priority (LIVE > ACTIVE > PENDING_RESOLUTION)
-- **Performance Optimization**: Bulk loading with caching reduces API calls and improves load times
+- **State Architecture**: Centralized BetDataContext provides derived views (`myBets`, `joinableBets`, etc.) consumed by BetsScreen and LiveEventsScreen
 
 ### Social Features
 - **Friend Management**: Send/accept/decline friend requests
@@ -301,10 +302,15 @@ Bet {
   betAmount: number
   sideAName: string
   sideBName: string
-  status: 'ACTIVE' | 'RESOLVED' | 'CANCELLED'
+  status: 'ACTIVE' | 'PENDING_RESOLUTION' | 'RESOLVED' | 'CANCELLED'
   creatorId: string
   winningSide?: string
-  participantCount: number
+  isPrivate: boolean
+  // Denormalized participant data (avoids N+1 participant queries)
+  sideACount: number          // Count of Side A participants
+  sideBCount: number          // Count of Side B participants
+  participantUserIds: string[] // User IDs of all participants
+  totalPot: number
   createdAt: datetime
   expiresAt: datetime
 }
@@ -421,43 +427,46 @@ updateProfilePicture(userId, currentUrl?) -> {
 }
 ```
 
-### Bulk Loading Service
+### BetDataContext (Centralized Bet & Squares State)
 ```typescript
-// src/services/bulkLoadingService.ts
-// Optimized data fetching service that reduces N+1 queries and improves performance
-// with pagination, caching, and automatic client-side sorting
+// src/contexts/BetDataContext.tsx
+// Single source of truth for all bet and squares data across the app.
+// Uses targeted GraphQL subscriptions instead of observeQuery to avoid
+// full dataset refetches on every change.
 
-// Core Functions:
-bulkLoadBetsWithParticipants(statusFilters[], options?) -> Promise<Bet[]>
-  - Loads bets and their participants in 2 optimized queries instead of N+1
-  - Supports pagination with configurable limits (default: 100 bets, 500 participants)
-  - Includes 30-second in-memory caching with TTL
-  - Client-side sorting by createdAt descending (newest first)
-  - Concurrent query batching with throttling controls
+// Architecture:
+// 1. Initial bulk load: Parallel GSI queries for bets, squares, purchases, invitations, friendships
+// 2. 11 targeted subscriptions: Bet/SquaresGame onCreate/onUpdate/onDelete,
+//    BetInvitation/SquaresInvitation onCreate/onUpdate, Friendship/SquaresPurchase onCreate
+// 3. Derived state via useMemo: Automatically recomputes filtered lists when underlying data changes
+// 4. Optimistic updates: Immediate UI feedback on bet joins with rollback on failure
 
-bulkLoadUserBetsWithParticipants(userId, options?) -> Promise<Bet[]>
-  - Filters to only bets where user is creator OR participant
-  - Uses cached results when available for better performance
-  - Automatically sorts by creation date (newest first)
+// Denormalized Bet Fields (eliminates participant queries for list views):
+//   sideACount: number    — count of Side A participants
+//   sideBCount: number    — count of Side B participants
+//   participantUserIds: string[]  — user IDs of all participants
 
-bulkLoadJoinableBetsWithParticipants(userId, options?) -> Promise<Bet[]>
-  - Filters to only ACTIVE bets where user is NOT creator and NOT participant
-  - Optimized for discovering new bets to join
-  - Smaller default limit (50) for better performance
+// Derived State (all via useMemo):
+myBets: Bet[]                          // Bets where user is creator OR participant
+joinableBets: Bet[]                    // ACTIVE bets user can join (respects isPrivate)
+joinableFriendsBets: Bet[]             // Subset of joinableBets from friends
+mySquaresGames: SquaresGame[]          // Games where user is creator OR has purchased
+joinableSquaresGames: SquaresGame[]    // ACTIVE squares games user can join
+joinableFriendsSquaresGames: SquaresGame[]
+betInvitations: BetInvitation[]        // Pending bet invitations for user
+squaresInvitations: SquaresInvitation[] // Pending squares invitations for user
 
-// Caching & Performance:
-clearBulkLoadingCache() -> void          // Force refresh by clearing cache
-getBulkLoadingCacheStats() -> object     // Debug cache usage and keys
+// Actions:
+joinBet(bet, side, amount) -> Promise<boolean>    // Optimistic update + server confirm
+acceptBetInvitation(invitation, side) -> Promise<boolean>
+declineBetInvitation(invitation) -> Promise<void>
+refresh() -> Promise<void>                         // Force full reload
 
-// Usage Examples:
-const userBets = await bulkLoadUserBetsWithParticipants(userId, {
-  limit: 50,
-  useCache: true,
-  forceRefresh: false
-});
-
-const joinableBets = await bulkLoadJoinableBetsWithParticipants(userId);
+// Usage in screens:
+const { myBets, joinableBets, betInvitations, refresh } = useBetData();
 ```
+
+**Important:** `bulkLoadingService.ts` still exists but is **dead code** — no screens import from it. All data loading goes through BetDataContext.
 
 ### Transaction Service
 ```typescript

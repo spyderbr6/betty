@@ -385,9 +385,9 @@ src/
 │   ├── AboutScreen.tsx            # App info
 │   ├── NotificationScreen.tsx     # Notifications
 │   └── ResolveScreen.tsx          # Bet resolution
-├── contexts/               # AuthContext for user state
+├── contexts/               # AuthContext for user state, BetDataContext for bet/squares data
 ├── services/
-│   ├── bulkLoadingService.ts             # Optimized data fetching
+│   ├── bulkLoadingService.ts             # Legacy (dead code) - replaced by BetDataContext
 │   ├── notificationService.ts            # Push & in-app notifications with preference checking
 │   ├── notificationPreferencesService.ts # User notification preference management
 │   ├── toastNotificationService.ts       # In-app toast with batching & rate limiting
