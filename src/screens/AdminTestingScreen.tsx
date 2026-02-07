@@ -30,6 +30,7 @@ import { formatCurrency } from '../utils/formatting';
 import { showAlert } from '../components/ui/CustomAlert';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
+import { backfillBetParticipantCounts } from '../services/backfillBetCounts';
 
 const client = generateClient<Schema>();
 
@@ -773,6 +774,16 @@ export const AdminTestingScreen: React.FC<{ onClose: () => void }> = ({ onClose 
 
         addLog(`✅ Test bet resolved! Winner: ${sideBName}`);
         addLog('💰 Payouts pending 48h dispute window');
+      }
+    },
+    {
+      id: 'backfill-bet-counts',
+      title: 'Backfill Bet Participant Counts',
+      description: 'One-time migration: populates sideACount, sideBCount, and participantUserIds on existing bets',
+      action: async () => {
+        addLog('Starting backfill of bet participant counts...');
+        const result = await backfillBetParticipantCounts((msg) => addLog(msg));
+        addLog(`Backfill result: ${result.updatedBets} updated, ${result.skippedBets} skipped, ${result.errors.length} errors out of ${result.totalBets} total`);
       }
     },
   ];
