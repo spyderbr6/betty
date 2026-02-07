@@ -624,6 +624,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderRadius: spacing.radius.md,
     paddingHorizontal: spacing.md,
+    overflow: 'hidden',
   },
   currencySymbol: {
     ...textStyles.h2,
