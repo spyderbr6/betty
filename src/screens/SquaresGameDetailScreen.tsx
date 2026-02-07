@@ -290,32 +290,6 @@ export const SquaresGameDetailScreen = ({ route, navigation }: any) => {
           </TouchableOpacity>
         )}
 
-        {/* Cancel Game - Owner or Admin */}
-        {canCancel && (
-          <View style={styles.cancelSection}>
-            <TouchableOpacity
-              style={styles.cancelButton}
-              onPress={handleCancelGame}
-              disabled={cancelling}
-              activeOpacity={0.7}
-            >
-              {cancelling ? (
-                <ActivityIndicator size="small" color={colors.textInverse} />
-              ) : (
-                <>
-                  <Ionicons name="close-circle-outline" size={18} color={colors.textInverse} />
-                  <Text style={styles.cancelButtonText}>Cancel Game</Text>
-                </>
-              )}
-            </TouchableOpacity>
-            <Text style={styles.cancelHint}>
-              {purchases.length > 0
-                ? 'All participants will be fully refunded'
-                : 'No refunds needed — no squares sold yet'}
-            </Text>
-          </View>
-        )}
-
         {/* Period Results - Consolidated view of prizes, scores, and winners */}
         <PeriodResultsCard
           game={game}
@@ -367,6 +341,32 @@ export const SquaresGameDetailScreen = ({ route, navigation }: any) => {
               <Text style={styles.investmentLabel}>Total Invested:</Text>
               <Text style={styles.investmentAmount}>{formatCurrency(totalInvested)}</Text>
             </View>
+          </View>
+        )}
+
+        {/* Cancel Game - Owner or Admin, placed at bottom to stay out of the way */}
+        {canCancel && (
+          <View style={styles.cancelSection}>
+            <TouchableOpacity
+              style={styles.cancelButton}
+              onPress={handleCancelGame}
+              disabled={cancelling}
+              activeOpacity={0.7}
+            >
+              {cancelling ? (
+                <ActivityIndicator size="small" color={colors.textInverse} />
+              ) : (
+                <>
+                  <Ionicons name="close-circle-outline" size={18} color={colors.textInverse} />
+                  <Text style={styles.cancelButtonText}>Cancel Game</Text>
+                </>
+              )}
+            </TouchableOpacity>
+            <Text style={styles.cancelHint}>
+              {purchases.length > 0
+                ? 'All participants will be fully refunded'
+                : 'No refunds needed — no squares sold yet'}
+            </Text>
           </View>
         )}
 
@@ -594,6 +594,7 @@ const styles = StyleSheet.create({
     fontWeight: typography.fontWeight.bold,
   },
   cancelSection: {
+    marginTop: spacing.lg,
     marginBottom: spacing.md,
   },
   cancelButton: {
