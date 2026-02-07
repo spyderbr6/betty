@@ -448,22 +448,19 @@ export class SquaresGameService {
         filter: { squaresGameId: { eq: squaresGameId } },
       });
 
-      if (!purchases || purchases.length === 0) {
-        console.log('[SquaresGame] No purchases to refund');
-        return true;
-      }
-
-      // Refund each buyer
+      // Refund buyers if any purchases exist
       const refundMap = new Map<string, number>();
 
-      for (const purchase of purchases) {
-        const currentRefund = refundMap.get(purchase.userId) || 0;
-        refundMap.set(purchase.userId, currentRefund + purchase.amount);
-      }
+      if (purchases && purchases.length > 0) {
+        for (const purchase of purchases) {
+          const currentRefund = refundMap.get(purchase.userId) || 0;
+          refundMap.set(purchase.userId, currentRefund + purchase.amount);
+        }
 
-      // Process refunds
-      for (const [userId, amount] of refundMap.entries()) {
-        await TransactionService.recordSquaresRefund(userId, amount, squaresGameId, 'multiple');
+        // Process refunds
+        for (const [userId, amount] of refundMap.entries()) {
+          await TransactionService.recordSquaresRefund(userId, amount, squaresGameId, 'multiple');
+        }
       }
 
       // Update game status
@@ -475,20 +472,20 @@ export class SquaresGameService {
       });
 
       // Send notifications to all buyers
-      const buyerIds = Array.from(refundMap.keys());
-      for (const buyerId of buyerIds) {
-        const refundAmount = refundMap.get(buyerId)!;
-        await NotificationService.createNotification({
-          userId: buyerId,
-          type: 'SQUARES_GAME_CANCELLED',
-          title: 'Game Cancelled',
-          message: `${game.title} was cancelled. You received a $${refundAmount.toFixed(2)} refund.`,
-          priority: 'MEDIUM',
-          actionData: { squaresGameId },
-        });
+      if (refundMap.size > 0) {
+        for (const [buyerId, refundAmount] of refundMap.entries()) {
+          await NotificationService.createNotification({
+            userId: buyerId,
+            type: 'SQUARES_GAME_CANCELLED',
+            title: 'Game Cancelled',
+            message: `${game.title} was cancelled. You received a $${refundAmount.toFixed(2)} refund.`,
+            priority: 'MEDIUM',
+            actionData: { squaresGameId },
+          });
+        }
       }
 
-      console.log('[SquaresGame] Cancelled game and refunded', buyerIds.length, 'buyers');
+      console.log('[SquaresGame] Cancelled game and refunded', refundMap.size, 'buyers');
       return true;
     } catch (error) {
       console.error('[SquaresGame] Error in cancelSquaresGame:', error);

@@ -35,7 +35,7 @@ const client = generateClient<Schema>();
 export const SquaresGameDetailScreen = ({ route, navigation }: any) => {
   const { gameId } = route.params; // Changed from squaresGameId to match navigation
   const { user } = useAuth();
-  const { dismissSquaresInvitationByGame } = useBetData();
+  const { dismissSquaresInvitationByGame, refresh } = useBetData();
 
   const [game, setGame] = useState<any>(null);
   const [event, setEvent] = useState<any>(null);
@@ -173,8 +173,15 @@ export const SquaresGameDetailScreen = ({ route, navigation }: any) => {
             try {
               const reason = isOwner ? 'Cancelled by game creator' : 'Cancelled by admin';
               await SquaresGameService.cancelSquaresGame(game.id, reason);
-              showAlert('Game Cancelled', 'The game has been cancelled and all participants have been refunded.');
-              navigation.goBack();
+
+              // Refresh both local state and global context so lists update
+              await Promise.all([loadGameData(), refresh()]);
+
+              showAlert(
+                'Game Cancelled',
+                'The game has been cancelled and all participants have been refunded.',
+                [{ text: 'OK', onPress: () => navigation.goBack() }]
+              );
             } catch (error) {
               console.error('Error cancelling game:', error);
               showAlert('Error', 'Failed to cancel the game. Please try again.');
