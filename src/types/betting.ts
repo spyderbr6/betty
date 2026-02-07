@@ -9,6 +9,7 @@ export interface User {
   email: string;
   displayName?: string; // Friendly name for friends
   profilePictureUrl?: string; // S3 URL for profile picture
+  isPublic?: boolean; // Account privacy: true = discoverable, false = private
   balance: number;
   trustScore: number;
   totalBets: number;

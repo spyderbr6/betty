@@ -22,6 +22,7 @@ const schema = a.schema({
       phoneNumberVerified: a.boolean().default(false),
       phoneNumberVerifiedAt: a.datetime(),
       allowPhoneDiscovery: a.boolean().default(false), // Opt-in for friend discovery by phone
+      isPublic: a.boolean().default(true), // Account privacy: true = discoverable in search, false = private
       role: a.enum(['USER', 'ADMIN', 'SUPER_ADMIN']), // User role for access control
       balance: a.float().default(0),
       trustScore: a.float().default(5.0),
