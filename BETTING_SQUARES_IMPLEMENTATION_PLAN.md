@@ -408,42 +408,14 @@ type NotificationType =
 
 ---
 
-### BulkLoadingService Extensions
+### Data Loading (via BetDataContext)
 
-**New Methods:**
-
-```typescript
-// In src/services/bulkLoadingService.ts
-
-/**
- * Load squares games with purchases and payouts
- */
-async function bulkLoadSquaresGamesWithData(
-  statusFilters: SquaresGameStatus[],
-  options?: { limit?: number, useCache?: boolean }
-): Promise<SquaresGame[]> {
-
-  // 1. Query games by status (GSI)
-  // 2. Get all purchases for these games (single query with IN filter)
-  // 3. Get all payouts for these games (single query with IN filter)
-  // 4. Client-side join and cache
-
-  // Reduces N+1 queries to 3 total queries
-}
-
-/**
- * Load user's squares games (as buyer)
- */
-async function bulkLoadUserSquaresGames(
-  userId: string,
-  options?: { includeCompleted?: boolean }
-): Promise<SquaresGame[]> {
-
-  // 1. Query purchases by userId (GSI)
-  // 2. Get unique squaresGameIds
-  // 3. Bulk load games with data
-}
-```
+> **⚠️ NOTE (2026-02):** The `bulkLoadingService` approach described in the original plan has been superseded. Squares data is now loaded and managed through `BetDataContext` (`src/contexts/BetDataContext.tsx`), which handles:
+> - Initial bulk load via `squaresGamesByStatus` GSI queries
+> - Real-time updates via `SquaresGame.onCreate/onUpdate/onDelete` subscriptions
+> - Purchase tracking via `SquaresPurchase.onCreate` subscription
+> - Invitation tracking via `SquaresInvitation.onCreate` subscription
+> - Derived views: `mySquaresGames`, `joinableSquaresGames`, `joinableFriendsSquaresGames`, `squaresInvitations`
 
 ---
 

@@ -1,5 +1,7 @@
 # DynamoDB Query Optimization Audit
 
+> **⚠️ NOTE (2026-02):** The primary data loading path for bets and squares has been replaced by `BetDataContext` (`src/contexts/BetDataContext.tsx`), which uses GSI queries (`betsByStatus`, `squaresGamesByStatus`) and targeted subscriptions. The `bulkLoadingService` referenced below is now dead code. This audit remains useful for understanding GSI patterns and DynamoDB query behavior across other services.
+
 **Date:** 2025-12-13
 **Issue:** Multiple services are using inefficient DynamoDB queries with filter expressions instead of properly indexed queries.
 
