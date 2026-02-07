@@ -74,25 +74,33 @@ export const AddFriendModal: React.FC<AddFriendModalProps> = ({
       setHasSearched(true);
 
       // Search users by email, display name, or phone number (if discovery enabled)
+      // Only search public accounts (isPublic: true)
       const [emailResults, nameResults, phoneResults] = await Promise.all([
         client.models.User.list({
           filter: {
-            email: { contains: searchQuery.trim().toLowerCase() }
+            and: [
+              { email: { contains: searchQuery.trim().toLowerCase() } },
+              { isPublic: { eq: true } }
+            ]
           },
           limit: 10,
         }),
         client.models.User.list({
           filter: {
-            displayName: { contains: searchQuery.trim() }
+            and: [
+              { displayName: { contains: searchQuery.trim() } },
+              { isPublic: { eq: true } }
+            ]
           },
           limit: 10,
         }),
-        // Search by phone number (only if user has enabled phone discovery)
+        // Search by phone number (only if user has enabled phone discovery AND account is public)
         client.models.User.list({
           filter: {
             and: [
               { phoneNumber: { contains: searchQuery.trim() } },
-              { allowPhoneDiscovery: { eq: true } }
+              { allowPhoneDiscovery: { eq: true } },
+              { isPublic: { eq: true } }
             ]
           },
           limit: 10,

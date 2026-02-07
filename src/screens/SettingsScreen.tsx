@@ -27,6 +27,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
   const { user } = useAuth();
   const [preferences, setPreferences] = useState<NotificationPreferences | null>(null);
   const [allowPhoneDiscovery, setAllowPhoneDiscovery] = useState(false);
+  const [isPublic, setIsPublic] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -88,6 +89,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
       const { data: userData } = await client.models.User.get({ id: user.userId });
       if (userData) {
         setAllowPhoneDiscovery(userData.allowPhoneDiscovery || false);
+        setIsPublic(userData.isPublic !== undefined ? userData.isPublic : true);
       }
     } catch (error) {
       console.error('[SettingsScreen] Error loading privacy settings:', error);
@@ -194,6 +196,33 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
       // Revert on failure
       setAllowPhoneDiscovery(previousValue);
       showAlert('Error', 'Failed to update privacy setting. Please try again.');
+    }
+  };
+
+  const handleAccountPrivacyToggle = async (value: boolean) => {
+    if (!user) return;
+
+    // Optimistic update
+    const previousValue = isPublic;
+    setIsPublic(value);
+
+    try {
+      // Update database
+      const result = await client.models.User.update({
+        id: user.userId,
+        isPublic: value,
+      });
+
+      if (!result.data) {
+        // Revert on failure
+        setIsPublic(previousValue);
+        showAlert('Error', 'Failed to update account privacy. Please try again.');
+      }
+    } catch (error) {
+      console.error('[SettingsScreen] Error updating account privacy:', error);
+      // Revert on failure
+      setIsPublic(previousValue);
+      showAlert('Error', 'Failed to update account privacy. Please try again.');
     }
   };
 
@@ -354,6 +383,21 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
         {/* Privacy */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>PRIVACY</Text>
+
+          <SettingRow
+            icon="eye-outline"
+            title="Public Account"
+            subtitle="Allow others to find you in friend search"
+            value={isPublic}
+            onValueChange={handleAccountPrivacyToggle}
+          />
+
+          <View style={styles.privacyNote}>
+            <Ionicons name="information-circle-outline" size={18} color={colors.info} />
+            <Text style={styles.privacyNoteText}>
+              When enabled, other users can find your account by searching for your email or name. Existing friends are unaffected if you turn this off.
+            </Text>
+          </View>
 
           <SettingRow
             icon="phone-portrait-outline"
