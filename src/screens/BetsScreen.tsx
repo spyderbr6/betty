@@ -262,10 +262,14 @@ export const BetsScreen: React.FC = () => {
     try {
       setIsLoading(true);
 
+      // Always fetch fresh data - disable caching to ensure consistent participant counts
+      clearBulkLoadingCache();
+
       // Use bulk loading service for efficient data fetching
       const userBets = await bulkLoadUserBetsWithParticipants(user.userId, {
-        limit: 100, // Larger limit for user's own bets
-        useCache: true
+        limit: 100,
+        useCache: false,
+        forceRefresh: true
       });
 
       setBets(userBets);

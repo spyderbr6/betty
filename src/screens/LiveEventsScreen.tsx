@@ -166,15 +166,20 @@ export const LiveEventsScreen: React.FC = () => {
         setIsLoading(true);
         console.log(`🎯 Fetching ${viewMode} bets with bulk loading for user:`, user.userId);
 
+        // Always fetch fresh data - disable caching to ensure consistent participant counts
+        clearBulkLoadingCache();
+
         // Use appropriate bulk loading service based on view mode
         const joinableBets = viewMode === 'friends'
           ? await bulkLoadFriendsBetsWithParticipants(user.userId, {
-              limit: 50, // Reasonable limit for live events
-              useCache: true
+              limit: 50,
+              useCache: false,
+              forceRefresh: true
             })
           : await bulkLoadJoinableBetsWithParticipants(user.userId, {
-              limit: 50, // Reasonable limit for live events
-              useCache: true
+              limit: 50,
+              useCache: false,
+              forceRefresh: true
             });
 
         console.log(`✅ Bulk loaded ${joinableBets.length} ${viewMode} bets`);
