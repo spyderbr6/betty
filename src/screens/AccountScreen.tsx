@@ -149,61 +149,82 @@ export const AccountScreen: React.FC = () => {
           updatedAt: userData.updatedAt || new Date().toISOString(),
         });
       } else {
-        // Create user record if it doesn't exist (use already fetched Cognito data)
-        // Note: Policy acceptance is implicitly true for new users since SignUp requires
-        // checkbox acceptance before creating Cognito account
+        // User record should already be created by AuthContext on first login.
+        // If we still don't have it, create it as a fallback.
+        console.log('[AccountScreen] No User record found, creating as fallback for:', user.userId);
         const currentTime = new Date().toISOString();
-        const newUser = await client.models.User.create({
-          id: user.userId,
-          username: user.username,
-          email: realEmail,
-          displayName: displayNameFromCognito || undefined,
-          balance: 0, // Starting balance
-          trustScore: 5.0,
-          totalBets: 0,
-          totalWinnings: 0,
-          winRate: 0,
-          // Policy acceptance - required during signup
-          tosAccepted: true,
-          tosAcceptedAt: currentTime,
-          tosVersion: CURRENT_TOS_VERSION,
-          privacyPolicyAccepted: true,
-          privacyPolicyAcceptedAt: currentTime,
-          privacyPolicyVersion: CURRENT_PRIVACY_VERSION,
-        });
-
-        if (newUser.data) {
-          // Create default notification preferences for new user
-          // This ensures notifications work immediately without race conditions
-          try {
-            await NotificationPreferencesService.createDefaultPreferences(newUser.data.id!);
-            console.log('[AccountScreen] Created default notification preferences for new user:', newUser.data.id);
-          } catch (prefError) {
-            console.error('[AccountScreen] Failed to create notification preferences for new user:', prefError);
-            // Don't block user creation if preferences fail - they'll be created on first notification
-          }
-
-          // Get fresh signed URL for profile picture if it exists
-          let profilePictureUrl = undefined;
-          if (newUser.data.profilePictureUrl) {
-            const signedUrl = await getProfilePictureUrl(newUser.data.profilePictureUrl);
-            profilePictureUrl = signedUrl || undefined;
-          }
-
-          setUserProfile({
-            id: newUser.data.id!,
-            username: newUser.data.username!,
-            email: newUser.data.email!,
-            displayName: newUser.data.displayName || undefined,
-            profilePictureUrl: profilePictureUrl,
-            balance: newUser.data.balance ?? 0,
-            trustScore: newUser.data.trustScore || 5.0,
-            totalBets: newUser.data.totalBets || 0,
-            totalWinnings: newUser.data.totalWinnings || 0,
-            winRate: newUser.data.winRate || 0,
-            createdAt: newUser.data.createdAt || new Date().toISOString(),
-            updatedAt: newUser.data.updatedAt || new Date().toISOString(),
+        try {
+          const newUser = await client.models.User.create({
+            id: user.userId,
+            username: user.username,
+            email: realEmail,
+            displayName: displayNameFromCognito || undefined,
+            balance: 0,
+            trustScore: 5.0,
+            totalBets: 0,
+            totalWinnings: 0,
+            winRate: 0,
+            tosAccepted: true,
+            tosAcceptedAt: currentTime,
+            tosVersion: CURRENT_TOS_VERSION,
+            privacyPolicyAccepted: true,
+            privacyPolicyAcceptedAt: currentTime,
+            privacyPolicyVersion: CURRENT_PRIVACY_VERSION,
           });
+
+          if (newUser.data) {
+            try {
+              await NotificationPreferencesService.createDefaultPreferences(newUser.data.id!);
+            } catch (prefError) {
+              console.warn('[AccountScreen] Failed to create notification preferences:', prefError);
+            }
+
+            let profilePictureUrl = undefined;
+            if (newUser.data.profilePictureUrl) {
+              const signedUrl = await getProfilePictureUrl(newUser.data.profilePictureUrl);
+              profilePictureUrl = signedUrl || undefined;
+            }
+
+            setUserProfile({
+              id: newUser.data.id!,
+              username: newUser.data.username!,
+              email: newUser.data.email!,
+              displayName: newUser.data.displayName || undefined,
+              profilePictureUrl: profilePictureUrl,
+              balance: newUser.data.balance ?? 0,
+              trustScore: newUser.data.trustScore || 5.0,
+              totalBets: newUser.data.totalBets || 0,
+              totalWinnings: newUser.data.totalWinnings || 0,
+              winRate: newUser.data.winRate || 0,
+              createdAt: newUser.data.createdAt || new Date().toISOString(),
+              updatedAt: newUser.data.updatedAt || new Date().toISOString(),
+            });
+          }
+        } catch (createError) {
+          // Record may have been created by AuthContext concurrently — re-fetch
+          console.warn('[AccountScreen] Create failed (may already exist), re-fetching:', createError);
+          const { data: retryData } = await client.models.User.get({ id: user.userId });
+          if (retryData) {
+            let profilePictureUrl = undefined;
+            if (retryData.profilePictureUrl) {
+              const signedUrl = await getProfilePictureUrl(retryData.profilePictureUrl);
+              profilePictureUrl = signedUrl || undefined;
+            }
+            setUserProfile({
+              id: retryData.id!,
+              username: retryData.username!,
+              email: retryData.email!,
+              displayName: retryData.displayName || undefined,
+              profilePictureUrl: profilePictureUrl,
+              balance: retryData.balance ?? 0,
+              trustScore: retryData.trustScore || 5.0,
+              totalBets: retryData.totalBets || 0,
+              totalWinnings: retryData.totalWinnings || 0,
+              winRate: retryData.winRate || 0,
+              createdAt: retryData.createdAt || new Date().toISOString(),
+              updatedAt: retryData.updatedAt || new Date().toISOString(),
+            });
+          }
         }
       }
 
