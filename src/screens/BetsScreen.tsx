@@ -24,12 +24,10 @@ import { Header } from '../components/ui/Header';
 import { BetCard } from '../components/betting/BetCard';
 import { SquaresGameCard } from '../components/betting/SquaresGameCard';
 import { BetInviteModal } from '../components/ui/BetInviteModal';
-import { Bet, BetInvitation, BetInvitationStatus, User, ParticipantStatus } from '../types/betting';
+import { Bet, BetInvitation, BetInvitationStatus } from '../types/betting';
 import { BetsStackParamList } from '../types/navigation';
 import { useAuth } from '../contexts/AuthContext';
-import { NotificationService } from '../services/notificationService';
-import { TransactionService } from '../services/transactionService';
-import { bulkLoadUserBetsWithParticipants, clearBulkLoadingCache } from '../services/bulkLoadingService';
+import { useBetData } from '../contexts/BetDataContext';
 import { showAlert } from '../components/ui/CustomAlert';
 
 type BetsScreenNavigationProp = StackNavigationProp<BetsStackParamList, 'BetsList'>;
@@ -37,70 +35,23 @@ type BetsScreenNavigationProp = StackNavigationProp<BetsStackParamList, 'BetsLis
 // Initialize GraphQL client
 const client = generateClient<Schema>();
 
-// Helper function to transform Amplify data to our Bet type
-const transformAmplifyBet = (bet: any): Bet | null => {
-  // Skip bets with missing required fields
-  if (!bet.id || !bet.title || !bet.description || !bet.category || !bet.status) {
-    return null;
-  }
-
-  // Parse odds from JSON string if needed
-  let parsedOdds = { sideAName: 'Side A', sideBName: 'Side B' }; // Default side names
-  if (bet.odds) {
-    try {
-      if (typeof bet.odds === 'string') {
-        parsedOdds = JSON.parse(bet.odds);
-      } else if (typeof bet.odds === 'object') {
-        parsedOdds = bet.odds;
-      }
-    } catch (error) {
-      console.error('Error parsing bet odds:', error);
-      // Use default side names on parse error
-    }
-  }
-
-  return {
-    id: bet.id,
-    title: bet.title,
-    description: bet.description,
-    category: bet.category,
-    status: bet.status,
-    creatorId: bet.creatorId || '',
-    totalPot: bet.totalPot || 0,
-    betAmount: bet.betAmount || bet.totalPot || 0, // Fallback to totalPot for existing bets
-    odds: parsedOdds,
-    deadline: bet.deadline || new Date().toISOString(),
-    winningSide: bet.winningSide || undefined,
-    resolutionReason: bet.resolutionReason || undefined,
-    createdAt: bet.createdAt || new Date().toISOString(),
-    updatedAt: bet.updatedAt || new Date().toISOString(),
-    participants: [], // Will be populated by separate query if needed
-  };
-};
-
-interface SquaresGame {
-  id: string;
-  creatorId: string;
-  eventId: string;
-  title: string;
-  description?: string;
-  status: string;
-  pricePerSquare: number;
-  totalPot: number;
-  squaresSold: number;
-  numbersAssigned: boolean;
-  createdAt: string;
-}
+// Data loading and transformations are now handled by BetDataContext
 
 export const BetsScreen: React.FC = () => {
   const { user } = useAuth();
   const navigation = useNavigation<BetsScreenNavigationProp>();
   const insets = useSafeAreaInsets();
-  const [bets, setBets] = useState<Bet[]>([]);
-  const [squaresGames, setSquaresGames] = useState<SquaresGame[]>([]);
-  const [betInvitations, setBetInvitations] = useState<BetInvitation[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+  const {
+    myBets,
+    mySquaresGames: squaresGames,
+    betInvitations,
+    isInitialLoading: isLoading,
+    isRefreshing: refreshing,
+    refresh,
+    joinBet,
+    acceptBetInvitation: contextAcceptInvitation,
+    declineBetInvitation: contextDeclineInvitation,
+  } = useBetData();
   const [processingInvitations, setProcessingInvitations] = useState<Set<string>>(new Set());
 
   // Toast state
@@ -111,238 +62,7 @@ export const BetsScreen: React.FC = () => {
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [selectedBetForInvite, setSelectedBetForInvite] = useState<Bet | null>(null);
 
-  useEffect(() => {
-    // Fetch initial bet data, squares games, bet invitations, and set up real-time subscriptions
-    const fetchData = async () => {
-      await Promise.all([fetchBets(), fetchSquaresGames(), fetchBetInvitations()]);
-    };
-
-    if (user?.userId) {
-      fetchData();
-    }
-  }, [user?.userId]);
-
-  const fetchBetInvitations = async () => {
-    if (!user?.userId) return;
-
-    try {
-      // Get pending bet invitations for current user
-      const { data: invitations } = await client.models.BetInvitation.list({
-        filter: {
-          toUserId: { eq: user.userId },
-          status: { eq: 'PENDING' }
-        }
-      });
-
-      if (invitations && invitations.length > 0) {
-        type InvitationWithDetails = {
-          id: string;
-          betId: string;
-          fromUserId: string;
-          toUserId: string;
-          status: BetInvitationStatus;
-          message?: string;
-          invitedSide: string;
-          createdAt: string;
-          updatedAt: string;
-          expiresAt: string;
-          bet: Bet | null;
-          fromUser: User;
-        };
-
-        // Fetch bet details and from user details for each invitation
-        const invitationsWithDetails: (InvitationWithDetails | null)[] = await Promise.all(
-          invitations.map(async (invitation) => {
-            try {
-              const [betResult, fromUserResult, participantsResult] = await Promise.all([
-                client.models.Bet.get({ id: invitation.betId }),
-                client.models.User.get({ id: invitation.fromUserId }),
-                client.models.Participant.list({
-                  filter: { betId: { eq: invitation.betId } }
-                })
-              ]);
-
-              if (betResult.data && fromUserResult.data) {
-                const transformedBet = transformAmplifyBet(betResult.data);
-
-                // Populate participants for the bet
-                if (transformedBet && participantsResult.data) {
-                  transformedBet.participants = participantsResult.data
-                    .filter(p => p.userId && p.side)
-                    .map(p => ({
-                      id: p.id!,
-                      betId: p.betId!,
-                      userId: p.userId!,
-                      side: p.side!,
-                      amount: p.amount || 0,
-                      status: p.status as ParticipantStatus || 'ACCEPTED',
-                      payout: p.payout || 0,
-                      joinedAt: p.joinedAt || p.createdAt || new Date().toISOString(),
-                    }));
-                }
-
-                return {
-                  id: invitation.id!,
-                  betId: invitation.betId!,
-                  fromUserId: invitation.fromUserId!,
-                  toUserId: invitation.toUserId!,
-                  status: invitation.status as BetInvitationStatus,
-                  message: invitation.message || undefined,
-                  invitedSide: invitation.invitedSide!,
-                  createdAt: invitation.createdAt || new Date().toISOString(),
-                  updatedAt: invitation.updatedAt || new Date().toISOString(),
-                  expiresAt: invitation.expiresAt || new Date().toISOString(),
-                  bet: transformedBet,
-                  fromUser: {
-                    id: fromUserResult.data.id!,
-                    username: fromUserResult.data.username!,
-                    email: fromUserResult.data.email!,
-                    displayName: fromUserResult.data.displayName || undefined,
-                    profilePictureUrl: fromUserResult.data.profilePictureUrl || undefined,
-                    balance: fromUserResult.data.balance || 0,
-                    trustScore: fromUserResult.data.trustScore || 5.0,
-                    totalBets: fromUserResult.data.totalBets || 0,
-                    totalWinnings: fromUserResult.data.totalWinnings || 0,
-                    winRate: fromUserResult.data.winRate || 0,
-                    createdAt: fromUserResult.data.createdAt || new Date().toISOString(),
-                    updatedAt: fromUserResult.data.updatedAt || new Date().toISOString(),
-                  }
-                } as InvitationWithDetails;
-              }
-              return null;
-            } catch (error) {
-              console.error(`Error fetching invitation details:`, error);
-              return null;
-            }
-          })
-        );
-
-        const validInvitations: BetInvitation[] = invitationsWithDetails
-          .filter((inv): inv is InvitationWithDetails => {
-            // Filter out null invitations and invitations without bets
-            if (!inv || inv.bet === null) return false;
-
-            // Filter out invitations for bets that are no longer joinable
-            const bet = inv.bet as Bet;
-            if (bet.status !== 'ACTIVE') {
-              // Optionally decline/expire these invitations automatically
-              console.log(`Filtering out invitation for bet ${bet.id} with status ${bet.status}`);
-              return false;
-            }
-
-            return true;
-          })
-          .map((inv) => ({
-            id: inv.id,
-            betId: inv.betId,
-            fromUserId: inv.fromUserId,
-            toUserId: inv.toUserId,
-            status: inv.status,
-            message: inv.message,
-            invitedSide: inv.invitedSide,
-            createdAt: inv.createdAt,
-            updatedAt: inv.updatedAt,
-            expiresAt: inv.expiresAt,
-            // Optional relations preserved and non-null here
-            bet: inv.bet as Bet,
-            fromUser: inv.fromUser,
-          }));
-        setBetInvitations(validInvitations);
-      } else {
-        setBetInvitations([]);
-      }
-    } catch (error) {
-      console.error('Error fetching bet invitations:', error);
-    }
-  };
-
-  const fetchBets = async () => {
-    if (!user?.userId) return;
-
-    try {
-      setIsLoading(true);
-
-      // Always fetch fresh data - disable caching to ensure consistent participant counts
-      clearBulkLoadingCache();
-
-      // Use bulk loading service for efficient data fetching
-      const userBets = await bulkLoadUserBetsWithParticipants(user.userId, {
-        limit: 100,
-        useCache: false,
-        forceRefresh: true
-      });
-
-      setBets(userBets);
-    } catch (error) {
-      console.error('❌ Error bulk loading user bets:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const fetchSquaresGames = async () => {
-    if (!user?.userId) return;
-
-    try {
-      // Fetch squares games where user is creator or has purchases
-      const [creatorGames, purchases] = await Promise.all([
-        client.models.SquaresGame.list({
-          filter: { creatorId: { eq: user.userId } }
-        }),
-        client.models.SquaresPurchase.list({
-          filter: { userId: { eq: user.userId } }
-        })
-      ]);
-
-      // Get unique game IDs from purchases
-      const purchasedGameIds = new Set(
-        (purchases.data || []).map(p => p.squaresGameId).filter(Boolean)
-      );
-
-      // Fetch games where user has purchases (excluding already loaded creator games)
-      const creatorGameIds = new Set((creatorGames.data || []).map(g => g.id));
-      const additionalGameIds = Array.from(purchasedGameIds).filter(
-        id => !creatorGameIds.has(id)
-      );
-
-      const additionalGames = await Promise.all(
-        additionalGameIds.map(id => client.models.SquaresGame.get({ id }))
-      );
-
-      // Combine all games
-      const allGames = [
-        ...(creatorGames.data || []),
-        ...additionalGames.map(g => g.data).filter(Boolean)
-      ];
-
-      // Transform and filter for ACTIVE, LOCKED, or LIVE games only
-      const transformedGames: SquaresGame[] = allGames
-        .filter(game =>
-          game &&
-          (game.status === 'ACTIVE' || game.status === 'LOCKED' || game.status === 'LIVE')
-        )
-        .map(game => ({
-          id: game.id!,
-          creatorId: game.creatorId!,
-          eventId: game.eventId!,
-          title: game.title!,
-          description: game.description || undefined,
-          status: game.status!,
-          pricePerSquare: game.pricePerSquare || 0,
-          totalPot: game.totalPot || 0,
-          squaresSold: game.squaresSold || 0,
-          numbersAssigned: game.numbersAssigned || false,
-          createdAt: game.createdAt || new Date().toISOString(),
-        }))
-        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-
-      setSquaresGames(transformedGames);
-    } catch (error) {
-      console.error('❌ Error fetching squares games:', error);
-    }
-  };
-
-  // Handle bet invitation acceptance
+  // Handle bet invitation acceptance via context
   const acceptBetInvitation = async (invitation: BetInvitation, selectedSide: string) => {
     if (!user?.userId || !invitation.bet || !selectedSide) return;
 
@@ -351,160 +71,15 @@ export const BetsScreen: React.FC = () => {
     try {
       setProcessingInvitations(prev => new Set(prev).add(invitation.id));
 
-      // Get current bet data to check if it's still joinable
-      const { data: currentBet } = await client.models.Bet.get({ id: invitation.betId });
+      const success = await contextAcceptInvitation(invitation, selectedSide);
 
-      if (!currentBet) {
-        showAlert('Error', 'This bet no longer exists.');
-        return;
+      if (success) {
+        const betOdds = invitation.bet.odds || { sideAName: 'Side A', sideBName: 'Side B' };
+        const joinedSideName = selectedSide === 'A' ? (betOdds.sideAName || 'Side A') : (betOdds.sideBName || 'Side B');
+        setToastMessage(`Joined "${invitation.bet.title}" on ${joinedSideName}! $${betAmount.toFixed(2)} deducted.`);
+        setShowToast(true);
+        setTimeout(() => setShowToast(false), 3000);
       }
-
-      // Check if bet is still in ACTIVE status (joinable)
-      if (currentBet.status !== 'ACTIVE') {
-        let statusMessage = '';
-        switch (currentBet.status) {
-          case 'RESOLVED':
-            statusMessage = 'This bet has already been resolved.';
-            break;
-          case 'PENDING_RESOLUTION':
-            statusMessage = 'This bet is pending resolution and can no longer be joined.';
-            break;
-          case 'CANCELLED':
-            statusMessage = 'This bet has been cancelled.';
-            break;
-          case 'LIVE':
-            statusMessage = 'This bet is now live and can no longer be joined.';
-            break;
-          default:
-            statusMessage = 'This bet is no longer available to join.';
-        }
-        showAlert('Bet Not Available', statusMessage);
-        // Remove the invalid invitation from the list
-        setBetInvitations(prev => prev.filter(inv => inv.id !== invitation.id));
-        return;
-      }
-
-      // Get current user data to check balance
-      const { data: currentUser } = await client.models.User.get({ id: user.userId });
-
-      if (!currentUser) {
-        showAlert('Error', 'Unable to verify your account. Please try again.');
-        return;
-      }
-
-      const currentBalance = currentUser.balance || 0;
-
-      // Check if user has sufficient balance
-      if (currentBalance < betAmount) {
-        showAlert(
-          'Insufficient Balance',
-          `You need $${betAmount.toFixed(2)} to join this bet, but you only have $${currentBalance.toFixed(2)}.`
-        );
-        return;
-      }
-
-      // Update invitation status
-      await client.models.BetInvitation.update({
-        id: invitation.id,
-        status: 'ACCEPTED'
-      });
-
-      // Notify the bet creator that their invitation was accepted
-      try {
-        const { data: accepterData } = await client.models.User.get({ id: user.userId });
-        if (accepterData && invitation.fromUserId !== user.userId) {
-          await NotificationService.createNotification({
-            userId: invitation.fromUserId,
-            type: 'BET_INVITATION_ACCEPTED',
-            title: 'Bet Invitation Accepted',
-            message: `${accepterData.displayName || accepterData.username} accepted your bet invitation for "${invitation.bet?.title}"`,
-            priority: 'MEDIUM',
-            actionType: 'view_bet',
-            actionData: { betId: invitation.betId },
-            relatedBetId: invitation.betId,
-            relatedUserId: user.userId,
-            relatedRequestId: invitation.id,
-            sendPush: true,
-          });
-        }
-      } catch (notificationError) {
-        console.warn('Failed to send bet invitation accepted notification:', notificationError);
-      }
-
-      // Create participant entry for the bet
-      const participantResult = await client.models.Participant.create({
-        betId: invitation.betId,
-        userId: user.userId,
-        side: selectedSide,
-        amount: betAmount,
-        status: 'ACCEPTED',
-        payout: 0,
-        joinedAt: new Date().toISOString(),
-      });
-
-      if (!participantResult.data) {
-        throw new Error('Failed to create participant record');
-      }
-
-      // Record transaction for bet placement (this handles balance deduction automatically)
-      const participantId = participantResult.data.id || '';
-      const betOdds = currentBet.odds ? JSON.parse(currentBet.odds) : { sideAName: 'Side A', sideBName: 'Side B' };
-      const joinedSideName = selectedSide === 'A' ? (betOdds.sideAName || 'Side A') : (betOdds.sideBName || 'Side B');
-      const transaction = await TransactionService.recordBetPlacement(
-        user.userId,
-        betAmount,
-        invitation.betId,
-        participantId,
-        currentBet.title || 'Bet',
-        joinedSideName
-      );
-
-      if (!transaction) {
-        // Rollback participant creation if transaction fails
-        await client.models.Participant.delete({ id: participantId });
-        throw new Error('Failed to record transaction');
-      }
-
-      // Update bet's total pot
-      const currentTotalPot = invitation.bet.totalPot || 0;
-      await client.models.Bet.update({
-        id: invitation.betId,
-        totalPot: currentTotalPot + betAmount,
-      });
-
-      // Send notification to the inviter
-      const { data: accepterData } = await client.models.User.get({ id: user.userId });
-      const currentUserDisplayName = accepterData?.displayName || accepterData?.username || user.username;
-      await NotificationService.createNotification({
-        userId: invitation.fromUserId,
-        type: 'BET_INVITATION_ACCEPTED',
-        title: 'Invitation Accepted!',
-        message: `${currentUserDisplayName} accepted your bet invitation for "${invitation.bet.title}"`,
-        priority: 'MEDIUM',
-        actionType: 'view_bet',
-        actionData: { betId: invitation.betId },
-        relatedBetId: invitation.betId,
-        relatedUserId: user.userId,
-      });
-
-      // Remove from local invitations
-      setBetInvitations(prev => prev.filter(inv => inv.id !== invitation.id));
-
-      // Refresh bets to show updated participant list and clear cache for fresh data
-      clearBulkLoadingCache();
-      await fetchBets();
-
-      // Show toast notification (joinedSideName already calculated above)
-      setToastMessage(`Joined "${invitation.bet.title}" on ${joinedSideName}! $${betAmount.toFixed(2)} deducted.`);
-      setShowToast(true);
-
-      // Hide toast after 3 seconds
-      setTimeout(() => {
-        setShowToast(false);
-      }, 3000);
-    } catch (error) {
-      console.error('Error accepting bet invitation:', error);
-      showAlert('Error', 'Failed to accept invitation. Please try again.');
     } finally {
       setProcessingInvitations(prev => {
         const newSet = new Set(prev);
@@ -514,48 +89,11 @@ export const BetsScreen: React.FC = () => {
     }
   };
 
-  // Handle bet invitation decline
+  // Handle bet invitation decline via context
   const declineBetInvitation = async (invitation: BetInvitation) => {
     try {
       setProcessingInvitations(prev => new Set(prev).add(invitation.id));
-
-      // Update invitation status
-      await client.models.BetInvitation.update({
-        id: invitation.id,
-        status: 'DECLINED'
-      });
-
-      // Notify the bet creator that their invitation was declined
-      try {
-        if (user?.userId) {
-          const { data: declinerData } = await client.models.User.get({ id: user.userId });
-          if (declinerData && invitation.fromUserId !== user.userId) {
-            await NotificationService.createNotification({
-              userId: invitation.fromUserId,
-              type: 'BET_INVITATION_DECLINED',
-              title: 'Bet Invitation Declined',
-              message: `${declinerData.displayName || declinerData.username} declined your bet invitation for "${invitation.bet?.title}"`,
-              priority: 'LOW',
-              actionType: 'view_bet',
-              actionData: { betId: invitation.betId },
-              relatedBetId: invitation.betId,
-              relatedUserId: user.userId,
-              relatedRequestId: invitation.id,
-              sendPush: false, // Low priority, no push needed
-            });
-          }
-        }
-      } catch (notificationError) {
-        console.warn('Failed to send bet invitation declined notification:', notificationError);
-      }
-
-      // Remove from local invitations
-      setBetInvitations(prev => prev.filter(inv => inv.id !== invitation.id));
-
-      showAlert('Declined', 'Bet invitation declined.');
-    } catch (error) {
-      console.error('Error declining bet invitation:', error);
-      showAlert('Error', 'Failed to decline invitation. Please try again.');
+      await contextDeclineInvitation(invitation);
     } finally {
       setProcessingInvitations(prev => {
         const newSet = new Set(prev);
@@ -565,18 +103,9 @@ export const BetsScreen: React.FC = () => {
     }
   };
 
-  // Handle refresh
+  // Handle refresh via context
   const onRefresh = async () => {
-    try {
-      setRefreshing(true);
-
-      // Clear cache for fresh data on manual refresh
-      clearBulkLoadingCache();
-
-      await Promise.all([fetchBets(), fetchSquaresGames(), fetchBetInvitations()]);
-    } finally {
-      setRefreshing(false);
-    }
+    await refresh();
   };
 
   const handleSquaresGamePress = (gameId: string) => {
@@ -584,256 +113,21 @@ export const BetsScreen: React.FC = () => {
     navigation.navigate('SquaresGameDetail', { gameId });
   };
 
-  // Set up real-time subscriptions using pushed data directly (no refetching)
-  useEffect(() => {
-    if (!user?.userId) return;
-
-    console.log('📡 Setting up real-time subscriptions for user:', user.userId);
-
-    // 1. Bet subscription - use pushed data directly
-    const betSubscription = client.models.Bet.observeQuery({
-      filter: {
-        or: [
-          { status: { eq: 'ACTIVE' } },
-          { status: { eq: 'PENDING_RESOLUTION' } }
-        ]
-      }
-    }).subscribe({
-      next: async ({ items }) => {
-        console.log('📡 Bet subscription update received:', items.length, 'bets');
-
-        // Fetch participants for all bets in parallel
-        const betsWithParticipants = await Promise.all(
-          items.map(async (bet) => {
-            try {
-              const { data: participants } = await client.models.Participant.list({
-                filter: { betId: { eq: bet.id } }
-              });
-
-              const transformedBet = transformAmplifyBet(bet);
-              if (transformedBet && participants) {
-                transformedBet.participants = participants
-                  .filter(p => p.userId && p.side)
-                  .map(p => ({
-                    id: p.id!,
-                    betId: p.betId!,
-                    userId: p.userId!,
-                    side: p.side!,
-                    amount: p.amount || 0,
-                    status: p.status as ParticipantStatus || 'ACCEPTED',
-                    payout: p.payout || 0,
-                    joinedAt: p.joinedAt || p.createdAt || new Date().toISOString(),
-                  }));
-              }
-              return transformedBet;
-            } catch (error) {
-              console.error('Error fetching participants for bet:', bet.id, error);
-              return transformAmplifyBet(bet);
-            }
-          })
-        );
-
-        // Filter for user's bets (creator or participant)
-        const userBets = betsWithParticipants.filter((bet): bet is Bet => {
-          if (!bet) return false;
-          const isCreator = bet.creatorId === user.userId;
-          const isParticipant = bet.participants?.some(p => p.userId === user.userId);
-          return isCreator || isParticipant;
-        });
-
-        // Sort by createdAt descending (newest first)
-        userBets.sort((a, b) =>
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-        );
-
-        setBets(userBets);
-      },
-      error: (error) => {
-        console.error('❌ Real-time bet subscription error:', error);
-      }
-    });
-
-    // 2. SquaresGame subscription - listen for games user is involved in
-    const squaresSubscription = client.models.SquaresGame.observeQuery({
-      filter: {
-        or: [
-          { status: { eq: 'ACTIVE' } },
-          { status: { eq: 'LOCKED' } },
-          { status: { eq: 'LIVE' } }
-        ]
-      }
-    }).subscribe({
-      next: async ({ items }) => {
-        console.log('📡 SquaresGame subscription update received:', items.length, 'games');
-
-        // Get user's purchases to identify games they're in
-        const { data: userPurchases } = await client.models.SquaresPurchase.list({
-          filter: { userId: { eq: user.userId } }
-        });
-
-        const purchasedGameIds = new Set(
-          (userPurchases || []).map(p => p.squaresGameId).filter(Boolean)
-        );
-
-        // Filter for games where user is creator or has purchases
-        const userGames = items.filter(game =>
-          game.creatorId === user.userId || purchasedGameIds.has(game.id)
-        );
-
-        // Transform and sort
-        const transformedGames: SquaresGame[] = userGames
-          .map(game => ({
-            id: game.id!,
-            creatorId: game.creatorId!,
-            eventId: game.eventId!,
-            title: game.title!,
-            description: game.description || undefined,
-            status: game.status!,
-            pricePerSquare: game.pricePerSquare || 0,
-            totalPot: game.totalPot || 0,
-            squaresSold: game.squaresSold || 0,
-            numbersAssigned: game.numbersAssigned || false,
-            createdAt: game.createdAt || new Date().toISOString(),
-          }))
-          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-
-        setSquaresGames(transformedGames);
-      },
-      error: (error) => {
-        console.error('❌ Real-time squares subscription error:', error);
-      }
-    });
-
-    // 3. BetInvitation subscription - listen for pending invitations
-    const invitationSubscription = client.models.BetInvitation.observeQuery({
-      filter: {
-        and: [
-          { toUserId: { eq: user.userId } },
-          { status: { eq: 'PENDING' } }
-        ]
-      }
-    }).subscribe({
-      next: async ({ items }) => {
-        console.log('📡 BetInvitation subscription update received:', items.length, 'invitations');
-
-        // Fetch bet and user details for each invitation
-        const invitationsWithDetails = await Promise.all(
-          items.map(async (invitation) => {
-            try {
-              const [betResult, fromUserResult, participantsResult] = await Promise.all([
-                client.models.Bet.get({ id: invitation.betId }),
-                client.models.User.get({ id: invitation.fromUserId }),
-                client.models.Participant.list({
-                  filter: { betId: { eq: invitation.betId } }
-                })
-              ]);
-
-              if (betResult.data && fromUserResult.data) {
-                const transformedBet = transformAmplifyBet(betResult.data);
-
-                // Populate participants
-                if (transformedBet && participantsResult.data) {
-                  transformedBet.participants = participantsResult.data
-                    .filter(p => p.userId && p.side)
-                    .map(p => ({
-                      id: p.id!,
-                      betId: p.betId!,
-                      userId: p.userId!,
-                      side: p.side!,
-                      amount: p.amount || 0,
-                      status: p.status as ParticipantStatus || 'ACCEPTED',
-                      payout: p.payout || 0,
-                      joinedAt: p.joinedAt || p.createdAt || new Date().toISOString(),
-                    }));
-                }
-
-                // Only include if bet is still ACTIVE
-                if (transformedBet && transformedBet.status === 'ACTIVE') {
-                  return {
-                    id: invitation.id!,
-                    betId: invitation.betId!,
-                    fromUserId: invitation.fromUserId!,
-                    toUserId: invitation.toUserId!,
-                    status: invitation.status as BetInvitationStatus,
-                    message: invitation.message || undefined,
-                    invitedSide: invitation.invitedSide!,
-                    createdAt: invitation.createdAt || new Date().toISOString(),
-                    updatedAt: invitation.updatedAt || new Date().toISOString(),
-                    expiresAt: invitation.expiresAt || new Date().toISOString(),
-                    bet: transformedBet,
-                    fromUser: {
-                      id: fromUserResult.data.id!,
-                      username: fromUserResult.data.username!,
-                      email: fromUserResult.data.email!,
-                      displayName: fromUserResult.data.displayName || undefined,
-                      profilePictureUrl: fromUserResult.data.profilePictureUrl || undefined,
-                      balance: fromUserResult.data.balance || 0,
-                      trustScore: fromUserResult.data.trustScore || 5.0,
-                      totalBets: fromUserResult.data.totalBets || 0,
-                      totalWinnings: fromUserResult.data.totalWinnings || 0,
-                      winRate: fromUserResult.data.winRate || 0,
-                      createdAt: fromUserResult.data.createdAt || new Date().toISOString(),
-                      updatedAt: fromUserResult.data.updatedAt || new Date().toISOString(),
-                    }
-                  };
-                }
-              }
-              return null;
-            } catch (error) {
-              console.error('Error fetching invitation details:', error);
-              return null;
-            }
-          })
-        );
-
-        const validInvitations = invitationsWithDetails.filter(
-          (inv): inv is BetInvitation => inv !== null
-        );
-
-        setBetInvitations(validInvitations);
-      },
-      error: (error) => {
-        console.error('❌ Real-time invitation subscription error:', error);
-      }
-    });
-
-    // Cleanup subscriptions on unmount
-    return () => {
-      console.log('📡 Cleaning up real-time subscriptions');
-      betSubscription.unsubscribe();
-      squaresSubscription.unsubscribe();
-      invitationSubscription.unsubscribe();
-    };
-  }, [user?.userId]);
-
-  const handleJoinBet = (betId: string, side: string, amount: number) => {
-    console.log(`User joined bet ${betId} on side ${side} with $${amount}`);
-    // Bet will be automatically updated via subscription
-  };
-
   const handleBetPress = (bet: Bet) => {
     console.log('Bet pressed:', bet.title);
-    // Navigate to bet details
   };
 
   const handleBalancePress = () => {
     console.log('Balance pressed');
-    // Navigate to balance/wallet screen
   };
 
   const handleEndBet = async (bet: Bet) => {
     try {
-      // Update bet status to PENDING_RESOLUTION
       await client.models.Bet.update({
         id: bet.id,
         status: 'PENDING_RESOLUTION',
         updatedAt: new Date().toISOString(),
       });
-
-      // Clear cache and refresh bets
-      clearBulkLoadingCache();
-      await fetchBets();
-
       showAlert('Bet Ended', 'Your bet has been moved to pending resolution. You can now declare the winner.');
     } catch (error) {
       console.error('Error ending bet:', error);
@@ -872,19 +166,8 @@ export const BetsScreen: React.FC = () => {
   }, [user]);
 
 
-  // Filter for user's ACTIVE bets only (created by user OR user is participant)
-  const filteredBets = bets.filter(bet => {
-    const isCreator = bet.creatorId === user?.userId;
-    const isParticipant = bet.participants?.some(p => p.userId === user?.userId);
-
-    // First filter by user involvement
-    if (!(isCreator || isParticipant)) return false;
-
-    // Only show ACTIVE bets (PENDING_RESOLUTION moved to Results tab)
-    if (bet.status !== 'ACTIVE') return false;
-
-    return true;
-  });
+  // Filter for user's ACTIVE bets only (myBets from context already filters by involvement)
+  const filteredBets = myBets.filter(bet => bet.status === 'ACTIVE');
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -974,7 +257,7 @@ export const BetsScreen: React.FC = () => {
                     key={bet.id}
                     bet={bet}
                     onPress={handleBetPress}
-                    onJoinBet={handleJoinBet}
+                    onJoinBet={() => {}}
                     onInviteFriends={(bet) => {
                       setSelectedBetForInvite(bet);
                       setShowInviteModal(true);
@@ -1102,9 +385,9 @@ const BetInvitationCard: React.FC<BetInvitationCardProps> = ({
   const timeUntilExpiry = new Date(invitation.expiresAt).getTime() - new Date().getTime();
   const hoursLeft = Math.max(0, Math.floor(timeUntilExpiry / (1000 * 60 * 60)));
 
-  // Calculate participant counts for each side
-  const sideACount = invitation.bet.participants?.filter(p => p.side === 'A').length || 0;
-  const sideBCount = invitation.bet.participants?.filter(p => p.side === 'B').length || 0;
+  // Use denormalized counts from bet record
+  const sideACount = invitation.bet.sideACount || 0;
+  const sideBCount = invitation.bet.sideBCount || 0;
 
   return (
     <View style={[styles.betCard, styles.invitationCard]}>

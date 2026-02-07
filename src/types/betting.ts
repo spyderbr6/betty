@@ -34,6 +34,10 @@ export interface Bet {
   resolutionReason?: string;
   disputeWindowEndsAt?: string; // When the 48-hour dispute window closes
   isPrivate?: boolean; // Private bets only visible to invited users
+  // Denormalized participant data for efficient list rendering
+  sideACount: number;
+  sideBCount: number;
+  participantUserIds: string[];
   createdAt: string;
   updatedAt: string;
   participants?: Participant[];

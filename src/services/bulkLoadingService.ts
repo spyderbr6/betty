@@ -106,6 +106,9 @@ const transformAmplifyBet = (bet: any): Bet | null => {
     winningSide: bet.winningSide || undefined,
     resolutionReason: bet.resolutionReason || undefined,
     isPrivate: bet.isPrivate || false, // Default to false for existing bets
+    sideACount: bet.sideACount || 0,
+    sideBCount: bet.sideBCount || 0,
+    participantUserIds: bet.participantUserIds || [],
     createdAt: bet.createdAt || new Date().toISOString(),
     updatedAt: bet.updatedAt || new Date().toISOString(),
     participants: [], // Will be populated by bulk loading

@@ -442,6 +442,9 @@ export const AdminTestingScreen: React.FC<{ onClose: () => void }> = ({ onClose 
           deadline: deadline.toISOString(),
           isPrivate: false,
           isTestBet: false,
+          sideACount: 0,
+          sideBCount: 0,
+          participantUserIds: [],
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         });

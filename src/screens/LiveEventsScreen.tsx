@@ -25,7 +25,7 @@ import { SquaresGameCard } from '../components/betting/SquaresGameCard';
 import { BetInviteModal } from '../components/ui/BetInviteModal';
 import { Bet } from '../types/betting';
 import { useAuth } from '../contexts/AuthContext';
-import { bulkLoadJoinableBetsWithParticipants, bulkLoadFriendsBetsWithParticipants, clearBulkLoadingCache } from '../services/bulkLoadingService';
+import { useBetData } from '../contexts/BetDataContext';
 import { QRScannerModal } from '../components/ui/QRScannerModal';
 import { getUpcomingEventsFromCache } from '../services/eventCacheService';
 import type { LiveEventData } from '../services/eventService';
@@ -37,112 +37,24 @@ import { BetsStackParamList } from '../types/navigation';
 // Initialize GraphQL client
 const client = generateClient<Schema>();
 
-// Mock live bets data as fallback
-const mockLiveBets: Bet[] = [
-  {
-    id: 'live1',
-    title: 'Next 3PT Made',
-    description: 'LeBron James makes next 3-point attempt',
-    category: 'SPORTS',
-    status: 'LIVE',
-    creatorId: 'user1',
-    totalPot: 50,
-    odds: {
-      sideAName: 'Yes',
-      sideBName: 'No',
-    },
-    deadline: new Date(Date.now() + 300000).toISOString(), // 5 minutes from now
-    createdAt: new Date(Date.now() - 600000).toISOString(),
-    updatedAt: new Date().toISOString(),
-    participants: [
-      { 
-        id: '1', 
-        betId: 'live1', 
-        userId: 'user1', 
-        side: 'A', 
-        amount: 25, 
-        status: 'ACCEPTED', 
-        payout: 0, 
-        joinedAt: new Date().toISOString() 
-      },
-      { 
-        id: '2', 
-        betId: 'live1', 
-        userId: 'user2', 
-        side: 'B', 
-        amount: 25, 
-        status: 'ACCEPTED', 
-        payout: 0, 
-        joinedAt: new Date().toISOString() 
-      },
-    ],
-  },
-  {
-    id: 'live2',
-    title: 'Next Timeout Called',
-    description: 'Which team calls the next timeout?',
-    category: 'SPORTS',
-    status: 'LIVE',
-    creatorId: 'user2',
-    totalPot: 75,
-    odds: {
-      sideAName: 'Lakers',
-      sideBName: 'Warriors',
-    },
-    deadline: new Date(Date.now() + 900000).toISOString(), // 15 minutes from now
-    createdAt: new Date(Date.now() - 300000).toISOString(),
-    updatedAt: new Date().toISOString(),
-    participants: [
-      { 
-        id: '3', 
-        betId: 'live2', 
-        userId: 'user3', 
-        side: 'A', 
-        amount: 30, 
-        status: 'ACCEPTED', 
-        payout: 0, 
-        joinedAt: new Date().toISOString() 
-      },
-      { 
-        id: '4', 
-        betId: 'live2', 
-        userId: 'user4', 
-        side: 'B', 
-        amount: 45, 
-        status: 'ACCEPTED', 
-        payout: 0, 
-        joinedAt: new Date().toISOString() 
-      },
-    ],
-  },
-];
-
-interface SquaresGame {
-  id: string;
-  creatorId: string;
-  eventId: string;
-  title: string;
-  description?: string;
-  status: string;
-  pricePerSquare: number;
-  totalPot: number;
-  squaresSold: number;
-  numbersAssigned: boolean;
-  isPrivate?: boolean;
-  isInvited?: boolean;
-  createdAt: string;
-}
+// Mock data removed — data now comes from BetDataContext
 
 type BetsScreenNavigationProp = StackNavigationProp<BetsStackParamList, 'BetsList'>;
 
 export const LiveEventsScreen: React.FC = () => {
   const { user } = useAuth();
+  const {
+    joinableBets,
+    joinableFriendsBets,
+    joinableSquaresGames: allJoinableSquares,
+    joinableFriendsSquaresGames: friendsJoinableSquares,
+    isInitialLoading,
+    isRefreshing,
+    refresh,
+    joinBet,
+  } = useBetData();
   const navigation = useNavigation<BetsScreenNavigationProp>();
   const insets = useSafeAreaInsets();
-  const [liveBets, setLiveBets] = useState<Bet[]>([]);
-  const [squaresGames, setSquaresGames] = useState<SquaresGame[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearch, setShowSearch] = useState(false);
   const [viewMode, setViewMode] = useState<'friends' | 'all'>('friends');
@@ -158,328 +70,27 @@ export const LiveEventsScreen: React.FC = () => {
   // Recommended events state
   const [recommendedEvents, setRecommendedEvents] = useState<LiveEventData[]>([]);
 
+  // Data comes from BetDataContext — viewMode just selects which derived array to display
+  const liveBets = viewMode === 'friends' ? joinableFriendsBets : joinableBets;
+  const squaresGames = viewMode === 'friends' ? friendsJoinableSquares : allJoinableSquares;
+  const isLoading = isInitialLoading;
+  const refreshing = isRefreshing;
+
+  // Fetch recommended events (stays local — not part of bet data)
   useEffect(() => {
-    if (!user) return;
-
-    const fetchJoinableBets = async () => {
-      try {
-        setIsLoading(true);
-        console.log(`🎯 Fetching ${viewMode} bets with bulk loading for user:`, user.userId);
-
-        // Always fetch fresh data - disable caching to ensure consistent participant counts
-        clearBulkLoadingCache();
-
-        // Use appropriate bulk loading service based on view mode
-        const joinableBets = viewMode === 'friends'
-          ? await bulkLoadFriendsBetsWithParticipants(user.userId, {
-              limit: 50,
-              useCache: false,
-              forceRefresh: true
-            })
-          : await bulkLoadJoinableBetsWithParticipants(user.userId, {
-              limit: 50,
-              useCache: false,
-              forceRefresh: true
-            });
-
-        console.log(`✅ Bulk loaded ${joinableBets.length} ${viewMode} bets`);
-        setLiveBets(joinableBets);
-      } catch (error) {
-        console.error(`❌ Error bulk loading ${viewMode} bets:`, error);
-        // Use mock data as fallback
-        setLiveBets(mockLiveBets);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
     const fetchRecommendedEvents = async () => {
       try {
-        console.log('🎯 Fetching upcoming events from cache');
-        // Get first 5 upcoming events from cache (already deduplicated by cache service)
         const events = await getUpcomingEventsFromCache();
-        const topEvents = events.slice(0, 5);
-
-        console.log(`✅ Loaded ${topEvents.length} upcoming events`);
-        setRecommendedEvents(topEvents);
+        setRecommendedEvents(events.slice(0, 5));
       } catch (error) {
-        console.error('❌ Error fetching upcoming events:', error);
+        console.error('Error fetching upcoming events:', error);
       }
     };
-
-    const fetchJoinableSquaresGames = async () => {
-      if (!user?.userId) return;
-
-      try {
-        console.log(`🎯 Fetching joinable squares games (viewMode: ${viewMode})`);
-
-        // Get user's purchases to filter out games they already joined
-        const { data: userPurchases } = await client.models.SquaresPurchase.list({
-          filter: { userId: { eq: user.userId } }
-        });
-
-        const joinedGameIds = new Set(
-          (userPurchases || []).map(p => p.squaresGameId).filter(Boolean)
-        );
-
-        // Get user's pending invitations
-        const { data: userInvitations } = await client.models.SquaresInvitation.list({
-          filter: {
-            toUserId: { eq: user.userId },
-            status: { eq: 'PENDING' }
-          }
-        });
-
-        const invitedGameIds = new Set(
-          (userInvitations || []).map(inv => inv.squaresGameId).filter(Boolean)
-        );
-
-        console.log(`✅ Found ${invitedGameIds.size} pending invitations`);
-
-        // If friends mode, get friend IDs first
-        let friendUserIds: string[] = [];
-        if (viewMode === 'friends') {
-          const [friendships1, friendships2] = await Promise.all([
-            client.models.Friendship.list({
-              filter: { user1Id: { eq: user.userId } }
-            }),
-            client.models.Friendship.list({
-              filter: { user2Id: { eq: user.userId } }
-            })
-          ]);
-
-          const allFriendships = [
-            ...(friendships1.data || []),
-            ...(friendships2.data || [])
-          ];
-
-          friendUserIds = allFriendships.map(friendship =>
-            friendship.user1Id === user.userId
-              ? friendship.user2Id
-              : friendship.user1Id
-          ).filter(Boolean) as string[];
-
-          console.log(`✅ Found ${friendUserIds.length} friends`);
-
-          if (friendUserIds.length === 0) {
-            // No friends, no games to show
-            console.log('No friends found, skipping squares games fetch');
-            setSquaresGames([]);
-            return;
-          }
-        }
-
-        // Fetch all ACTIVE squares games
-        const { data: games } = await client.models.SquaresGame.list({
-          filter: {
-            status: { eq: 'ACTIVE' }
-          }
-        });
-
-        // Filter to joinable games
-        const joinableGames: SquaresGame[] = (games || [])
-          .filter(game => {
-            if (!game) return false;
-
-            // Must not be creator
-            if (game.creatorId === user.userId) return false;
-
-            // Must not have already purchased squares
-            if (joinedGameIds.has(game.id!)) return false;
-
-            // If friends mode, must be created by a friend
-            if (viewMode === 'friends' && !friendUserIds.includes(game.creatorId!)) {
-              return false;
-            }
-
-            // Include private games ONLY if user is invited
-            if (game.isPrivate && !invitedGameIds.has(game.id!)) {
-              return false;
-            }
-
-            return true;
-          })
-          .map(game => ({
-            id: game.id!,
-            creatorId: game.creatorId!,
-            eventId: game.eventId!,
-            title: game.title!,
-            description: game.description || undefined,
-            status: game.status!,
-            pricePerSquare: game.pricePerSquare || 0,
-            totalPot: game.totalPot || 0,
-            squaresSold: game.squaresSold || 0,
-            numbersAssigned: game.numbersAssigned || false,
-            isPrivate: game.isPrivate || false,
-            isInvited: invitedGameIds.has(game.id!),
-            createdAt: game.createdAt || new Date().toISOString(),
-          }))
-          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-
-        console.log(`✅ Loaded ${joinableGames.length} joinable squares games`);
-        setSquaresGames(joinableGames);
-      } catch (error) {
-        console.error('❌ Error fetching joinable squares games:', error);
-      }
-    };
-
-    fetchJoinableBets();
-    fetchRecommendedEvents();
-    fetchJoinableSquaresGames();
-
-    // Set up real-time subscription for bet changes
-    const betSubscription = client.models.Bet.observeQuery({
-      filter: {
-        status: { eq: 'ACTIVE' }
-      }
-    }).subscribe({
-      next: async () => {
-        console.log('🔄 Real-time bet update detected, refreshing joinable bets');
-        // Clear cache and refetch to get latest data
-        clearBulkLoadingCache();
-        await fetchJoinableBets();
-      },
-      error: (error) => {
-        console.error('❌ Real-time bet subscription error:', error);
-      }
-    });
-
-    // Set up real-time subscription for participant changes
-    const participantSubscription = client.models.Participant.observeQuery().subscribe({
-      next: async () => {
-        console.log('🔄 Real-time participant update detected, refreshing joinable bets');
-        // Clear cache and refetch to get latest data
-        clearBulkLoadingCache();
-        await fetchJoinableBets();
-      },
-      error: (error) => {
-        console.error('❌ Real-time participant subscription error:', error);
-      }
-    });
-
-    // Cleanup subscriptions on unmount
-    return () => {
-      betSubscription.unsubscribe();
-      participantSubscription.unsubscribe();
-    };
-  }, [user, viewMode]); // Re-fetch when viewMode changes
+    if (user) fetchRecommendedEvents();
+  }, [user]);
 
   const onRefresh = async () => {
-    try {
-      setRefreshing(true);
-      if (!user) return;
-
-      console.log(`🔄 Refreshing content (type: ${contentType}, view: ${viewMode})`);
-
-      // Refresh bets
-      const joinableBets = viewMode === 'friends'
-        ? await bulkLoadFriendsBetsWithParticipants(user.userId, {
-            limit: 50,
-            forceRefresh: true // Bypass cache on manual refresh
-          })
-        : await bulkLoadJoinableBetsWithParticipants(user.userId, {
-            limit: 50,
-            forceRefresh: true // Bypass cache on manual refresh
-          });
-
-      console.log(`✅ Refreshed ${joinableBets.length} ${viewMode} bets`);
-      setLiveBets(joinableBets);
-
-      // Refresh squares games
-      const { data: userPurchases } = await client.models.SquaresPurchase.list({
-        filter: { userId: { eq: user.userId } }
-      });
-
-      const joinedGameIds = new Set(
-        (userPurchases || []).map(p => p.squaresGameId).filter(Boolean)
-      );
-
-      // Get user's pending invitations
-      const { data: userInvitations } = await client.models.SquaresInvitation.list({
-        filter: {
-          toUserId: { eq: user.userId },
-          status: { eq: 'PENDING' }
-        }
-      });
-
-      const invitedGameIds = new Set(
-        (userInvitations || []).map(inv => inv.squaresGameId).filter(Boolean)
-      );
-
-      // If friends mode, get friend IDs first
-      let friendUserIds: string[] = [];
-      if (viewMode === 'friends') {
-        const [friendships1, friendships2] = await Promise.all([
-          client.models.Friendship.list({
-            filter: { user1Id: { eq: user.userId } }
-          }),
-          client.models.Friendship.list({
-            filter: { user2Id: { eq: user.userId } }
-          })
-        ]);
-
-        const allFriendships = [
-          ...(friendships1.data || []),
-          ...(friendships2.data || [])
-        ];
-
-        friendUserIds = allFriendships.map(friendship =>
-          friendship.user1Id === user.userId
-            ? friendship.user2Id
-            : friendship.user1Id
-        ).filter(Boolean) as string[];
-
-        if (friendUserIds.length === 0) {
-          setSquaresGames([]);
-          return;
-        }
-      }
-
-      const { data: games } = await client.models.SquaresGame.list({
-        filter: { status: { eq: 'ACTIVE' } }
-      });
-
-      const joinableGames: SquaresGame[] = (games || [])
-        .filter(game => {
-          if (!game) return false;
-          if (game.creatorId === user.userId) return false;
-          if (joinedGameIds.has(game.id!)) return false;
-          if (viewMode === 'friends' && !friendUserIds.includes(game.creatorId!)) {
-            return false;
-          }
-          // Include private games ONLY if user is invited
-          if (game.isPrivate && !invitedGameIds.has(game.id!)) {
-            return false;
-          }
-          return true;
-        })
-        .map(game => ({
-          id: game.id!,
-          creatorId: game.creatorId!,
-          eventId: game.eventId!,
-          title: game.title!,
-          description: game.description || undefined,
-          status: game.status!,
-          pricePerSquare: game.pricePerSquare || 0,
-          totalPot: game.totalPot || 0,
-          squaresSold: game.squaresSold || 0,
-          numbersAssigned: game.numbersAssigned || false,
-          isPrivate: game.isPrivate || false,
-          isInvited: invitedGameIds.has(game.id!),
-          createdAt: game.createdAt || new Date().toISOString(),
-        }))
-        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-
-      console.log(`✅ Refreshed ${joinableGames.length} joinable squares games`);
-      setSquaresGames(joinableGames);
-
-      // Note: Recommended events use 24h cache and won't refresh on pull-to-refresh
-      // This is intentional to avoid excessive API calls
-    } catch (error) {
-      console.error(`❌ Error refreshing content:`, error);
-    } finally {
-      setRefreshing(false);
-    }
+    await refresh();
   };
 
   const handleBetPress = (bet: Bet) => {
@@ -492,9 +103,8 @@ export const LiveEventsScreen: React.FC = () => {
     navigation.navigate('SquaresGameDetail', { gameId: game.id });
   };
 
-  const handleJoinBet = (betId: string, side: string, amount: number) => {
-    console.log(`User joined bet ${betId} on side ${side} with $${amount}`);
-    // Bet will be automatically updated via subscription and moved from joinable list
+  const handleJoinBet = () => {
+    // Join is now handled by BetCard via context — this callback is for compatibility
   };
 
   const handleBalancePress = () => {
@@ -789,7 +399,7 @@ export const LiveEventsScreen: React.FC = () => {
               <Text style={styles.statLabel}>TOTAL AVAILABLE POT</Text>
             </View>
             <View style={styles.statCard}>
-              <Text style={styles.statValue}>{liveBets.reduce((sum, bet) => sum + (bet.participants?.length || 0), 0)}</Text>
+              <Text style={styles.statValue}>{liveBets.reduce((sum, bet) => sum + (bet.sideACount || 0) + (bet.sideBCount || 0), 0)}</Text>
               <Text style={styles.statLabel}>ACTIVE BETTORS</Text>
             </View>
             <View style={styles.statCard}>

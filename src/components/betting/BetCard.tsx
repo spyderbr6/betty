@@ -22,7 +22,6 @@ import { useAuth } from '../../contexts/AuthContext';
 import { NotificationService } from '../../services/notificationService';
 import { TransactionService } from '../../services/transactionService';
 import { BetAcceptanceService } from '../../services/betAcceptanceService';
-import { clearBulkLoadingCache } from '../../services/bulkLoadingService';
 import { FileDisputeModal } from '../ui/FileDisputeModal';
 import { showAlert } from '../ui/CustomAlert';
 
@@ -97,13 +96,18 @@ export const BetCard: React.FC<BetCardProps> = ({
   const { user } = useAuth();
   const [isJoining, setIsJoining] = useState(false);
   const [selectedSide, setSelectedSide] = useState<'A' | 'B' | null>(null);
-  const [userParticipation, setUserParticipation] = useState<{
-    hasJoined: boolean;
-    side: 'A' | 'B' | null;
-    amount: number;
-  }>({ hasJoined: false, side: null, amount: 0 });
-  // Track if user joined locally (to prevent stale prop from resetting state)
-  const [locallyJoined, setLocallyJoined] = useState(false);
+  // Derive user participation from denormalized participantUserIds on the bet
+  const hasJoined = user ? (bet.participantUserIds || []).includes(user.userId) : false;
+  // We don't know which side without participant records, but we track it locally after join
+  const [joinedSide, setJoinedSide] = useState<'A' | 'B' | null>(null);
+  const [joinedAmount, setJoinedAmount] = useState(0);
+
+  const userParticipation = {
+    hasJoined: hasJoined || joinedSide !== null,
+    side: joinedSide,
+    amount: joinedAmount,
+  };
+
   const [timeRemaining, setTimeRemaining] = useState<string>('');
   const [showDisputeModal, setShowDisputeModal] = useState(false);
   const [isAccepting, setIsAccepting] = useState(false);
@@ -112,26 +116,6 @@ export const BetCard: React.FC<BetCardProps> = ({
     acceptedCount: number;
     hasUserAccepted: boolean;
   }>({ totalCount: 0, acceptedCount: 0, hasUserAccepted: false });
-
-  // Check if current user has joined this bet
-  useEffect(() => {
-    if (user && bet.participants) {
-      const userParticipant = bet.participants.find(p => p.userId === user.userId);
-      if (userParticipant) {
-        setUserParticipation({
-          hasJoined: true,
-          side: userParticipant.side as 'A' | 'B',
-          amount: userParticipant.amount,
-        });
-        // Sync locallyJoined with server data
-        setLocallyJoined(true);
-      } else if (!locallyJoined) {
-        // Only reset if we haven't locally confirmed a join
-        // This prevents stale props from overwriting successful local joins
-        setUserParticipation({ hasJoined: false, side: null, amount: 0 });
-      }
-    }
-  }, [user, bet.participants, locallyJoined]);
 
   // Update countdown timer for ACTIVE bets
   useEffect(() => {
@@ -167,7 +151,7 @@ export const BetCard: React.FC<BetCardProps> = ({
     };
 
     loadAcceptanceProgress();
-  }, [bet.status, bet.winningSide, bet.id, user, bet.participants]);
+  }, [bet.status, bet.winningSide, bet.id, user]);
 
   const handlePress = () => {
     onPress?.(bet);
@@ -249,12 +233,8 @@ export const BetCard: React.FC<BetCardProps> = ({
       if (existingParticipants && existingParticipants.length > 0) {
         // User already joined - update local state to reflect this
         const existingParticipant = existingParticipants[0];
-        setLocallyJoined(true);
-        setUserParticipation({
-          hasJoined: true,
-          side: existingParticipant.side as 'A' | 'B',
-          amount: existingParticipant.amount,
-        });
+        setJoinedSide(existingParticipant.side as 'A' | 'B');
+        setJoinedAmount(existingParticipant.amount);
         showAlert(
           'Already Joined',
           'You have already joined this bet.'
@@ -301,10 +281,13 @@ export const BetCard: React.FC<BetCardProps> = ({
           throw new Error('Failed to record transaction');
         }
 
-        // Update bet total pot
+        // Update bet total pot and denormalized participant counts
         await client.models.Bet.update({
           id: bet.id,
           totalPot: (bet.totalPot || 0) + amount,
+          sideACount: (bet.sideACount || 0) + (side === 'A' ? 1 : 0),
+          sideBCount: (bet.sideBCount || 0) + (side === 'B' ? 1 : 0),
+          participantUserIds: [...(bet.participantUserIds || []), user.userId],
           updatedAt: new Date().toISOString()
         });
 
@@ -336,20 +319,11 @@ export const BetCard: React.FC<BetCardProps> = ({
           `You've joined the bet with $${amount}. Your new balance is $${(currentBalance - amount).toFixed(2)}.`
         );
 
-        // Clear the bulk loading cache to ensure fresh data on next fetch
-        // This fixes the issue where cached bet data shows stale participant counts
-        clearBulkLoadingCache();
-
         onJoinBet?.(bet.id, side, amount);
 
-        // Update local participation state and mark as locally joined
-        // This prevents stale props from resetting the UI
-        setLocallyJoined(true);
-        setUserParticipation({
-          hasJoined: true,
-          side: side,
-          amount: amount,
-        });
+        // Track which side we joined locally (for immediate UI feedback)
+        setJoinedSide(side);
+        setJoinedAmount(amount);
       } else {
         throw new Error('Failed to join bet');
       }
@@ -423,11 +397,11 @@ export const BetCard: React.FC<BetCardProps> = ({
     }
   };
 
-  // Calculate participant counts
-  const participantCount = bet.participants?.length || 0;
-  const totalPot = bet.participants?.reduce((sum, p) => sum + p.amount, 0) || bet.totalPot || 0;
-  const sideACount = bet.participants?.filter(p => p.side === 'A').length || 0;
-  const sideBCount = bet.participants?.filter(p => p.side === 'B').length || 0;
+  // Use denormalized counts from bet record
+  const sideACount = bet.sideACount || 0;
+  const sideBCount = bet.sideBCount || 0;
+  const participantCount = sideACount + sideBCount;
+  const totalPot = bet.totalPot || 0;
   const statusColor = getStatusColor(bet.status);
   const statusText = getStatusText(bet.status);
 
@@ -764,11 +738,7 @@ export const BetCard: React.FC<BetCardProps> = ({
         <View style={styles.payoutContainer}>
           <Ionicons name="trophy" size={16} color={colors.success} />
           <Text style={styles.payoutText}>
-            Won {formatCurrency(
-              bet.participants?.find(p => p.userId === user?.userId)?.payout || 0,
-              'USD',
-              false
-            )}
+            Won {formatCurrency(bet.totalPot || 0, 'USD', false)}
           </Text>
         </View>
       )}
