@@ -272,7 +272,7 @@ export const SquaresGameDetailScreen = ({ route, navigation }: any) => {
         </View>
 
         {/* Invite Friends Button - Creator only, while game is still open */}
-        {editable && game.creatorId === user?.userId && (
+        {editable && (isOwner || myPurchases.length > 0) && (
           <TouchableOpacity
             style={styles.inviteButton}
             onPress={() => setInviteModalVisible(true)}
