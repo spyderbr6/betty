@@ -35,7 +35,7 @@ const client = generateClient<Schema>();
 export const SquaresGameDetailScreen = ({ route, navigation }: any) => {
   const { gameId } = route.params; // Changed from squaresGameId to match navigation
   const { user } = useAuth();
-  const { dismissSquaresInvitationByGame } = useBetData();
+  const { dismissSquaresInvitationByGame, refresh } = useBetData();
 
   const [game, setGame] = useState<any>(null);
   const [event, setEvent] = useState<any>(null);
@@ -173,8 +173,15 @@ export const SquaresGameDetailScreen = ({ route, navigation }: any) => {
             try {
               const reason = isOwner ? 'Cancelled by game creator' : 'Cancelled by admin';
               await SquaresGameService.cancelSquaresGame(game.id, reason);
-              showAlert('Game Cancelled', 'The game has been cancelled and all participants have been refunded.');
-              navigation.goBack();
+
+              // Refresh both local state and global context so lists update
+              await Promise.all([loadGameData(), refresh()]);
+
+              showAlert(
+                'Game Cancelled',
+                'The game has been cancelled and all participants have been refunded.',
+                [{ text: 'OK', onPress: () => navigation.goBack() }]
+              );
             } catch (error) {
               console.error('Error cancelling game:', error);
               showAlert('Error', 'Failed to cancel the game. Please try again.');
@@ -283,32 +290,6 @@ export const SquaresGameDetailScreen = ({ route, navigation }: any) => {
           </TouchableOpacity>
         )}
 
-        {/* Cancel Game - Owner or Admin */}
-        {canCancel && (
-          <View style={styles.cancelSection}>
-            <TouchableOpacity
-              style={styles.cancelButton}
-              onPress={handleCancelGame}
-              disabled={cancelling}
-              activeOpacity={0.7}
-            >
-              {cancelling ? (
-                <ActivityIndicator size="small" color={colors.textInverse} />
-              ) : (
-                <>
-                  <Ionicons name="close-circle-outline" size={18} color={colors.textInverse} />
-                  <Text style={styles.cancelButtonText}>Cancel Game</Text>
-                </>
-              )}
-            </TouchableOpacity>
-            <Text style={styles.cancelHint}>
-              {purchases.length > 0
-                ? 'All participants will be fully refunded'
-                : 'No refunds needed — no squares sold yet'}
-            </Text>
-          </View>
-        )}
-
         {/* Period Results - Consolidated view of prizes, scores, and winners */}
         <PeriodResultsCard
           game={game}
@@ -360,6 +341,32 @@ export const SquaresGameDetailScreen = ({ route, navigation }: any) => {
               <Text style={styles.investmentLabel}>Total Invested:</Text>
               <Text style={styles.investmentAmount}>{formatCurrency(totalInvested)}</Text>
             </View>
+          </View>
+        )}
+
+        {/* Cancel Game - Owner or Admin, placed at bottom to stay out of the way */}
+        {canCancel && (
+          <View style={styles.cancelSection}>
+            <TouchableOpacity
+              style={styles.cancelButton}
+              onPress={handleCancelGame}
+              disabled={cancelling}
+              activeOpacity={0.7}
+            >
+              {cancelling ? (
+                <ActivityIndicator size="small" color={colors.textInverse} />
+              ) : (
+                <>
+                  <Ionicons name="close-circle-outline" size={18} color={colors.textInverse} />
+                  <Text style={styles.cancelButtonText}>Cancel Game</Text>
+                </>
+              )}
+            </TouchableOpacity>
+            <Text style={styles.cancelHint}>
+              {purchases.length > 0
+                ? 'All participants will be fully refunded'
+                : 'No refunds needed — no squares sold yet'}
+            </Text>
           </View>
         )}
 
@@ -587,6 +594,7 @@ const styles = StyleSheet.create({
     fontWeight: typography.fontWeight.bold,
   },
   cancelSection: {
+    marginTop: spacing.lg,
     marginBottom: spacing.md,
   },
   cancelButton: {
