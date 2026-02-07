@@ -193,7 +193,7 @@ export const WithdrawFundsModal: React.FC<WithdrawFundsModalProps> = ({
   };
 
   const renderSelectMethod = () => (
-    <ScrollView style={styles.stepContent} showsVerticalScrollIndicator={false}>
+    <ScrollView style={styles.stepContent} contentContainerStyle={styles.stepContentContainer} showsVerticalScrollIndicator={false}>
       <Text style={styles.sectionTitle}>SELECT VENMO ACCOUNT</Text>
 
       {isLoadingMethods ? (
@@ -265,7 +265,7 @@ export const WithdrawFundsModal: React.FC<WithdrawFundsModalProps> = ({
   );
 
   const renderEnterAmount = () => (
-    <ScrollView style={styles.stepContent} showsVerticalScrollIndicator={false}>
+    <ScrollView style={styles.stepContent} contentContainerStyle={styles.stepContentContainer} showsVerticalScrollIndicator={false}>
       <Text style={styles.sectionTitle}>WITHDRAWAL DETAILS</Text>
 
       {/* Available Balance */}
@@ -380,7 +380,7 @@ export const WithdrawFundsModal: React.FC<WithdrawFundsModalProps> = ({
   );
 
   const renderConfirmation = () => (
-    <ScrollView style={styles.stepContent} showsVerticalScrollIndicator={false}>
+    <ScrollView style={styles.stepContent} contentContainerStyle={styles.stepContentContainer} showsVerticalScrollIndicator={false}>
       <Text style={styles.sectionTitle}>CONFIRM WITHDRAWAL</Text>
 
       {/* Summary Card */}
@@ -456,7 +456,7 @@ export const WithdrawFundsModal: React.FC<WithdrawFundsModalProps> = ({
       <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
         <KeyboardAvoidingView
           style={styles.content}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
           <ModalHeader title="Withdraw Funds" onClose={onClose} />
 
@@ -508,7 +508,10 @@ const styles = StyleSheet.create({
   // Content
   stepContent: {
     flex: 1,
-    padding: spacing.lg,
+  },
+  stepContentContainer: {
+    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.xl,
   },
   sectionTitle: {
     ...textStyles.label,
