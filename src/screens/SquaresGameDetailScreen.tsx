@@ -147,6 +147,46 @@ export const SquaresGameDetailScreen = ({ route, navigation }: any) => {
     }
   };
 
+  const [cancelling, setCancelling] = useState(false);
+
+  const isOwner = game?.creatorId === user?.userId;
+  const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN';
+  const canCancel = (isOwner || isAdmin) &&
+    game && ['ACTIVE', 'SETUP', 'LOCKED'].includes(game.status);
+
+  const handleCancelGame = () => {
+    const hasParticipants = purchases.length > 0;
+    const refundMessage = hasParticipants
+      ? `All ${purchases.length} purchased square${purchases.length > 1 ? 's' : ''} will be fully refunded (${formatCurrency(game.totalPot)}).`
+      : 'No squares have been purchased yet.';
+
+    showAlert(
+      'Cancel Game',
+      `Are you sure you want to cancel "${game.title}"?\n\n${refundMessage}`,
+      [
+        { text: 'Keep Game', style: 'cancel' },
+        {
+          text: 'Cancel Game',
+          style: 'destructive',
+          onPress: async () => {
+            setCancelling(true);
+            try {
+              const reason = isOwner ? 'Cancelled by game creator' : 'Cancelled by admin';
+              await SquaresGameService.cancelSquaresGame(game.id, reason);
+              showAlert('Game Cancelled', 'The game has been cancelled and all participants have been refunded.');
+              navigation.goBack();
+            } catch (error) {
+              console.error('Error cancelling game:', error);
+              showAlert('Error', 'Failed to cancel the game. Please try again.');
+            } finally {
+              setCancelling(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const myPurchases = purchases.filter((p) => p.userId === user?.userId);
 
   // Group purchases by owner name
@@ -241,6 +281,32 @@ export const SquaresGameDetailScreen = ({ route, navigation }: any) => {
             <Ionicons name="person-add-outline" size={18} color={colors.primary} />
             <Text style={styles.inviteButtonText}>Invite Friends</Text>
           </TouchableOpacity>
+        )}
+
+        {/* Cancel Game - Owner or Admin */}
+        {canCancel && (
+          <View style={styles.cancelSection}>
+            <TouchableOpacity
+              style={styles.cancelButton}
+              onPress={handleCancelGame}
+              disabled={cancelling}
+              activeOpacity={0.7}
+            >
+              {cancelling ? (
+                <ActivityIndicator size="small" color={colors.textInverse} />
+              ) : (
+                <>
+                  <Ionicons name="close-circle-outline" size={18} color={colors.textInverse} />
+                  <Text style={styles.cancelButtonText}>Cancel Game</Text>
+                </>
+              )}
+            </TouchableOpacity>
+            <Text style={styles.cancelHint}>
+              {purchases.length > 0
+                ? 'All participants will be fully refunded'
+                : 'No refunds needed — no squares sold yet'}
+            </Text>
+          </View>
         )}
 
         {/* Period Results - Consolidated view of prizes, scores, and winners */}
@@ -520,27 +586,27 @@ const styles = StyleSheet.create({
     color: colors.textInverse,
     fontWeight: typography.fontWeight.bold,
   },
-  creatorActions: {
-    padding: spacing.md,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    backgroundColor: colors.surface,
+  cancelSection: {
+    marginBottom: spacing.md,
   },
   cancelButton: {
     backgroundColor: colors.error,
     paddingVertical: spacing.sm,
     borderRadius: spacing.radius.sm,
     alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
     marginBottom: spacing.xs,
   },
   cancelButtonText: {
     ...textStyles.body,
     color: colors.textInverse,
     fontWeight: typography.fontWeight.semibold,
+    marginLeft: spacing.xs,
   },
   cancelHint: {
     ...textStyles.caption,
-    color: colors.textMuted,
+    color: colors.textSecondary,
     textAlign: 'center',
   },
   inviteButton: {
