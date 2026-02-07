@@ -33,21 +33,48 @@ const client = generateClient<Schema>();
 
 interface FriendsScreenProps {
   onClose?: () => void;
+  initialShowRequests?: boolean;
 }
 
-export const FriendsScreen: React.FC<FriendsScreenProps> = ({ onClose }) => {
+export const FriendsScreen: React.FC<FriendsScreenProps> = ({ onClose, initialShowRequests }) => {
   const { user } = useAuth();
   const [friends, setFriends] = useState<FriendListItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [showAddFriendModal, setShowAddFriendModal] = useState(false);
   const [showFriendRequestsModal, setShowFriendRequestsModal] = useState(false);
+  const [pendingRequestCount, setPendingRequestCount] = useState(0);
 
   useEffect(() => {
     if (user) {
       fetchFriends();
+      fetchPendingRequestCount();
     }
   }, [user]);
+
+  // Auto-open friend requests modal when navigated from notification
+  useEffect(() => {
+    if (initialShowRequests && !isLoading) {
+      setShowFriendRequestsModal(true);
+    }
+  }, [initialShowRequests, isLoading]);
+
+  const fetchPendingRequestCount = async () => {
+    if (!user?.userId) return;
+    try {
+      const { data: pendingRequests } = await client.models.FriendRequest.list({
+        filter: {
+          and: [
+            { toUserId: { eq: user.userId } },
+            { status: { eq: 'PENDING' } },
+          ],
+        },
+      });
+      setPendingRequestCount(pendingRequests?.length || 0);
+    } catch (error) {
+      console.error('Error fetching pending request count:', error);
+    }
+  };
 
   const fetchFriends = async () => {
     if (!user?.userId) return;
@@ -172,8 +199,9 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ onClose }) => {
   };
 
   const handleRequestHandled = () => {
-    // Refresh friends list when a request is accepted
+    // Refresh friends list and request count when a request is handled
     fetchFriends();
+    fetchPendingRequestCount();
   };
 
   const handleFriendPress = (friend: FriendListItem) => {
@@ -291,14 +319,13 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ onClose }) => {
             >
               <Ionicons name="mail-outline" size={20} color={colors.primary} />
               <Text style={styles.requestsButtonText}>Requests</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.addFriendButton}
-              onPress={handleAddFriend}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="person-add" size={20} color={colors.background} />
-              <Text style={styles.addFriendText}>Add Friend</Text>
+              {pendingRequestCount > 0 && (
+                <View style={styles.requestsBadge}>
+                  <Text style={styles.requestsBadgeText}>
+                    {pendingRequestCount > 99 ? '99+' : pendingRequestCount.toString()}
+                  </Text>
+                </View>
+              )}
             </TouchableOpacity>
           </View>
         </View>
@@ -503,14 +530,6 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     textTransform: 'uppercase',
   },
-  addFriendButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.primary,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: spacing.radius.sm,
-  },
   headerActions: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -532,11 +551,21 @@ const styles = StyleSheet.create({
     marginLeft: spacing.xs / 2,
     fontWeight: typography.fontWeight.semibold,
   },
-  addFriendText: {
-    ...textStyles.button,
-    color: colors.background,
+  requestsBadge: {
+    backgroundColor: colors.error,
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
     marginLeft: spacing.xs,
-    fontWeight: typography.fontWeight.semibold,
+  },
+  requestsBadgeText: {
+    color: colors.background,
+    fontSize: 11,
+    fontWeight: typography.fontWeight.bold,
+    lineHeight: 13,
   },
 
   // Friends List

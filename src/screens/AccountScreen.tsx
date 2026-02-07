@@ -18,7 +18,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { generateClient } from 'aws-amplify/data';
 import { fetchUserAttributes } from 'aws-amplify/auth';
 import type { Schema } from '../../amplify/data/resource';
@@ -55,6 +55,7 @@ export const AccountScreen: React.FC = () => {
   const { user, signOut } = useAuth();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
+  const route = useRoute();
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -70,6 +71,7 @@ export const AccountScreen: React.FC = () => {
   const [showAdminDashboard, setShowAdminDashboard] = useState(false);
   const [showAdminDispute, setShowAdminDispute] = useState(false);
   const [showAdminTesting, setShowAdminTesting] = useState(false);
+  const [friendsInitialShowRequests, setFriendsInitialShowRequests] = useState(false);
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
   const [pendingPayouts, setPendingPayouts] = useState(0);
@@ -79,6 +81,17 @@ export const AccountScreen: React.FC = () => {
       fetchUserStats();
     }
   }, [user]);
+
+  // Handle navigation params (e.g., from notification tap)
+  useEffect(() => {
+    const params = route.params as { openFriendRequests?: boolean } | undefined;
+    if (params?.openFriendRequests) {
+      setFriendsInitialShowRequests(true);
+      setShowFriendsScreen(true);
+      // Clear the param so it doesn't re-trigger on re-render
+      navigation.setParams({ openFriendRequests: undefined } as any);
+    }
+  }, [route.params]);
 
   const fetchUserStats = async () => {
     if (!user) return;
@@ -667,7 +680,13 @@ export const AccountScreen: React.FC = () => {
         presentationStyle="fullScreen"
         onRequestClose={() => setShowFriendsScreen(false)}
       >
-        <FriendsScreen onClose={() => setShowFriendsScreen(false)} />
+        <FriendsScreen
+          onClose={() => {
+            setShowFriendsScreen(false);
+            setFriendsInitialShowRequests(false);
+          }}
+          initialShowRequests={friendsInitialShowRequests}
+        />
       </Modal>
 
       {/* Detailed Stats Modal */}
