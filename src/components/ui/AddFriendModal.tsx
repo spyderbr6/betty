@@ -88,7 +88,7 @@ export const AddFriendModal: React.FC<AddFriendModalProps> = ({
         client.models.User.list({
           filter: {
             and: [
-              { displayName: { contains: searchQuery.trim() } },
+              { displayNameLower: { contains: searchQuery.trim().toLowerCase() } },
               { isPublic: { eq: true } }
             ]
           },

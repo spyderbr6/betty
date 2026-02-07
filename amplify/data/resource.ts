@@ -16,6 +16,7 @@ const schema = a.schema({
       username: a.string().required(),
       email: a.string().required(),
       displayName: a.string(), // Friendly/display name for friends
+      displayNameLower: a.string(), // Lowercase version for case-insensitive searching
       profilePictureUrl: a.string(), // S3 URL for profile picture
       // Phone verification fields
       phoneNumber: a.string(), // E.164 format: +1234567890
