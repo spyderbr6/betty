@@ -378,6 +378,7 @@ export const AccountScreen: React.FC = () => {
       const updatedUser = await client.models.User.update({
         id: userProfile.id,
         displayName: profileData.displayName,
+        displayNameLower: profileData.displayName ? profileData.displayName.toLowerCase() : undefined,
         profilePictureUrl: profileData.profilePicture,
       });
 

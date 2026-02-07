@@ -100,6 +100,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           username: currentUser.username,
           email: realEmail,
           displayName: displayNameFromCognito || undefined,
+          displayNameLower: displayNameFromCognito ? displayNameFromCognito.toLowerCase() : undefined,
           balance: 0,
           trustScore: 5.0,
           totalBets: 0,

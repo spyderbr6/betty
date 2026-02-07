@@ -31,6 +31,7 @@ import { showAlert } from '../components/ui/CustomAlert';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
 import { backfillBetParticipantCounts } from '../services/backfillBetCounts';
+import { migrateDisplayNameLower, checkMigrationStatus } from '../utils/migrateDisplayNameLower';
 
 const client = generateClient<Schema>();
 
@@ -788,6 +789,45 @@ export const AdminTestingScreen: React.FC<{ onClose: () => void }> = ({ onClose 
     },
   ];
 
+  const migrationModules: TestModule[] = [
+    {
+      id: 'check-displayname-migration',
+      title: 'Check DisplayName Migration Status',
+      description: 'Check how many users need the displayNameLower field populated',
+      action: async () => {
+        addLog('Checking migration status...');
+        const status = await checkMigrationStatus();
+        addLog(`Total users: ${status.total}`);
+        addLog(`Already migrated: ${status.migrated}`);
+        addLog(`Need migration: ${status.needsMigration}`);
+
+        if (status.needsMigration > 0) {
+          addLog('💡 Run the migration to fix case-insensitive search');
+        } else {
+          addLog('✅ All users are migrated');
+        }
+      }
+    },
+    {
+      id: 'migrate-displayname-lower',
+      title: 'Migrate DisplayNameLower Field',
+      description: 'One-time migration: populates displayNameLower for case-insensitive friend search',
+      action: async () => {
+        addLog('Starting displayNameLower migration...');
+        addLog('This will update all users with displayName to have displayNameLower');
+
+        const count = await migrateDisplayNameLower();
+
+        if (count === 0) {
+          addLog('✅ No users needed migration (all up to date)');
+        } else {
+          addLog(`✅ Migration complete! ${count} users updated`);
+          addLog('Friend search is now case-insensitive');
+        }
+      }
+    },
+  ];
+
   if (!user || (user.role !== 'ADMIN' && user.role !== 'SUPER_ADMIN')) {
     return null;
   }
@@ -870,6 +910,33 @@ export const AdminTestingScreen: React.FC<{ onClose: () => void }> = ({ onClose 
             Create and manage test bets. Test bets are public and visible to all users.
           </Text>
           {betTestingModules.map((module) => (
+            <TouchableOpacity
+              key={module.id}
+              style={[
+                styles.testCard,
+                activeTest === module.id && styles.testCardActive
+              ]}
+              onPress={() => runTest(module.id, module.action)}
+              disabled={loading}
+            >
+              <View style={styles.testCardHeader}>
+                <Text style={styles.testCardTitle}>{module.title}</Text>
+                {activeTest === module.id && (
+                  <ActivityIndicator size="small" color={colors.primary} />
+                )}
+              </View>
+              <Text style={styles.testCardDescription}>{module.description}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {/* Data Migrations */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>🔄 Data Migrations</Text>
+          <Text style={styles.sectionDescription}>
+            One-time migrations to fix data consistency issues. Run these after schema changes.
+          </Text>
+          {migrationModules.map((module) => (
             <TouchableOpacity
               key={module.id}
               style={[
