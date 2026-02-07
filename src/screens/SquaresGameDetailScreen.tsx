@@ -26,6 +26,8 @@ import { colors, spacing, typography, textStyles, shadows } from '../styles';
 import { formatCurrency, formatDateTime } from '../utils/formatting';
 import { showAlert } from '../components/ui/CustomAlert';
 import { SquaresGameService } from '../services/squaresGameService';
+import { SquaresInviteModal } from '../components/ui/SquaresInviteModal';
+import { Ionicons } from '@expo/vector-icons';
 
 const client = generateClient<Schema>();
 
@@ -41,6 +43,7 @@ export const SquaresGameDetailScreen = ({ route, navigation }: any) => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [purchaseModalVisible, setPurchaseModalVisible] = useState(false);
+  const [inviteModalVisible, setInviteModalVisible] = useState(false);
 
   // Load game data
   const loadGameData = useCallback(async () => {
@@ -223,6 +226,18 @@ export const SquaresGameDetailScreen = ({ route, navigation }: any) => {
           </View>
         </View>
 
+        {/* Invite Friends Button - Creator only, while game is still open */}
+        {editable && game.creatorId === user?.userId && (
+          <TouchableOpacity
+            style={styles.inviteButton}
+            onPress={() => setInviteModalVisible(true)}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="person-add-outline" size={18} color={colors.primary} />
+            <Text style={styles.inviteButtonText}>Invite Friends</Text>
+          </TouchableOpacity>
+        )}
+
         {/* Period Results - Consolidated view of prizes, scores, and winners */}
         <PeriodResultsCard
           game={game}
@@ -313,6 +328,16 @@ export const SquaresGameDetailScreen = ({ route, navigation }: any) => {
         selectedSquares={selectedSquares}
         onConfirmPurchase={handleConfirmPurchase}
         userDisplayName={user?.displayName || user?.username}
+      />
+
+      {/* Invite Friends Modal */}
+      <SquaresInviteModal
+        visible={inviteModalVisible}
+        onClose={() => setInviteModalVisible(false)}
+        game={game}
+        onInvitesSent={(count) => {
+          console.log(`Sent ${count} squares invitations`);
+        }}
       />
     </SafeAreaView>
   );
@@ -512,5 +537,22 @@ const styles = StyleSheet.create({
     ...textStyles.caption,
     color: colors.textMuted,
     textAlign: 'center',
+  },
+  inviteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: spacing.radius.md,
+    padding: spacing.sm,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.primary,
+  },
+  inviteButtonText: {
+    ...textStyles.button,
+    color: colors.primary,
+    fontWeight: typography.fontWeight.semibold,
+    marginLeft: spacing.xs,
   },
 });
