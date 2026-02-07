@@ -60,6 +60,7 @@ interface BetDataContextValue {
   acceptBetInvitation: (invitation: BetInvitation, selectedSide: string) => Promise<boolean>;
   declineBetInvitation: (invitation: BetInvitation) => Promise<void>;
   declineSquaresInvitation: (invitation: SquaresInvitation) => Promise<void>;
+  dismissSquaresInvitationByGame: (squaresGameId: string) => void;
 }
 
 const BetDataContext = createContext<BetDataContextValue | null>(null);
@@ -1060,6 +1061,18 @@ export const BetDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   }, [user?.userId]);
 
+  const dismissSquaresInvitationByGameAction = useCallback((squaresGameId: string) => {
+    setSquaresInvitationsMap(prev => {
+      const updated = new Map(prev);
+      for (const [id, inv] of updated) {
+        if (inv.squaresGameId === squaresGameId) {
+          updated.delete(id);
+        }
+      }
+      return updated;
+    });
+  }, []);
+
   // ─── Context value ───────────────────────────────────────────────────────
 
   const value = useMemo<BetDataContextValue>(() => ({
@@ -1078,6 +1091,7 @@ export const BetDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
     acceptBetInvitation: acceptBetInvitationAction,
     declineBetInvitation: declineBetInvitationAction,
     declineSquaresInvitation: declineSquaresInvitationAction,
+    dismissSquaresInvitationByGame: dismissSquaresInvitationByGameAction,
   }), [
     myBets,
     joinableBets,
@@ -1094,6 +1108,7 @@ export const BetDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
     acceptBetInvitationAction,
     declineBetInvitationAction,
     declineSquaresInvitationAction,
+    dismissSquaresInvitationByGameAction,
   ]);
 
   return (
