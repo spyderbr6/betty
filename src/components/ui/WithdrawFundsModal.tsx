@@ -453,7 +453,7 @@ export const WithdrawFundsModal: React.FC<WithdrawFundsModalProps> = ({
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
-      <SafeAreaView style={styles.container} edges={['top']}>
+      <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
         <KeyboardAvoidingView
           style={styles.content}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -462,7 +462,7 @@ export const WithdrawFundsModal: React.FC<WithdrawFundsModalProps> = ({
 
           {/* Step Indicator */}
           <View style={styles.stepIndicator}>
-            <View style={styles.stepDot} />
+            <View style={[styles.stepDot, styles.stepDotActive]} />
             <View style={[styles.stepDot, (step === 'enter_amount' || step === 'confirmation') && styles.stepDotActive]} />
             <View style={[styles.stepDot, step === 'confirmation' && styles.stepDotActive]} />
           </View>
