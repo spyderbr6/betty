@@ -19,6 +19,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
 import { useAuth } from '../contexts/AuthContext';
+import { useBetData } from '../contexts/BetDataContext';
 import { SquaresGrid } from '../components/betting/SquaresGrid';
 import { PeriodResultsCard } from '../components/betting/PeriodResultsCard';
 import { PurchaseSquaresModal } from '../components/modals/PurchaseSquaresModal';
@@ -34,6 +35,7 @@ const client = generateClient<Schema>();
 export const SquaresGameDetailScreen = ({ route, navigation }: any) => {
   const { gameId } = route.params; // Changed from squaresGameId to match navigation
   const { user } = useAuth();
+  const { dismissSquaresInvitationByGame } = useBetData();
 
   const [game, setGame] = useState<any>(null);
   const [event, setEvent] = useState<any>(null);
@@ -134,6 +136,9 @@ export const SquaresGameDetailScreen = ({ route, navigation }: any) => {
         'Purchase Successful',
         `Successfully purchased ${selectedSquares.length} square${selectedSquares.length > 1 ? 's' : ''} for ${ownerName}!`
       );
+
+      // Remove invitation card immediately (service already auto-accepted in DB)
+      dismissSquaresInvitationByGame(game.id);
 
       // Refresh data
       loadGameData();
