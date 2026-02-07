@@ -1,11 +1,13 @@
 import React, { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react';
 import { AppState } from 'react-native';
-import { fetchAuthSession, getCurrentUser, signOut as amplifySignOut } from 'aws-amplify/auth';
+import { fetchAuthSession, getCurrentUser, fetchUserAttributes, signOut as amplifySignOut } from 'aws-amplify/auth';
 import { Hub } from 'aws-amplify/utils';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
 import { NotificationService } from '../services/notificationService';
+import { NotificationPreferencesService } from '../services/notificationPreferencesService';
 import { initializePushNotifications, addNotificationResponseListener, removeNotificationResponseListener } from '../services/pushNotificationConfig';
+import { CURRENT_TOS_VERSION, CURRENT_PRIVACY_VERSION } from '../constants/policies';
 import type { Subscription } from 'expo-notifications';
 
 const client = generateClient<Schema>();
@@ -75,14 +77,61 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const currentUser = await getCurrentUser();
 
       // Fetch user data from database to get role and onboarding status
-      const { data: userData } = await client.models.User.get({ id: currentUser.userId });
+      let { data: userData } = await client.models.User.get({ id: currentUser.userId });
+
+      // Create User record if it doesn't exist (first login after signup)
+      if (!userData) {
+        console.log('[AuthContext] No User record found, creating one for:', currentUser.userId);
+
+        // Fetch Cognito attributes for display name and email
+        let displayNameFromCognito = '';
+        let realEmail = currentUser.username;
+        try {
+          const userAttributes = await fetchUserAttributes();
+          displayNameFromCognito = userAttributes.name || '';
+          realEmail = userAttributes.email || currentUser.username;
+        } catch (attrError) {
+          console.warn('[AuthContext] Could not fetch Cognito user attributes:', attrError);
+        }
+
+        const currentTime = new Date().toISOString();
+        const createResult = await client.models.User.create({
+          id: currentUser.userId,
+          username: currentUser.username,
+          email: realEmail,
+          displayName: displayNameFromCognito || undefined,
+          balance: 0,
+          trustScore: 5.0,
+          totalBets: 0,
+          totalWinnings: 0,
+          winRate: 0,
+          tosAccepted: true,
+          tosAcceptedAt: currentTime,
+          tosVersion: CURRENT_TOS_VERSION,
+          privacyPolicyAccepted: true,
+          privacyPolicyAcceptedAt: currentTime,
+          privacyPolicyVersion: CURRENT_PRIVACY_VERSION,
+        });
+
+        if (createResult.data) {
+          userData = createResult.data;
+          console.log('[AuthContext] User record created successfully');
+
+          // Create default notification preferences for new user
+          try {
+            await NotificationPreferencesService.createDefaultPreferences(createResult.data.id!);
+          } catch (prefError) {
+            console.warn('[AuthContext] Failed to create notification preferences:', prefError);
+          }
+        }
+      }
 
       if (isMountedRef.current) {
         const newUser = {
           userId: currentUser.userId,
           username: currentUser.username,
           displayName: userData?.displayName ?? undefined,
-          role: (userData?.role as UserRole) || 'USER', // Default to USER if role not set
+          role: (userData?.role as UserRole) || 'USER',
           onboardingCompleted: userData?.onboardingCompleted ?? false,
           onboardingStep: userData?.onboardingStep ?? 0,
           profilePictureUrl: userData?.profilePictureUrl ?? undefined,
