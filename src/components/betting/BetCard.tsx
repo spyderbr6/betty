@@ -98,9 +98,29 @@ export const BetCard: React.FC<BetCardProps> = ({
   const [selectedSide, setSelectedSide] = useState<'A' | 'B' | null>(null);
   // Derive user participation from denormalized participantUserIds on the bet
   const hasJoined = user ? (bet.participantUserIds || []).includes(user.userId) : false;
-  // We don't know which side without participant records, but we track it locally after join
   const [joinedSide, setJoinedSide] = useState<'A' | 'B' | null>(null);
   const [joinedAmount, setJoinedAmount] = useState(0);
+
+  // Fetch participant record to determine which side the user joined
+  useEffect(() => {
+    if (!hasJoined || joinedSide !== null || !user?.userId) return;
+
+    const fetchParticipant = async () => {
+      try {
+        const { data: participants } = await client.models.Participant.list({
+          filter: { betId: { eq: bet.id }, userId: { eq: user.userId } }
+        });
+        if (participants && participants.length > 0) {
+          setJoinedSide(participants[0].side as 'A' | 'B');
+          setJoinedAmount(participants[0].amount || 0);
+        }
+      } catch (error) {
+        console.warn('Failed to fetch participant side:', error);
+      }
+    };
+
+    fetchParticipant();
+  }, [hasJoined, joinedSide, user?.userId, bet.id]);
 
   const userParticipation = {
     hasJoined: hasJoined || joinedSide !== null,

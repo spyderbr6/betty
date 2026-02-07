@@ -11,7 +11,7 @@ import React, { createContext, useContext, useState, useEffect, useMemo, useCall
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
 import { useAuth } from './AuthContext';
-import { Bet, BetInvitation, BetInvitationStatus } from '../types/betting';
+import { Bet, BetInvitation, BetInvitationStatus, SquaresInvitation } from '../types/betting';
 import { NotificationService } from '../services/notificationService';
 import { TransactionService } from '../services/transactionService';
 import { showAlert } from '../components/ui/CustomAlert';
@@ -48,6 +48,7 @@ interface BetDataContextValue {
 
   // Invitations
   betInvitations: BetInvitation[];
+  squaresInvitations: SquaresInvitation[];
 
   // Loading state
   isInitialLoading: boolean;
@@ -134,6 +135,7 @@ export const BetDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [allSquaresGames, setAllSquaresGames] = useState<Map<string, SquaresGame>>(new Map());
   const [myPurchasedSquaresGameIds, setMyPurchasedSquaresGameIds] = useState<Set<string>>(new Set());
   const [invitedSquaresGameIds, setInvitedSquaresGameIds] = useState<Set<string>>(new Set());
+  const [squaresInvitationsMap, setSquaresInvitationsMap] = useState<Map<string, SquaresInvitation>>(new Map());
   const [invitedBetIds, setInvitedBetIds] = useState<Set<string>>(new Set());
   const [betInvitationsMap, setBetInvitationsMap] = useState<Map<string, BetInvitation>>(new Map());
   const [friendIds, setFriendIds] = useState<Set<string>>(new Set());
@@ -166,7 +168,13 @@ export const BetDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
       ] = await Promise.all([
         client.models.Bet.betsByStatus({ status: 'ACTIVE' as any }, { limit: 200 }),
         client.models.Bet.betsByStatus({ status: 'PENDING_RESOLUTION' as any }, { limit: 200 }),
-        client.models.SquaresGame.list({ filter: { or: [{ status: { eq: 'ACTIVE' } }, { status: { eq: 'LOCKED' } }, { status: { eq: 'LIVE' } }] } }),
+        Promise.all([
+          client.models.SquaresGame.squaresGamesByStatus({ status: 'ACTIVE' as any }, { limit: 200 }),
+          client.models.SquaresGame.squaresGamesByStatus({ status: 'LOCKED' as any }, { limit: 200 }),
+          client.models.SquaresGame.squaresGamesByStatus({ status: 'LIVE' as any }, { limit: 200 }),
+        ]).then(([active, locked, live]) => ({
+          data: [...(active.data || []), ...(locked.data || []), ...(live.data || [])],
+        })),
         client.models.SquaresPurchase.list({ filter: { userId: { eq: user.userId } } }),
         client.models.SquaresInvitation.list({ filter: { toUserId: { eq: user.userId }, status: { eq: 'PENDING' } } }),
         client.models.BetInvitation.list({ filter: { toUserId: { eq: user.userId }, status: { eq: 'PENDING' } } }),
@@ -197,9 +205,59 @@ export const BetDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
       setMyPurchasedSquaresGameIds(
         new Set((myPurchasesResult.data || []).map(p => p.squaresGameId).filter(Boolean) as string[])
       );
-      setInvitedSquaresGameIds(
-        new Set((mySquaresInvitationsResult.data || []).map(inv => inv.squaresGameId).filter(Boolean) as string[])
-      );
+
+      // Build squares invitations with enriched data
+      const sqInvitations = mySquaresInvitationsResult.data || [];
+      const sqInvGameIds = new Set<string>();
+      const sqInvMap = new Map<string, SquaresInvitation>();
+
+      await Promise.all(sqInvitations.map(async (inv: any) => {
+        try {
+          if (!inv.squaresGameId) return;
+          sqInvGameIds.add(inv.squaresGameId);
+
+          const [gameResult, fromUserResult] = await Promise.all([
+            client.models.SquaresGame.get({ id: inv.squaresGameId }),
+            client.models.User.get({ id: inv.fromUserId }),
+          ]);
+
+          if (!gameResult.data || !fromUserResult.data) return;
+
+          const enriched: SquaresInvitation = {
+            id: inv.id!,
+            squaresGameId: inv.squaresGameId,
+            fromUserId: inv.fromUserId!,
+            toUserId: inv.toUserId!,
+            status: inv.status || 'PENDING',
+            message: inv.message || undefined,
+            createdAt: inv.createdAt || new Date().toISOString(),
+            updatedAt: inv.updatedAt || new Date().toISOString(),
+            expiresAt: inv.expiresAt || undefined,
+            squaresGame: transformSquaresGame(gameResult.data),
+            fromUser: {
+              id: fromUserResult.data.id!,
+              username: fromUserResult.data.username!,
+              email: fromUserResult.data.email!,
+              displayName: fromUserResult.data.displayName || undefined,
+              profilePictureUrl: fromUserResult.data.profilePictureUrl || undefined,
+              balance: fromUserResult.data.balance || 0,
+              trustScore: fromUserResult.data.trustScore || 5.0,
+              totalBets: fromUserResult.data.totalBets || 0,
+              totalWinnings: fromUserResult.data.totalWinnings || 0,
+              winRate: fromUserResult.data.winRate || 0,
+              createdAt: fromUserResult.data.createdAt || new Date().toISOString(),
+              updatedAt: fromUserResult.data.updatedAt || new Date().toISOString(),
+            },
+          };
+
+          sqInvMap.set(enriched.id, enriched);
+        } catch (error) {
+          console.error('Error enriching squares invitation:', error);
+        }
+      }));
+
+      setInvitedSquaresGameIds(sqInvGameIds);
+      setSquaresInvitationsMap(sqInvMap);
 
       // Build bet invitations with enriched data
       const betInvitations = myBetInvitationsResult.data || [];
@@ -290,6 +348,7 @@ export const BetDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
       setAllSquaresGames(new Map());
       setMyPurchasedSquaresGameIds(new Set());
       setInvitedSquaresGameIds(new Set());
+      setSquaresInvitationsMap(new Map());
       setInvitedBetIds(new Set());
       setBetInvitationsMap(new Map());
       setFriendIds(new Set());
@@ -526,13 +585,58 @@ export const BetDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
     // 11. SquaresInvitation.onCreate — invitation for current user
     subscriptions.push(
       client.models.SquaresInvitation.onCreate().subscribe({
-        next: (rawInv) => {
+        next: async (rawInv) => {
           if (rawInv.toUserId === user.userId && rawInv.status === 'PENDING' && rawInv.squaresGameId) {
             setInvitedSquaresGameIds(prev => {
               const updated = new Set(prev);
               updated.add(rawInv.squaresGameId!);
               return updated;
             });
+
+            // Enrich and add to invitations map
+            try {
+              const [gameResult, fromUserResult] = await Promise.all([
+                client.models.SquaresGame.get({ id: rawInv.squaresGameId }),
+                client.models.User.get({ id: rawInv.fromUserId }),
+              ]);
+
+              if (gameResult.data && fromUserResult.data) {
+                const enriched: SquaresInvitation = {
+                  id: rawInv.id!,
+                  squaresGameId: rawInv.squaresGameId!,
+                  fromUserId: rawInv.fromUserId!,
+                  toUserId: rawInv.toUserId!,
+                  status: rawInv.status || 'PENDING',
+                  message: rawInv.message || undefined,
+                  createdAt: rawInv.createdAt || new Date().toISOString(),
+                  updatedAt: rawInv.updatedAt || new Date().toISOString(),
+                  expiresAt: rawInv.expiresAt || undefined,
+                  squaresGame: transformSquaresGame(gameResult.data),
+                  fromUser: {
+                    id: fromUserResult.data.id!,
+                    username: fromUserResult.data.username!,
+                    email: fromUserResult.data.email!,
+                    displayName: fromUserResult.data.displayName || undefined,
+                    profilePictureUrl: fromUserResult.data.profilePictureUrl || undefined,
+                    balance: fromUserResult.data.balance || 0,
+                    trustScore: fromUserResult.data.trustScore || 5.0,
+                    totalBets: fromUserResult.data.totalBets || 0,
+                    totalWinnings: fromUserResult.data.totalWinnings || 0,
+                    winRate: fromUserResult.data.winRate || 0,
+                    createdAt: fromUserResult.data.createdAt || new Date().toISOString(),
+                    updatedAt: fromUserResult.data.updatedAt || new Date().toISOString(),
+                  },
+                };
+
+                setSquaresInvitationsMap(prev => {
+                  const updated = new Map(prev);
+                  updated.set(enriched.id, enriched);
+                  return updated;
+                });
+              }
+            } catch (error) {
+              console.error('Error enriching squares invitation:', error);
+            }
           }
         },
         error: (err) => console.error('SquaresInvitation.onCreate subscription error:', err),
@@ -611,6 +715,12 @@ export const BetDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return invitations
       .sort((a: BetInvitation, b: BetInvitation) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [betInvitationsMap]);
+
+  const squaresInvitations = useMemo((): SquaresInvitation[] => {
+    const invitations: SquaresInvitation[] = Array.from(squaresInvitationsMap.values());
+    return invitations
+      .sort((a: SquaresInvitation, b: SquaresInvitation) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }, [squaresInvitationsMap]);
 
   // ─── Actions ─────────────────────────────────────────────────────────────
 
@@ -916,6 +1026,7 @@ export const BetDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
     joinableSquaresGames,
     joinableFriendsSquaresGames,
     betInvitations,
+    squaresInvitations,
     isInitialLoading,
     isRefreshing,
     refresh,
@@ -930,6 +1041,7 @@ export const BetDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
     joinableSquaresGames,
     joinableFriendsSquaresGames,
     betInvitations,
+    squaresInvitations,
     isInitialLoading,
     isRefreshing,
     refresh,
