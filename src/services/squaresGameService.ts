@@ -230,6 +230,26 @@ export class SquaresGameService {
         actionData: { squaresGameId },
       });
 
+      // Auto-accept any pending invitation for this user/game
+      try {
+        const { data: pendingInvitations } = await client.models.SquaresInvitation.squaresInvitationsByGame({
+          squaresGameId,
+        });
+        const myInvitation = (pendingInvitations || []).find(
+          inv => inv.toUserId === userId && inv.status === 'PENDING'
+        );
+        if (myInvitation) {
+          await client.models.SquaresInvitation.update({
+            id: myInvitation.id,
+            status: 'ACCEPTED',
+            updatedAt: new Date().toISOString(),
+          });
+          console.log('[SquaresGame] Auto-accepted invitation', myInvitation.id);
+        }
+      } catch (invError) {
+        console.warn('[SquaresGame] Failed to auto-accept invitation:', invError);
+      }
+
       // Check if grid is now full (100 squares)
       if (newSquaresSold >= 100) {
         await this.lockGridAndAssignNumbers(squaresGameId);

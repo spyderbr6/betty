@@ -59,6 +59,7 @@ interface BetDataContextValue {
   joinBet: (bet: Bet, side: 'A' | 'B', amount: number) => Promise<boolean>;
   acceptBetInvitation: (invitation: BetInvitation, selectedSide: string) => Promise<boolean>;
   declineBetInvitation: (invitation: BetInvitation) => Promise<void>;
+  declineSquaresInvitation: (invitation: SquaresInvitation) => Promise<void>;
 }
 
 const BetDataContext = createContext<BetDataContextValue | null>(null);
@@ -1016,6 +1017,49 @@ export const BetDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   }, [user?.userId]);
 
+  const declineSquaresInvitationAction = useCallback(async (invitation: SquaresInvitation): Promise<void> => {
+    if (!user?.userId) return;
+
+    try {
+      await client.models.SquaresInvitation.update({
+        id: invitation.id,
+        status: 'DECLINED',
+        updatedAt: new Date().toISOString(),
+      });
+
+      // Notify the inviter
+      try {
+        const { data: declinerData } = await client.models.User.get({ id: user.userId });
+        if (declinerData && invitation.fromUserId !== user.userId) {
+          await NotificationService.createNotification({
+            userId: invitation.fromUserId,
+            type: 'SQUARES_INVITATION_DECLINED',
+            title: 'Squares Invitation Declined',
+            message: `${declinerData.displayName || declinerData.username} declined your squares game invitation`,
+            priority: 'LOW',
+            actionData: { squaresGameId: invitation.squaresGameId },
+            relatedUserId: user.userId,
+            sendPush: false,
+          });
+        }
+      } catch (notificationError) {
+        console.warn('Failed to send squares invitation declined notification:', notificationError);
+      }
+
+      // Remove from local state
+      setSquaresInvitationsMap(prev => {
+        const updated = new Map(prev);
+        updated.delete(invitation.id);
+        return updated;
+      });
+
+      showAlert('Declined', 'Squares invitation declined.');
+    } catch (error) {
+      console.error('Error declining squares invitation:', error);
+      showAlert('Error', 'Failed to decline invitation. Please try again.');
+    }
+  }, [user?.userId]);
+
   // ─── Context value ───────────────────────────────────────────────────────
 
   const value = useMemo<BetDataContextValue>(() => ({
@@ -1033,6 +1077,7 @@ export const BetDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
     joinBet,
     acceptBetInvitation: acceptBetInvitationAction,
     declineBetInvitation: declineBetInvitationAction,
+    declineSquaresInvitation: declineSquaresInvitationAction,
   }), [
     myBets,
     joinableBets,
@@ -1048,6 +1093,7 @@ export const BetDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
     joinBet,
     acceptBetInvitationAction,
     declineBetInvitationAction,
+    declineSquaresInvitationAction,
   ]);
 
   return (
