@@ -390,7 +390,7 @@ export const AddFundsModal: React.FC<AddFundsModalProps> = ({
       <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
         <KeyboardAvoidingView
           style={styles.content}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
           <ModalHeader title="Add Funds" onClose={onClose} />
 
@@ -444,7 +444,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   stepContentContainer: {
-    padding: spacing.lg,
+    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.xl,
   },
   sectionTitle: {
     ...textStyles.label,
