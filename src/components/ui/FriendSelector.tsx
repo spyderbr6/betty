@@ -125,17 +125,20 @@ export const FriendSelector: React.FC<FriendSelectorProps> = ({
 
 const styles = StyleSheet.create({
   section: {
-    marginBottom: spacing.lg,
+    padding: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
   },
   sectionTitle: {
-    ...textStyles.label,
-    color: colors.textSecondary,
-    marginBottom: spacing.xs / 2,
+    ...textStyles.h3,
+    color: colors.textPrimary,
+    marginBottom: spacing.xs,
+    fontWeight: typography.fontWeight.bold,
   },
   sectionSubtitle: {
     ...textStyles.caption,
     color: colors.textMuted,
-    marginBottom: spacing.sm,
+    marginBottom: spacing.md,
   },
   friendsScroll: {
     marginTop: spacing.md,
