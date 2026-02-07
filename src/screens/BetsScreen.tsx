@@ -24,7 +24,7 @@ import { Header } from '../components/ui/Header';
 import { BetCard } from '../components/betting/BetCard';
 import { SquaresGameCard } from '../components/betting/SquaresGameCard';
 import { BetInviteModal } from '../components/ui/BetInviteModal';
-import { Bet, BetInvitation, BetInvitationStatus } from '../types/betting';
+import { Bet, BetInvitation } from '../types/betting';
 import { BetsStackParamList } from '../types/navigation';
 import { useAuth } from '../contexts/AuthContext';
 import { useBetData } from '../contexts/BetDataContext';
@@ -48,7 +48,6 @@ export const BetsScreen: React.FC = () => {
     isInitialLoading: isLoading,
     isRefreshing: refreshing,
     refresh,
-    joinBet,
     acceptBetInvitation: contextAcceptInvitation,
     declineBetInvitation: contextDeclineInvitation,
   } = useBetData();

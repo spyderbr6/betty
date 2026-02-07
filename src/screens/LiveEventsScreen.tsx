@@ -16,8 +16,6 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { generateClient } from 'aws-amplify/data';
-import type { Schema } from '../../amplify/data/resource';
 import { colors, commonStyles, textStyles, spacing, typography } from '../styles';
 import { Header } from '../components/ui/Header';
 import { BetCard } from '../components/betting/BetCard';
@@ -34,8 +32,20 @@ import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { BetsStackParamList } from '../types/navigation';
 
-// Initialize GraphQL client
-const client = generateClient<Schema>();
+interface SquaresGame {
+  id: string;
+  creatorId: string;
+  eventId: string;
+  title: string;
+  description?: string;
+  status: string;
+  pricePerSquare: number;
+  totalPot: number;
+  squaresSold: number;
+  numbersAssigned: boolean;
+  isPrivate?: boolean;
+  createdAt: string;
+}
 
 // Mock data removed — data now comes from BetDataContext
 
@@ -51,7 +61,6 @@ export const LiveEventsScreen: React.FC = () => {
     isInitialLoading,
     isRefreshing,
     refresh,
-    joinBet,
   } = useBetData();
   const navigation = useNavigation<BetsScreenNavigationProp>();
   const insets = useSafeAreaInsets();

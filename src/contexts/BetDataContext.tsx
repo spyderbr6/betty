@@ -11,7 +11,7 @@ import React, { createContext, useContext, useState, useEffect, useMemo, useCall
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
 import { useAuth } from './AuthContext';
-import { Bet, BetInvitation, BetInvitationStatus, User, ParticipantStatus } from '../types/betting';
+import { Bet, BetInvitation, BetInvitationStatus } from '../types/betting';
 import { NotificationService } from '../services/notificationService';
 import { TransactionService } from '../services/transactionService';
 import { showAlert } from '../components/ui/CustomAlert';
@@ -546,65 +546,70 @@ export const BetDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   // ─── Derived state (useMemo) ─────────────────────────────────────────────
 
-  const myBets = useMemo(() => {
+  const myBets = useMemo((): Bet[] => {
     if (!user?.userId) return [];
-    return Array.from(allBets.values())
-      .filter(bet => {
+    const bets: Bet[] = Array.from(allBets.values());
+    return bets
+      .filter((bet: Bet) => {
         const isCreator = bet.creatorId === user.userId;
         const isParticipant = (bet.participantUserIds || []).includes(user.userId);
         return isCreator || isParticipant;
       })
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      .sort((a: Bet, b: Bet) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [allBets, user?.userId]);
 
-  const joinableBets = useMemo(() => {
+  const joinableBets = useMemo((): Bet[] => {
     if (!user?.userId) return [];
-    return Array.from(allBets.values())
-      .filter(bet => {
+    const bets: Bet[] = Array.from(allBets.values());
+    return bets
+      .filter((bet: Bet) => {
         if (bet.status !== 'ACTIVE') return false;
         if (bet.creatorId === user.userId) return false;
         if ((bet.participantUserIds || []).includes(user.userId)) return false;
         if (bet.isPrivate && !invitedBetIds.has(bet.id)) return false;
         return true;
       })
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      .sort((a: Bet, b: Bet) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [allBets, user?.userId, invitedBetIds]);
 
   const joinableFriendsBets = useMemo(() => {
     return joinableBets.filter(bet => friendIds.has(bet.creatorId));
   }, [joinableBets, friendIds]);
 
-  const mySquaresGames = useMemo(() => {
+  const mySquaresGames = useMemo((): SquaresGame[] => {
     if (!user?.userId) return [];
-    return Array.from(allSquaresGames.values())
-      .filter(game => {
+    const games: SquaresGame[] = Array.from(allSquaresGames.values());
+    return games
+      .filter((game: SquaresGame) => {
         const isCreator = game.creatorId === user.userId;
         const hasPurchased = myPurchasedSquaresGameIds.has(game.id);
         return isCreator || hasPurchased;
       })
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      .sort((a: SquaresGame, b: SquaresGame) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [allSquaresGames, user?.userId, myPurchasedSquaresGameIds]);
 
-  const joinableSquaresGames = useMemo(() => {
+  const joinableSquaresGames = useMemo((): SquaresGame[] => {
     if (!user?.userId) return [];
-    return Array.from(allSquaresGames.values())
-      .filter(game => {
+    const games: SquaresGame[] = Array.from(allSquaresGames.values());
+    return games
+      .filter((game: SquaresGame) => {
         if (game.status !== 'ACTIVE') return false;
         if (game.creatorId === user.userId) return false;
         if (myPurchasedSquaresGameIds.has(game.id)) return false;
         if (game.isPrivate && !invitedSquaresGameIds.has(game.id)) return false;
         return true;
       })
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      .sort((a: SquaresGame, b: SquaresGame) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [allSquaresGames, user?.userId, myPurchasedSquaresGameIds, invitedSquaresGameIds]);
 
   const joinableFriendsSquaresGames = useMemo(() => {
     return joinableSquaresGames.filter(game => friendIds.has(game.creatorId));
   }, [joinableSquaresGames, friendIds]);
 
-  const betInvitations = useMemo(() => {
-    return Array.from(betInvitationsMap.values())
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const betInvitations = useMemo((): BetInvitation[] => {
+    const invitations: BetInvitation[] = Array.from(betInvitationsMap.values());
+    return invitations
+      .sort((a: BetInvitation, b: BetInvitation) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [betInvitationsMap]);
 
   // ─── Actions ─────────────────────────────────────────────────────────────
