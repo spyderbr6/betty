@@ -386,7 +386,7 @@ export const CreateBetScreen: React.FC = () => {
         sideBName: sideBName.trim(),
       });
 
-      // Create bet via GraphQL API
+      // Create bet via GraphQL API with denormalized participant data
       const result = await client.models.Bet.create({
         title: betTitle.trim(),
         description: betDescription.trim(),
@@ -398,6 +398,9 @@ export const CreateBetScreen: React.FC = () => {
         odds: oddsObject,
         deadline: deadlineDate.toISOString(),
         isPrivate: isPrivate, // Pass the private bet setting
+        sideACount: selectedSide === 'A' ? 1 : 0,
+        sideBCount: selectedSide === 'B' ? 1 : 0,
+        participantUserIds: [user.userId],
       });
 
       console.log('GraphQL result:', result);

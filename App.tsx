@@ -22,6 +22,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from './src/contexts/AuthContext';
 import { NotificationProvider } from './src/contexts/NotificationContext';
 import { EventCheckInProvider } from './src/contexts/EventCheckInContext';
+import { BetDataProvider } from './src/contexts/BetDataContext';
 import { Login } from './src/components/Login';
 import { SignUp } from './src/components/SignUp';
 import { AppNavigator } from './src/navigation/AppNavigator';
@@ -95,6 +96,7 @@ export default function App() {
     <SafeAreaProvider>
       <AuthProvider>
         <NotificationProvider>
+          <BetDataProvider>
           <EventCheckInProvider>
             <View style={styles.container}>
               <MainApp />
@@ -103,6 +105,7 @@ export default function App() {
               <CustomAlertController />
             </View>
           </EventCheckInProvider>
+          </BetDataProvider>
         </NotificationProvider>
       </AuthProvider>
     </SafeAreaProvider>

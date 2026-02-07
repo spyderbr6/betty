@@ -206,6 +206,10 @@ const schema = a.schema({
       eventId: a.id(), // Optional link to live event
       isPrivate: a.boolean().default(false), // Private bets only visible to invited users
       isTestBet: a.boolean().default(false), // Flag for admin test bets (excludes from real bet lists)
+      // Denormalized participant counts for efficient list queries (no participant fetch needed)
+      sideACount: a.integer().default(0),
+      sideBCount: a.integer().default(0),
+      participantUserIds: a.string().array(), // Array of user IDs who have joined
       createdAt: a.datetime(),
       updatedAt: a.datetime(),
       // Relations
