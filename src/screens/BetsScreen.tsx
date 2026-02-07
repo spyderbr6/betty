@@ -51,6 +51,7 @@ export const BetsScreen: React.FC = () => {
     refresh,
     acceptBetInvitation: contextAcceptInvitation,
     declineBetInvitation: contextDeclineInvitation,
+    declineSquaresInvitation: contextDeclineSquaresInvitation,
   } = useBetData();
   const [processingInvitations, setProcessingInvitations] = useState<Set<string>>(new Set());
 
@@ -94,6 +95,20 @@ export const BetsScreen: React.FC = () => {
     try {
       setProcessingInvitations(prev => new Set(prev).add(invitation.id));
       await contextDeclineInvitation(invitation);
+    } finally {
+      setProcessingInvitations(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(invitation.id);
+        return newSet;
+      });
+    }
+  };
+
+  // Handle squares invitation decline via context
+  const declineSquaresInvitation = async (invitation: SquaresInvitation) => {
+    try {
+      setProcessingInvitations(prev => new Set(prev).add(invitation.id));
+      await contextDeclineSquaresInvitation(invitation);
     } finally {
       setProcessingInvitations(prev => {
         const newSet = new Set(prev);
@@ -230,30 +245,56 @@ export const BetsScreen: React.FC = () => {
             </View>
 
             {squaresInvitations.map((invitation: SquaresInvitation) => (
-              <TouchableOpacity
-                key={invitation.id}
-                style={styles.squaresInvitationCard}
-                onPress={() => handleSquaresGamePress(invitation.squaresGameId)}
-                activeOpacity={0.8}
-              >
-                <View style={styles.squaresInvitationContent}>
-                  <View style={styles.squaresInvitationHeader}>
-                    <Ionicons name="grid-outline" size={20} color={colors.primary} />
-                    <Text style={styles.squaresInvitationTitle} numberOfLines={1}>
-                      {invitation.squaresGame?.title || 'Squares Game'}
+              <View key={invitation.id} style={styles.squaresInvitationCard}>
+                <TouchableOpacity
+                  style={styles.squaresInvitationTappable}
+                  onPress={() => handleSquaresGamePress(invitation.squaresGameId)}
+                  activeOpacity={0.8}
+                >
+                  <View style={styles.squaresInvitationContent}>
+                    <View style={styles.squaresInvitationHeader}>
+                      <Ionicons name="grid-outline" size={20} color={colors.primary} />
+                      <Text style={styles.squaresInvitationTitle} numberOfLines={1}>
+                        {invitation.squaresGame?.title || 'Squares Game'}
+                      </Text>
+                    </View>
+                    <Text style={styles.squaresInvitationFrom}>
+                      From {invitation.fromUser?.displayName || invitation.fromUser?.username || 'Unknown'}
                     </Text>
+                    {invitation.squaresGame?.pricePerSquare != null && (
+                      <Text style={styles.squaresInvitationPrice}>
+                        ${invitation.squaresGame.pricePerSquare} per square
+                      </Text>
+                    )}
                   </View>
-                  <Text style={styles.squaresInvitationFrom}>
-                    From {invitation.fromUser?.displayName || invitation.fromUser?.username || 'Unknown'}
-                  </Text>
-                  {invitation.squaresGame?.pricePerSquare != null && (
-                    <Text style={styles.squaresInvitationPrice}>
-                      ${invitation.squaresGame.pricePerSquare} per square
-                    </Text>
-                  )}
+                  <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+                </TouchableOpacity>
+                <View style={styles.squaresInvitationActions}>
+                  <TouchableOpacity
+                    style={styles.squaresDeclineButton}
+                    onPress={() => declineSquaresInvitation(invitation)}
+                    disabled={processingInvitations.has(invitation.id)}
+                    activeOpacity={0.7}
+                  >
+                    {processingInvitations.has(invitation.id) ? (
+                      <ActivityIndicator size="small" color={colors.error} />
+                    ) : (
+                      <>
+                        <Ionicons name="close" size={14} color={colors.error} />
+                        <Text style={styles.squaresDeclineText}>Decline</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.squaresViewButton}
+                    onPress={() => handleSquaresGamePress(invitation.squaresGameId)}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="eye-outline" size={14} color={colors.background} />
+                    <Text style={styles.squaresViewText}>View & Join</Text>
+                  </TouchableOpacity>
                 </View>
-                <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
-              </TouchableOpacity>
+              </View>
             ))}
           </>
         )}
@@ -1014,15 +1055,18 @@ const styles = StyleSheet.create({
 
   // Squares Invitation Card
   squaresInvitationCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
     backgroundColor: colors.surface,
     borderRadius: spacing.radius.md,
     marginHorizontal: spacing.md,
     marginBottom: spacing.sm,
-    padding: spacing.md,
     borderWidth: 2,
     borderColor: colors.primary,
+    overflow: 'hidden',
+  },
+  squaresInvitationTappable: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: spacing.md,
   },
   squaresInvitationContent: {
     flex: 1,
@@ -1048,5 +1092,40 @@ const styles = StyleSheet.create({
     ...textStyles.caption,
     color: colors.primary,
     fontWeight: typography.fontWeight.semibold,
+  },
+  squaresInvitationActions: {
+    flexDirection: 'row',
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  squaresDeclineButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.surface,
+    borderRightWidth: 1,
+    borderRightColor: colors.border,
+  },
+  squaresDeclineText: {
+    ...textStyles.button,
+    color: colors.error,
+    fontWeight: typography.fontWeight.semibold,
+    marginLeft: spacing.xs / 2,
+  },
+  squaresViewButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.primary,
+  },
+  squaresViewText: {
+    ...textStyles.button,
+    color: colors.background,
+    fontWeight: typography.fontWeight.semibold,
+    marginLeft: spacing.xs / 2,
   },
 });
