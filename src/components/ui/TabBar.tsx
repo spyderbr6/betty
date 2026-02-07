@@ -32,7 +32,7 @@ export const TabBar: React.FC<BottomTabBarProps> = ({
     myBets: 0,
     joinableBets: 0,
     pendingResolutions: 0,
-    notifications: 0,
+    friendRequests: 0,
   });
 
   // Fetch real counts for badges (including squares games)
@@ -41,11 +41,12 @@ export const TabBar: React.FC<BottomTabBarProps> = ({
       if (!user?.userId) return;
 
       try {
-        // Fetch user's active bets and squares games in parallel
+        // Fetch user's active bets, squares games, and friend requests in parallel
         const [
           { data: allBets },
           { data: allSquaresGames },
-          { data: userPurchases }
+          { data: userPurchases },
+          { data: pendingFriendRequests }
         ] = await Promise.all([
           client.models.Bet.list({
             filter: {
@@ -67,6 +68,14 @@ export const TabBar: React.FC<BottomTabBarProps> = ({
           }),
           client.models.SquaresPurchase.list({
             filter: { userId: { eq: user.userId } }
+          }),
+          client.models.FriendRequest.list({
+            filter: {
+              and: [
+                { toUserId: { eq: user.userId } },
+                { status: { eq: 'PENDING' } }
+              ]
+            }
           })
         ]);
 
@@ -114,7 +123,7 @@ export const TabBar: React.FC<BottomTabBarProps> = ({
           myBets: myBetsCount + mySquaresCount, // Include both bets and squares
           joinableBets: joinableBetsCount,
           pendingResolutions: pendingResolutionsCount,
-          notifications: 0, // TODO: Implement notifications system
+          friendRequests: pendingFriendRequests?.length || 0,
         });
       } catch (error) {
         console.error('Error fetching tab counts:', error);
@@ -160,11 +169,21 @@ export const TabBar: React.FC<BottomTabBarProps> = ({
       }
     });
 
+    const friendRequestSubscription = client.models.FriendRequest.observeQuery().subscribe({
+      next: () => {
+        fetchTabCounts();
+      },
+      error: (error) => {
+        console.error('Tab friend request subscription error:', error);
+      }
+    });
+
     return () => {
       betSubscription.unsubscribe();
       participantSubscription.unsubscribe();
       squaresGameSubscription.unsubscribe();
       squaresPurchaseSubscription.unsubscribe();
+      friendRequestSubscription.unsubscribe();
     };
   }, [user]);
 
@@ -220,7 +239,7 @@ export const TabBar: React.FC<BottomTabBarProps> = ({
       case 'Resolve':
         return tabCounts.pendingResolutions > 0 ? tabCounts.pendingResolutions : null;
       case 'Account':
-        return tabCounts.notifications > 0 ? tabCounts.notifications : null;
+        return tabCounts.friendRequests > 0 ? tabCounts.friendRequests : null;
       default:
         return null;
     }

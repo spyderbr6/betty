@@ -185,7 +185,7 @@ export const AppNavigator: React.FC = () => {
           if (navigationAction.modal === 'notifications') {
             navigationRef.current.navigate('Account' as never);
           } else if (navigationAction.modal === 'friend_requests') {
-            navigationRef.current.navigate('Account' as never);
+            navigationRef.current.navigate('Account' as never, { openFriendRequests: true } as never);
           } else if (navigationAction.modal === 'bet_details') {
             navigationRef.current.navigate('Resolve' as never);
           }
