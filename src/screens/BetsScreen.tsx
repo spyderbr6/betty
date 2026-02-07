@@ -24,7 +24,7 @@ import { Header } from '../components/ui/Header';
 import { BetCard } from '../components/betting/BetCard';
 import { SquaresGameCard } from '../components/betting/SquaresGameCard';
 import { BetInviteModal } from '../components/ui/BetInviteModal';
-import { Bet, BetInvitation } from '../types/betting';
+import { Bet, BetInvitation, SquaresInvitation } from '../types/betting';
 import { BetsStackParamList } from '../types/navigation';
 import { useAuth } from '../contexts/AuthContext';
 import { useBetData } from '../contexts/BetDataContext';
@@ -45,6 +45,7 @@ export const BetsScreen: React.FC = () => {
     myBets,
     mySquaresGames: squaresGames,
     betInvitations,
+    squaresInvitations,
     isInitialLoading: isLoading,
     isRefreshing: refreshing,
     refresh,
@@ -214,6 +215,45 @@ export const BetsScreen: React.FC = () => {
                 onDecline={() => declineBetInvitation(invitation)}
                 isProcessing={processingInvitations.has(invitation.id)}
               />
+            ))}
+          </>
+        )}
+
+        {/* Squares Invitations Section */}
+        {squaresInvitations.length > 0 && (
+          <>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>SQUARES INVITATIONS</Text>
+              <View style={styles.invitationBadge}>
+                <Text style={styles.invitationBadgeText}>{squaresInvitations.length}</Text>
+              </View>
+            </View>
+
+            {squaresInvitations.map((invitation: SquaresInvitation) => (
+              <TouchableOpacity
+                key={invitation.id}
+                style={styles.squaresInvitationCard}
+                onPress={() => handleSquaresGamePress(invitation.squaresGameId)}
+                activeOpacity={0.8}
+              >
+                <View style={styles.squaresInvitationContent}>
+                  <View style={styles.squaresInvitationHeader}>
+                    <Ionicons name="grid-outline" size={20} color={colors.primary} />
+                    <Text style={styles.squaresInvitationTitle} numberOfLines={1}>
+                      {invitation.squaresGame?.title || 'Squares Game'}
+                    </Text>
+                  </View>
+                  <Text style={styles.squaresInvitationFrom}>
+                    From {invitation.fromUser?.displayName || invitation.fromUser?.username || 'Unknown'}
+                  </Text>
+                  {invitation.squaresGame?.pricePerSquare != null && (
+                    <Text style={styles.squaresInvitationPrice}>
+                      ${invitation.squaresGame.pricePerSquare} per square
+                    </Text>
+                  )}
+                </View>
+                <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+              </TouchableOpacity>
             ))}
           </>
         )}
@@ -970,5 +1010,43 @@ const styles = StyleSheet.create({
     marginLeft: spacing.xs,
     fontWeight: typography.fontWeight.medium,
     textAlign: 'center',
+  },
+
+  // Squares Invitation Card
+  squaresInvitationCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: spacing.radius.md,
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.sm,
+    padding: spacing.md,
+    borderWidth: 2,
+    borderColor: colors.primary,
+  },
+  squaresInvitationContent: {
+    flex: 1,
+  },
+  squaresInvitationHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.xs,
+  },
+  squaresInvitationTitle: {
+    ...textStyles.h4,
+    color: colors.textPrimary,
+    fontSize: typography.fontSize.base,
+    marginLeft: spacing.xs,
+    flex: 1,
+  },
+  squaresInvitationFrom: {
+    ...textStyles.bodySmall,
+    color: colors.textSecondary,
+    marginBottom: spacing.xs / 2,
+  },
+  squaresInvitationPrice: {
+    ...textStyles.caption,
+    color: colors.primary,
+    fontWeight: typography.fontWeight.semibold,
   },
 });
