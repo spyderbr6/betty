@@ -132,7 +132,6 @@ export const AccountScreen: React.FC = () => {
           updateData.displayName = displayNameFromCognito;
           updateData.displayNameLower = displayNameFromCognito.toLowerCase();
           shouldUpdate = true;
-          console.log('[AccountScreen] Fixing displayName from hash to:', displayNameFromCognito);
         }
 
         // Update user record if needed

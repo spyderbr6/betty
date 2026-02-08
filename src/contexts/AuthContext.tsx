@@ -76,21 +76,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const currentUser = await getCurrentUser();
 
-      console.log('[AuthContext] Cognito user:', {
-        userId: currentUser.userId,
-        username: currentUser.username,
-      });
-
       // Fetch user data from database to get role and onboarding status
       let { data: userData } = await client.models.User.get({ id: currentUser.userId });
-
-      console.log('[AuthContext] Raw database query result:', {
-        queryId: currentUser.userId,
-        userData_id: userData?.id,
-        userData_username: userData?.username,
-        userData_displayName: userData?.displayName,
-        userData_email: userData?.email,
-      });
 
       // Create User record if it doesn't exist (first login after signup)
       if (!userData) {
@@ -141,14 +128,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       if (isMountedRef.current) {
-        // Debug: Check what we're loading from database
-        console.log('[AuthContext] Loading user data:', {
-          currentUser_userId: currentUser.userId,
-          currentUser_username: currentUser.username,
-          userData_displayName: userData?.displayName,
-          userData_username: userData?.username,
-        });
-
         const newUser = {
           userId: currentUser.userId,
           username: currentUser.username,
@@ -158,8 +137,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           onboardingStep: userData?.onboardingStep ?? 0,
           profilePictureUrl: userData?.profilePictureUrl ?? undefined,
         };
-
-        console.log('[AuthContext] Created user object:', newUser);
         setUser(newUser);
 
         // Register push token when user is authenticated

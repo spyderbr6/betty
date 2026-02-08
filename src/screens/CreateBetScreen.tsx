@@ -361,10 +361,7 @@ export const CreateBetScreen: React.FC = () => {
     setIsCreating(true);
 
     try {
-      // Get current user
-      const user = await getCurrentUser();
-
-      // Check user balance before creating bet
+      // Check user balance before creating bet (user comes from useAuth() at top of component)
       const { data: userData } = await client.models.User.get({ id: user.userId });
       const currentBalance = userData?.balance || 0;
 
@@ -384,14 +381,6 @@ export const CreateBetScreen: React.FC = () => {
       const oddsObject = JSON.stringify({
         sideAName: sideAName.trim(),
         sideBName: sideBName.trim(),
-      });
-
-      // Debug: Check what we're storing as creatorName
-      console.log('[CreateBet] User object:', {
-        userId: user.userId,
-        username: user.username,
-        displayName: user.displayName,
-        creatorName: user.displayName || 'User'
       });
 
       // Create bet via GraphQL API with denormalized participant data
