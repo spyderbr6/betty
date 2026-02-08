@@ -51,6 +51,7 @@ export const WithdrawFundsModal: React.FC<WithdrawFundsModalProps> = ({
   const [isLoadingMethods, setIsLoadingMethods] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [step, setStep] = useState<'select_method' | 'enter_amount' | 'confirmation'>('select_method');
+  const [amountFocused, setAmountFocused] = useState(false);
 
   // Load payment methods and user balance when modal opens
   useEffect(() => {
@@ -277,17 +278,21 @@ export const WithdrawFundsModal: React.FC<WithdrawFundsModalProps> = ({
       {/* Amount Input */}
       <View style={styles.inputSection}>
         <Text style={styles.inputLabel}>Amount to Withdraw</Text>
-        <View style={styles.amountInputContainer}>
+        <View style={[styles.amountInputContainer, amountFocused && styles.amountInputContainerFocused]}>
           <Text style={styles.currencySymbol}>$</Text>
-          <TextInput
-            style={styles.amountInput}
-            placeholder="0.00"
-            placeholderTextColor={colors.textMuted}
-            keyboardType="decimal-pad"
-            value={amount}
-            onChangeText={setAmount}
-            autoFocus
-          />
+          <View style={styles.amountInputWrapper}>
+            <TextInput
+              style={styles.amountInput}
+              placeholder="0.00"
+              placeholderTextColor={colors.textMuted}
+              keyboardType="decimal-pad"
+              value={amount}
+              onChangeText={setAmount}
+              onFocus={() => setAmountFocused(true)}
+              onBlur={() => setAmountFocused(false)}
+              autoFocus
+            />
+          </View>
         </View>
         <Text style={styles.inputHint}>
           Min: {formatCurrency(MIN_WITHDRAWAL)} • Available: {formatCurrency(userBalance)}
@@ -620,10 +625,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: colors.surface,
-    borderWidth: 1,
+    borderWidth: 2,
     borderColor: colors.border,
     borderRadius: spacing.radius.md,
     paddingHorizontal: spacing.md,
+  },
+  amountInputContainerFocused: {
+    borderColor: colors.primary,
   },
   currencySymbol: {
     fontSize: typography.fontSize['2xl'],
@@ -631,8 +639,11 @@ const styles = StyleSheet.create({
     fontWeight: typography.fontWeight.bold,
     fontFamily: typography.fontFamily.bold,
   },
-  amountInput: {
+  amountInputWrapper: {
     flex: 1,
+    overflow: 'hidden',
+  },
+  amountInput: {
     fontSize: typography.fontSize['2xl'],
     color: colors.textPrimary,
     fontWeight: typography.fontWeight.bold,
