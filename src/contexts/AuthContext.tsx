@@ -183,6 +183,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const silent = options?.silent ?? false;
       const forceRefresh = options?.forceRefresh ?? false;
 
+      console.log('[AuthContext] refreshAuth called:', { silent, forceRefresh });
+
       if (!silent && isMountedRef.current) {
         setIsLoading(true);
       }
@@ -190,13 +192,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       try {
         const sessionValid = await ensureSession(forceRefresh);
         if (!sessionValid) {
+          console.log('[AuthContext] refreshAuth: Session invalid, clearing user');
           if (isMountedRef.current) {
             setUser(null);
           }
           return;
         }
 
+        console.log('[AuthContext] refreshAuth: Calling checkAuthState...');
         await checkAuthState();
+        console.log('[AuthContext] refreshAuth: checkAuthState completed');
       } catch (error) {
         console.error('Error refreshing auth state:', error);
         if (isMountedRef.current) {
