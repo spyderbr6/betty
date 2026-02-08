@@ -92,6 +92,20 @@ const transformAmplifyBet = (bet: any): Bet | null => {
     category: bet.category,
     status: bet.status,
     creatorId: bet.creatorId || '',
+    creator: bet.creator ? {
+      id: bet.creator.id!,
+      username: bet.creator.username!,
+      email: bet.creator.email!,
+      displayName: bet.creator.displayName || undefined,
+      profilePictureUrl: bet.creator.profilePictureUrl || undefined,
+      balance: bet.creator.balance || 0,
+      trustScore: bet.creator.trustScore || 5.0,
+      totalBets: bet.creator.totalBets || 0,
+      totalWinnings: bet.creator.totalWinnings || 0,
+      winRate: bet.creator.winRate || 0,
+      createdAt: bet.creator.createdAt || new Date().toISOString(),
+      updatedAt: bet.creator.updatedAt || new Date().toISOString(),
+    } : undefined,
     totalPot: bet.totalPot || 0,
     betAmount: bet.betAmount || bet.totalPot || 0,
     odds: parsedOdds,
@@ -107,6 +121,35 @@ const transformAmplifyBet = (bet: any): Bet | null => {
     updatedAt: bet.updatedAt || new Date().toISOString(),
     participants: [],
   };
+};
+
+// Helper to enrich a single bet with creator data
+const enrichBetWithCreator = async (bet: Bet): Promise<Bet> => {
+  try {
+    const { data: creator } = await client.models.User.get({ id: bet.creatorId });
+    if (creator) {
+      return {
+        ...bet,
+        creator: {
+          id: creator.id!,
+          username: creator.username!,
+          email: creator.email!,
+          displayName: creator.displayName || undefined,
+          profilePictureUrl: creator.profilePictureUrl || undefined,
+          balance: creator.balance || 0,
+          trustScore: creator.trustScore || 5.0,
+          totalBets: creator.totalBets || 0,
+          totalWinnings: creator.totalWinnings || 0,
+          winRate: creator.winRate || 0,
+          createdAt: creator.createdAt || new Date().toISOString(),
+          updatedAt: creator.updatedAt || new Date().toISOString(),
+        },
+      };
+    }
+  } catch (error) {
+    console.error(`Error fetching creator ${bet.creatorId}:`, error);
+  }
+  return bet;
 };
 
 const transformSquaresGame = (game: any): SquaresGame | null => {
@@ -184,14 +227,58 @@ export const BetDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
         client.models.Friendship.list({ filter: { user2Id: { eq: user.userId } } }),
       ]);
 
-      // Build bets map
+      // Build bets map with creator enrichment
       const betsMap = new Map<string, Bet>();
       const allRawBets = [...(activeBetsResult.data || []), ...(pendingBetsResult.data || [])];
+
+      // Collect unique creator IDs
+      const creatorIds = new Set<string>();
+      const transformedBets: Bet[] = [];
       for (const rawBet of allRawBets) {
         // Skip test bets
         if (rawBet.isTestBet) continue;
         const bet = transformAmplifyBet(rawBet);
-        if (bet) betsMap.set(bet.id, bet);
+        if (bet) {
+          transformedBets.push(bet);
+          creatorIds.add(bet.creatorId);
+        }
+      }
+
+      // Fetch all creators in parallel
+      const creatorMap = new Map<string, any>();
+      await Promise.all(
+        Array.from(creatorIds).map(async (creatorId) => {
+          try {
+            const { data: creator } = await client.models.User.get({ id: creatorId });
+            if (creator) {
+              creatorMap.set(creatorId, {
+                id: creator.id!,
+                username: creator.username!,
+                email: creator.email!,
+                displayName: creator.displayName || undefined,
+                profilePictureUrl: creator.profilePictureUrl || undefined,
+                balance: creator.balance || 0,
+                trustScore: creator.trustScore || 5.0,
+                totalBets: creator.totalBets || 0,
+                totalWinnings: creator.totalWinnings || 0,
+                winRate: creator.winRate || 0,
+                createdAt: creator.createdAt || new Date().toISOString(),
+                updatedAt: creator.updatedAt || new Date().toISOString(),
+              });
+            }
+          } catch (error) {
+            console.error(`Error fetching creator ${creatorId}:`, error);
+          }
+        })
+      );
+
+      // Enrich bets with creator data
+      for (const bet of transformedBets) {
+        const enrichedBet = {
+          ...bet,
+          creator: creatorMap.get(bet.creatorId),
+        };
+        betsMap.set(enrichedBet.id, enrichedBet);
       }
       setAllBets(betsMap);
 
@@ -369,13 +456,15 @@ export const BetDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
     // 1. Bet.onCreate — new bet appears
     subscriptions.push(
       client.models.Bet.onCreate().subscribe({
-        next: (rawBet) => {
+        next: async (rawBet) => {
           if (rawBet.isTestBet) return;
           const bet = transformAmplifyBet(rawBet);
           if (bet && (bet.status === 'ACTIVE' || bet.status === 'PENDING_RESOLUTION')) {
+            // Enrich with creator data
+            const enrichedBet = await enrichBetWithCreator(bet);
             setAllBets(prev => {
               const updated = new Map(prev);
-              updated.set(bet.id, bet);
+              updated.set(enrichedBet.id, enrichedBet);
               return updated;
             });
           }
@@ -387,14 +476,17 @@ export const BetDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
     // 2. Bet.onUpdate — status change, counts change, pot change
     subscriptions.push(
       client.models.Bet.onUpdate().subscribe({
-        next: (rawBet) => {
+        next: async (rawBet) => {
           const bet = transformAmplifyBet(rawBet);
           if (!bet) return;
 
           setAllBets(prev => {
             const updated = new Map(prev);
             if (bet.status === 'ACTIVE' || bet.status === 'PENDING_RESOLUTION') {
-              updated.set(bet.id, bet);
+              // Preserve existing creator data if available, otherwise bet will be enriched on next load
+              const existingBet = prev.get(bet.id);
+              const updatedBet = existingBet?.creator ? { ...bet, creator: existingBet.creator } : bet;
+              updated.set(bet.id, updatedBet);
             } else {
               // Bet moved to RESOLVED/CANCELLED — remove from active tracking
               updated.delete(bet.id);
