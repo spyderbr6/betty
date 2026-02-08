@@ -65,7 +65,7 @@ export const BetList: React.FC<BetListProps> = ({
       filtered = filtered.filter(bet =>
         bet.title.toLowerCase().includes(query) ||
         bet.description.toLowerCase().includes(query) ||
-        bet.creator?.username.toLowerCase().includes(query)
+        bet.creatorName?.toLowerCase().includes(query)
       );
     }
 
