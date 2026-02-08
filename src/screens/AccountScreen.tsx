@@ -123,9 +123,16 @@ export const AccountScreen: React.FC = () => {
           shouldUpdate = true;
         }
 
-        if (!userData.displayName && displayNameFromCognito) {
+        // Fix displayName if it's missing OR if it looks like a hash (32 char UUID)
+        const isHashLike = userData.displayName &&
+                          userData.displayName.length === 32 &&
+                          /^[a-f0-9]{32}$/.test(userData.displayName.toLowerCase());
+
+        if ((!userData.displayName || isHashLike) && displayNameFromCognito) {
           updateData.displayName = displayNameFromCognito;
+          updateData.displayNameLower = displayNameFromCognito.toLowerCase();
           shouldUpdate = true;
+          console.log('[AccountScreen] Fixing displayName from hash to:', displayNameFromCognito);
         }
 
         // Update user record if needed
