@@ -76,21 +76,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const currentUser = await getCurrentUser();
 
-      console.log('[AuthContext] Cognito user:', {
-        userId: currentUser.userId,
-        username: currentUser.username,
-      });
-
       // Fetch user data from database to get role and onboarding status
       let { data: userData } = await client.models.User.get({ id: currentUser.userId });
-
-      console.log('[AuthContext] Raw database query result:', {
-        queryId: currentUser.userId,
-        userData_id: userData?.id,
-        userData_username: userData?.username,
-        userData_displayName: userData?.displayName,
-        userData_email: userData?.email,
-      });
 
       // Create User record if it doesn't exist (first login after signup)
       if (!userData) {
@@ -141,14 +128,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       if (isMountedRef.current) {
-        // Debug: Check what we're loading from database
-        console.log('[AuthContext] Loading user data:', {
-          currentUser_userId: currentUser.userId,
-          currentUser_username: currentUser.username,
-          userData_displayName: userData?.displayName,
-          userData_username: userData?.username,
-        });
-
         const newUser = {
           userId: currentUser.userId,
           username: currentUser.username,
@@ -158,8 +137,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           onboardingStep: userData?.onboardingStep ?? 0,
           profilePictureUrl: userData?.profilePictureUrl ?? undefined,
         };
-
-        console.log('[AuthContext] Created user object:', newUser);
         setUser(newUser);
 
         // Register push token when user is authenticated
@@ -183,8 +160,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const silent = options?.silent ?? false;
       const forceRefresh = options?.forceRefresh ?? false;
 
-      console.log('[AuthContext] refreshAuth called:', { silent, forceRefresh });
-
       if (!silent && isMountedRef.current) {
         setIsLoading(true);
       }
@@ -192,16 +167,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       try {
         const sessionValid = await ensureSession(forceRefresh);
         if (!sessionValid) {
-          console.log('[AuthContext] refreshAuth: Session invalid, clearing user');
           if (isMountedRef.current) {
             setUser(null);
           }
           return;
         }
 
-        console.log('[AuthContext] refreshAuth: Calling checkAuthState...');
         await checkAuthState();
-        console.log('[AuthContext] refreshAuth: checkAuthState completed');
       } catch (error) {
         console.error('Error refreshing auth state:', error);
         if (isMountedRef.current) {
@@ -286,14 +258,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.error('Error signing out:', error);
     }
   }, []);
-
-  // Debug: Log what's being provided to context consumers
-  console.log('[AuthContext] Provider rendering with user:', user ? {
-    userId: user.userId,
-    username: user.username,
-    displayName: user.displayName,
-    role: user.role,
-  } : null);
 
   return (
     <AuthContext.Provider value={{ user, isLoading, signOut, refreshAuth }}>

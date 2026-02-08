@@ -58,15 +58,6 @@ const client = generateClient<Schema>();
 
 export const CreateBetScreen: React.FC = () => {
   const { user } = useAuth();
-
-  // Debug: Log user from useAuth immediately
-  console.log('[CreateBetScreen] useAuth() returned user:', user ? {
-    userId: user.userId,
-    username: user.username,
-    displayName: user.displayName,
-    role: user.role,
-  } : null);
-
   const insets = useSafeAreaInsets();
   const { checkedInEvent } = useEventCheckIn();
   const scrollRef = React.useRef<ScrollView | null>(null);
@@ -390,14 +381,6 @@ export const CreateBetScreen: React.FC = () => {
       const oddsObject = JSON.stringify({
         sideAName: sideAName.trim(),
         sideBName: sideBName.trim(),
-      });
-
-      // Debug: Check what we're storing as creatorName
-      console.log('[CreateBet] User object:', {
-        userId: user.userId,
-        username: user.username,
-        displayName: user.displayName,
-        creatorName: user.displayName || 'User'
       });
 
       // Create bet via GraphQL API with denormalized participant data
