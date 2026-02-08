@@ -386,6 +386,14 @@ export const CreateBetScreen: React.FC = () => {
         sideBName: sideBName.trim(),
       });
 
+      // Debug: Check what we're storing as creatorName
+      console.log('[CreateBet] User object:', {
+        userId: user.userId,
+        username: user.username,
+        displayName: user.displayName,
+        creatorName: user.displayName || 'User'
+      });
+
       // Create bet via GraphQL API with denormalized participant data
       const result = await client.models.Bet.create({
         title: betTitle.trim(),
