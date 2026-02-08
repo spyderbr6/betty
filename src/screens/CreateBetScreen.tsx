@@ -370,10 +370,7 @@ export const CreateBetScreen: React.FC = () => {
     setIsCreating(true);
 
     try {
-      // Get current user
-      const user = await getCurrentUser();
-
-      // Check user balance before creating bet
+      // Check user balance before creating bet (user comes from useAuth() at top of component)
       const { data: userData } = await client.models.User.get({ id: user.userId });
       const currentBalance = userData?.balance || 0;
 
