@@ -393,6 +393,7 @@ export const CreateBetScreen: React.FC = () => {
         category: selectedCategory as Schema['Bet']['type']['category'],
         status: 'ACTIVE',
         creatorId: user.userId,
+        creatorName: user.displayName || user.username,
         totalPot: amount,
         betAmount: amount, // Store the individual bet amount for joining
         odds: oddsObject,

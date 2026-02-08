@@ -198,6 +198,7 @@ const schema = a.schema({
       category: a.enum(['SPORTS', 'ENTERTAINMENT', 'WEATHER', 'STOCKS', 'CUSTOM']),
       status: a.enum(['DRAFT', 'ACTIVE', 'LIVE', 'PENDING_RESOLUTION', 'DISPUTED', 'RESOLVED', 'CANCELLED']),
       creatorId: a.id().required(),
+      creatorName: a.string(), // Denormalized creator display name for efficient rendering
       totalPot: a.float().required(),
       betAmount: a.float(), // Individual bet amount for joining
       odds: a.json(), // Store odds as JSON object

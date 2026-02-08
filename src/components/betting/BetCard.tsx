@@ -427,7 +427,7 @@ export const BetCard: React.FC<BetCardProps> = ({
 
   // Determine if user is creator
   const isCreator = user && bet.creatorId === user.userId;
-  const creatorName = bet.creator?.displayName || bet.creator?.username || 'Unknown';
+  const creatorName = bet.creatorName || 'Unknown';
 
   // Check if bet is active
   const isActive = bet.status === 'ACTIVE';

@@ -26,7 +26,7 @@ export interface Bet {
   category: BetCategory;
   status: BetStatus;
   creatorId: string;
-  creator?: User;
+  creatorName?: string; // Denormalized creator display name
   totalPot: number;
   betAmount?: number;
   odds: BetOdds;

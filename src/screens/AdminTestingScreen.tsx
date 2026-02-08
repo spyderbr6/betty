@@ -435,6 +435,7 @@ export const AdminTestingScreen: React.FC<{ onClose: () => void }> = ({ onClose 
           category: 'CUSTOM',
           status: 'ACTIVE',
           creatorId: testUserId, // Test user is creator, not you
+          creatorName: 'Test User',
           totalPot: 0, // No one joined yet
           betAmount: 10,
           odds: JSON.stringify({
