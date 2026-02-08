@@ -245,6 +245,32 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ onClose, initialSh
       .slice(0, 2) || '??';
   };
 
+  const headerRightComponent = (
+    <View style={styles.headerIconRow}>
+      <TouchableOpacity
+        style={styles.headerIconButton}
+        onPress={handleViewRequests}
+        activeOpacity={0.7}
+      >
+        <Ionicons name="mail-outline" size={22} color={colors.primary} />
+        {pendingRequestCount > 0 && (
+          <View style={styles.headerIconBadge}>
+            <Text style={styles.headerIconBadgeText}>
+              {pendingRequestCount > 99 ? '99+' : pendingRequestCount.toString()}
+            </Text>
+          </View>
+        )}
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={styles.headerIconButton}
+        onPress={handleAddFriend}
+        activeOpacity={0.7}
+      >
+        <Ionicons name="person-add" size={20} color={colors.primary} />
+      </TouchableOpacity>
+    </View>
+  );
+
   if (isLoading) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
@@ -252,15 +278,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ onClose, initialSh
           <ModalHeader
             title="Friends"
             onClose={onClose}
-            rightComponent={
-              <TouchableOpacity
-                style={styles.addButton}
-                onPress={handleAddFriend}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="person-add" size={20} color={colors.primary} />
-              </TouchableOpacity>
-            }
+            rightComponent={headerRightComponent}
           />
         ) : (
           <Header title="Friends" />
@@ -279,15 +297,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ onClose, initialSh
         <ModalHeader
           title="Friends"
           onClose={onClose}
-          rightComponent={
-            <TouchableOpacity
-              style={styles.addButton}
-              onPress={handleAddFriend}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="person-add" size={20} color={colors.primary} />
-            </TouchableOpacity>
-          }
+          rightComponent={headerRightComponent}
         />
       ) : (
         <Header title="Friends" />
@@ -305,31 +315,6 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ onClose, initialSh
           />
         }
       >
-        {/* Friends Header */}
-        <View style={styles.headerSection}>
-          <View style={styles.headerInfo}>
-            <Text style={styles.friendsCount}>{friends.length}</Text>
-            <Text style={styles.friendsLabel}>Friends</Text>
-          </View>
-          <View style={styles.headerActions}>
-            <TouchableOpacity
-              style={styles.requestsButton}
-              onPress={handleViewRequests}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="mail-outline" size={20} color={colors.primary} />
-              <Text style={styles.requestsButtonText}>Requests</Text>
-              {pendingRequestCount > 0 && (
-                <View style={styles.requestsBadge}>
-                  <Text style={styles.requestsBadgeText}>
-                    {pendingRequestCount > 99 ? '99+' : pendingRequestCount.toString()}
-                  </Text>
-                </View>
-              )}
-            </TouchableOpacity>
-          </View>
-        </View>
-
         {/* Friends List */}
         {friends.length > 0 ? (
           <View style={styles.friendsList}>
@@ -500,72 +485,35 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 
-  // Modal Header Action Button
-  addButton: {
+  // Modal Header Action Icons
+  headerIconRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  headerIconButton: {
     padding: spacing.xs,
     marginRight: spacing.xs,
+    position: 'relative',
   },
-
-  // Header Section
-  headerSection: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.lg,
-    backgroundColor: colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  headerInfo: {
-    alignItems: 'center',
-  },
-  friendsCount: {
-    ...textStyles.h2,
-    color: colors.textPrimary,
-    fontWeight: typography.fontWeight.bold,
-  },
-  friendsLabel: {
-    ...textStyles.caption,
-    color: colors.textMuted,
-    textTransform: 'uppercase',
-  },
-  headerActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  requestsButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.primary,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    borderRadius: spacing.radius.sm,
-    marginRight: spacing.sm,
-  },
-  requestsButtonText: {
-    ...textStyles.caption,
-    color: colors.primary,
-    marginLeft: spacing.xs / 2,
-    fontWeight: typography.fontWeight.semibold,
-  },
-  requestsBadge: {
+  headerIconBadge: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
     backgroundColor: colors.error,
-    borderRadius: 10,
-    minWidth: 20,
-    height: 20,
+    borderRadius: 8,
+    minWidth: 16,
+    height: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 6,
-    marginLeft: spacing.xs,
+    paddingHorizontal: 4,
+    borderWidth: 1.5,
+    borderColor: colors.surface,
   },
-  requestsBadgeText: {
+  headerIconBadgeText: {
     color: colors.background,
-    fontSize: 11,
+    fontSize: 9,
     fontWeight: typography.fontWeight.bold,
-    lineHeight: 13,
+    lineHeight: 11,
   },
 
   // Friends List
