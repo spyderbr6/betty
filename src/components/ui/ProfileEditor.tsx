@@ -186,6 +186,15 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({
             <Text style={styles.readOnlyHelper}>Username cannot be changed</Text>
           </View>
         </View>
+
+        {/* Email Display (Read-only) */}
+        <View style={styles.inputSection}>
+          <Text style={styles.inputLabel}>Email</Text>
+          <View style={styles.readOnlyContainer}>
+            <Text style={styles.readOnlyText}>{user.email}</Text>
+            <Text style={styles.readOnlyHelper}>Email cannot be changed</Text>
+          </View>
+        </View>
       </View>
 
       {/* Action Buttons */}
