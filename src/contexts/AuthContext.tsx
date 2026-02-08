@@ -128,6 +128,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       if (isMountedRef.current) {
+        // Debug: Check what we're loading from database
+        console.log('[AuthContext] Loading user data:', {
+          currentUser_userId: currentUser.userId,
+          currentUser_username: currentUser.username,
+          userData_displayName: userData?.displayName,
+          userData_username: userData?.username,
+        });
+
         const newUser = {
           userId: currentUser.userId,
           username: currentUser.username,
@@ -137,6 +145,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           onboardingStep: userData?.onboardingStep ?? 0,
           profilePictureUrl: userData?.profilePictureUrl ?? undefined,
         };
+
+        console.log('[AuthContext] Created user object:', newUser);
         setUser(newUser);
 
         // Register push token when user is authenticated
