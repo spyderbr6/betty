@@ -282,6 +282,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
+  // Debug: Log what's being provided to context consumers
+  console.log('[AuthContext] Provider rendering with user:', user ? {
+    userId: user.userId,
+    username: user.username,
+    displayName: user.displayName,
+    role: user.role,
+  } : null);
+
   return (
     <AuthContext.Provider value={{ user, isLoading, signOut, refreshAuth }}>
       {children}
