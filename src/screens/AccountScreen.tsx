@@ -380,13 +380,20 @@ export const AccountScreen: React.FC = () => {
     try {
       setIsUpdatingProfile(true);
 
-      // Update user profile in database
-      const updatedUser = await client.models.User.update({
+      // Build update object - only include fields that are being changed
+      const updateData: any = {
         id: userProfile.id,
         displayName: profileData.displayName,
         displayNameLower: profileData.displayName ? profileData.displayName.toLowerCase() : undefined,
-        profilePictureUrl: profileData.profilePicture,
-      });
+      };
+
+      // Only update profile picture if it's explicitly provided and different from current
+      if (profileData.profilePicture !== undefined && profileData.profilePicture !== userProfile.profilePictureUrl) {
+        updateData.profilePictureUrl = profileData.profilePicture;
+      }
+
+      // Update user profile in database
+      const updatedUser = await client.models.User.update(updateData);
 
       if (updatedUser.data) {
         // Update local state
@@ -506,7 +513,6 @@ export const AccountScreen: React.FC = () => {
                   {userProfile.displayName || 'Set Display Name'}
                 </Text>
               </TouchableOpacity>
-              <Text style={styles.email}>{userProfile.email}</Text>
 
               {/* Balance Breakdown */}
               <View style={styles.balanceBreakdown}>
@@ -520,11 +526,10 @@ export const AccountScreen: React.FC = () => {
                     <Text style={styles.pendingValue}>${pendingPayouts.toFixed(2)}</Text>
                   </View>
                 )}
-              </View>
-
-              <View style={styles.trustContainer}>
-                <Text style={styles.trustLabel}>Trust Score</Text>
-                <Text style={styles.trustScore}>{userProfile.trustScore.toFixed(1)}/10</Text>
+                <View style={styles.balanceRow}>
+                  <Text style={styles.balanceLabel}>Trust Score:</Text>
+                  <Text style={styles.trustScore}>{userProfile.trustScore.toFixed(1)}/10</Text>
+                </View>
               </View>
             </View>
           </View>
@@ -963,11 +968,6 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
     fontWeight: '700',
   },
-  email: {
-    ...textStyles.body,
-    color: colors.textSecondary,
-    marginBottom: spacing.xs,
-  },
   balanceBreakdown: {
     marginVertical: spacing.xs,
     paddingVertical: spacing.xs,
@@ -994,15 +994,6 @@ const styles = StyleSheet.create({
     ...textStyles.button,
     color: colors.warning,
     fontWeight: '600',
-  },
-  trustContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  trustLabel: {
-    ...textStyles.caption,
-    color: colors.textMuted,
-    marginRight: spacing.xs,
   },
   trustScore: {
     ...textStyles.button,
