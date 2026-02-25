@@ -751,29 +751,33 @@ export class TransactionService {
         sortDirection: 'ASC' // Oldest first for admin processing queue
       });
 
-      const transactions = (data || []).map(t => ({
-        id: t.id!,
-        userId: t.userId!,
-        type: t.type as TransactionType,
-        status: t.status as TransactionStatus,
-        amount: t.amount!,
-        actualAmount: t.actualAmount || undefined,
-        platformFee: t.platformFee || 0,
-        balanceBefore: t.balanceBefore!,
-        balanceAfter: t.balanceAfter!,
-        paymentMethodId: t.paymentMethodId || undefined,
-        venmoTransactionId: t.venmoTransactionId || undefined,
-        venmoUsername: t.venmoUsername || undefined,
-        relatedBetId: t.relatedBetId || undefined,
-        relatedParticipantId: t.relatedParticipantId || undefined,
-        relatedSquaresGameId: t.relatedSquaresGameId || undefined,
-        notes: t.notes || undefined,
-        failureReason: t.failureReason || undefined,
-        processedBy: t.processedBy || undefined,
-        createdAt: t.createdAt!,
-        processedAt: t.processedAt || undefined,
-        completedAt: t.completedAt || undefined,
-      }));
+      // Only return DEPOSIT and WITHDRAWAL transactions for admin approval queue
+      // Other transaction types (BET_WON, BET_PLACED, etc.) should never need admin approval
+      const transactions = (data || [])
+        .filter(t => t.type === 'DEPOSIT' || t.type === 'WITHDRAWAL')
+        .map(t => ({
+          id: t.id!,
+          userId: t.userId!,
+          type: t.type as TransactionType,
+          status: t.status as TransactionStatus,
+          amount: t.amount!,
+          actualAmount: t.actualAmount || undefined,
+          platformFee: t.platformFee || 0,
+          balanceBefore: t.balanceBefore!,
+          balanceAfter: t.balanceAfter!,
+          paymentMethodId: t.paymentMethodId || undefined,
+          venmoTransactionId: t.venmoTransactionId || undefined,
+          venmoUsername: t.venmoUsername || undefined,
+          relatedBetId: t.relatedBetId || undefined,
+          relatedParticipantId: t.relatedParticipantId || undefined,
+          relatedSquaresGameId: t.relatedSquaresGameId || undefined,
+          notes: t.notes || undefined,
+          failureReason: t.failureReason || undefined,
+          processedBy: t.processedBy || undefined,
+          createdAt: t.createdAt!,
+          processedAt: t.processedAt || undefined,
+          completedAt: t.completedAt || undefined,
+        }));
 
       return transactions.sort((a, b) =>
         new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()

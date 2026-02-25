@@ -343,25 +343,31 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
 
   const renderTransaction = (transaction: Transaction) => {
     const isDeposit = transaction.type === 'DEPOSIT';
+    const isWithdrawal = transaction.type === 'WITHDRAWAL';
     const isProcessing = processingId === transaction.id;
+
+    // Determine display properties based on actual transaction type
+    const iconName = isDeposit ? 'arrow-down-circle' : isWithdrawal ? 'arrow-up-circle' : 'help-circle';
+    const iconColor = isDeposit ? colors.success : colors.warning;
+    const typeLabel = transaction.type.replace(/_/g, ' ');
 
     return (
       <View key={transaction.id} style={styles.transactionCard}>
         <View style={styles.transactionHeader}>
           <View style={[
             styles.transactionIcon,
-            { backgroundColor: isDeposit ? colors.success + '20' : colors.warning + '20' }
+            { backgroundColor: iconColor + '20' }
           ]}>
             <Ionicons
-              name={isDeposit ? 'arrow-down-circle' : 'arrow-up-circle'}
+              name={iconName}
               size={24}
-              color={isDeposit ? colors.success : colors.warning}
+              color={iconColor}
             />
           </View>
 
           <View style={styles.transactionInfo}>
             <Text style={styles.transactionType}>
-              {isDeposit ? 'DEPOSIT' : 'WITHDRAWAL'}
+              {typeLabel}
             </Text>
             <Text style={styles.transactionAmount}>
               {formatCurrency(transaction.amount)}
