@@ -35,6 +35,7 @@ export type BetsStackParamList = {
   BetsList: undefined;
   BetDetails: {
     betId: string;
+    returnToTab?: keyof AppTabParamList;
   };
   JoinBet: {
     bet: Bet;
