@@ -44,18 +44,23 @@ export const BettingHistoryScreen: React.FC<BettingHistoryScreenProps> = ({ onCl
 
     // Navigate to squares game detail if it's a squares transaction
     if (transaction.relatedSquaresGameId) {
-      // Navigate first, then close modal with delay to ensure navigation completes
       navigation.navigate('Bets', {
         screen: 'SquaresGameDetail',
         params: { gameId: transaction.relatedSquaresGameId }
       });
-      // Close modal after a brief delay to let navigation start
       setTimeout(() => onClose(), 100);
       return;
     }
 
-    // Note: Regular bets (relatedBetId) don't have a detail screen yet,
-    // so we don't navigate for those transactions
+    // Navigate to bet detail page for bet transactions
+    if (transaction.relatedBetId) {
+      navigation.navigate('Bets', {
+        screen: 'BetDetails',
+        params: { betId: transaction.relatedBetId }
+      });
+      setTimeout(() => onClose(), 100);
+      return;
+    }
   };
 
   const fetchTransactions = async () => {
@@ -204,8 +209,8 @@ interface TransactionCardProps {
 }
 
 const TransactionCard: React.FC<TransactionCardProps> = ({ transaction, onPress }) => {
-  // Check if transaction is clickable (only squares games have detail pages)
-  const isClickable = !!transaction.relatedSquaresGameId;
+  // Transactions with a related bet or squares game can navigate to a detail page
+  const isClickable = !!transaction.relatedSquaresGameId || !!transaction.relatedBetId;
   const getTransactionIcon = (): keyof typeof Ionicons.glyphMap => {
     switch (transaction.type) {
       case 'DEPOSIT': return 'arrow-down-circle';

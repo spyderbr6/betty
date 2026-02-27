@@ -24,6 +24,7 @@ import { ResolveScreen } from '../screens/ResolveScreen';
 import { AccountScreen } from '../screens/AccountScreen';
 import { OnboardingScreen } from '../screens/OnboardingScreen';
 import { SquaresGameDetailScreen } from '../screens/SquaresGameDetailScreen';
+import { BetDetailsScreen } from '../screens/BetDetailsScreen';
 
 // Create navigators
 const Tab = createBottomTabNavigator<AppTabParamList>();
@@ -49,6 +50,11 @@ const BetsStackNavigator = () => {
         name="BetsList"
         component={BetsScreen}
         options={{ headerShown: false }} // We'll use custom header
+      />
+      <BetsStack.Screen
+        name="BetDetails"
+        component={BetDetailsScreen}
+        options={{ headerShown: false }}
       />
       <BetsStack.Screen
         name="SquaresGameDetail"
