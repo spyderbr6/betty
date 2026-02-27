@@ -34,7 +34,7 @@ interface BetData {
   category: string;
   status: string;
   creatorId: string;
-  creatorName?: string;
+  creatorDisplayName: string;
   totalPot: number;
   betAmount?: number;
   odds: { sideAName: string; sideBName: string };
@@ -52,15 +52,21 @@ interface ParticipantData {
   id: string;
   side: string;
   amount: number;
-  payout: number;
   joinedAt: string;
 }
 
+interface WinTransactionData {
+  netReceived: number;   // transaction.amount  — what was actually credited
+  platformFee: number;   // transaction.platformFee — fee taken
+  grossPayout: number;   // netReceived + platformFee
+}
+
 export const BetDetailsScreen: React.FC<Props> = ({ navigation, route }) => {
-  const { betId } = route.params;
+  const { betId, returnToTab } = route.params;
   const { user } = useAuth();
   const [bet, setBet] = useState<BetData | null>(null);
   const [participant, setParticipant] = useState<ParticipantData | null>(null);
+  const [winTransaction, setWinTransaction] = useState<WinTransactionData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -74,41 +80,63 @@ export const BetDetailsScreen: React.FC<Props> = ({ navigation, route }) => {
       setIsLoading(true);
       setError(null);
 
-      const [betResult, participantsResult] = await Promise.all([
+      const [betResult, participantsResult, transactionsResult] = await Promise.all([
         client.models.Bet.get({ id: betId }),
         client.models.Participant.list({
           filter: { betId: { eq: betId }, userId: { eq: user.userId } },
         }),
+        client.models.Transaction.list({
+          filter: {
+            and: [
+              { userId: { eq: user.userId } },
+              { relatedBetId: { eq: betId } },
+              { type: { eq: 'BET_WON' } },
+            ],
+          },
+        }),
       ]);
 
-      if (betResult.data) {
-        const raw = betResult.data;
-        setBet({
-          id: raw.id,
-          title: raw.title,
-          description: raw.description,
-          category: raw.category || 'CUSTOM',
-          status: raw.status || 'ACTIVE',
-          creatorId: raw.creatorId,
-          creatorName: raw.creatorName || undefined,
-          totalPot: raw.totalPot,
-          betAmount: raw.betAmount || undefined,
-          odds: (raw.odds as { sideAName: string; sideBName: string }) || {
-            sideAName: 'Side A',
-            sideBName: 'Side B',
-          },
-          deadline: raw.deadline,
-          winningSide: raw.winningSide || undefined,
-          resolutionReason: raw.resolutionReason || undefined,
-          sideACount: raw.sideACount || 0,
-          sideBCount: raw.sideBCount || 0,
-          participantUserIds: (raw.participantUserIds?.filter(Boolean) as string[]) || [],
-          createdAt: raw.createdAt || '',
-          updatedAt: raw.updatedAt || '',
-        });
-      } else {
+      if (!betResult.data) {
         setError('Bet not found');
+        return;
       }
+
+      const raw = betResult.data;
+
+      // Fetch creator's real display name
+      let creatorDisplayName = raw.creatorName || '';
+      if (!creatorDisplayName) {
+        try {
+          const { data: creatorUser } = await client.models.User.get({ id: raw.creatorId });
+          creatorDisplayName = creatorUser?.displayName || creatorUser?.username || raw.creatorId;
+        } catch {
+          creatorDisplayName = raw.creatorId;
+        }
+      }
+
+      setBet({
+        id: raw.id,
+        title: raw.title,
+        description: raw.description,
+        category: raw.category || 'CUSTOM',
+        status: raw.status || 'ACTIVE',
+        creatorId: raw.creatorId,
+        creatorDisplayName,
+        totalPot: raw.totalPot,
+        betAmount: raw.betAmount || undefined,
+        odds: (raw.odds as { sideAName: string; sideBName: string }) || {
+          sideAName: 'Side A',
+          sideBName: 'Side B',
+        },
+        deadline: raw.deadline,
+        winningSide: raw.winningSide || undefined,
+        resolutionReason: raw.resolutionReason || undefined,
+        sideACount: raw.sideACount || 0,
+        sideBCount: raw.sideBCount || 0,
+        participantUserIds: (raw.participantUserIds?.filter(Boolean) as string[]) || [],
+        createdAt: raw.createdAt || '',
+        updatedAt: raw.updatedAt || '',
+      });
 
       if (participantsResult.data && participantsResult.data.length > 0) {
         const p = participantsResult.data[0];
@@ -116,8 +144,19 @@ export const BetDetailsScreen: React.FC<Props> = ({ navigation, route }) => {
           id: p.id,
           side: p.side,
           amount: p.amount,
-          payout: p.payout || 0,
           joinedAt: p.joinedAt || '',
+        });
+      }
+
+      // Pull payout figures directly from the stored BET_WON transaction
+      if (transactionsResult.data && transactionsResult.data.length > 0) {
+        const t = transactionsResult.data[0];
+        const net = t.amount || 0;
+        const fee = t.platformFee || 0;
+        setWinTransaction({
+          netReceived: net,
+          platformFee: fee,
+          grossPayout: net + fee,
         });
       }
     } catch (err) {
@@ -125,6 +164,15 @@ export const BetDetailsScreen: React.FC<Props> = ({ navigation, route }) => {
       setError('Failed to load bet details');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleBack = () => {
+    if (returnToTab) {
+      // Navigate parent tab navigator back to the originating tab
+      navigation.getParent()?.navigate(returnToTab);
+    } else if (navigation.canGoBack()) {
+      navigation.goBack();
     }
   };
 
@@ -172,7 +220,7 @@ export const BetDetailsScreen: React.FC<Props> = ({ navigation, route }) => {
     <View style={styles.header}>
       <TouchableOpacity
         style={styles.backButton}
-        onPress={() => navigation.goBack()}
+        onPress={handleBack}
         activeOpacity={0.7}
       >
         <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
@@ -237,9 +285,14 @@ export const BetDetailsScreen: React.FC<Props> = ({ navigation, route }) => {
             ]}>
               YOU {userResult}
             </Text>
-            {userResult === 'WON' && participant && participant.payout > 0 && (
+            {userResult === 'WON' && winTransaction && (
               <Text style={styles.resultSubtext}>
-                Payout: {formatCurrency(participant.payout)}
+                Net received: {formatCurrency(winTransaction.netReceived)}
+              </Text>
+            )}
+            {userResult === 'LOST' && participant && (
+              <Text style={styles.resultSubtext}>
+                Lost: {formatCurrency(participant.amount)}
               </Text>
             )}
           </View>
@@ -269,6 +322,10 @@ export const BetDetailsScreen: React.FC<Props> = ({ navigation, route }) => {
 
           <View style={styles.infoGrid}>
             <View style={styles.infoItem}>
+              <Text style={styles.infoLabel}>Created By</Text>
+              <Text style={styles.infoValue}>{bet.creatorDisplayName}</Text>
+            </View>
+            <View style={styles.infoItem}>
               <Text style={styles.infoLabel}>Category</Text>
               <Text style={styles.infoValue}>{formatCategory(bet.category)}</Text>
             </View>
@@ -292,7 +349,7 @@ export const BetDetailsScreen: React.FC<Props> = ({ navigation, route }) => {
               <Text style={styles.infoLabel}>Created</Text>
               <Text style={styles.infoValue}>{formatDate(bet.createdAt)}</Text>
             </View>
-            <View style={styles.infoItem}>
+            <View style={[styles.infoItem, { width: '100%' }]}>
               <Text style={styles.infoLabel}>Deadline</Text>
               <Text style={styles.infoValue}>{formatDate(bet.deadline)}</Text>
             </View>
@@ -317,7 +374,7 @@ export const BetDetailsScreen: React.FC<Props> = ({ navigation, route }) => {
                   </View>
                 )}
                 {bet.winningSide === 'A' && (
-                  <View style={[styles.winnerBadge]}>
+                  <View style={styles.winnerBadge}>
                     <Ionicons name="trophy" size={10} color={colors.success} />
                     <Text style={styles.winnerBadgeText}>WINNER</Text>
                   </View>
@@ -376,6 +433,8 @@ export const BetDetailsScreen: React.FC<Props> = ({ navigation, route }) => {
         {participant && (
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Your Participation</Text>
+
+            {/* Always-visible: side and amount bet */}
             <View style={styles.infoGrid}>
               <View style={styles.infoItem}>
                 <Text style={styles.infoLabel}>Your Side</Text>
@@ -385,25 +444,72 @@ export const BetDetailsScreen: React.FC<Props> = ({ navigation, route }) => {
                 </Text>
               </View>
               <View style={styles.infoItem}>
-                <Text style={styles.infoLabel}>Amount Bet</Text>
-                <Text style={styles.infoValue}>{formatCurrency(participant.amount)}</Text>
-              </View>
-              {bet.status === 'RESOLVED' && (
-                <View style={styles.infoItem}>
-                  <Text style={styles.infoLabel}>Payout</Text>
-                  <Text style={[
-                    styles.infoValue,
-                    { color: userResult === 'WON' ? colors.success : colors.textMuted },
-                  ]}>
-                    {userResult === 'WON' ? formatCurrency(participant.payout) : formatCurrency(0)}
-                  </Text>
-                </View>
-              )}
-              <View style={styles.infoItem}>
                 <Text style={styles.infoLabel}>Joined</Text>
                 <Text style={styles.infoValue}>{formatDate(participant.joinedAt)}</Text>
               </View>
+              <View style={[styles.infoItem, { width: '100%' }]}>
+                <Text style={styles.infoLabel}>Amount Wagered</Text>
+                <Text style={styles.infoValue}>{formatCurrency(participant.amount)}</Text>
+              </View>
             </View>
+
+            {/* Payout breakdown — only when resolved */}
+            {bet.status === 'RESOLVED' && (
+              <>
+                <View style={styles.divider} />
+                {userResult === 'WON' && winTransaction ? (
+                  <>
+                    <Text style={styles.payoutSectionLabel}>Payout Breakdown</Text>
+                    <View style={styles.payoutRow}>
+                      <Text style={styles.payoutLabel}>Gross Payout</Text>
+                      <Text style={styles.payoutValue}>{formatCurrency(winTransaction.grossPayout)}</Text>
+                    </View>
+                    <View style={styles.payoutRow}>
+                      <Text style={styles.payoutLabel}>Platform Fee</Text>
+                      <Text style={[styles.payoutValue, { color: colors.error }]}>
+                        − {formatCurrency(winTransaction.platformFee)}
+                      </Text>
+                    </View>
+                    <View style={[styles.payoutRow, styles.payoutTotalRow]}>
+                      <Text style={styles.payoutTotalLabel}>Net Received</Text>
+                      <Text style={[styles.payoutTotalValue, { color: colors.success }]}>
+                        {formatCurrency(winTransaction.netReceived)}
+                      </Text>
+                    </View>
+                    {participant && (
+                      <View style={[styles.payoutRow, { marginTop: spacing.xs }]}>
+                        <Text style={styles.payoutLabel}>Net Profit</Text>
+                        <Text style={[styles.payoutValue, { color: colors.success }]}>
+                          +{formatCurrency(winTransaction.netReceived - participant.amount)}
+                        </Text>
+                      </View>
+                    )}
+                  </>
+                ) : userResult === 'WON' ? (
+                  // Won but transaction not yet completed (still pending)
+                  <View style={styles.payoutRow}>
+                    <Text style={styles.payoutLabel}>Payout</Text>
+                    <Text style={[styles.payoutValue, { color: colors.warning }]}>Pending</Text>
+                  </View>
+                ) : (
+                  <>
+                    <Text style={styles.payoutSectionLabel}>Result</Text>
+                    <View style={styles.payoutRow}>
+                      <Text style={styles.payoutLabel}>Payout Received</Text>
+                      <Text style={[styles.payoutValue, { color: colors.textMuted }]}>
+                        {formatCurrency(0)}
+                      </Text>
+                    </View>
+                    <View style={[styles.payoutRow, styles.payoutTotalRow]}>
+                      <Text style={styles.payoutTotalLabel}>Net Result</Text>
+                      <Text style={[styles.payoutTotalValue, { color: colors.error }]}>
+                        − {formatCurrency(participant.amount)}
+                      </Text>
+                    </View>
+                  </>
+                )}
+              </>
+            )}
           </View>
         )}
 
@@ -418,12 +524,16 @@ export const BetDetailsScreen: React.FC<Props> = ({ navigation, route }) => {
 
           <IdRow label="Bet ID" value={bet.id} />
           <IdRow label="Creator ID" value={bet.creatorId} />
-          {bet.creatorName && <IdRow label="Creator Name" value={bet.creatorName} />}
+          <IdRow label="Creator Name" value={bet.creatorDisplayName} mono={false} />
           {participant && <IdRow label="Participant ID" value={participant.id} />}
           {bet.winningSide && (
-            <IdRow label="Winning Side" value={`${bet.winningSide} (${bet.winningSide === 'A' ? sideAName : sideBName})`} />
+            <IdRow
+              label="Winning Side"
+              value={`${bet.winningSide} (${bet.winningSide === 'A' ? sideAName : sideBName})`}
+              mono={false}
+            />
           )}
-          <IdRow label="Stored Participant IDs" value={`${bet.participantUserIds.length} total`} />
+          <IdRow label="Stored Participant IDs" value={`${bet.participantUserIds.length} total`} mono={false} />
           <IdRow label="Last Updated" value={formatDate(bet.updatedAt)} mono={false} />
         </View>
 
@@ -719,6 +829,50 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: typography.fontSize.sm,
     marginTop: spacing.xs / 2,
+  },
+
+  // Payout breakdown
+  payoutSectionLabel: {
+    ...textStyles.caption,
+    color: colors.textMuted,
+    fontSize: 11,
+    textTransform: 'uppercase',
+    fontWeight: typography.fontWeight.semibold,
+    marginBottom: spacing.sm,
+  },
+  payoutRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.xs,
+  },
+  payoutLabel: {
+    ...textStyles.body,
+    color: colors.textSecondary,
+    fontSize: typography.fontSize.sm,
+  },
+  payoutValue: {
+    ...textStyles.body,
+    color: colors.textPrimary,
+    fontSize: typography.fontSize.sm,
+    fontWeight: typography.fontWeight.medium,
+  },
+  payoutTotalRow: {
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingTop: spacing.xs,
+    marginTop: spacing.xs / 2,
+  },
+  payoutTotalLabel: {
+    ...textStyles.body,
+    color: colors.textPrimary,
+    fontWeight: typography.fontWeight.semibold,
+    fontSize: typography.fontSize.sm,
+  },
+  payoutTotalValue: {
+    ...textStyles.body,
+    fontWeight: typography.fontWeight.bold,
+    fontSize: typography.fontSize.base,
   },
 
   // Debug IDs

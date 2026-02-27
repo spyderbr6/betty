@@ -56,7 +56,7 @@ export const BettingHistoryScreen: React.FC<BettingHistoryScreenProps> = ({ onCl
     if (transaction.relatedBetId) {
       navigation.navigate('Bets', {
         screen: 'BetDetails',
-        params: { betId: transaction.relatedBetId }
+        params: { betId: transaction.relatedBetId, returnToTab: 'Account' }
       });
       setTimeout(() => onClose(), 100);
       return;
