@@ -41,15 +41,11 @@ async function updateExpiredBets(): Promise<{ updated: number; cancelled: number
     const now = new Date();
     const currentISOString = now.toISOString();
 
-    // Get only ACTIVE bets that have expired (deadline < now) in a single optimized query
-    const { data: expiredActiveBets } = await client.models.Bet.list({
-      filter: {
-        and: [
-          { status: { eq: 'ACTIVE' } },
-          { deadline: { lt: currentISOString } }
-        ]
-      }
+    // Get ACTIVE bets using GSI (scan filter only returns first page!), then filter by deadline
+    const { data: activeBets } = await client.models.Bet.betsByStatus({
+      status: 'ACTIVE'
     });
+    const expiredActiveBets = activeBets?.filter((bet: any) => bet.deadline && bet.deadline < currentISOString) || [];
 
     if (!expiredActiveBets || expiredActiveBets.length === 0) {
       console.log('✅ [Scheduled] No expired active bets found');

@@ -48,11 +48,9 @@ async function processCompletedDisputeWindows(): Promise<{
     const now = new Date();
     const currentISOString = now.toISOString();
 
-    // Get all PENDING_RESOLUTION bets (we'll filter them below)
-    const { data: pendingBets } = await client.models.Bet.list({
-      filter: {
-        status: { eq: 'PENDING_RESOLUTION' }
-      }
+    // Get all PENDING_RESOLUTION bets using GSI (scan filter only returns first page!)
+    const { data: pendingBets } = await client.models.Bet.betsByStatus({
+      status: 'PENDING_RESOLUTION'
     });
 
     if (!pendingBets || pendingBets.length === 0) {
@@ -294,17 +292,13 @@ async function processCompletedDisputeWindows(): Promise<{
  */
 async function checkAndApplyMilestones(userId: string): Promise<void> {
   try {
-    // Get count of resolved bets created by this user
-    const { data: resolvedBets } = await client.models.Bet.list({
-      filter: {
-        and: [
-          { creatorId: { eq: userId } },
-          { status: { eq: 'RESOLVED' } }
-        ]
-      }
+    // Get resolved bets using GSI, then filter by creator
+    const { data: resolvedBets } = await client.models.Bet.betsByStatus({
+      status: 'RESOLVED'
     });
+    const creatorResolvedBets = resolvedBets?.filter((b: any) => b.creatorId === userId) || [];
 
-    const resolvedCount = resolvedBets?.length || 0;
+    const resolvedCount = creatorResolvedBets.length;
 
     // Check if user just hit a milestone (exact count)
     let milestoneReward = 0;
