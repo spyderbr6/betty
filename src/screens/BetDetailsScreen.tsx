@@ -56,9 +56,8 @@ interface ParticipantData {
 }
 
 interface WinTransactionData {
-  netReceived: number;   // transaction.amount  — what was actually credited
-  platformFee: number;   // transaction.platformFee — fee taken
-  grossPayout: number;   // netReceived + platformFee
+  payout: number;      // transaction.amount — net credited to user (already after fee)
+  platformFee: number; // transaction.platformFee — fee taken (informational only)
 }
 
 export const BetDetailsScreen: React.FC<Props> = ({ navigation, route }) => {
@@ -148,15 +147,12 @@ export const BetDetailsScreen: React.FC<Props> = ({ navigation, route }) => {
         });
       }
 
-      // Pull payout figures directly from the stored BET_WON transaction
+      // Read payout directly from the BET_WON transaction — no calculation
       if (transactionsResult.data && transactionsResult.data.length > 0) {
         const t = transactionsResult.data[0];
-        const net = t.amount || 0;
-        const fee = t.platformFee || 0;
         setWinTransaction({
-          netReceived: net,
-          platformFee: fee,
-          grossPayout: net + fee,
+          payout: t.amount || 0,
+          platformFee: t.platformFee || 0,
         });
       }
     } catch (err) {
@@ -287,7 +283,7 @@ export const BetDetailsScreen: React.FC<Props> = ({ navigation, route }) => {
             </Text>
             {userResult === 'WON' && winTransaction && (
               <Text style={styles.resultSubtext}>
-                Net received: {formatCurrency(winTransaction.netReceived)}
+                Payout: {formatCurrency(winTransaction.payout)}
               </Text>
             )}
             {userResult === 'LOST' && participant && (
@@ -459,28 +455,18 @@ export const BetDetailsScreen: React.FC<Props> = ({ navigation, route }) => {
                 <View style={styles.divider} />
                 {userResult === 'WON' && winTransaction ? (
                   <>
-                    <Text style={styles.payoutSectionLabel}>Payout Breakdown</Text>
-                    <View style={styles.payoutRow}>
-                      <Text style={styles.payoutLabel}>Gross Payout</Text>
-                      <Text style={styles.payoutValue}>{formatCurrency(winTransaction.grossPayout)}</Text>
-                    </View>
-                    <View style={styles.payoutRow}>
-                      <Text style={styles.payoutLabel}>Platform Fee</Text>
-                      <Text style={[styles.payoutValue, { color: colors.error }]}>
-                        − {formatCurrency(winTransaction.platformFee)}
-                      </Text>
-                    </View>
+                    <Text style={styles.payoutSectionLabel}>Payout</Text>
                     <View style={[styles.payoutRow, styles.payoutTotalRow]}>
-                      <Text style={styles.payoutTotalLabel}>Net Received</Text>
+                      <Text style={styles.payoutTotalLabel}>Received</Text>
                       <Text style={[styles.payoutTotalValue, { color: colors.success }]}>
-                        {formatCurrency(winTransaction.netReceived)}
+                        {formatCurrency(winTransaction.payout)}
                       </Text>
                     </View>
-                    {participant && (
+                    {winTransaction.platformFee > 0 && (
                       <View style={[styles.payoutRow, { marginTop: spacing.xs }]}>
-                        <Text style={styles.payoutLabel}>Net Profit</Text>
-                        <Text style={[styles.payoutValue, { color: colors.success }]}>
-                          +{formatCurrency(winTransaction.netReceived - participant.amount)}
+                        <Text style={styles.payoutLabel}>Platform Fee</Text>
+                        <Text style={[styles.payoutValue, { color: colors.textMuted }]}>
+                          {formatCurrency(winTransaction.platformFee)}
                         </Text>
                       </View>
                     )}
