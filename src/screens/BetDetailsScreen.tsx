@@ -22,6 +22,7 @@ import { BetsStackParamList } from '../types/navigation';
 import { colors, spacing, textStyles, typography, shadows } from '../styles';
 import { useAuth } from '../contexts/AuthContext';
 import { formatCurrency, formatCategory } from '../utils/formatting';
+import { TransactionService } from '../services/transactionService';
 
 const client = generateClient<Schema>();
 
@@ -79,20 +80,12 @@ export const BetDetailsScreen: React.FC<Props> = ({ navigation, route }) => {
       setIsLoading(true);
       setError(null);
 
-      const [betResult, participantsResult, transactionsResult] = await Promise.all([
+      const [betResult, participantsResult, allTransactions] = await Promise.all([
         client.models.Bet.get({ id: betId }),
         client.models.Participant.list({
           filter: { betId: { eq: betId }, userId: { eq: user.userId } },
         }),
-        client.models.Transaction.list({
-          filter: {
-            and: [
-              { userId: { eq: user.userId } },
-              { relatedBetId: { eq: betId } },
-              { type: { eq: 'BET_WON' } },
-            ],
-          },
-        }),
+        TransactionService.getUserTransactions(user.userId),
       ]);
 
       if (!betResult.data) {
@@ -147,12 +140,14 @@ export const BetDetailsScreen: React.FC<Props> = ({ navigation, route }) => {
         });
       }
 
-      // Read payout directly from the BET_WON transaction — no calculation
-      if (transactionsResult.data && transactionsResult.data.length > 0) {
-        const t = transactionsResult.data[0];
+      // Find the BET_WON transaction for this bet using the same service billing history uses
+      const winTx = allTransactions.find(
+        t => t.type === 'BET_WON' && t.relatedBetId === betId
+      );
+      if (winTx) {
         setWinTransaction({
-          payout: t.amount || 0,
-          platformFee: t.platformFee || 0,
+          payout: winTx.actualAmount ?? winTx.amount,
+          platformFee: winTx.platformFee,
         });
       }
     } catch (err) {
