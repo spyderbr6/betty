@@ -147,11 +147,11 @@ export const BetDetailsScreen: React.FC<Props> = ({ navigation, route }) => {
         });
       }
 
-      // Read payout directly from the BET_WON transaction — no calculation
+      // Use actualAmount (net received) + platformFee — same fields billing history reads
       if (transactionsResult.data && transactionsResult.data.length > 0) {
         const t = transactionsResult.data[0];
         setWinTransaction({
-          payout: t.amount || 0,
+          payout: t.actualAmount ?? t.amount ?? 0,
           platformFee: t.platformFee || 0,
         });
       }
