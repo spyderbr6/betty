@@ -54,12 +54,12 @@
 
 ## 🔄 IMMEDIATE NEXT STEPS (Current Development Cycle)
 
-### **Priority 1: Critical Bug Fixes & UI Polish** ✅ COMPLETED
-- [ ] the signout button on settings page i want to replace the system prompt with a prompt that we create. "Are you sure?", this will help me test on the web and apps.
-- [ ] i need to capture phone numbers for sms verification and finding friends. 
-- [ ] lets remove the stats from the my bets page and the profile's main page. those are needless.
-- [ ] payment methods, its unclear how they get verified. there doesnt appear to be a way to do it. should it just be when the first payment is authorized?
-- [ ] i feel like the resolved bets should be loaded in separately or we should remove them from my bets completely. 
+### **Priority 1: Critical Bug Fixes & UI Polish**
+- [x] Replace sign-out system prompt with custom "Are you sure?" alert **✅ COMPLETED** (uses `showAlert()`)
+- [x] Capture phone numbers for SMS verification and friend discovery **✅ COMPLETED** (PhoneInput in SignUp, phoneNumber/phoneNumberVerified in User model)
+- [ ] Remove stats from My Bets page and profile's main page — still present in AccountScreen
+- [x] Payment method verification flow **✅ COMPLETED** (auto-verified on first successful deposit)
+- [x] Separate resolved bets from My Bets **✅ COMPLETED** (loaded separately via GSI queries)
 
 
 
@@ -68,7 +68,7 @@
 - [x] Implement Trust & Safety features **✅ COMPLETED**
   - [x] Change password functionality (AWS Cognito updatePassword)
   - [x] Two-factor authentication setup (AWS Cognito TOTP)
-  - [ ] Two-factor SMS
+  - [ ] Two-factor SMS (TOTP done, SMS not implemented)
 - [x] **Notification System Implementation** **✅ COMPLETED (2025-10-26)**
   - [x] Database schema for user notification preferences
   - [x] Notification preferences service with CRUD operations
@@ -84,12 +84,14 @@
     - [ ] Firebase configuration for Android (E_REGISTRATION_FAILED)
     - [ ] EXPO_ACCESS_TOKEN environment variable in Lambda
   - [ ] **Missing Notification Triggers:**
-    - [ ] BET_JOINED (add to BetsScreen.tsx when user joins)
-    - [ ] BET_RESOLVED (add to ResolveScreen.tsx when resolved)
-    - [ ] BET_CANCELLED (add to cancellation logic)
-    - [ ] DEPOSIT_COMPLETED/FAILED (add to transactionService.ts)
-    - [ ] WITHDRAWAL_COMPLETED/FAILED (add to transactionService.ts)
-    - [ ] PAYMENT_METHOD_VERIFIED (add to paymentMethodService.ts)
+    - [x] BET_JOINED — implemented in BetDataContext.tsx ✅
+    - [x] BET_RESOLVED — implemented in transactionService.ts (recordBetWinnings) ✅
+    - [ ] BET_CANCELLED — NOT triggered in recordBetCancellation
+    - [x] DEPOSIT_COMPLETED — implemented in transactionService.ts ✅
+    - [x] WITHDRAWAL_COMPLETED — implemented in transactionService.ts ✅
+    - [ ] DEPOSIT_FAILED — not triggered in failure path
+    - [ ] WITHDRAWAL_FAILED — not triggered in failure path
+    - [x] PAYMENT_METHOD_VERIFIED — implemented in transactionService.ts ✅
   - [x] **Currently Working:** FRIEND_REQUEST_RECEIVED, FRIEND_REQUEST_ACCEPTED, FRIEND_REQUEST_DECLINED
 
 - [x] Settings screen functionality **✅ COMPLETED**
@@ -102,9 +104,7 @@
   - Direct support contact method
 
 ### **Priority 3: Feature Completion**
-- [ ] Remove or implement private bet functionality
-  - Currently toggle exists but does nothing
-  - Either wire up private bet logic or remove the option
+- [x] Private bet functionality **✅ COMPLETED** — toggle wired up, `isPrivate` passed to bet creation (default: true)
 - [x] In-app toast notifications with expo-notifications **✅ COMPLETED**
   - [x] Smart batching (3+ same type → single batch toast)
   - [x] Rate limiting (max 1 toast per 3 seconds)
@@ -113,8 +113,8 @@
   - [x] Auto-dismiss based on priority (5s/4s/3s)
 - [ ] Push notifications configuration
   - Infrastructure complete, needs Firebase setup + EXPO_ACCESS_TOKEN
-- [ ] Instant balance updates after payouts and joins
-- [ ] Add missing notification event triggers (bet events, payment events)
+- [x] Instant balance updates after payouts and joins **✅ COMPLETED** (optimistic updates in BetDataContext)
+- [ ] Add missing notification triggers: BET_CANCELLED, DEPOSIT_FAILED, WITHDRAWAL_FAILED
 
 ---
 
@@ -149,6 +149,7 @@
   - Trending topics
 
 ### **Platform Expansion**
+- [x] **Squares Game Feature**: Full lifecycle implemented (SETUP → ACTIVE → LOCKED → LIVE → PENDING_RESOLUTION → RESOLVED) ✅
 - [ ] **QR Code Integration**: Bet sharing and quick joining
 - [ ] **Camera Features**: Photo evidence for bet resolution
 - [ ] **Location Services**: Location-based bet discovery
@@ -471,4 +472,4 @@ src/
 
 ---
 
-*Last Updated: Comprehensive notification system completed - User preferences, intelligent toast notifications with batching/rate limiting, navigation handlers (2025-10-26)*
+*Last Updated: Audited and synced with codebase (2026-03-19) — marked P1 items complete, notification triggers partially done, squares feature complete*
