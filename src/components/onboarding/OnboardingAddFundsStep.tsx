@@ -38,13 +38,6 @@ export const OnboardingAddFundsStep: React.FC<OnboardingAddFundsStepProps> = ({
     setShowAddFundsModal(true);
   };
 
-  const handleAddPaymentMethod = () => {
-    setShowAddFundsModal(false);
-    setTimeout(() => {
-      setShowAddPaymentMethodModal(true);
-    }, 300);
-  };
-
   const handleFundsAdded = () => {
     // Funds were successfully added, update state and close modal
     onFundsAdded(true);
@@ -140,7 +133,6 @@ export const OnboardingAddFundsStep: React.FC<OnboardingAddFundsStepProps> = ({
         visible={showAddFundsModal}
         onClose={() => setShowAddFundsModal(false)}
         onSuccess={handleFundsAdded}
-        onAddPaymentMethod={handleAddPaymentMethod}
       />
 
       {/* Add Payment Method Modal */}

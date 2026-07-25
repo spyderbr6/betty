@@ -12,7 +12,6 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
-  Alert,
   Modal,
   Image,
 } from 'react-native';
