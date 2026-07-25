@@ -8,6 +8,7 @@ import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
 import { NotificationService } from './notificationService';
 import { TrustScoreService } from './trustScoreService';
+import { WITHDRAWAL_FEE_RATE, WINNINGS_FEE_RATE } from '../config/subscriptionConfig';
 
 const client = generateClient<Schema>();
 
@@ -71,6 +72,15 @@ export interface CreateTransactionParams {
 }
 
 export class TransactionService {
+  private static async isProSubscriber(userId: string): Promise<boolean> {
+    try {
+      const { data: user } = await client.models.User.get({ id: userId });
+      return user?.subscriptionTier === 'PRO' && user?.subscriptionStatus === 'ACTIVE';
+    } catch {
+      return false;
+    }
+  }
+
   /**
    * Get user's current balance
    */
@@ -249,8 +259,10 @@ export class TransactionService {
       return null;
     }
 
-    // Calculate platform fee (2% of withdrawal)
-    const platformFee = Math.round(amount * 0.02 * 100) / 100; // Round to 2 decimal places
+    // Calculate platform fee (waived for Pro subscribers)
+    const isPro = await TransactionService.isProSubscriber(userId);
+    const feeRate = isPro ? 0 : WITHDRAWAL_FEE_RATE;
+    const platformFee = Math.round(amount * feeRate * 100) / 100;
     const netAmount = amount - platformFee;
 
     console.log('[Transaction] Withdrawal with fee:', {
@@ -321,8 +333,10 @@ export class TransactionService {
     betTitle?: string,
     winningSide?: string
   ): Promise<Transaction | null> {
-    // Calculate platform fee (3% of winnings)
-    const platformFee = Math.round(amount * 0.03 * 100) / 100; // Round to 2 decimal places
+    // Calculate platform fee (waived for Pro subscribers)
+    const isPro = await TransactionService.isProSubscriber(userId);
+    const feeRate = isPro ? 0 : WINNINGS_FEE_RATE;
+    const platformFee = Math.round(amount * feeRate * 100) / 100;
     const netAmount = amount - platformFee;
 
     console.log('[Transaction] Bet winnings with fee:', {

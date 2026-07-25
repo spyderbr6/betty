@@ -12,6 +12,8 @@ import type { Subscription } from 'expo-notifications';
 
 const client = generateClient<Schema>();
 
+import type { SubscriptionTier, SubscriptionStatus } from '../config/subscriptionConfig';
+
 type UserRole = 'USER' | 'ADMIN' | 'SUPER_ADMIN';
 
 interface User {
@@ -22,6 +24,8 @@ interface User {
   onboardingCompleted: boolean;
   onboardingStep: number;
   profilePictureUrl?: string;
+  subscriptionTier: SubscriptionTier;
+  subscriptionStatus: SubscriptionStatus;
 }
 
 interface RefreshOptions {
@@ -136,6 +140,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           onboardingCompleted: userData?.onboardingCompleted ?? false,
           onboardingStep: userData?.onboardingStep ?? 0,
           profilePictureUrl: userData?.profilePictureUrl ?? undefined,
+          subscriptionTier: (userData?.subscriptionTier as SubscriptionTier) || 'FREE',
+          subscriptionStatus: (userData?.subscriptionStatus as SubscriptionStatus) || 'ACTIVE',
         };
         setUser(newUser);
 

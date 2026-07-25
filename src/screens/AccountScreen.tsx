@@ -37,6 +37,7 @@ import { AboutScreen } from './AboutScreen';
 import { AdminDashboardScreen } from './AdminDashboardScreen';
 import { AdminDisputeScreen } from './AdminDisputeScreen';
 import { AdminTestingScreen } from './AdminTestingScreen';
+import { SubscriptionScreen } from './SubscriptionScreen';
 import { useAuth } from '../contexts/AuthContext';
 import { ProfileEditForm, User } from '../types/betting';
 import { getProfilePictureUrl } from '../services/imageUploadService';
@@ -71,6 +72,7 @@ export const AccountScreen: React.FC = () => {
   const [showAdminDashboard, setShowAdminDashboard] = useState(false);
   const [showAdminDispute, setShowAdminDispute] = useState(false);
   const [showAdminTesting, setShowAdminTesting] = useState(false);
+  const [showSubscription, setShowSubscription] = useState(false);
   const [friendsInitialShowRequests, setFriendsInitialShowRequests] = useState(false);
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
@@ -584,27 +586,29 @@ export const AccountScreen: React.FC = () => {
                 <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.menuOption}
-                onPress={handleAdminTestingPress}
-                activeOpacity={0.7}
-              >
-                <View style={styles.menuOptionLeft}>
-                  <View style={[styles.menuIconContainer, styles.adminIconContainer]}>
-                    <Ionicons name="flask" size={22} color={colors.warning} />
-                  </View>
-                  <View style={styles.menuOptionContent}>
-                    <View style={styles.adminTitleRow}>
-                      <Text style={styles.menuOptionTitle}>Admin Testing Tools</Text>
-                      <View style={styles.adminBadge}>
-                        <Text style={styles.adminBadgeText}>DEBUG</Text>
-                      </View>
+              {__DEV__ && (
+                <TouchableOpacity
+                  style={styles.menuOption}
+                  onPress={handleAdminTestingPress}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.menuOptionLeft}>
+                    <View style={[styles.menuIconContainer, styles.adminIconContainer]}>
+                      <Ionicons name="flask" size={22} color={colors.warning} />
                     </View>
-                    <Text style={styles.menuOptionSubtitle}>Test and debug system features</Text>
+                    <View style={styles.menuOptionContent}>
+                      <View style={styles.adminTitleRow}>
+                        <Text style={styles.menuOptionTitle}>Admin Testing Tools</Text>
+                        <View style={styles.adminBadge}>
+                          <Text style={styles.adminBadgeText}>DEBUG</Text>
+                        </View>
+                      </View>
+                      <Text style={styles.menuOptionSubtitle}>Test and debug system features</Text>
+                    </View>
                   </View>
-                </View>
-                <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
-              </TouchableOpacity>
+                  <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+                </TouchableOpacity>
+              )}
             </View>
           )}
 
@@ -631,6 +635,12 @@ export const AccountScreen: React.FC = () => {
             title="Payment Methods"
             subtitle="Manage deposits and withdrawals"
             onPress={handlePaymentMethodsPress}
+          />
+          <MenuOption
+            icon={user?.subscriptionTier === 'PRO' ? 'star' : 'star-outline'}
+            title={user?.subscriptionTier === 'PRO' ? 'Pro Membership' : 'Upgrade to Pro'}
+            subtitle={user?.subscriptionTier === 'PRO' ? '0% fees on everything · $4.99/mo' : 'Remove all fees for $4.99/month'}
+            onPress={() => setShowSubscription(true)}
           />
           <MenuOption
             icon="shield-checkmark-outline"
@@ -789,14 +799,26 @@ export const AccountScreen: React.FC = () => {
         <AdminDisputeScreen onClose={() => setShowAdminDispute(false)} />
       )}
 
-      {/* Admin Testing Modal */}
+      {/* Admin Testing Modal — dev builds only */}
+      {__DEV__ && (
+        <Modal
+          visible={showAdminTesting}
+          animationType="slide"
+          presentationStyle="fullScreen"
+          onRequestClose={() => setShowAdminTesting(false)}
+        >
+          <AdminTestingScreen onClose={() => setShowAdminTesting(false)} />
+        </Modal>
+      )}
+
+      {/* Subscription Modal */}
       <Modal
-        visible={showAdminTesting}
+        visible={showSubscription}
         animationType="slide"
         presentationStyle="fullScreen"
-        onRequestClose={() => setShowAdminTesting(false)}
+        onRequestClose={() => setShowSubscription(false)}
       >
-        <AdminTestingScreen onClose={() => setShowAdminTesting(false)} />
+        <SubscriptionScreen onClose={() => setShowSubscription(false)} />
       </Modal>
 
       {/* Sign Out Confirmation Modal */}
