@@ -81,7 +81,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const currentUser = await getCurrentUser();
 
       // Fetch user data from database to get role and onboarding status
-      let { data: userData } = await client.models.User.get({ id: currentUser.userId });
+      let { data: userData } = await (client.models.User as any).get({ id: currentUser.userId });
 
       // Create User record if it doesn't exist (first login after signup)
       if (!userData) {
@@ -99,7 +99,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
 
         const currentTime = new Date().toISOString();
-        const createResult = await client.models.User.create({
+        const createResult = await (client.models.User as any).create({
           id: currentUser.userId,
           username: currentUser.username,
           email: realEmail,

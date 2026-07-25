@@ -282,7 +282,6 @@ export const PaymentMethodsScreen: React.FC<PaymentMethodsScreenProps> = ({ onCl
         visible={showAddFundsModal}
         onClose={() => setShowAddFundsModal(false)}
         onSuccess={refreshData}
-        onAddPaymentMethod={() => setShowAddMethodModal(true)}
       />
       <WithdrawFundsModal
         visible={showWithdrawModal}

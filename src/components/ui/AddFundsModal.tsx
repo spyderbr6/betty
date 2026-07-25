@@ -136,7 +136,6 @@ export const AddFundsModal: React.FC<AddFundsModalProps> = ({
             onFocus={() => setAmountFocused(true)}
             onBlur={() => setAmountFocused(false)}
             autoFocus
-            includeFontPadding={false}
             textAlignVertical="center"
           />
         </View>

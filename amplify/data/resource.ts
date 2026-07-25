@@ -44,8 +44,8 @@ const schema = a.schema({
       privacyPolicyAcceptedAt: a.datetime(), // When Privacy Policy was accepted
       privacyPolicyVersion: a.string(), // Version of Privacy Policy accepted (e.g., "1.0")
       // Subscription fields
-      subscriptionTier: a.enum(['FREE', 'PRO']).default('FREE'),
-      subscriptionStatus: a.enum(['ACTIVE', 'CANCELLED', 'PAST_DUE', 'TRIALING']).default('ACTIVE'),
+      subscriptionTier: a.enum(['FREE', 'PRO']),
+      subscriptionStatus: a.enum(['ACTIVE', 'CANCELLED', 'PAST_DUE', 'TRIALING']),
       subscriptionCurrentPeriodEnd: a.datetime(),
       stripeCustomerId: a.string(),
       stripeSubscriptionId: a.string(),
