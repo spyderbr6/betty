@@ -1,0 +1,13 @@
+{
+  "name": "stripe-manage",
+  "version": "1.0.0",
+  "type": "module",
+  "dependencies": {
+    "aws-amplify": "^6.15.4",
+    "stripe": "^16.0.0"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.152",
+    "@types/node": "^24.4.0"
+  }
+}

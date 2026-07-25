@@ -4,6 +4,9 @@ import { scheduledSquaresChecker } from "../functions/scheduled-squares-checker/
 import { pushNotificationSender } from "../functions/push-notification-sender/resource";
 import { eventFetcher } from "../functions/event-fetcher/resource";
 import { payoutProcessor } from "../functions/payout-processor/resource";
+import { stripePaymentIntent } from "../functions/stripe-payment-intent/resource";
+import { stripeWebhook } from "../functions/stripe-webhook/resource";
+import { stripeManage } from "../functions/stripe-manage/resource";
 
 /*== SIDEBET BETTING PLATFORM SCHEMA =======================================
 This schema defines the core data models for the SideBet peer-to-peer betting
@@ -40,6 +43,12 @@ const schema = a.schema({
       privacyPolicyAccepted: a.boolean().default(false), // Privacy Policy accepted
       privacyPolicyAcceptedAt: a.datetime(), // When Privacy Policy was accepted
       privacyPolicyVersion: a.string(), // Version of Privacy Policy accepted (e.g., "1.0")
+      // Subscription fields
+      subscriptionTier: a.enum(['FREE', 'PRO']).default('FREE'),
+      subscriptionStatus: a.enum(['ACTIVE', 'CANCELLED', 'PAST_DUE', 'TRIALING']).default('ACTIVE'),
+      subscriptionCurrentPeriodEnd: a.datetime(),
+      stripeCustomerId: a.string(),
+      stripeSubscriptionId: a.string(),
       createdAt: a.datetime(),
       updatedAt: a.datetime(),
       // Relations
@@ -412,11 +421,13 @@ const schema = a.schema({
     .model({
       id: a.id(),
       userId: a.id().required(),
-      type: a.enum(['VENMO', 'PAYPAL', 'BANK_ACCOUNT', 'CASH_APP']),
+      type: a.enum(['VENMO', 'PAYPAL', 'BANK_ACCOUNT', 'CASH_APP', 'STRIPE_CARD']),
       // Venmo-specific fields
       venmoUsername: a.string(),
       venmoPhone: a.string(), // Last 4 digits for verification
       venmoEmail: a.string(), // Email associated with Venmo account
+      // Stripe-specific fields
+      stripePaymentMethodId: a.string(),
       // Verification
       isVerified: a.boolean().default(false),
       verifiedAt: a.datetime(),
@@ -467,6 +478,7 @@ const schema = a.schema({
       // Venmo-specific fields
       venmoTransactionId: a.string(), // User-provided Venmo transaction ID for verification
       venmoUsername: a.string(), // Captured at time of transaction
+      stripePaymentIntentId: a.string(), // Stripe PaymentIntent ID for card deposits
       // Related entities
       relatedBetId: a.id(),
       relatedParticipantId: a.id(),
@@ -753,6 +765,36 @@ const schema = a.schema({
     .handler(a.handler.function(eventFetcher))
     .authorization((allow) => [allow.authenticated()]),
 
+  // Stripe: Create a PaymentIntent for a card deposit
+  createStripePaymentIntent: a
+    .mutation()
+    .arguments({
+      amountCents: a.integer().required(), // Desired deposit in cents (before processing fee)
+    })
+    .returns(a.customType({
+      clientSecret: a.string(),
+      paymentIntentId: a.string(),
+      transactionId: a.string(),
+      totalChargeCents: a.integer(), // Amount actually charged (with processing fee)
+    }))
+    .handler(a.handler.function(stripePaymentIntent))
+    .authorization((allow) => [allow.authenticated()]),
+
+  // Stripe: Create subscription or get customer portal URL
+  createStripeManage: a
+    .mutation()
+    .arguments({
+      action: a.string().required(), // 'create_subscription' | 'customer_portal'
+      returnUrl: a.string(),
+    })
+    .returns(a.customType({
+      clientSecret: a.string(),
+      subscriptionId: a.string(),
+      portalUrl: a.string(),
+    }))
+    .handler(a.handler.function(stripeManage))
+    .authorization((allow) => [allow.authenticated()]),
+
 }).authorization((allow) => [
   // Allow the Lambda functions to be invoked and access data
   allow.resource(scheduledBetChecker).to(["query", "listen", "mutate"]),
@@ -760,6 +802,9 @@ const schema = a.schema({
   allow.resource(pushNotificationSender).to(["query", "listen", "mutate"]),
   allow.resource(eventFetcher).to(["query", "listen", "mutate"]),
   allow.resource(payoutProcessor).to(["query", "listen", "mutate"]),
+  allow.resource(stripePaymentIntent).to(["query", "listen", "mutate"]),
+  allow.resource(stripeWebhook).to(["query", "listen", "mutate"]),
+  allow.resource(stripeManage).to(["query", "listen", "mutate"]),
 ]);
 
 export type Schema = ClientSchema<typeof schema>;

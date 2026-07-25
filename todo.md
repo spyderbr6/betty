@@ -52,6 +52,61 @@
 
 ---
 
+## 💳 STRIPE INTEGRATION STATUS
+
+### ✅ Completed (this session)
+- **Card deposits via Stripe Payment Sheet** — replaces manual Venmo TX ID entry
+  - `stripe-payment-intent` Lambda creates PaymentIntent, returns clientSecret
+  - `AddFundsModal` replaced with 2-step Stripe flow (amount → Payment Sheet → success)
+  - 0.5% processing fee shown transparently before payment; waived for Pro members
+- **Stripe webhook** Lambda updates Transaction + credits balance automatically
+  - Exposed via Lambda Function URL (copy URL from CloudFormation outputs → Stripe Dashboard → Developers → Webhooks)
+  - Handles: `payment_intent.succeeded`, `customer.subscription.*`
+- **Pro subscription** ($4.99/month) via Stripe Billing
+  - `stripe-manage` Lambda: creates subscription, returns clientSecret for Payment Sheet
+  - Customer Portal via `createStripeManage({ action: 'customer_portal' })` — no custom cancel UI needed
+  - Webhook handles subscription lifecycle (created, updated, deleted → User.subscriptionTier)
+- **Fee restructure** — all rates centralized in `src/config/subscriptionConfig.ts`
+  - Free tier: 0.5% deposit, 2% withdrawal, 3% winnings
+  - Pro tier: 0% on everything
+- **AdminTestingScreen** gated behind `__DEV__` (removed from production builds)
+
+### ⚙️ Required setup before deploying
+1. Create Stripe account at stripe.com
+2. Copy Secret Key → set `STRIPE_SECRET_KEY` in Amplify environment variables
+3. Copy Publishable Key → add `STRIPE_PUBLISHABLE_KEY=pk_live_...` to `.env` file
+4. Create Pro subscription product in Stripe → copy Price ID → set `STRIPE_PRO_PRICE_ID` in Amplify env vars
+5. Run `npx expo install @stripe/stripe-react-native`
+6. Deploy Amplify backend (`amplify push`) — CloudFormation outputs will show `StripeWebhookUrl`
+7. In Stripe Dashboard → Developers → Webhooks → Add endpoint → paste `StripeWebhookUrl`
+8. Copy Webhook Signing Secret → set `STRIPE_WEBHOOK_SECRET` in Amplify environment variables
+9. Enable Customer Portal in Stripe Dashboard → Settings → Billing → Customer Portal
+
+### 🔮 Phase 2: Automated Withdrawals (Stripe Connect Express)
+**Goal**: Eliminate the remaining manual admin step for paying out withdrawals.
+
+**How it works:**
+1. User taps "Withdraw" — they're prompted to connect their bank via Stripe Connect Express onboarding
+2. One-time onboarding: user enters bank account info, Stripe verifies identity (KYC)
+3. After onboarding, `User.stripeConnectedAccountId` is stored in DynamoDB
+4. On withdrawal request: platform calls `stripe.transfers.create()` → funds hit user's bank in 1-2 days
+
+**Implementation steps:**
+1. Add `stripeConnectedAccountId` field to User model in `amplify/data/resource.ts`
+2. Create `stripe-connect-onboard` Lambda: calls `stripe.accountLinks.create()` with type `account_onboarding`, returns onboarding URL
+3. Add new GraphQL mutation `createStripeConnectOnboardingLink` → backed by Lambda
+4. In `WithdrawFundsModal`: check if user has `stripeConnectedAccountId`
+   - If not: show "Connect Your Bank" button → open onboarding URL (Linking.openURL)
+   - If yes: show standard withdrawal flow
+5. Handle `account.updated` webhook event → update `stripeConnectedAccountId` when onboarding completes
+6. Create `stripe-payout` Lambda: calls `stripe.transfers.create({ destination: connectedAccountId, amount, currency: 'usd' })`
+7. Replace admin approval queue for withdrawals with automatic payout trigger
+8. Withdrawal then completes in 1-2 business days with no admin involvement
+
+**Cost**: Stripe charges 0.25% per payout (capped at $2) — already covered by the 2% withdrawal fee for Free tier. Pro members pay 0% withdrawal fee but the platform still pays Stripe's ~0.25%.
+
+---
+
 ## 🔄 IMMEDIATE NEXT STEPS (Current Development Cycle)
 
 ### **Priority 1: Critical Bug Fixes & UI Polish** ✅ COMPLETED

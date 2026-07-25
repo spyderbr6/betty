@@ -13,6 +13,7 @@ import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
 import { TransactionService } from './transactionService';
 import { NotificationService } from './notificationService';
+import { WINNINGS_FEE_RATE } from '../config/subscriptionConfig';
 
 const client = generateClient<Schema>();
 
@@ -610,8 +611,8 @@ export class SquaresGameService {
 
     const grossPayout = totalPot * percentage;
 
-    // Apply 3% platform fee (consistent with bet winnings)
-    const platformFee = grossPayout * 0.03;
+    // Apply platform fee (rate defined in subscriptionConfig — Pro subscribers handled at transaction level)
+    const platformFee = grossPayout * WINNINGS_FEE_RATE;
     const netPayout = grossPayout - platformFee;
 
     return Math.round(netPayout * 100) / 100;

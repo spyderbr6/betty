@@ -14,6 +14,11 @@ import '@aws-amplify/react-native';
 import amplifyconfig from './amplify_outputs.json';
 Amplify.configure(amplifyconfig);
 
+// @ts-ignore — installed via: npx expo install @stripe/stripe-react-native
+import { StripeProvider } from '@stripe/stripe-react-native';
+// @ts-ignore — react-native-dotenv resolves @env at build time
+import { STRIPE_PUBLISHABLE_KEY } from '@env';
+
 // Now import components that use Amplify
 import { useState, useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
@@ -93,22 +98,27 @@ export default function App() {
   }, []);
 
   return (
-    <SafeAreaProvider>
-      <AuthProvider>
-        <NotificationProvider>
-          <BetDataProvider>
-          <EventCheckInProvider>
-            <View style={styles.container}>
-              <MainApp />
-              <StatusBar style="light" backgroundColor={colors.background} />
-              <Toast config={toastConfig} />
-              <CustomAlertController />
-            </View>
-          </EventCheckInProvider>
-          </BetDataProvider>
-        </NotificationProvider>
-      </AuthProvider>
-    </SafeAreaProvider>
+    <StripeProvider
+      publishableKey={STRIPE_PUBLISHABLE_KEY ?? ''}
+      merchantIdentifier="merchant.com.sidebet.app"
+    >
+      <SafeAreaProvider>
+        <AuthProvider>
+          <NotificationProvider>
+            <BetDataProvider>
+            <EventCheckInProvider>
+              <View style={styles.container}>
+                <MainApp />
+                <StatusBar style="light" backgroundColor={colors.background} />
+                <Toast config={toastConfig} />
+                <CustomAlertController />
+              </View>
+            </EventCheckInProvider>
+            </BetDataProvider>
+          </NotificationProvider>
+        </AuthProvider>
+      </SafeAreaProvider>
+    </StripeProvider>
   );
 }
 
