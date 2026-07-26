@@ -1,6 +1,6 @@
 /**
  * Payment Methods Screen
- * Manage deposits, withdrawals, and payment methods with Venmo integration
+ * Manage deposits, withdrawals, and payment methods
  */
 
 import React, { useState, useEffect } from 'react';
@@ -251,7 +251,7 @@ export const PaymentMethodsScreen: React.FC<PaymentMethodsScreenProps> = ({ onCl
               <Ionicons name="card-outline" size={64} color={colors.textMuted} />
               <Text style={styles.emptyStateTitle}>No Payment Methods</Text>
               <Text style={styles.emptyStateText}>
-                Add a Venmo account to deposit or withdraw funds
+                Add a Venmo account to enable withdrawals
               </Text>
               <TouchableOpacity
                 style={styles.addButton}
@@ -271,7 +271,7 @@ export const PaymentMethodsScreen: React.FC<PaymentMethodsScreenProps> = ({ onCl
           <View style={styles.infoBannerContent}>
             <Text style={styles.infoBannerTitle}>How It Works</Text>
             <Text style={styles.infoBannerText}>
-              Add funds via Venmo to get started. Your payment method will be automatically verified when your first deposit is approved (typically 1-2 hours). Once verified, you can withdraw funds anytime. Withdrawals are processed within 1-2 business days.
+              Add funds instantly by card via the Add Funds button. Venmo accounts listed here are used for withdrawals only — withdrawals are processed within 1-2 business days.
             </Text>
           </View>
         </View>
