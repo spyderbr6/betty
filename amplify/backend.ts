@@ -28,6 +28,9 @@ const backend = defineBackend({
   // Note: liveScoreUpdater removed - TheSportsDB score updates are too unreliable
 });
 
+// Force CloudFormation to generate a new AppSync API Key (fixes expired/missing key on production stack)
+backend.data.resources.cfnResources.cfnApiKey?.overrideLogicalId('recoverApiKey20260726');
+
 // Expose the stripe-webhook Lambda via a public Function URL so Stripe can call it.
 // After deployment, copy the URL from CloudFormation outputs and paste it into
 // the Stripe dashboard under Developers → Webhooks.
