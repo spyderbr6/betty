@@ -12,7 +12,7 @@ Amplify.configure(resourceConfig, libraryOptions);
 
 const client = generateClient<Schema>() as any;
 
-const stripe = new Stripe(env.STRIPE_SECRET_KEY, { apiVersion: '2024-12-18.acacia' });
+const stripe = new Stripe(env.STRIPE_SECRET_KEY, { apiVersion: '2026-06-24.dahlia' });
 
 interface ManageArgs {
   action: string;
@@ -61,7 +61,7 @@ export const handler: AppSyncResolverHandler<ManageArgs, ManageResult> = async (
             // Already subscribed — return existing subscription's latest invoice
             const invoice = await stripe.invoices.retrieve(existing.latest_invoice as string);
             return {
-              clientSecret: (invoice.payment_intent as Stripe.PaymentIntent)?.client_secret ?? null,
+              clientSecret: ((invoice as any).payment_intent as Stripe.PaymentIntent)?.client_secret ?? null,
               subscriptionId: existing.id,
               portalUrl: null,
             };
@@ -79,8 +79,8 @@ export const handler: AppSyncResolverHandler<ManageArgs, ManageResult> = async (
         expand: ['latest_invoice.payment_intent'],
       });
 
-      const invoice = subscription.latest_invoice as Stripe.Invoice;
-      const paymentIntent = invoice.payment_intent as Stripe.PaymentIntent;
+      const invoice = subscription.latest_invoice as any;
+      const paymentIntent = invoice?.payment_intent as Stripe.PaymentIntent;
 
       return {
         clientSecret: paymentIntent.client_secret,
