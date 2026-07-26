@@ -124,7 +124,7 @@ async function handleSubscriptionChange(subscription: Stripe.Subscription, delet
   }
 
   const status = subscription.status;
-  const periodEnd = new Date(subscription.current_period_end * 1000).toISOString();
+  const periodEnd = new Date((subscription as any).current_period_end * 1000).toISOString();
   const isActive = status === 'active' || status === 'trialing';
 
   await client.models.User.update({
