@@ -12,7 +12,7 @@ Amplify.configure(resourceConfig, libraryOptions);
 
 const client = generateClient<Schema>() as any;
 
-const stripe = new Stripe(env.STRIPE_SECRET_KEY, { apiVersion: '2024-12-18.acacia' });
+const stripe = new Stripe(env.STRIPE_SECRET_KEY, { apiVersion: '2026-06-24.dahlia' });
 
 export const handler: APIGatewayProxyHandlerV2 = async (event) => {
   const sig = event.headers?.['stripe-signature'];
