@@ -4,7 +4,7 @@
   "type": "module",
   "dependencies": {
     "aws-amplify": "^6.15.4",
-    "stripe": "^16.0.0"
+    "stripe": "^22.0.0"
   },
   "devDependencies": {
     "@types/aws-lambda": "^8.10.152",
