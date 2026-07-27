@@ -228,17 +228,17 @@ export const PaymentMethodsScreen: React.FC<PaymentMethodsScreenProps> = ({ onCl
           </TouchableOpacity>
         </View>
 
-        {/* Payment Methods */}
+        {/* Withdrawal Methods */}
         <View style={styles.methodsSection}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>SAVED PAYMENT METHODS</Text>
+            <Text style={styles.sectionTitle}>WITHDRAWAL METHODS</Text>
             <TouchableOpacity
               style={styles.addMethodButton}
               onPress={() => setShowAddMethodModal(true)}
               activeOpacity={0.7}
             >
               <Ionicons name="add" size={16} color={colors.primary} />
-              <Text style={styles.addMethodButtonText}>Add</Text>
+              <Text style={styles.addMethodButtonText}>Add Venmo</Text>
             </TouchableOpacity>
           </View>
 

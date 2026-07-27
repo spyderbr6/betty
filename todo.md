@@ -71,16 +71,160 @@
   - Pro tier: 0% on everything
 - **AdminTestingScreen** gated behind `__DEV__` (removed from production builds)
 
-### ⚙️ Required setup before deploying
-1. Create Stripe account at stripe.com
-2. Copy Secret Key → set `STRIPE_SECRET_KEY` in Amplify environment variables
-3. Copy Publishable Key → add `STRIPE_PUBLISHABLE_KEY=pk_live_...` to `.env` file
-4. Create Pro subscription product in Stripe → copy Price ID → set `STRIPE_PRO_PRICE_ID` in Amplify env vars
-5. Run `npx expo install @stripe/stripe-react-native`
-6. Deploy Amplify backend (`amplify push`) — CloudFormation outputs will show `StripeWebhookUrl`
-7. In Stripe Dashboard → Developers → Webhooks → Add endpoint → paste `StripeWebhookUrl`
-8. Copy Webhook Signing Secret → set `STRIPE_WEBHOOK_SECRET` in Amplify environment variables
-9. Enable Customer Portal in Stripe Dashboard → Settings → Billing → Customer Portal
+### ⚙️ Stripe Setup Guide (Test → Production)
+
+#### Understanding Test vs Live mode
+Stripe has two completely separate environments. **Never mix keys across environments.**
+
+| | Test mode | Live (Production) mode |
+|---|---|---|
+| Keys start with | `pk_test_` / `sk_test_` | `pk_live_` / `sk_live_` |
+| Real money? | No — fake transactions only | Yes — real charges |
+| Test card | `4242 4242 4242 4242` | Real cards only |
+| Dashboard toggle | Top-right "Test mode" ON | Top-right "Test mode" OFF |
+
+---
+
+#### Step 1 — Create a Stripe account
+Go to [stripe.com](https://stripe.com) → Sign up (or log in).
+Make sure **Test mode** is ON (toggle in top-right of dashboard).
+
+---
+
+#### Step 2 — Get your API keys
+**Stripe Dashboard → Developers → API Keys**
+
+You need two keys per environment:
+- **Publishable key** (`pk_test_...` or `pk_live_...`) — goes in `.env`, safe to expose in app bundle
+- **Secret key** (`sk_test_...` or `sk_live_...`) — goes in Amplify env vars, NEVER committed to git
+
+**For testing**: copy the `pk_test_...` and `sk_test_...` keys.
+**For production**: switch the dashboard toggle to Live mode, copy the `pk_live_...` and `sk_live_...` keys.
+
+---
+
+#### Step 3 — Set the publishable key in `.env`
+Open the `.env` file in the root of the project (not committed to git):
+```
+# For testing:
+STRIPE_PUBLISHABLE_KEY=pk_test_YOUR_KEY_HERE
+
+# For production (swap when going live):
+STRIPE_PUBLISHABLE_KEY=pk_live_YOUR_KEY_HERE
+```
+This key is bundled into the app and used by StripeProvider in App.tsx.
+
+---
+
+#### Step 4 — Set Lambda environment variables in Amplify Console
+Go to **AWS Amplify Console → [your app] → [branch] → Environment variables**
+(or set them per-function in **AWS Lambda Console → each function → Configuration → Environment variables**)
+
+Set these for all three Stripe Lambda functions (`stripe-payment-intent`, `stripe-webhook`, `stripe-manage`):
+
+| Variable | Where to get it | Test value | Production value |
+|---|---|---|---|
+| `STRIPE_SECRET_KEY` | Stripe → Developers → API Keys | `sk_test_...` | `sk_live_...` |
+| `STRIPE_WEBHOOK_SECRET` | Stripe → Developers → Webhooks (after Step 6) | `whsec_...` | `whsec_...` |
+| `STRIPE_PRO_PRICE_ID` | Stripe → Products (after Step 5) | `price_test_...` | `price_live_...` |
+| `STRIPE_PORTAL_RETURN_URL` | Deep link back to app | `sidebet://account` | `sidebet://account` |
+
+**IMPORTANT**: These are set in AWS, not in code. They are not in `.env` and are never committed to git.
+
+After changing Lambda env vars: **redeploy the branch** (or wait for the next deployment) for changes to take effect.
+
+---
+
+#### Step 5 — Create the Pro subscription product in Stripe
+**Stripe Dashboard → Products → + Add product** (make sure you're in the right mode: Test or Live)
+
+1. Name: `SideBet Pro`
+2. Description: `0% fees on all deposits, withdrawals, and winnings`
+3. Click **Add price**:
+   - Pricing model: **Standard pricing**
+   - Price: `$4.99`
+   - Billing period: **Monthly**
+   - Currency: `USD`
+4. Save product
+5. Click on the price you just created → copy the **Price ID** (starts with `price_`)
+6. Set this as `STRIPE_PRO_PRICE_ID` in Amplify env vars (Step 4)
+
+To change the Pro price in the future: create a new price in Stripe, update `STRIPE_PRO_PRICE_ID`. Do NOT delete old prices — existing subscribers stay on the old price until you migrate them.
+
+---
+
+#### Step 6 — Set up the webhook endpoint
+After deploying the Amplify backend, the `StripeWebhookUrl` Lambda Function URL appears in CloudFormation outputs.
+
+**To find it**: AWS Console → CloudFormation → your Amplify stack → Outputs tab → look for `StripeWebhookUrl`. It looks like:
+`https://xxxxxxxxxxxxxxxx.lambda-url.us-east-2.on.aws/`
+
+**Add it to Stripe**:
+1. Stripe Dashboard → Developers → Webhooks → **+ Add endpoint**
+2. Endpoint URL: paste the Lambda URL
+3. Events to listen for — select these:
+   - `payment_intent.succeeded`
+   - `customer.subscription.created`
+   - `customer.subscription.updated`
+   - `customer.subscription.deleted`
+4. Click **Add endpoint**
+5. Click **Reveal** next to Signing secret → copy the `whsec_...` value
+6. Set as `STRIPE_WEBHOOK_SECRET` in Amplify env vars
+
+**Two separate webhooks needed** — one in Stripe Test mode for testing, one in Stripe Live mode for production. Each will have a different signing secret.
+
+---
+
+#### Step 7 — Enable the Customer Portal (for subscription management)
+**Stripe Dashboard → Settings → Billing → Customer Portal** (make sure you're in the right mode)
+
+1. Toggle "Customer portal" ON
+2. Under **Cancellation**: enable "Cancel subscriptions"
+3. Under **Subscriptions**: enable "Upgrade and downgrade subscriptions" (optional)
+4. Click **Save**
+
+This powers the "Manage Subscription" button in the app — users can cancel or update their plan through Stripe's hosted page without any custom UI.
+
+---
+
+#### Step 8 — Test the full flow
+Use this test card (no real money charged):
+```
+Card number:  4242 4242 4242 4242
+Expiry:       Any future date (e.g. 12/29)
+CVC:          Any 3 digits (e.g. 123)
+ZIP:          Any 5 digits (e.g. 12345)
+```
+
+**Deposit test**:
+1. Open app → Account → Add Funds
+2. Enter an amount (e.g. $10)
+3. Tap Pay → Stripe Payment Sheet appears
+4. Enter test card above → confirm
+5. Balance should update within a few seconds (webhook fires → Lambda credits balance)
+6. Verify in Stripe Dashboard → Payments → you see a test charge
+
+**Subscription test**:
+1. Account → Upgrade to Pro
+2. Enter test card → confirm
+3. User should see "Pro Member" status
+4. Verify in Stripe Dashboard → Subscriptions → active test subscription
+
+**Declined card test**:
+- Use card `4000 0000 0000 9995` → triggers "insufficient funds" decline
+
+---
+
+#### Switching from Test → Production
+1. Change `STRIPE_PUBLISHABLE_KEY` in `.env` from `pk_test_...` to `pk_live_...`
+2. Change `STRIPE_SECRET_KEY` in Amplify env vars from `sk_test_...` to `sk_live_...`
+3. Add a new Stripe Live mode webhook endpoint (repeat Step 6 with Live mode ON)
+4. Change `STRIPE_WEBHOOK_SECRET` in Amplify env vars to the new Live mode `whsec_...`
+5. Create the Pro product/price in Live mode (repeat Step 5)
+6. Change `STRIPE_PRO_PRICE_ID` in Amplify env vars to the Live mode `price_...`
+7. Redeploy the Amplify branch
+
+The `.env` file controls what the app bundle uses. Amplify env vars control what the Lambda functions use. Both must be consistent (both test or both live) — mixing them will cause payment failures.
 
 ### 🔮 Phase 2: Automated Withdrawals (Stripe Connect Express)
 **Goal**: Eliminate the remaining manual admin step for paying out withdrawals.
