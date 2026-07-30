@@ -116,22 +116,34 @@ This key is bundled into the app and used by StripeProvider in App.tsx.
 
 ---
 
-#### Step 4 — Set Lambda environment variables in Amplify Console
-Go to **AWS Amplify Console → [your app] → [branch] → Environment variables**
-(or set them per-function in **AWS Lambda Console → each function → Configuration → Environment variables**)
+#### Step 4 — Set backend values in Amplify **Secrets**
 
-Set these for all three Stripe Lambda functions (`stripe-payment-intent`, `stripe-webhook`, `stripe-manage`):
+⚠️ **Amplify has two separate stores and they are NOT interchangeable:**
+- **Secrets** — accessed in code via `secret('NAME')`. Encrypted, never written into the CloudFormation template.
+- **Environment variables** — accessed in code via `process.env.NAME`. Plain text, baked into the template at build time.
 
-| Variable | Where to get it | Test value | Production value |
+The three Stripe Lambdas use `secret()`, so these values **must go in Secrets**, not Environment variables. Putting them in Environment variables makes them resolve to empty and every Stripe call fails with "Could not initialize payment."
+
+**Where to set them**: AWS Amplify Console → [your app] → **Hosting → Secrets** → Manage secrets → pick your branch.
+
+| Secret name | Where to get it | Test value | Production value |
 |---|---|---|---|
 | `STRIPE_SECRET_KEY` | Stripe → Developers → API Keys | `sk_test_...` | `sk_live_...` |
 | `STRIPE_WEBHOOK_SECRET` | Stripe → Developers → Webhooks (after Step 6) | `whsec_...` | `whsec_...` |
-| `STRIPE_PRO_PRICE_ID` | Stripe → Products (after Step 5) | `price_test_...` | `price_live_...` |
-| `STRIPE_PORTAL_RETURN_URL` | Deep link back to app | `sidebet://account` | `sidebet://account` |
+| `STRIPE_PRO_PRICE_ID` | Stripe → Products (after Step 5) | `price_...` | `price_...` |
 
-**IMPORTANT**: These are set in AWS, not in code. They are not in `.env` and are never committed to git.
+All three must exist or **the deployment will fail** with a "secret not found" error — that error is the fastest way to confirm a secret is missing or misnamed. Names are case-sensitive and must match exactly.
 
-After changing Lambda env vars: **redeploy the branch** (or wait for the next deployment) for changes to take effect.
+`STRIPE_PORTAL_RETURN_URL` is not a secret — it defaults to `sidebet://account` in code and only needs setting as a plain Environment variable if you want to override it.
+
+**For local sandbox development**, set secrets via the CLI instead:
+```bash
+npx ampx sandbox secret set STRIPE_SECRET_KEY
+npx ampx sandbox secret set STRIPE_WEBHOOK_SECRET
+npx ampx sandbox secret set STRIPE_PRO_PRICE_ID
+```
+
+**After changing any secret: redeploy the branch.** Secrets are resolved at deploy time, so edits do not reach running Lambdas until the next deployment.
 
 ---
 
@@ -217,14 +229,31 @@ ZIP:          Any 5 digits (e.g. 12345)
 
 #### Switching from Test → Production
 1. Change `STRIPE_PUBLISHABLE_KEY` in `.env` from `pk_test_...` to `pk_live_...`
-2. Change `STRIPE_SECRET_KEY` in Amplify env vars from `sk_test_...` to `sk_live_...`
+2. Change the `STRIPE_SECRET_KEY` **secret** from `sk_test_...` to `sk_live_...`
 3. Add a new Stripe Live mode webhook endpoint (repeat Step 6 with Live mode ON)
-4. Change `STRIPE_WEBHOOK_SECRET` in Amplify env vars to the new Live mode `whsec_...`
+4. Change the `STRIPE_WEBHOOK_SECRET` **secret** to the new Live mode `whsec_...`
 5. Create the Pro product/price in Live mode (repeat Step 5)
-6. Change `STRIPE_PRO_PRICE_ID` in Amplify env vars to the Live mode `price_...`
+6. Change the `STRIPE_PRO_PRICE_ID` **secret** to the Live mode `price_...`
 7. Redeploy the Amplify branch
 
-The `.env` file controls what the app bundle uses. Amplify env vars control what the Lambda functions use. Both must be consistent (both test or both live) — mixing them will cause payment failures.
+The `.env` file controls what the app bundle uses. Amplify Secrets control what the Lambda functions use. Both must be consistent (both test or both live) — mixing them causes `No such payment_intent` errors, since a test-mode key cannot act on a live-mode object.
+
+---
+
+### 🩺 Troubleshooting
+
+**"Could not initialize payment"** — the `stripe-payment-intent` Lambda returned no clientSecret. Check CloudWatch → `/aws/lambda/...stripe-payment-intent...`:
+| Log message | Cause | Fix |
+|---|---|---|
+| `Invalid API Key provided: ` (empty) | Secret missing or set as an Environment variable instead of a Secret | Set it under Hosting → Secrets, redeploy |
+| `Invalid API Key provided: sk_...` | Typo, or key from the wrong Stripe mode | Re-copy the key from Stripe |
+| `[StripePI] No userId in identity` | Caller is not authenticated | Sign out and back in |
+| `[StripePI] Invalid amount:` | Deposit below the $5 minimum | Enter $5 or more |
+| No logs at all | Mutation never reached the Lambda | Confirm the backend deployed successfully |
+
+**Balance does not update after a successful payment** — the webhook is not reaching the Lambda. Check Stripe Dashboard → Developers → Webhooks → your endpoint → "Events" tab for delivery failures. A 400 means the signing secret is wrong; a timeout means the URL is wrong.
+
+**Payment Sheet does not appear at all** — the native Stripe module is missing. It requires an EAS build; it does not work in Expo Go or on web.
 
 ### 🔮 Phase 2: Automated Withdrawals (Stripe Connect Express)
 **Goal**: Eliminate the remaining manual admin step for paying out withdrawals.
