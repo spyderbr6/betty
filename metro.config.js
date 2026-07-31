@@ -11,13 +11,14 @@ config.resolver.alias = {
 // Ensure platform extensions are properly resolved
 config.resolver.platforms = ['native', 'android', 'ios', 'web'];
 
-// Redirect @stripe/stripe-react-native to a web stub on web builds.
-// The native SDK imports codegen native modules that Metro cannot bundle for web.
+// Redirect @stripe/stripe-react-native to the web implementation on web builds.
+// The native SDK imports codegen native modules that Metro cannot bundle for web;
+// src/web/stripe-react-native.tsx provides the same API backed by Stripe.js.
 const defaultResolveRequest = config.resolver.resolveRequest;
 config.resolver.resolveRequest = (context, moduleName, platform) => {
   if (platform === 'web' && moduleName === '@stripe/stripe-react-native') {
     return {
-      filePath: path.resolve(__dirname, 'src/mocks/stripe-react-native.web.tsx'),
+      filePath: path.resolve(__dirname, 'src/web/stripe-react-native.tsx'),
       type: 'sourceFile',
     };
   }

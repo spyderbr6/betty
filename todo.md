@@ -70,6 +70,13 @@
   - Free tier: 0.5% deposit, 2% withdrawal, 3% winnings
   - Pro tier: 0% on everything
 - **AdminTestingScreen** gated behind `__DEV__` (removed from production builds)
+- **Cross-platform payments** — card entry works on iOS, Android, *and* web
+  - Native (iOS/Android): Stripe Payment Sheet via `@stripe/stripe-react-native` (requires an EAS build)
+  - Web: Stripe Payment Element via `@stripe/stripe-js` + `@stripe/react-stripe-js`
+  - `src/web/stripe-react-native.tsx` exposes the same `initPaymentSheet`/`presentPaymentSheet`
+    API as the native SDK, so `AddFundsModal` and `SubscriptionScreen` are platform-agnostic.
+    Metro swaps the implementation at build time (see `metro.config.js`).
+  - Both platforms share one backend — same Lambdas, same `clientSecret`, same webhook.
 
 ### ⚙️ Stripe Setup Guide (Test → Production)
 
@@ -253,7 +260,9 @@ The `.env` file controls what the app bundle uses. Amplify Secrets control what 
 
 **Balance does not update after a successful payment** — the webhook is not reaching the Lambda. Check Stripe Dashboard → Developers → Webhooks → your endpoint → "Events" tab for delivery failures. A 400 means the signing secret is wrong; a timeout means the URL is wrong.
 
-**Payment Sheet does not appear at all** — the native Stripe module is missing. It requires an EAS build; it does not work in Expo Go or on web.
+**Payment form does not appear at all**
+- *On iOS/Android*: the native Stripe module is missing. The Payment Sheet requires an EAS build — it does not work in Expo Go.
+- *On web*: `STRIPE_PUBLISHABLE_KEY` is missing from `.env`, so Stripe.js never loads. The form reports "Payments are not configured for web."
 
 ### 🔮 Phase 2: Automated Withdrawals (Stripe Connect Express)
 **Goal**: Eliminate the remaining manual admin step for paying out withdrawals.
