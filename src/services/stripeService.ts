@@ -1,6 +1,6 @@
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
-import { Linking } from 'react-native';
+import { Linking, Platform } from 'react-native';
 import { calculateDepositFee } from '../config/subscriptionConfig';
 
 const client = generateClient<Schema>();
@@ -92,9 +92,16 @@ export async function createSubscription(): Promise<SubscriptionResult> {
  */
 export async function openCustomerPortal(): Promise<void> {
   try {
+    // Where Stripe sends the user's browser after they finish in the portal.
+    // A custom scheme cannot be followed by a web browser, so web needs a real URL.
+    const returnUrl =
+      Platform.OS === 'web' && typeof window !== 'undefined'
+        ? window.location.origin
+        : 'sidebet://account';
+
     const result = await (client as any).mutations.createStripeManage({
       action: 'customer_portal',
-      returnUrl: 'sidebet://account',
+      returnUrl,
     });
     const portalUrl = result?.data?.portalUrl;
     if (portalUrl) {

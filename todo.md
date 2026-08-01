@@ -146,6 +146,17 @@ All three must exist or **the deployment will fail** with a "secret not found" e
 
 `STRIPE_PORTAL_RETURN_URL` is not a secret — it defaults to `sidebet://account` in code and only needs setting as a plain Environment variable if you want to override it.
 
+⚠️ **Do not confuse the two Stripe URLs.** They point in opposite directions:
+
+| | Direction | Where it goes | Correct value |
+|---|---|---|---|
+| **Webhook endpoint** (set in Stripe Dashboard → Webhooks) | Stripe's servers → your backend | The Lambda Function URL | `https://xxxx.lambda-url.<region>.on.aws/` |
+| **`STRIPE_PORTAL_RETURN_URL`** | The user's browser → back to your app | Your app | `sidebet://account` |
+
+Putting the Lambda URL in `STRIPE_PORTAL_RETURN_URL` drops users on a page that just says `OK` after they finish managing their subscription.
+
+The app overrides this per platform anyway (see `openCustomerPortal()` in `src/services/stripeService.ts`): mobile uses the `sidebet://` deep link, web uses `window.location.origin`, because a browser cannot follow a custom scheme. The env var is only a fallback.
+
 **For local sandbox development**, set secrets via the CLI instead:
 ```bash
 npx ampx sandbox secret set STRIPE_SECRET_KEY
