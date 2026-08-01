@@ -11,6 +11,7 @@ import { stripePaymentIntent } from './functions/stripe-payment-intent/resource'
 import { stripeWebhook } from './functions/stripe-webhook/resource';
 import { stripeManage } from './functions/stripe-manage/resource';
 import { FunctionUrlAuthType } from 'aws-cdk-lib/aws-lambda';
+import { AnyPrincipal } from 'aws-cdk-lib/aws-iam';
 import { CfnOutput } from 'aws-cdk-lib';
 
 const backend = defineBackend({
@@ -38,6 +39,12 @@ const webhookFn = backend.stripeWebhook.resources.lambda;
 const webhookUrl = webhookFn.addFunctionUrl({
   authType: FunctionUrlAuthType.NONE,
 });
+
+// Stripe calls this endpoint unauthenticated, so the URL needs a resource policy
+// allowing anyone to invoke it. Without this AWS rejects the request with 403
+// before the handler runs — the request never reaches our signature check, which
+// is what actually authenticates the caller.
+webhookUrl.grantInvokeUrl(new AnyPrincipal());
 new CfnOutput(backend.stack, 'StripeWebhookUrl', {
   value: webhookUrl.url,
   description: 'Paste this URL into Stripe Dashboard → Developers → Webhooks',
