@@ -163,7 +163,12 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
   };
 
   const getVerificationId = (transaction: Transaction): string => {
-    // For deposits, use Venmo transaction ID
+    // Card deposits verify against the Stripe PaymentIntent, so the admin has to
+    // look the charge up in Stripe before they can approve it.
+    if (transaction.type === 'DEPOSIT' && transaction.stripePaymentIntentId) {
+      return transaction.stripePaymentIntentId;
+    }
+    // For Venmo deposits, use Venmo transaction ID
     // For withdrawals, use transaction ID
     if (transaction.type === 'DEPOSIT' && transaction.venmoTransactionId) {
       return transaction.venmoTransactionId;
@@ -172,6 +177,9 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
   };
 
   const getVerificationLabel = (transaction: Transaction): string => {
+    if (transaction.type === 'DEPOSIT' && transaction.stripePaymentIntentId) {
+      return 'Stripe PaymentIntent ID';
+    }
     if (transaction.type === 'DEPOSIT' && transaction.venmoTransactionId) {
       return 'Venmo Transaction ID';
     }
@@ -235,8 +243,9 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
 
       if (success) {
         const feeAmount = approvalTransaction.amount - actualAmount;
+        const feeLabel = approvalTransaction.stripePaymentIntentId ? 'shortfall' : 'Venmo fee';
         const message = feeAmount > 0.01
-          ? `Transaction approved. User credited with $${actualAmount.toFixed(2)} (Venmo fee: $${feeAmount.toFixed(2)})`
+          ? `Transaction approved. User credited with $${actualAmount.toFixed(2)} (${feeLabel}: $${feeAmount.toFixed(2)})`
           : 'Transaction approved successfully';
         showAlert('Success', message);
         console.log('[AdminDashboard] Reloading transactions after approval...');
@@ -420,6 +429,25 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
               <Text style={styles.detailLabel}>Venmo TX ID:</Text>
               <Text style={styles.detailValue}>{transaction.venmoTransactionId}</Text>
             </View>
+          )}
+
+          {transaction.stripePaymentIntentId && (
+            <>
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Stripe Intent:</Text>
+                <Text style={[styles.detailValue, styles.stripeIntentId]} selectable>
+                  {transaction.stripePaymentIntentId}
+                </Text>
+              </View>
+              <View style={styles.stripeWarning}>
+                <Ionicons name="warning-outline" size={16} color={colors.warning} />
+                <Text style={styles.stripeWarningText}>
+                  Card payment that did not settle automatically — the webhook
+                  likely failed. Confirm this charge succeeded in the Stripe
+                  Dashboard before approving.
+                </Text>
+              </View>
+            </>
           )}
 
           <View style={styles.detailRow}>
@@ -1118,6 +1146,28 @@ const styles = StyleSheet.create({
   balanceAfter: {
     color: colors.success,
     fontWeight: typography.fontWeight.bold,
+  },
+  stripeIntentId: {
+    fontFamily: typography.fontFamily.mono,
+    fontSize: typography.fontSize.xs,
+    flexShrink: 1,
+  },
+  stripeWarning: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: colors.warning + '15',
+    borderRadius: spacing.radius.sm,
+    borderWidth: 1,
+    borderColor: colors.warning + '40',
+    padding: spacing.sm,
+    marginTop: spacing.xs,
+    marginBottom: spacing.xs,
+  },
+  stripeWarningText: {
+    ...textStyles.caption,
+    color: colors.warning,
+    marginLeft: spacing.xs,
+    flexShrink: 1,
   },
   notesSection: {
     marginTop: spacing.xs,

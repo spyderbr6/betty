@@ -504,13 +504,14 @@ export class TransactionService {
         return false;
       }
 
-      // Card deposits are settled by the Stripe webhook, which credits the balance
-      // itself. Approving one here would credit it twice.
-      if (transaction.type === 'DEPOSIT' && transaction.stripePaymentIntentId) {
-        console.error(
-          '[Transaction] Refusing manual approval of a Stripe deposit:',
-          transactionId,
-          '— this settles automatically via webhook.'
+      // Never credit a transaction twice. This is the single guard protecting
+      // against: an admin approving a card deposit the webhook already settled,
+      // a double-tap on approve, and a late webhook arriving after a manual
+      // approval (the webhook has its own already-settled check too).
+      if (status === 'COMPLETED' && transaction.status === 'COMPLETED') {
+        console.warn(
+          '[Transaction] Already COMPLETED, refusing to credit again:',
+          transactionId
         );
         return false;
       }
@@ -782,13 +783,14 @@ export class TransactionService {
       // Only return DEPOSIT and WITHDRAWAL transactions for admin approval queue
       // Other transaction types (BET_WON, BET_PLACED, etc.) should never need admin approval
       //
-      // Card deposits (stripePaymentIntentId set) are settled automatically by the
-      // Stripe webhook and must NEVER appear here — approving one manually would
-      // credit the balance a second time. A card deposit stuck in PENDING means the
-      // webhook did not arrive; fix the webhook rather than approving by hand.
+      // Card deposits normally settle themselves via the Stripe webhook and never
+      // linger here. One that IS still PENDING means the webhook did not arrive, so
+      // it stays visible as a manual recovery path. Verify the charge actually
+      // succeeded in the Stripe Dashboard before approving — updateTransactionStatus
+      // refuses to credit anything already marked COMPLETED, so a late webhook
+      // cannot double-credit after a manual approval.
       const transactions = (data || [])
         .filter((t: any) => t.type === 'DEPOSIT' || t.type === 'WITHDRAWAL')
-        .filter((t: any) => !t.stripePaymentIntentId)
         .map((t: any) => ({
           id: t.id!,
           userId: t.userId!,
