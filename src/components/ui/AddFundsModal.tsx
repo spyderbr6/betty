@@ -135,7 +135,9 @@ export const AddFundsModal: React.FC<AddFundsModalProps> = ({
             onChangeText={setAmount}
             onFocus={() => setAmountFocused(true)}
             onBlur={() => setAmountFocused(false)}
-            autoFocus
+            // On web, autoFocus makes the browser scroll the field into view,
+            // which shifts the layout horizontally and clips the left edge.
+            autoFocus={Platform.OS !== 'web'}
             textAlignVertical="center"
           />
         </View>
@@ -233,6 +235,8 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
+    // Prevents any overflowing child from scrolling the viewport sideways
+    overflow: 'hidden',
   },
   content: {
     flex: 1,
@@ -243,6 +247,11 @@ const styles = StyleSheet.create({
   stepContentContainer: {
     paddingVertical: spacing.lg,
     paddingHorizontal: spacing.xl,
+    // Keep content within the viewport on wide screens so nothing can push
+    // the layout horizontally
+    width: '100%',
+    maxWidth: 520,
+    alignSelf: 'center',
   },
   sectionTitle: {
     ...textStyles.label,
@@ -302,10 +311,14 @@ const styles = StyleSheet.create({
   feeLabel: {
     ...textStyles.bodySmall,
     color: colors.textSecondary,
+    // Wrap long labels instead of widening the row past the container
+    flexShrink: 1,
+    marginRight: spacing.sm,
   },
   feeValue: {
     ...textStyles.bodySmall,
     color: colors.textSecondary,
+    flexShrink: 0,
   },
   feeWaived: {
     color: colors.success,
@@ -320,11 +333,14 @@ const styles = StyleSheet.create({
     ...textStyles.button,
     color: colors.textPrimary,
     fontWeight: typography.fontWeight.semibold,
+    flexShrink: 1,
+    marginRight: spacing.sm,
   },
   feeTotalValue: {
     ...textStyles.button,
     color: colors.primary,
     fontWeight: typography.fontWeight.bold,
+    flexShrink: 0,
   },
   feeNote: {
     ...textStyles.caption,
@@ -349,6 +365,7 @@ const styles = StyleSheet.create({
     color: colors.warning,
     fontWeight: typography.fontWeight.semibold,
     marginLeft: spacing.xs,
+    flexShrink: 1,
   },
 
   // Pay button

@@ -222,10 +222,14 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
+    overflow: 'hidden',
   },
   content: {
     paddingHorizontal: spacing.xl,
     paddingBottom: spacing.xl,
+    width: '100%',
+    maxWidth: 520,
+    alignSelf: 'center',
   },
 
   // Pro active

@@ -19,6 +19,7 @@ import {
   StyleSheet,
   Modal,
   ActivityIndicator,
+  ScrollView,
 } from 'react-native';
 import { loadStripe, type Stripe as StripeJs } from '@stripe/stripe-js';
 import {
@@ -152,7 +153,14 @@ const PaymentSheetHost: React.FC<{ publishableKey?: string }> = ({ publishableKe
           </TouchableOpacity>
         </View>
 
-        <View style={styles.formWrapper}>
+        {/* Scrollable so the Pay button stays reachable on short viewports
+            and once the card form expands. */}
+        <ScrollView
+          style={styles.formScroll}
+          contentContainerStyle={styles.formWrapper}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
           <Elements
             stripe={stripePromise}
             options={{
@@ -170,7 +178,7 @@ const PaymentSheetHost: React.FC<{ publishableKey?: string }> = ({ publishableKe
           >
             <CheckoutForm onFinish={finish} />
           </Elements>
-        </View>
+        </ScrollView>
       </View>
     </Modal>
   );
@@ -236,6 +244,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
+    overflow: 'hidden',
   },
   header: {
     flexDirection: 'row',
@@ -258,16 +267,19 @@ const styles = StyleSheet.create({
     ...textStyles.button,
     color: colors.textSecondary,
   },
-  formWrapper: {
+  formScroll: {
     flex: 1,
+  },
+  formWrapper: {
     paddingHorizontal: spacing.xl,
     paddingTop: spacing.xl,
+    paddingBottom: spacing.xl,
     maxWidth: 520,
     width: '100%',
     alignSelf: 'center',
   },
   form: {
-    flex: 1,
+    width: '100%',
   },
   errorText: {
     ...textStyles.bodySmall,
