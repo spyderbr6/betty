@@ -10,7 +10,9 @@ import { NotificationService } from './notificationService';
 import { TrustScoreService } from './trustScoreService';
 import { WITHDRAWAL_FEE_RATE, WINNINGS_FEE_RATE } from '../config/subscriptionConfig';
 
-const client = generateClient<Schema>();
+// Cast to any: the Transaction model has enough fields that Amplify's generated
+// types exceed TypeScript's union-complexity limit (TS2590) at each call site.
+const client = generateClient<Schema>() as any;
 
 export type TransactionType =
   | 'DEPOSIT'
@@ -45,6 +47,7 @@ export interface Transaction {
   paymentMethodId?: string;
   venmoTransactionId?: string;
   venmoUsername?: string;
+  stripePaymentIntentId?: string; // Set on card deposits — settled automatically by webhook
   relatedBetId?: string;
   relatedParticipantId?: string;
   relatedSquaresGameId?: string; // For squares game transactions
@@ -501,6 +504,17 @@ export class TransactionService {
         return false;
       }
 
+      // Card deposits are settled by the Stripe webhook, which credits the balance
+      // itself. Approving one here would credit it twice.
+      if (transaction.type === 'DEPOSIT' && transaction.stripePaymentIntentId) {
+        console.error(
+          '[Transaction] Refusing manual approval of a Stripe deposit:',
+          transactionId,
+          '— this settles automatically via webhook.'
+        );
+        return false;
+      }
+
       // If completing a deposit, update user balance
       if (status === 'COMPLETED' && transaction.type === 'DEPOSIT') {
         // Use actualAmount if provided (after Venmo fees), otherwise use requested amount
@@ -713,7 +727,7 @@ export class TransactionService {
         sortDirection: 'DESC' // Newest first
       });
 
-      let transactions = (data || []).map(t => ({
+      let transactions = (data || []).map((t: any) => ({
         id: t.id!,
         userId: t.userId!,
         type: t.type as TransactionType,
@@ -739,10 +753,10 @@ export class TransactionService {
 
       // Filter client-side by type and/or status if specified
       if (options.type) {
-        transactions = transactions.filter(t => t.type === options.type);
+        transactions = transactions.filter((t: any) => t.type === options.type);
       }
       if (options.status) {
-        transactions = transactions.filter(t => t.status === options.status);
+        transactions = transactions.filter((t: any) => t.status === options.status);
       }
 
       // Already sorted by GSI (createdAt DESC), no need to sort again
@@ -767,9 +781,15 @@ export class TransactionService {
 
       // Only return DEPOSIT and WITHDRAWAL transactions for admin approval queue
       // Other transaction types (BET_WON, BET_PLACED, etc.) should never need admin approval
+      //
+      // Card deposits (stripePaymentIntentId set) are settled automatically by the
+      // Stripe webhook and must NEVER appear here — approving one manually would
+      // credit the balance a second time. A card deposit stuck in PENDING means the
+      // webhook did not arrive; fix the webhook rather than approving by hand.
       const transactions = (data || [])
-        .filter(t => t.type === 'DEPOSIT' || t.type === 'WITHDRAWAL')
-        .map(t => ({
+        .filter((t: any) => t.type === 'DEPOSIT' || t.type === 'WITHDRAWAL')
+        .filter((t: any) => !t.stripePaymentIntentId)
+        .map((t: any) => ({
           id: t.id!,
           userId: t.userId!,
           type: t.type as TransactionType,
@@ -782,6 +802,7 @@ export class TransactionService {
           paymentMethodId: t.paymentMethodId || undefined,
           venmoTransactionId: t.venmoTransactionId || undefined,
           venmoUsername: t.venmoUsername || undefined,
+          stripePaymentIntentId: t.stripePaymentIntentId || undefined,
           relatedBetId: t.relatedBetId || undefined,
           relatedParticipantId: t.relatedParticipantId || undefined,
           relatedSquaresGameId: t.relatedSquaresGameId || undefined,
@@ -793,7 +814,7 @@ export class TransactionService {
           completedAt: t.completedAt || undefined,
         }));
 
-      return transactions.sort((a, b) =>
+      return transactions.sort((a: any, b: any) =>
         new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
       );
     } catch (error) {

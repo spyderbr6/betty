@@ -58,7 +58,8 @@
 - **Card deposits via Stripe Payment Sheet** — replaces manual Venmo TX ID entry
   - `stripe-payment-intent` Lambda creates PaymentIntent, returns clientSecret
   - `AddFundsModal` replaced with 2-step Stripe flow (amount → Payment Sheet → success)
-  - 0.5% processing fee shown transparently before payment; waived for Pro members
+  - Card processing passed through at Stripe's cost (2.9% + $0.30, grossed up so
+    the platform nets the full deposit), shown transparently before payment
 - **Stripe webhook** Lambda updates Transaction + credits balance automatically
   - Exposed via Lambda Function URL (copy URL from CloudFormation outputs → Stripe Dashboard → Developers → Webhooks)
   - Handles: `payment_intent.succeeded`, `customer.subscription.*`
@@ -67,8 +68,10 @@
   - Customer Portal via `createStripeManage({ action: 'customer_portal' })` — no custom cancel UI needed
   - Webhook handles subscription lifecycle (created, updated, deleted → User.subscriptionTier)
 - **Fee restructure** — all rates centralized in `src/config/subscriptionConfig.ts`
-  - Free tier: 0.5% deposit, 2% withdrawal, 3% winnings
-  - Pro tier: 0% on everything
+  - Deposits: card processing at cost for everyone (Free and Pro alike) — this is
+    Stripe's fee, not a platform margin. See `calculateDepositFee()`.
+  - Free tier: 2% withdrawal, 3% winnings
+  - Pro tier: 0% withdrawal, 0% winnings
 - **AdminTestingScreen** gated behind `__DEV__` (removed from production builds)
 - **Cross-platform payments** — card entry works on iOS, Android, *and* web
   - Native (iOS/Android): Stripe Payment Sheet via `@stripe/stripe-react-native` (requires an EAS build)

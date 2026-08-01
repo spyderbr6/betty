@@ -14,8 +14,20 @@ const client = generateClient<Schema>() as any;
 
 const stripe = new Stripe(env.STRIPE_SECRET_KEY, { apiVersion: '2026-06-24.dahlia' });
 
-// Fee rates must match src/config/subscriptionConfig.ts
-const DEPOSIT_PROCESSING_FEE_RATE = 0.005;
+// Must match calculateDepositFee() in src/config/subscriptionConfig.ts
+const STRIPE_PERCENT_FEE = 0.029;
+const STRIPE_FIXED_FEE_CENTS = 30;
+
+/**
+ * Fee (in cents) to add so the platform nets the full deposit after Stripe's cut.
+ * Stripe deducts from the total charged, so the fee is grossed up:
+ *   total = (deposit + fixed) / (1 - percent)
+ * Rounded up so the platform is never short.
+ */
+function calculateDepositFeeCents(depositCents: number): number {
+  const total = (depositCents + STRIPE_FIXED_FEE_CENTS) / (1 - STRIPE_PERCENT_FEE);
+  return Math.ceil(total - depositCents);
+}
 
 interface PaymentIntentArgs {
   amountCents: number;
@@ -45,12 +57,12 @@ export const handler: AppSyncResolverHandler<PaymentIntentArgs, PaymentIntentRes
   }
 
   try {
-    // Check if user is Pro subscriber (no processing fee for Pro)
     const { data: user } = await client.models.User.get({ id: userId });
-    const isPro = user?.subscriptionTier === 'PRO' && user?.subscriptionStatus === 'ACTIVE';
 
+    // Card processing is passed through at Stripe's cost for everyone — Pro's
+    // benefit is 0% on withdrawals and winnings, not on card processing.
     const depositAmountCents = amountCents;
-    const processingFeeCents = isPro ? 0 : Math.round(amountCents * DEPOSIT_PROCESSING_FEE_RATE);
+    const processingFeeCents = calculateDepositFeeCents(depositAmountCents);
     const totalChargeCents = depositAmountCents + processingFeeCents;
     const depositAmountDollars = depositAmountCents / 100;
 
@@ -75,7 +87,7 @@ export const handler: AppSyncResolverHandler<PaymentIntentArgs, PaymentIntentRes
       balanceBefore: user?.balance ?? 0,
       balanceAfter: (user?.balance ?? 0) + depositAmountDollars,
       stripePaymentIntentId: paymentIntent.id,
-      notes: `Card deposit${isPro ? '' : ` (0.5% processing fee: $${(processingFeeCents / 100).toFixed(2)})`}`,
+      notes: `Card deposit (card processing fee: $${(processingFeeCents / 100).toFixed(2)})`,
       createdAt: new Date().toISOString(),
     });
 
