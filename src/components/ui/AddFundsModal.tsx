@@ -95,12 +95,17 @@ export const AddFundsModal: React.FC<AddFundsModalProps> = ({
       const { error: presentError } = await presentPaymentSheet();
 
       if (presentError) {
+        // Log every outcome — a silent 'Canceled' return is otherwise
+        // indistinguishable from the sheet never opening.
+        console.log('[AddFundsModal] Payment sheet returned:', presentError);
         if (presentError.code !== 'Canceled') {
           showAlert('Payment Failed', presentError.message ?? 'Payment was not completed.');
         }
         setIsProcessing(false);
         return;
       }
+
+      console.log('[AddFundsModal] Payment confirmed, awaiting webhook to credit balance');
 
       // 4. Payment confirmed — balance updates via Stripe webhook within seconds
       setDidSucceed(true);

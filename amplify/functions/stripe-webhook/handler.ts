@@ -15,18 +15,38 @@ const client = generateClient<Schema>() as any;
 const stripe = new Stripe(env.STRIPE_SECRET_KEY, { apiVersion: '2026-06-24.dahlia' });
 
 export const handler: APIGatewayProxyHandlerV2 = async (event) => {
-  const sig = event.headers?.['stripe-signature'];
-  const rawBody = event.body ?? '';
+  // Header names arrive lowercased through Function URLs, but check both to be safe.
+  const headers = event.headers ?? {};
+  const sig = headers['stripe-signature'] ?? headers['Stripe-Signature'];
+
+  // Signature verification hashes the EXACT bytes Stripe sent. Lambda Function URLs
+  // base64-encode the body depending on content type, so decode before verifying —
+  // otherwise every event fails verification and deposits stay PENDING forever.
+  const rawBody = event.isBase64Encoded
+    ? Buffer.from(event.body ?? '', 'base64').toString('utf8')
+    : event.body ?? '';
+
+  if (!sig) {
+    console.error('[StripeWebhook] Missing stripe-signature header');
+    return { statusCode: 400, body: 'Missing stripe-signature header' };
+  }
+  if (!env.STRIPE_WEBHOOK_SECRET) {
+    console.error('[StripeWebhook] STRIPE_WEBHOOK_SECRET is not set — check Amplify Secrets');
+    return { statusCode: 500, body: 'Webhook secret not configured' };
+  }
 
   let stripeEvent: Stripe.Event;
   try {
-    stripeEvent = stripe.webhooks.constructEvent(rawBody, sig!, env.STRIPE_WEBHOOK_SECRET);
+    stripeEvent = stripe.webhooks.constructEvent(rawBody, sig, env.STRIPE_WEBHOOK_SECRET);
   } catch (err) {
-    console.error('[StripeWebhook] Signature verification failed:', err);
+    console.error('[StripeWebhook] Signature verification failed:', err, {
+      isBase64Encoded: event.isBase64Encoded,
+      bodyLength: rawBody.length,
+    });
     return { statusCode: 400, body: 'Webhook signature verification failed' };
   }
 
-  console.log('[StripeWebhook] Event:', stripeEvent.type);
+  console.log('[StripeWebhook] Event:', stripeEvent.type, stripeEvent.id);
 
   try {
     switch (stripeEvent.type) {
@@ -70,7 +90,16 @@ async function handlePaymentIntentSucceeded(paymentIntent: Stripe.PaymentIntent)
 
   const pendingTx = transactions?.find((t: any) => t.status === 'PENDING');
   if (!pendingTx) {
-    console.error('[StripeWebhook] No pending transaction for PaymentIntent:', paymentIntent.id);
+    const already = transactions?.find((t: any) => t.status === 'COMPLETED');
+    if (already) {
+      // Stripe retries webhooks; this one was already settled. Nothing to do.
+      console.log('[StripeWebhook] PaymentIntent already settled, skipping:', paymentIntent.id);
+      return;
+    }
+    console.error('[StripeWebhook] No transaction found for PaymentIntent:', paymentIntent.id, {
+      matchesFound: transactions?.length ?? 0,
+      statuses: transactions?.map((t: any) => t.status),
+    });
     return;
   }
 
