@@ -1,7 +1,7 @@
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
 import { Linking } from 'react-native';
-import { DEPOSIT_PROCESSING_FEE_RATE } from '../config/subscriptionConfig';
+import { calculateDepositFee } from '../config/subscriptionConfig';
 
 const client = generateClient<Schema>();
 
@@ -21,9 +21,12 @@ export interface SubscriptionResult {
 /**
  * Calculate how much will be charged for a desired deposit amount.
  * Returns { depositAmount, processingFee, totalCharge } all in dollars.
+ *
+ * The processing fee is Stripe's actual cost passed through, so it is the same
+ * for Free and Pro members.
  */
-export function calculateDepositCharge(depositDollars: number, isPro: boolean) {
-  const processingFee = isPro ? 0 : Math.round(depositDollars * DEPOSIT_PROCESSING_FEE_RATE * 100) / 100;
+export function calculateDepositCharge(depositDollars: number) {
+  const processingFee = calculateDepositFee(depositDollars);
   return {
     depositAmount: depositDollars,
     processingFee,

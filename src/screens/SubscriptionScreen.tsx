@@ -19,7 +19,7 @@ import { ModalHeader } from '../components/ui/ModalHeader';
 import { showAlert } from '../components/ui/CustomAlert';
 import { useAuth } from '../contexts/AuthContext';
 import { createSubscription, openCustomerPortal } from '../services/stripeService';
-import { PRO_MONTHLY_DISPLAY, WITHDRAWAL_FEE_RATE, WINNINGS_FEE_RATE, DEPOSIT_PROCESSING_FEE_RATE } from '../config/subscriptionConfig';
+import { PRO_MONTHLY_DISPLAY, WITHDRAWAL_FEE_RATE, WINNINGS_FEE_RATE } from '../config/subscriptionConfig';
 
 // @ts-ignore — installed via: npx expo install @stripe/stripe-react-native
 import { useStripe } from '@stripe/stripe-react-native';
@@ -31,7 +31,6 @@ interface SubscriptionScreenProps {
 const PRO_FEATURES = [
   { icon: 'trophy-outline', text: '0% fee on all bet winnings' },
   { icon: 'cash-outline', text: '0% withdrawal fee' },
-  { icon: 'card-outline', text: '0% deposit processing fee' },
   { icon: 'flash-outline', text: 'Priority support' },
 ];
 
@@ -103,7 +102,6 @@ export const SubscriptionScreen: React.FC<SubscriptionScreenProps> = ({ onClose 
 
   const freeWithdrawalFee = `${(WITHDRAWAL_FEE_RATE * 100).toFixed(0)}%`;
   const freeWinningsFee = `${(WINNINGS_FEE_RATE * 100).toFixed(0)}%`;
-  const freeDepositFee = `${(DEPOSIT_PROCESSING_FEE_RATE * 100 * 10).toFixed(0) === '5' ? '0.5' : (DEPOSIT_PROCESSING_FEE_RATE * 100).toFixed(1)}%`;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -166,10 +164,14 @@ export const SubscriptionScreen: React.FC<SubscriptionScreenProps> = ({ onClose 
                 <Text style={[styles.comparisonCol, styles.comparisonColHeader]}>Free</Text>
                 <Text style={[styles.comparisonCol, styles.comparisonColHeaderPro]}>Pro</Text>
               </View>
-              <ComparisonRow label="Deposit fee" free={freeDepositFee} pro="0%" />
               <ComparisonRow label="Withdrawal fee" free={freeWithdrawalFee} pro="0%" />
               <ComparisonRow label="Winnings fee" free={freeWinningsFee} pro="0%" />
             </View>
+
+            <Text style={styles.feeFootnote}>
+              Card processing is charged at cost by our payment processor on every
+              deposit, for Free and Pro members alike.
+            </Text>
 
             <View style={styles.featuresCard}>
               {PRO_FEATURES.map((f) => (
@@ -327,6 +329,12 @@ const styles = StyleSheet.create({
   comparisonProVal: {
     color: colors.success,
     fontWeight: typography.fontWeight.bold,
+  },
+  feeFootnote: {
+    ...textStyles.caption,
+    color: colors.textMuted,
+    marginTop: -spacing.md,
+    marginBottom: spacing.lg,
   },
 
   // Features list

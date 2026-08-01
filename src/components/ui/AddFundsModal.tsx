@@ -49,9 +49,8 @@ export const AddFundsModal: React.FC<AddFundsModalProps> = ({
   const [isProcessing, setIsProcessing] = useState(false);
   const [didSucceed, setDidSucceed] = useState(false);
 
-  const isPro = user?.subscriptionTier === 'PRO' && user?.subscriptionStatus === 'ACTIVE';
   const numAmount = parseFloat(amount) || 0;
-  const { processingFee, totalCharge } = calculateDepositCharge(numAmount, isPro);
+  const { processingFee, totalCharge } = calculateDepositCharge(numAmount);
   const isAmountValid = numAmount >= MIN_DEPOSIT && numAmount <= MAX_DEPOSIT;
 
   const resetState = () => {
@@ -152,12 +151,8 @@ export const AddFundsModal: React.FC<AddFundsModalProps> = ({
             <Text style={styles.feeValue}>${numAmount.toFixed(2)}</Text>
           </View>
           <View style={styles.feeRow}>
-            <Text style={styles.feeLabel}>
-              Processing fee {isPro ? '(Pro — waived)' : '(0.5%)'}
-            </Text>
-            <Text style={[styles.feeValue, isPro && styles.feeWaived]}>
-              {isPro ? 'FREE' : `$${processingFee.toFixed(2)}`}
-            </Text>
+            <Text style={styles.feeLabel}>Card processing fee</Text>
+            <Text style={styles.feeValue}>${processingFee.toFixed(2)}</Text>
           </View>
           <View style={styles.feeDivider} />
           <View style={styles.feeRow}>
@@ -165,15 +160,9 @@ export const AddFundsModal: React.FC<AddFundsModalProps> = ({
             <Text style={styles.feeTotalValue}>${totalCharge.toFixed(2)}</Text>
           </View>
           <Text style={styles.feeNote}>
-            ${numAmount.toFixed(2)} will be added to your SideBet balance.
+            ${numAmount.toFixed(2)} will be added to your SideBet balance. The card
+            processing fee is charged by our payment processor and passed through at cost.
           </Text>
-        </View>
-      )}
-
-      {isPro && (
-        <View style={styles.proBanner}>
-          <Ionicons name="star" size={16} color={colors.warning} />
-          <Text style={styles.proBannerText}>Pro member — 0% processing fee</Text>
         </View>
       )}
 
