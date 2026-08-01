@@ -10,8 +10,7 @@ import { payoutProcessor } from './functions/payout-processor/resource';
 import { stripePaymentIntent } from './functions/stripe-payment-intent/resource';
 import { stripeWebhook } from './functions/stripe-webhook/resource';
 import { stripeManage } from './functions/stripe-manage/resource';
-import { FunctionUrlAuthType } from 'aws-cdk-lib/aws-lambda';
-import { AnyPrincipal } from 'aws-cdk-lib/aws-iam';
+import { FunctionUrlAuthType, CfnPermission } from 'aws-cdk-lib/aws-lambda';
 import { CfnOutput } from 'aws-cdk-lib';
 
 const backend = defineBackend({
@@ -44,7 +43,16 @@ const webhookUrl = webhookFn.addFunctionUrl({
 // allowing anyone to invoke it. Without this AWS rejects the request with 403
 // before the handler runs — the request never reaches our signature check, which
 // is what actually authenticates the caller.
-webhookUrl.grantInvokeUrl(new AnyPrincipal());
+//
+// Declared as an L1 CfnPermission rather than functionUrl.grantInvokeUrl(): the
+// grant helper silently does nothing when the underlying construct is an imported
+// function reference, which is how Amplify surfaces it. The L1 always emits.
+new CfnPermission(webhookFn.stack, 'StripeWebhookPublicInvoke', {
+  action: 'lambda:InvokeFunctionUrl',
+  functionName: webhookFn.functionArn,
+  principal: '*',
+  functionUrlAuthType: 'NONE',
+});
 new CfnOutput(backend.stack, 'StripeWebhookUrl', {
   value: webhookUrl.url,
   description: 'Paste this URL into Stripe Dashboard → Developers → Webhooks',
