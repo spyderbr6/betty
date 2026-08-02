@@ -212,7 +212,7 @@ will fail signature verification with a 400 until the secret is set (Step 6.6 be
 
 **Add it to Stripe**:
 1. Stripe Dashboard → Developers → Webhooks → **+ Add endpoint**
-2. Endpoint URL: paste the Lambda URL
+2. Endpoint URL: paste the API Gateway URL
 3. Events to listen for — select these:
    - `payment_intent.succeeded`
    - `customer.subscription.created`
@@ -221,6 +221,14 @@ will fail signature verification with a 400 until the secret is set (Step 6.6 be
 4. Click **Add endpoint**
 5. Click **Reveal** next to Signing secret → copy the `whsec_...` value
 6. Set as `STRIPE_WEBHOOK_SECRET` in Amplify env vars
+
+> ⚠️ **Migrating an existing endpoint to a new URL?** The signing secret is per-endpoint,
+> so it depends how you do it:
+> - **Editing** the existing endpoint's URL in place → the `whsec_...` is unchanged, leave
+>   `STRIPE_WEBHOOK_SECRET` alone.
+> - **Creating a new endpoint** (and disabling the old one) → it gets a **new** `whsec_...`.
+>   You must update `STRIPE_WEBHOOK_SECRET` and redeploy, or every delivery fails signature
+>   verification with a `400`. This is the most common follow-on failure after fixing a 403.
 
 **Two separate webhooks needed** — one in Stripe Test mode for testing, one in Stripe Live mode for production. Each will have a different signing secret.
 
