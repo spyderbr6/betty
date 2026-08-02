@@ -15,6 +15,31 @@ const client = generateClient<Schema>() as any;
 const stripe = new Stripe(env.STRIPE_SECRET_KEY, { apiVersion: '2026-06-24.dahlia' });
 
 export const handler: APIGatewayProxyHandlerV2 = async (event) => {
+  // Health check. Stripe only ever POSTs, so a GET is always a human checking
+  // whether this endpoint is the one Stripe should be pointing at.
+  //
+  // This exists because a Function URL that has been replaced (any rolled-back or
+  // recreated deploy mints a new hostname) returns 403 — the exact same response as
+  // a missing invoke permission. The two are otherwise indistinguishable from
+  // outside AWS. Curl the URL configured in Stripe: a 200 here means the hostname is
+  // live and this handler runs, so any delivery failure is signature/handler-side.
+  // A 403 means the request never reached Lambda and the URL is stale or blocked.
+  const method = event.requestContext?.http?.method?.toUpperCase();
+  if (method === 'GET' || method === 'HEAD') {
+    return {
+      statusCode: 200,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        service: 'stripe-webhook',
+        status: 'ok',
+        // Booleans only — never echo the secrets themselves onto a public endpoint.
+        stripeSecretKeyConfigured: Boolean(env.STRIPE_SECRET_KEY),
+        webhookSecretConfigured: Boolean(env.STRIPE_WEBHOOK_SECRET),
+        time: new Date().toISOString(),
+      }),
+    };
+  }
+
   // Header names arrive lowercased through Function URLs, but check both to be safe.
   const headers = event.headers ?? {};
   const sig = headers['stripe-signature'] ?? headers['Stripe-Signature'];
