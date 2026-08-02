@@ -72,6 +72,14 @@ const schema = a.schema({
       sentSquaresInvitations: a.hasMany('SquaresInvitation', 'fromUserId'),
       receivedSquaresInvitations: a.hasMany('SquaresInvitation', 'toUserId'),
     })
+    .secondaryIndexes((index) => [
+      // Lets the stripe-webhook Lambda resolve a Stripe customer to a user directly.
+      // Without this the lookup is a filtered Scan, which only examines the first page
+      // of the table and silently misses users beyond it. Only rows that actually have
+      // a stripeCustomerId are projected into the index.
+      index('stripeCustomerId')
+        .queryField('usersByStripeCustomerId')
+    ])
     .authorization((allow) => [
       allow.owner().to(['create', 'read', 'update', 'delete']),
       allow.authenticated().to(['read', 'create', 'update']) // Allow authenticated users to update any user (for balance changes, stats, etc.)
@@ -505,7 +513,15 @@ const schema = a.schema({
       // Allows: SELECT * WHERE status = 'PENDING' ORDER BY createdAt ASC
       index('status')
         .sortKeys(['createdAt'])
-        .queryField('transactionsByStatus')
+        .queryField('transactionsByStatus'),
+      // Index for settling card deposits from the Stripe webhook.
+      // The webhook has only the PaymentIntent ID to go on, and a filtered Scan is not
+      // a lookup: DynamoDB scans one page of the table in arbitrary order and filters
+      // within it, so once the table outgrows a page a given deposit becomes invisible
+      // and the webhook returns 200 without ever crediting the balance. Only card
+      // deposits carry a stripePaymentIntentId, so only they land in this index.
+      index('stripePaymentIntentId')
+        .queryField('transactionsByStripePaymentIntentId')
     ])
     .authorization((allow) => [
       allow.owner().to(['create', 'read']), // Users can create their own transactions and read them

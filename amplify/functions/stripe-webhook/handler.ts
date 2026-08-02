@@ -108,10 +108,25 @@ async function handlePaymentIntentSucceeded(paymentIntent: Stripe.PaymentIntent)
 
   const depositAmountDollars = parseInt(depositAmountCents, 10) / 100;
 
-  // Find the pending transaction by stripePaymentIntentId
-  const { data: transactions } = await client.models.Transaction.list({
-    filter: { stripePaymentIntentId: { eq: paymentIntent.id } },
+  // Find the transaction by stripePaymentIntentId, through the index of the same name.
+  //
+  // This was previously Transaction.list({ filter: { stripePaymentIntentId } }), which
+  // is not a lookup at all — a filtered list compiles to a DynamoDB Scan that reads a
+  // single page of the table in arbitrary order and applies the filter to just that
+  // page. Every non-card transaction (bet placements, winnings, refunds, squares) shares
+  // the table, so once it outgrew one page a given deposit stopped being found: the
+  // handler logged "No transaction found", returned 200, and the deposit sat PENDING
+  // forever while Stripe reported the delivery as successful.
+  const { data: transactions, errors } = await client.models.Transaction.transactionsByStripePaymentIntentId({
+    stripePaymentIntentId: paymentIntent.id,
   });
+
+  if (errors?.length) {
+    // Throw rather than return: the outer catch turns this into a 500 so Stripe retries.
+    // Swallowing it would strand a real payment.
+    console.error('[StripeWebhook] Transaction lookup failed:', paymentIntent.id, JSON.stringify(errors));
+    throw new Error('Transaction lookup failed');
+  }
 
   const pendingTx = transactions?.find((t: any) => t.status === 'PENDING');
   if (!pendingTx) {
@@ -121,11 +136,16 @@ async function handlePaymentIntentSucceeded(paymentIntent: Stripe.PaymentIntent)
       console.log('[StripeWebhook] PaymentIntent already settled, skipping:', paymentIntent.id);
       return;
     }
+    // Any PaymentIntent reaching this point was created by stripe-payment-intent, which
+    // writes the PENDING row before returning the client secret — so a missing row means
+    // the write is not visible yet (index propagation) rather than absent. Fail so Stripe
+    // retries with backoff instead of 200-ing and stranding the deposit; the already-settled
+    // branch above keeps those retries from double-crediting.
     console.error('[StripeWebhook] No transaction found for PaymentIntent:', paymentIntent.id, {
       matchesFound: transactions?.length ?? 0,
       statuses: transactions?.map((t: any) => t.status),
     });
-    return;
+    throw new Error(`No transaction found for PaymentIntent ${paymentIntent.id}`);
   }
 
   // Get current balance
@@ -153,14 +173,25 @@ async function handlePaymentIntentSucceeded(paymentIntent: Stripe.PaymentIntent)
 }
 
 async function handleSubscriptionChange(subscription: Stripe.Subscription, deleted: boolean) {
-  // Find user by stripeCustomerId
+  // Find user by stripeCustomerId, through the index of the same name. Same reasoning as
+  // the deposit lookup above: a filtered list is a paged Scan, not a lookup, so it would
+  // quietly stop resolving subscribers once the User table outgrew a single scan page.
   const customerId = subscription.customer as string;
-  const { data: users } = await client.models.User.list({
-    filter: { stripeCustomerId: { eq: customerId } },
+  const { data: users, errors } = await client.models.User.usersByStripeCustomerId({
+    stripeCustomerId: customerId,
   });
+
+  if (errors?.length) {
+    console.error('[StripeWebhook] User lookup failed:', customerId, JSON.stringify(errors));
+    throw new Error('User lookup failed');
+  }
 
   const user = users?.[0];
   if (!user) {
+    // Deliberately not retried, unlike the deposit path. A PaymentIntent gets there only
+    // after its metadata proves we created it, so a missing row is our bug. A subscription
+    // event carries no such proof — it may belong to a customer created straight in the
+    // Stripe dashboard, and retrying that until Stripe disables the endpoint helps nobody.
     console.error('[StripeWebhook] No user found for Stripe customer:', customerId);
     return;
   }
