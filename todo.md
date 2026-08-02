@@ -187,14 +187,32 @@ To change the Pro price in the future: create a new price in Stripe, update `STR
 ---
 
 #### Step 6 — Set up the webhook endpoint
-After deploying the Amplify backend, the `StripeWebhookUrl` Lambda Function URL appears in CloudFormation outputs.
+The backend exposes the webhook handler on **two** endpoints. Use the API Gateway one.
 
-**To find it**: AWS Console → CloudFormation → your Amplify stack → Outputs tab → look for `StripeWebhookUrl`. It looks like:
-`https://xxxxxxxxxxxxxxxx.lambda-url.us-east-2.on.aws/`
+| | URL shape | Use |
+|---|---|---|
+| **API Gateway** ✅ | `https://xxxxxxxxxx.execute-api.us-east-2.amazonaws.com/stripe-webhook` | **Configure this in Stripe** |
+| Lambda Function URL | `https://xxxxxxxxxxxxxxxx.lambda-url.us-east-2.on.aws/` | Legacy — returns 403 in this AWS account |
+
+Both route to the same Lambda with the same payload format, so the handler is identical either way.
+The Function URL is kept only as a fallback; it is not the supported path. See the 403 entry
+under Troubleshooting for why.
+
+**To find the API Gateway URL** (either works, no console needed for the first):
+- `amplify_outputs.json` → `custom.stripeWebhookApiUrl`
+- AWS Console → CloudFormation → your Amplify stack → Outputs tab → `StripeWebhookApiUrl`
+
+**Verify it before pasting it into Stripe** — a `GET` returns a health check:
+```
+curl -i https://xxxxxxxxxx.execute-api.us-east-2.amazonaws.com/stripe-webhook
+```
+A `200` with `{"service":"stripe-webhook","status":"ok",...}` means the endpoint is live and the
+handler runs. The response also reports `webhookSecretConfigured` — if that is `false`, deliveries
+will fail signature verification with a 400 until the secret is set (Step 6.6 below).
 
 **Add it to Stripe**:
 1. Stripe Dashboard → Developers → Webhooks → **+ Add endpoint**
-2. Endpoint URL: paste the Lambda URL
+2. Endpoint URL: paste the API Gateway URL
 3. Events to listen for — select these:
    - `payment_intent.succeeded`
    - `customer.subscription.created`
@@ -203,6 +221,14 @@ After deploying the Amplify backend, the `StripeWebhookUrl` Lambda Function URL 
 4. Click **Add endpoint**
 5. Click **Reveal** next to Signing secret → copy the `whsec_...` value
 6. Set as `STRIPE_WEBHOOK_SECRET` in Amplify env vars
+
+> ⚠️ **Migrating an existing endpoint to a new URL?** The signing secret is per-endpoint,
+> so it depends how you do it:
+> - **Editing** the existing endpoint's URL in place → the `whsec_...` is unchanged, leave
+>   `STRIPE_WEBHOOK_SECRET` alone.
+> - **Creating a new endpoint** (and disabling the old one) → it gets a **new** `whsec_...`.
+>   You must update `STRIPE_WEBHOOK_SECRET` and redeploy, or every delivery fails signature
+>   verification with a `400`. This is the most common follow-on failure after fixing a 403.
 
 **Two separate webhooks needed** — one in Stripe Test mode for testing, one in Stripe Live mode for production. Each will have a different signing secret.
 
@@ -272,7 +298,60 @@ The `.env` file controls what the app bundle uses. Amplify Secrets control what 
 | `[StripePI] Invalid amount:` | Deposit below the $5 minimum | Enter $5 or more |
 | No logs at all | Mutation never reached the Lambda | Confirm the backend deployed successfully |
 
-**Balance does not update after a successful payment** — the webhook is not reaching the Lambda. Check Stripe Dashboard → Developers → Webhooks → your endpoint → "Events" tab for delivery failures. A 400 means the signing secret is wrong; a timeout means the URL is wrong.
+**Balance does not update after a successful payment** — the webhook is not reaching the Lambda. Check Stripe Dashboard → Developers → Webhooks → your endpoint → "Events" tab for delivery failures. A 400 means the signing secret is wrong; a timeout means the URL is wrong; a 403 means the request never reached the Lambda at all — see below.
+
+**Webhook deliveries to the Lambda Function URL return `403 Forbidden`** — this is a known
+issue in this AWS account, and **the fix is to point Stripe at the API Gateway URL instead**
+(`amplify_outputs.json` → `custom.stripeWebhookApiUrl`). Then hit **Resend** on the failed
+events in Stripe to settle any deposits that got stuck.
+
+*Why the Function URL fails:* the 403 is produced by AWS *before* the handler runs, so
+CloudWatch shows no logs for the request at all. Everything the app controls was checked
+against the deployed resources and ruled out:
+
+| Checked | Result |
+|---|---|
+| Function URL auth type | `NONE` ✅ |
+| Resource policy grants anonymous `lambda:InvokeFunctionUrl` | Present — twice ✅ |
+| URL configured in Stripe matches the deployed URL | Matches ✅ |
+| Amplify deploy succeeds | Yes ✅ |
+
+With all four true, nothing in this repo can produce the 403. The remaining explanation is an
+account- or Organization-level control (an SCP or Resource Control Policy) denying anonymous
+invoke on Lambda Function URLs — that produces exactly this signature: deploys succeed, the
+config reads as correct, and invocations are rejected before reaching Lambda. API Gateway is
+not affected, because it invokes the function as `apigateway.amazonaws.com` rather than as an
+anonymous caller against a Function URL.
+
+Note that `lambda:CreateFunctionUrlConfig` is *not* blocked here — only invocation is — which
+is why the URL provisions cleanly and looks healthy right up until Stripe calls it.
+
+*Do not bother re-adding invoke permissions.* `amplify/backend.ts` already declares an explicit
+`CfnPermission` (`Principal: "*"`, `lambda:InvokeFunctionUrl`, `FunctionUrlAuthType = NONE`)
+**in addition to** the one CDK adds automatically for `authType: NONE` (verified in
+`aws-cdk-lib/aws-lambda/lib/function-url.js`). Both statements are in the deployed policy.
+Adding a third changes nothing.
+
+**Diagnosing any webhook endpoint** — curl it. Run this from a normal machine; a corporate
+proxy or sandboxed environment returns its *own* 403 and gives a false reading (look for
+`CONNECT tunnel failed`, which is the proxy, not AWS):
+
+```
+curl -i <the-url-configured-in-stripe>
+```
+
+| Response | Meaning | Fix |
+|---|---|---|
+| `200 {"service":"stripe-webhook","status":"ok",...}` | Endpoint live, handler runs. Any delivery failure is signature- or handler-side, not routing. | Check CloudWatch logs |
+| `200` but `webhookSecretConfigured: false` | Endpoint fine, but `STRIPE_WEBHOOK_SECRET` never reached the Lambda | Set it under Hosting → **Secrets** (not Environment variables), redeploy |
+| `403 {"Message":"Forbidden"}` | Request never reached Lambda | Switch Stripe to `stripeWebhookApiUrl` (above) |
+| `404 {"message":"Not Found"}` | Right API, wrong path | Path must be exactly `/stripe-webhook` |
+
+**Meanwhile, no payment is ever lost.** Card deposits whose webhook never landed stay `PENDING`
+and appear in the **admin dashboard approval queue** with their Stripe PaymentIntent ID.
+Verify the charge in Stripe, then approve (requires typing the last 4 of that PaymentIntent
+ID). `TransactionService.updateTransactionStatus` refuses to credit a transaction already
+marked `COMPLETED`, so a late webhook cannot double-credit after a manual approval.
 
 **Payment form does not appear at all**
 - *On iOS/Android*: the native Stripe module is missing. The Payment Sheet requires an EAS build — it does not work in Expo Go.
