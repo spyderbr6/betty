@@ -3,7 +3,7 @@
  * Replaces the old manual Venmo reconciliation flow.
  */
 
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -22,7 +22,11 @@ import { colors, spacing, typography, textStyles } from '../../styles';
 import { useAuth } from '../../contexts/AuthContext';
 import { ModalHeader } from './ModalHeader';
 import { showAlert } from './CustomAlert';
-import { createPaymentIntent, calculateDepositCharge } from '../../services/stripeService';
+import {
+  createPaymentIntent,
+  calculateDepositCharge,
+  waitForDepositToSettle,
+} from '../../services/stripeService';
 
 // @ts-ignore — installed via: npx expo install @stripe/stripe-react-native
 import { useStripe } from '@stripe/stripe-react-native';
@@ -48,15 +52,28 @@ export const AddFundsModal: React.FC<AddFundsModalProps> = ({
   const [amountFocused, setAmountFocused] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [didSucceed, setDidSucceed] = useState(false);
+  // 'waiting'   — Stripe took the money, the webhook has not credited the balance yet
+  // 'confirmed' — the deposit's Transaction row reached COMPLETED; balance is real
+  // 'slow'      — settlement outstripped our wait; the payment is fine, the credit is late
+  const [settleState, setSettleState] = useState<'waiting' | 'confirmed' | 'slow'>('waiting');
+  const [newBalance, setNewBalance] = useState<number | null>(null);
+
+  // Identifies the in-flight settlement wait. Bumped on reset, so a poll that outlives its
+  // modal (user tapped Done early, or started another deposit) resolves into a no-op
+  // instead of writing state for a payment that is no longer on screen.
+  const settleRunRef = useRef(0);
 
   const numAmount = parseFloat(amount) || 0;
   const { processingFee, totalCharge } = calculateDepositCharge(numAmount);
   const isAmountValid = numAmount >= MIN_DEPOSIT && numAmount <= MAX_DEPOSIT;
 
   const resetState = () => {
+    settleRunRef.current += 1;
     setAmount('');
     setIsProcessing(false);
     setDidSucceed(false);
+    setSettleState('waiting');
+    setNewBalance(null);
   };
 
   const handleClose = () => {
@@ -107,13 +124,46 @@ export const AddFundsModal: React.FC<AddFundsModalProps> = ({
 
       console.log('[AddFundsModal] Payment confirmed, awaiting webhook to credit balance');
 
-      // 4. Payment confirmed — balance updates via Stripe webhook within seconds
+      // 4. Payment confirmed by Stripe. The balance is NOT credited yet — that happens
+      //    out of band when the stripe-webhook Lambda settles the Transaction row. Show
+      //    the confirmation screen in its waiting state and watch for the actual credit,
+      //    rather than claiming the money landed and hoping it did.
       setDidSucceed(true);
+      setSettleState('waiting');
+      setIsProcessing(false);
+
+      // Tell the parent straight away that a payment succeeded — before waiting on the
+      // credit. Onboarding keys its "may advance" flag off this, and the user can dismiss
+      // this screen mid-wait; deferring it would lose their progress after they had paid.
+      onSuccess?.();
+
+      const runId = ++settleRunRef.current;
+      const settlement = await waitForDepositToSettle(intentData.transactionId);
+
+      // The user moved on (closed the modal, or started another deposit). Their balance
+      // still updates; there is just no longer a screen for this result to land on.
+      if (settleRunRef.current !== runId) return;
+
+      if (settlement.status === 'COMPLETED') {
+        setNewBalance(settlement.balanceAfter);
+        setSettleState('confirmed');
+      } else {
+        if (settlement.status === 'FAILED') {
+          console.error('[AddFundsModal] Deposit did not settle:', intentData.transactionId);
+        }
+        // TIMEOUT and FAILED both land here deliberately. Stripe has the money either way,
+        // so "it did not work" would be false and alarming — a slow webhook and a failed
+        // settlement look identical from here, and both resolve through the same admin
+        // approval queue. Say what is certainly true and leave the balance unclaimed.
+        setSettleState('slow');
+      }
+
+      // Fire again now that the balance has actually moved, so the screen behind re-reads
+      // a credited balance rather than the still-PENDING one it saw a moment ago.
       onSuccess?.();
     } catch (err) {
       console.error('[AddFundsModal] Payment error:', err);
       showAlert('Error', 'Something went wrong. Please try again.');
-    } finally {
       setIsProcessing(false);
     }
   };
@@ -195,20 +245,51 @@ export const AddFundsModal: React.FC<AddFundsModalProps> = ({
     </ScrollView>
   );
 
-  const renderSuccess = () => (
-    <View style={styles.successContainer}>
-      <View style={styles.successIcon}>
-        <Ionicons name="checkmark-circle" size={80} color={colors.success} />
+  const renderSuccess = () => {
+    const confirmed = settleState === 'confirmed';
+    const waiting = settleState === 'waiting';
+
+    return (
+      <View style={styles.successContainer}>
+        <View style={styles.successIcon}>
+          {waiting ? (
+            <ActivityIndicator size="large" color={colors.success} />
+          ) : (
+            <Ionicons
+              name={confirmed ? 'checkmark-circle' : 'time-outline'}
+              size={80}
+              color={confirmed ? colors.success : colors.warning}
+            />
+          )}
+        </View>
+
+        <Text style={styles.successTitle}>
+          {confirmed ? 'Funds Added!' : waiting ? 'Payment Confirmed' : 'Payment Received'}
+        </Text>
+
+        <Text style={styles.successSubtitle}>
+          {confirmed
+            ? `$${numAmount.toFixed(2)} was added to your balance.`
+            : waiting
+              ? `Adding $${numAmount.toFixed(2)} to your balance…`
+              : `Your payment went through, but the balance is taking longer than usual to update. $${numAmount.toFixed(2)} will appear shortly — you can safely close this.`}
+        </Text>
+
+        {confirmed && newBalance !== null && (
+          <View style={styles.newBalanceRow}>
+            <Text style={styles.newBalanceLabel}>New balance</Text>
+            <Text style={styles.newBalanceValue}>${newBalance.toFixed(2)}</Text>
+          </View>
+        )}
+
+        {/* Deliberately enabled while waiting. The credit lands regardless of whether this
+            screen is open, so blocking Done would trap the user for no benefit. */}
+        <TouchableOpacity style={styles.payButton} onPress={handleClose} activeOpacity={0.8}>
+          <Text style={styles.payButtonText}>{waiting ? 'Close' : 'Done'}</Text>
+        </TouchableOpacity>
       </View>
-      <Text style={styles.successTitle}>Payment Confirmed!</Text>
-      <Text style={styles.successSubtitle}>
-        ${numAmount.toFixed(2)} is being added to your balance. It will appear within a few seconds.
-      </Text>
-      <TouchableOpacity style={styles.payButton} onPress={handleClose} activeOpacity={0.8}>
-        <Text style={styles.payButtonText}>Done</Text>
-      </TouchableOpacity>
-    </View>
-  );
+    );
+  };
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={handleClose}>
@@ -409,5 +490,22 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: spacing.xl,
     lineHeight: 22,
+  },
+  newBalanceRow: {
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: spacing.radius.md,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.xl,
+    marginBottom: spacing.xl,
+  },
+  newBalanceLabel: {
+    ...textStyles.label,
+    color: colors.textSecondary,
+    marginBottom: spacing.xs,
+  },
+  newBalanceValue: {
+    ...textStyles.balance,
+    color: colors.success,
   },
 });

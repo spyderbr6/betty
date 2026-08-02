@@ -32,6 +32,7 @@ export const OnboardingAddFundsStep: React.FC<OnboardingAddFundsStepProps> = ({
   onBack,
 }) => {
   const [showAddFundsModal, setShowAddFundsModal] = useState(false);
+  const [didAddFunds, setDidAddFunds] = useState(false);
   const [showAddPaymentMethodModal, setShowAddPaymentMethodModal] = useState(false);
 
   const handleAddFunds = () => {
@@ -39,12 +40,24 @@ export const OnboardingAddFundsStep: React.FC<OnboardingAddFundsStepProps> = ({
   };
 
   const handleFundsAdded = () => {
-    // Funds were successfully added, update state and close modal
+    // Record the deposit but leave the modal open. It closed the modal here previously,
+    // which unmounted AddFundsModal in the same tick it set its success state — so its
+    // confirmation screen was unreachable from onboarding and the user was returned to
+    // the step with no acknowledgement that the payment had gone through at all.
+    // The modal now shows the confirmation itself; onboarding advances on dismiss.
     onFundsAdded(true);
+    setDidAddFunds(true);
+  };
+
+  const handleAddFundsClose = () => {
     setShowAddFundsModal(false);
-    setTimeout(() => {
-      onNext();
-    }, 300);
+    // Only advance if a payment actually succeeded — closing the modal without paying
+    // should leave the user on this step, not skip them past it.
+    if (didAddFunds) {
+      setTimeout(() => {
+        onNext();
+      }, 300);
+    }
   };
 
   const handlePaymentMethodAdded = () => {
@@ -131,7 +144,7 @@ export const OnboardingAddFundsStep: React.FC<OnboardingAddFundsStepProps> = ({
       {/* Add Funds Modal */}
       <AddFundsModal
         visible={showAddFundsModal}
-        onClose={() => setShowAddFundsModal(false)}
+        onClose={handleAddFundsClose}
         onSuccess={handleFundsAdded}
       />
 
