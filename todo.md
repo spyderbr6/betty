@@ -300,6 +300,34 @@ The `.env` file controls what the app bundle uses. Amplify Secrets control what 
 
 **Balance does not update after a successful payment** — the webhook is not reaching the Lambda. Check Stripe Dashboard → Developers → Webhooks → your endpoint → "Events" tab for delivery failures. A 400 means the signing secret is wrong; a timeout means the URL is wrong; a 403 means the request never reached the Lambda at all — see below.
 
+**Stripe reports the webhook succeeded (200) but the deposit stays `PENDING`** — the handler
+ran, took a path that logs an error, and still returned 200. Check CloudWatch →
+`/aws/lambda/...stripe-webhook...` and find the line for that PaymentIntent:
+
+| Log line | Cause | Fix |
+|---|---|---|
+| `No transaction found for PaymentIntent: pi_... { matchesFound: 0 }` | The lookup missed the row | Fixed by the `stripePaymentIntentId` index — see below. Redeploy, then **Resend** the event |
+| `PaymentIntent already settled, skipping` | Already credited (a retry, or a manual admin approval) | Nothing to do — working as intended |
+| `Unhandled event type: ...` | The endpoint is subscribed to events the handler ignores | Harmless, but trim the event list in Stripe |
+| `Event:` line absent entirely | Delivery went to a different endpoint | Check which URL that Stripe endpoint points at |
+| `User not found:` | The PaymentIntent's `userId` metadata has no matching User row | Investigate — should not happen |
+
+*Root cause of `matchesFound: 0`:* the webhook used to find the deposit with
+`Transaction.list({ filter: { stripePaymentIntentId } })`. A filtered list is **not** a lookup —
+it compiles to a DynamoDB **Scan** that reads a single page of the table in arbitrary order and
+applies the filter to only that page. Every bet placement, payout, refund and squares purchase
+shares the Transaction table, so once it grew past one scan page a given deposit stopped being
+found. The handler logged an error, returned 200, and the balance was never credited — while
+Stripe showed a green delivery. It is now a real indexed query
+(`transactionsByStripePaymentIntentId`), and a lookup that fails returns 500 so Stripe retries
+instead of silently dropping a paid deposit. The identical bug on `User.stripeCustomerId`
+(subscriptions) was fixed the same way.
+
+> **Deploying these indexes**: adding a GSI to a live DynamoDB table takes a few minutes while
+> DynamoDB backfills it. Existing rows that already carry a `stripePaymentIntentId` are
+> backfilled automatically, so previously stuck deposits become findable — **Resend** their
+> events in Stripe once the deploy finishes and they will settle.
+
 **Webhook deliveries to the Lambda Function URL return `403 Forbidden`** — this is a known
 issue in this AWS account, and **the fix is to point Stripe at the API Gateway URL instead**
 (`amplify_outputs.json` → `custom.stripeWebhookApiUrl`). Then hit **Resend** on the failed
