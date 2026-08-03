@@ -46,11 +46,13 @@ export const PaymentMethodsScreen: React.FC<PaymentMethodsScreenProps> = ({ onCl
     loadData();
   }, [user?.userId]);
 
-  const loadData = async () => {
+  // `silent` refreshes in place without flipping the full-screen loading state. A refresh
+  // triggered while a modal is open must not blank the screen out from under it.
+  const loadData = async ({ silent = false }: { silent?: boolean } = {}) => {
     if (!user?.userId) return;
 
     try {
-      setIsLoading(true);
+      if (!silent) setIsLoading(true);
 
       // Load balance and payment methods in parallel
       const [userBalance, methods] = await Promise.all([
@@ -63,13 +65,13 @@ export const PaymentMethodsScreen: React.FC<PaymentMethodsScreenProps> = ({ onCl
     } catch (error) {
       console.error('Error loading payment data:', error);
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
     }
   };
 
   const refreshData = async () => {
     setIsRefreshing(true);
-    await loadData();
+    await loadData({ silent: true });
     setIsRefreshing(false);
   };
 
@@ -156,21 +158,24 @@ export const PaymentMethodsScreen: React.FC<PaymentMethodsScreenProps> = ({ onCl
     </View>
   );
 
-  if (isLoading) {
-    return (
-      <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
-        <ModalHeader title="Payment Methods" onClose={onClose} />
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.primary} />
-        </View>
-      </SafeAreaView>
-    );
-  }
-
+  // Deliberately one tree rather than an early return for the loading state.
+  //
+  // The modals below used to be reachable only from the loaded branch, so any refresh that
+  // set isLoading unmounted whichever modal was open and destroyed its state. AddFundsModal
+  // showing its payment confirmation was the visible casualty: completing a payment called
+  // onSuccess -> refreshData -> isLoading, the modal was torn down mid-confirmation and
+  // remounted on the amount-entry form, which read as the screen flickering and throwing
+  // the user back to the start. Keeping the modals mounted in a stable position makes that
+  // structurally impossible, whatever future loading states get added.
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <ModalHeader title="Payment Methods" onClose={onClose} />
 
+      {isLoading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      ) : (
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {/* Balance Overview */}
         <View style={styles.balanceSection}>
@@ -276,8 +281,9 @@ export const PaymentMethodsScreen: React.FC<PaymentMethodsScreenProps> = ({ onCl
           </View>
         </View>
       </ScrollView>
+      )}
 
-      {/* Modals */}
+      {/* Modals — rendered unconditionally so a loading flip cannot unmount an open one */}
       <AddFundsModal
         visible={showAddFundsModal}
         onClose={() => setShowAddFundsModal(false)}

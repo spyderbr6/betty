@@ -39,10 +39,12 @@ export class NotificationPreferencesService {
    */
   static async getUserPreferences(userId: string): Promise<NotificationPreferences> {
     try {
-      // Try to fetch existing preferences
-      const { data: preferencesList } = await client.models.NotificationPreferences.list({
-        filter: { userId: { eq: userId } }
-      });
+      // Fetch through the userId index. This was a filtered list, which is a paged DynamoDB
+      // Scan rather than a lookup — once the table outgrew a scan page a user's own row
+      // could stop being returned, and absent preferences are indistinguishable from
+      // "everything disabled", silently suppressing that user's notifications.
+      const { data: preferencesList } = await (client as any).models.NotificationPreferences
+        .notificationPreferencesByUser({ userId });
 
       if (preferencesList && preferencesList.length > 0) {
         const prefs = preferencesList[0];
@@ -83,7 +85,9 @@ export class NotificationPreferencesService {
    */
   static async createDefaultPreferences(userId: string): Promise<NotificationPreferences> {
     try {
-      const { data } = await client.models.NotificationPreferences.create({
+      // Cast as elsewhere in the services layer: adding the userId secondary index widened
+      // the generated model type enough to trip TS2590 ("union type too complex") here.
+      const { data } = await (client as any).models.NotificationPreferences.create({
         userId,
         pushEnabled: true,
         inAppEnabled: true,
@@ -178,7 +182,8 @@ export class NotificationPreferencesService {
       const updateData: any = { id: preferences.id };
       updateData[key] = value;
 
-      await client.models.NotificationPreferences.update(updateData);
+      // Cast for the same reason as the other model calls here — see createDefaultPreferences.
+      await (client as any).models.NotificationPreferences.update(updateData);
 
       console.log(`[NotificationPreferences] Updated ${key} to ${value} for user ${userId}`);
       return true;
@@ -209,7 +214,8 @@ export class NotificationPreferencesService {
       delete updateData.userId; // Don't update userId
       delete updateData.createdAt; // Don't update createdAt
 
-      await client.models.NotificationPreferences.update(updateData);
+      // Cast for the same reason as the other model calls here — see createDefaultPreferences.
+      await (client as any).models.NotificationPreferences.update(updateData);
 
       console.log(`[NotificationPreferences] Batch updated preferences for user ${userId}`);
       return true;
@@ -249,27 +255,28 @@ export class NotificationPreferencesService {
    * Check if currently in Do Not Disturb window
    */
   static isInDndWindow(preferences: NotificationPreferences): boolean {
-    if (!preferences.dndEnabled || !preferences.dndStartHour || !preferences.dndEndHour) {
+    // Compare against null, not falsiness: hour 0 is midnight, a legitimate boundary that
+    // `!preferences.dndStartHour` would treat as unset and silently disable DND.
+    if (
+      !preferences.dndEnabled ||
+      preferences.dndStartHour == null ||
+      preferences.dndEndHour == null
+    ) {
       return false;
     }
 
-    const now = new Date();
-    const currentHour = now.getHours();
-
+    const currentHour = new Date().getHours();
     const start = preferences.dndStartHour;
     const end = preferences.dndEndHour;
 
-    // Handle cases where DND window crosses midnight
     if (start < end) {
-      // Normal case: start=22, end=7 means 10 PM to 7 AM next day
-      // But we need to check if current time is in the window
-      // If start=22 and end=7, it wraps around midnight
-      // Actually this logic is backwards - let me fix it
-      return currentHour >= start || currentHour < end;
-    } else {
-      // DND window is within same day (e.g., start=9, end=17 means 9 AM to 5 PM)
+      // Window sits inside one day, e.g. 9 -> 17 is 9 AM to 5 PM.
       return currentHour >= start && currentHour < end;
     }
+
+    // Window wraps midnight, e.g. 22 -> 7 is 10 PM to 7 AM. start === end is treated as
+    // wrapping too, which makes it a full 24 hours rather than an empty window.
+    return currentHour >= start || currentHour < end;
   }
 
   /**
