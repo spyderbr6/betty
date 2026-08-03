@@ -36,13 +36,13 @@ export const handler: AppSyncResolverHandler<PushNotificationArgs, boolean> = as
   try {
     const { userId, title, message, data, priority = 'MEDIUM' } = event.arguments;
 
-    // Get user's active push tokens
-    const { data: tokens } = await client.models.PushToken.list({
-      filter: {
-        userId: { eq: userId },
-        isActive: { eq: true }
-      }
-    });
+    // Get the user's push tokens through the userId index, then drop inactive ones in
+    // memory (a user has a handful of devices, so there is nothing to gain from filtering
+    // server-side). This was a filtered list, which is a paged DynamoDB Scan rather than a
+    // lookup: once the table outgrew a scan page the user's own tokens stopped coming back
+    // and every push for them silently no-opped as "no active push tokens".
+    const { data: allTokens } = await client.models.PushToken.pushTokensByUser({ userId });
+    const tokens = (allTokens ?? []).filter((t: any) => t.isActive);
 
     if (!tokens || tokens.length === 0) {
       console.log(`No active push tokens found for user ${userId}`);

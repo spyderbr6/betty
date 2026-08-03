@@ -284,8 +284,12 @@ export const AddFundsModal: React.FC<AddFundsModalProps> = ({
 
         {/* Deliberately enabled while waiting. The credit lands regardless of whether this
             screen is open, so blocking Done would trap the user for no benefit. */}
-        <TouchableOpacity style={styles.payButton} onPress={handleClose} activeOpacity={0.8}>
-          <Text style={styles.payButtonText}>{waiting ? 'Close' : 'Done'}</Text>
+        <TouchableOpacity
+          style={[styles.payButton, styles.successButton]}
+          onPress={handleClose}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.successButtonText}>{waiting ? 'Close' : 'Done'}</Text>
         </TouchableOpacity>
       </View>
     );
@@ -490,6 +494,19 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: spacing.xl,
     lineHeight: 22,
+  },
+  // successContainer centres its children, which collapses payButton to the width of its
+  // label instead of the full-width primary button used everywhere else in this modal.
+  // Stretch it back out so the confirmation's action matches the Pay button it replaces.
+  successButton: {
+    alignSelf: 'stretch',
+  },
+  successButtonText: {
+    ...textStyles.button,
+    color: colors.background,
+    fontWeight: typography.fontWeight.bold,
+    // No marginLeft: payButtonText offsets itself to sit beside an icon, and this label
+    // stands alone, so inheriting that margin would push it off centre.
   },
   newBalanceRow: {
     alignItems: 'center',
