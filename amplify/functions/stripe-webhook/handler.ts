@@ -170,6 +170,59 @@ async function handlePaymentIntentSucceeded(paymentIntent: Stripe.PaymentIntent)
   await client.models.User.update({ id: userId, balance: newBalance });
 
   console.log(`[StripeWebhook] Deposit completed for user ${userId}: +$${depositAmountDollars} → balance $${newBalance}`);
+
+  await notifyDepositCompleted(userId, depositAmountDollars);
+}
+
+/**
+ * Raises the same DEPOSIT_COMPLETED notification an admin-approved deposit produces.
+ *
+ * Admin approvals go through TransactionService.updateTransactionStatus, which notifies as a
+ * side effect. This Lambda settles card deposits by writing the Transaction and User records
+ * directly, so it bypassed that entirely — a card deposit credited the balance and told the
+ * user nothing, while an otherwise identical Venmo deposit did. This closes that gap.
+ *
+ * Never allowed to fail the webhook: the money is already credited by the time this runs, and
+ * throwing here would make Stripe retry a settled deposit purely because a notification failed.
+ */
+async function notifyDepositCompleted(userId: string, amountDollars: number) {
+  try {
+    // Read preferences through the userId index; absent preferences mean the user has never
+    // opened notification settings, so fall back to the schema defaults (enabled).
+    const { data: prefsList } = await client.models.NotificationPreferences.notificationPreferencesByUser({
+      userId,
+    });
+    const prefs = prefsList?.[0];
+
+    if (prefs?.paymentNotificationsEnabled === false) {
+      console.log('[StripeWebhook] Payment notifications disabled for user, skipping:', userId);
+      return;
+    }
+
+    const title = 'Deposit Successful';
+    const message = `Your deposit of $${amountDollars.toFixed(2)} has been completed`;
+
+    await client.models.Notification.create({
+      userId,
+      type: 'DEPOSIT_COMPLETED',
+      title,
+      message,
+      isRead: false,
+      priority: 'HIGH',
+    });
+
+    // Record only, no push — matching every other notification raised from a Lambda here
+    // (payout-processor, scheduled-bet-checker, scheduled-squares-checker). Push is
+    // dispatched from the client path, and the sendPushNotification mutation is scoped to
+    // allow.authenticated() anyway, which this IAM-authenticated function is not. Pushing
+    // from Lambdas is a coherent change to make across all of those call sites at once,
+    // not something to bolt onto deposits alone.
+    //
+    // It is also the notification least in need of a push: it lands seconds after the user
+    // tapped Pay, on a screen already showing them the confirmation.
+  } catch (error) {
+    console.error('[StripeWebhook] Failed to notify deposit completion:', userId, error);
+  }
 }
 
 async function handleSubscriptionChange(subscription: Stripe.Subscription, deleted: boolean) {

@@ -203,8 +203,18 @@ const schema = a.schema({
       // Relations
       user: a.belongsTo('User', 'userId'),
     })
+    .secondaryIndexes((index) => [
+      // Preferences are looked up by userId on every notification. A filtered list would be
+      // a paged Scan, which silently stops finding a given user's row once the table grows
+      // past one scan page — and missing preferences read as "notification disabled".
+      index('userId')
+        .queryField('notificationPreferencesByUser')
+    ])
     .authorization((allow) => [
       allow.owner().to(['create', 'read', 'update', 'delete']),
+      // The stripe-webhook Lambda settles card deposits and needs to read preferences to
+      // decide whether to notify. Read-only: it never edits a user's preferences.
+      allow.authenticated().to(['read']),
     ]),
 
   Bet: a
