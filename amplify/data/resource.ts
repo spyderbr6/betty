@@ -159,6 +159,15 @@ const schema = a.schema({
       // Relations
       user: a.belongsTo('User', 'userId'),
     })
+    .secondaryIndexes((index) => [
+      // push-notification-sender resolves a user's device tokens on every push. A filtered
+      // list is a paged Scan, so once this table outgrew a scan page — one row per user per
+      // device — a user's own tokens stopped being returned. The sender reads that as
+      // "no active push tokens", logs it, and returns false, so push silently stops working
+      // for that user with nothing that looks like an error anywhere.
+      index('userId')
+        .queryField('pushTokensByUser')
+    ])
     .authorization((allow) => [
       allow.owner().to(['create', 'read', 'update', 'delete']),
       allow.authenticated().to(['create']) // Allow users to register tokens for others (admin use)

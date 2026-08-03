@@ -48,6 +48,7 @@ src/
 - **CLAUDE.md** (this file): Main development guide and architecture overview
 - **[MODAL_STANDARDS.md](./MODAL_STANDARDS.md)**: **REQUIRED** reading before creating/modifying modals
 - **[PUSH_NOTIFICATION_GUIDE.md](./PUSH_NOTIFICATION_GUIDE.md)**: Complete guide to push notification setup, testing, and troubleshooting
+- **[STRIPE_GUIDE.md](./STRIPE_GUIDE.md)**: Card deposits and Pro subscriptions — setup, test → production switchover, and payment troubleshooting
 - **todo.md**: Current tasks and project roadmap
 
 ### UI Components & Alerts
