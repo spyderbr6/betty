@@ -15,6 +15,11 @@ export interface SubscriptionResult {
   success: boolean;
   clientSecret?: string;
   subscriptionId?: string;
+  /**
+   * The user is already subscribed, so there is nothing to pay and no `clientSecret`.
+   * Not a failure — the local tier is simply behind Stripe and needs refreshing.
+   */
+  alreadyActive?: boolean;
   error?: string;
 }
 
@@ -127,14 +132,27 @@ export async function createSubscription(): Promise<SubscriptionResult> {
     const result = await (client as any).mutations.createStripeManage({ action: 'create_subscription' });
     const data = result?.data;
 
+    // Already subscribed: no payment to collect, and reporting a failure here would push
+    // a paying member to try again and risk a second charge.
+    if (data?.alreadyActive) {
+      return { success: true, alreadyActive: true, subscriptionId: data.subscriptionId };
+    }
+
     if (!data?.clientSecret) {
-      return { success: false, error: 'Failed to create subscription. Please try again.' };
+      // GraphQL-level errors never reach `data`, so log the whole result — an empty
+      // payload with no `error` means the mutation itself failed, not the Lambda.
+      console.error('[StripeService] No clientSecret returned:', JSON.stringify(result));
+      return {
+        success: false,
+        error: data?.error ?? 'Failed to create subscription. Please try again.',
+      };
     }
 
     return {
       success: true,
       clientSecret: data.clientSecret,
       subscriptionId: data.subscriptionId,
+      alreadyActive: false,
     };
   } catch (error) {
     console.error('[StripeService] createSubscription error:', error);
@@ -142,10 +160,49 @@ export async function createSubscription(): Promise<SubscriptionResult> {
   }
 }
 
+export type SubscriptionActivation = { status: 'ACTIVE' } | { status: 'TIMEOUT' };
+
+/**
+ * Waits for a subscription payment to actually be reflected on the user's tier.
+ *
+ * Same reasoning as `waitForDepositToSettle` above: a confirmed Payment Sheet only means
+ * Stripe took the money. `User.subscriptionTier` is set out of band by the stripe-webhook
+ * Lambda, so announcing "you're Pro now" at confirmation time is a guess — and it was the
+ * wrong guess for every upgrade while the webhook was misrouted, which is precisely how a
+ * charged user was left on the Free tier with the app congratulating them.
+ *
+ * Polls the very record the webhook writes, so the confirmation is evidence.
+ */
+export async function waitForSubscriptionToActivate(
+  userId: string,
+  { timeoutMs = 20000, intervalMs = 1500 }: { timeoutMs?: number; intervalMs?: number } = {}
+): Promise<SubscriptionActivation> {
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    try {
+      // Cast for the same reason as elsewhere in this file — see waitForDepositToSettle.
+      const { data: user } = await (client as any).models.User.get({ id: userId });
+      if (user?.subscriptionTier === 'PRO' && user?.subscriptionStatus === 'ACTIVE') {
+        return { status: 'ACTIVE' };
+      }
+    } catch (error) {
+      // One failed read should not end the wait early.
+      console.warn('[StripeService] Subscription poll failed:', error);
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+
+  // Deliberately no FAILED case. Unlike a deposit, nothing writes a terminal failure
+  // state here, so the only honest answer short of ACTIVE is "not confirmed yet".
+  return { status: 'TIMEOUT' };
+}
+
 /**
  * Opens the Stripe Customer Portal so the user can manage or cancel their subscription.
  */
-export async function openCustomerPortal(): Promise<void> {
+export async function openCustomerPortal(): Promise<{ success: boolean; error?: string }> {
   try {
     // Where Stripe sends the user's browser after they finish in the portal.
     // A custom scheme cannot be followed by a web browser, so web needs a real URL.
@@ -159,12 +216,22 @@ export async function openCustomerPortal(): Promise<void> {
       returnUrl,
     });
     const portalUrl = result?.data?.portalUrl;
-    if (portalUrl) {
-      await Linking.openURL(portalUrl);
-    } else {
-      console.error('[StripeService] No portal URL returned');
+
+    if (!portalUrl) {
+      // The most likely cause is the Customer Portal not being enabled for this Stripe
+      // mode (Dashboard → Settings → Billing → Customer Portal), which fails per-mode —
+      // so this can work in test and fail in live. CloudWatch has Stripe's own message.
+      console.error('[StripeService] No portal URL returned:', JSON.stringify(result));
+      return {
+        success: false,
+        error: result?.data?.error ?? 'Could not open the billing portal. Please try again.',
+      };
     }
+
+    await Linking.openURL(portalUrl);
+    return { success: true };
   } catch (error) {
     console.error('[StripeService] openCustomerPortal error:', error);
+    return { success: false, error: 'Could not open the billing portal. Please try again.' };
   }
 }

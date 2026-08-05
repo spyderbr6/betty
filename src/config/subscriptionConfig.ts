@@ -33,4 +33,11 @@ export const PRO_SUBSCRIPTION_PRICE_CENTS = 499; // $4.99/month — update here 
 export const PRO_MONTHLY_DISPLAY = '$4.99';
 
 export type SubscriptionTier = 'FREE' | 'PRO';
-export type SubscriptionStatus = 'ACTIVE' | 'CANCELLED' | 'PAST_DUE' | 'TRIALING';
+// Mirrors the User.subscriptionStatus enum in amplify/data/resource.ts. INCOMPLETE is
+// the state a subscription sits in between creation and its first successful payment.
+export type SubscriptionStatus =
+  | 'ACTIVE'
+  | 'CANCELLED'
+  | 'PAST_DUE'
+  | 'TRIALING'
+  | 'INCOMPLETE';

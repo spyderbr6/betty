@@ -3,9 +3,15 @@
 Card deposits and Pro subscriptions, end to end: what is implemented, how to configure
 Stripe from test through production, and how to diagnose it when payments stop arriving.
 
-**Status: complete and working in production.** Card deposits credit balances automatically
-via the webhook. Kept as reference documentation — active Stripe work lives in
-[todo.md](./todo.md).
+**Status:** Card deposits are complete and working in production — balances credit
+automatically via the webhook.
+
+**Pro subscriptions have not yet been verified end to end.** The code path was broken by two
+Stripe API changes (see [Subscriptions specifically](#subscriptions-specifically) under
+Troubleshooting) and has been fixed but not exercised against a live Stripe account. Before
+declaring it working, confirm: the `STRIPE_PRO_PRICE_ID` secret resolves in the mode you are
+testing, `customer.subscription.*` deliveries succeed against the **API Gateway** endpoint,
+and a test upgrade actually flips `User.subscriptionTier` to `PRO`.
 
 ---
 
@@ -16,7 +22,8 @@ via the webhook. Kept as reference documentation — active Stripe work lives in
   - Card processing passed through at Stripe's cost (2.9% + $0.30, grossed up so
     the platform nets the full deposit), shown transparently before payment
 - **Stripe webhook** Lambda updates Transaction + credits balance automatically
-  - Exposed via Lambda Function URL (copy URL from CloudFormation outputs → Stripe Dashboard → Developers → Webhooks)
+  - Exposed on **two** endpoints; configure Stripe against the API Gateway one (see Step 6).
+    The Lambda Function URL returns 403 in this AWS account.
   - Handles: `payment_intent.succeeded`, `customer.subscription.*`
 - **Pro subscription** ($4.99/month) via Stripe Billing
   - `stripe-manage` Lambda: creates subscription, returns clientSecret for Payment Sheet
@@ -339,3 +346,69 @@ marked `COMPLETED`, so a late webhook cannot double-credit after a manual approv
 **Payment form does not appear at all**
 - *On iOS/Android*: the native Stripe module is missing. The Payment Sheet requires an EAS build — it does not work in Expo Go.
 - *On web*: `STRIPE_PUBLISHABLE_KEY` is missing from `.env`, so Stripe.js never loads. The form reports "Payments are not configured for web."
+
+---
+
+### Subscriptions specifically
+
+**"Could not start your subscription"** — `stripe-manage` returned no `clientSecret`.
+Check CloudWatch → `/aws/lambda/...stripe-manage...`:
+
+| Log line | Cause | Fix |
+|---|---|---|
+| `No such price: 'price_...'` | `STRIPE_PRO_PRICE_ID` is from the other Stripe mode | Create the price in the mode matching `STRIPE_SECRET_KEY`, update the secret, redeploy |
+| `Invalid API Key provided:` (empty) | Secret set as an Environment variable, not a Secret | Set under Hosting → **Secrets**, redeploy |
+| `This property cannot be expanded (latest_invoice.payment_intent)` | Pre-fix code | Fixed — see the API version note below |
+| `No confirmation secret on subscription invoice` | Invoice finalized with nothing to collect (e.g. a 100% coupon) | Expected for $0 invoices; the webhook still grants Pro |
+| `Subscription already active` | User is already subscribed | Working as intended — the app now says so instead of erroring |
+
+**User paid but is still on the Free tier** — the charge and the tier are set by two
+different paths. Stripe taking the money proves nothing about `User.subscriptionTier`,
+which only `stripe-webhook` writes. Check, in order:
+1. Stripe Dashboard → Developers → Webhooks → is `customer.subscription.*` in the endpoint's
+   event list, and are deliveries succeeding? A 403 means the endpoint URL is stale — use
+   the API Gateway URL, not the Function URL (see Step 6).
+2. CloudWatch → `/aws/lambda/...stripe-webhook...` for `Subscription active for user ...`.
+   `Subscription update failed` there means the write was rejected — the message names the field.
+3. `No user found for Stripe customer: cus_...` means the customer has no matching User row.
+   That path deliberately does **not** retry.
+
+The app no longer claims success on faith: `SubscriptionScreen` polls the User record after
+payment and only says "Welcome to Pro!" once the tier has actually flipped. If the webhook is
+down the user sees "Payment received … can take a moment to activate" instead — accurate, and
+it does not invite a second charge.
+
+#### ⚠️ Stripe API version pitfalls (the cause of the original breakage)
+
+This integration pins `apiVersion: '2026-06-24.dahlia'`. Two fields moved in
+`2025-03-31.basil`, and **both** failures are silent — a `Stripe.Subscription` cast to `any`
+compiles perfectly and returns `undefined` at runtime:
+
+| Removed | Replacement | Symptom if you use the old one |
+|---|---|---|
+| `Invoice.payment_intent` | `Invoice.confirmation_secret.client_secret`, via `expand: ['latest_invoice.confirmation_secret']` | Stripe **rejects the unknown expand path**, so `subscriptions.create` throws outright |
+| `Subscription.current_period_end` | `Subscription.items.data[].current_period_end` | `new Date(undefined * 1000).toISOString()` throws `RangeError`, failing the webhook after the payment succeeded |
+
+Also note Stripe's subscription statuses do **not** upper-case cleanly onto the
+`User.subscriptionStatus` enum — `canceled` (one L) vs `CANCELLED` (two) is the trap. Use
+`mapSubscriptionStatus()` in the webhook handler rather than `status.toUpperCase()`.
+
+**Known gap — `TRIALING` grants no benefits.** The webhook sets `subscriptionTier: 'PRO'` for
+a trialing subscription, but every entitlement check is
+`tier === 'PRO' && status === 'ACTIVE'` (`transactionService.ts`, `SubscriptionScreen.tsx`),
+so a trialing member would still be charged Free-tier fees. This cannot fire today — the Pro
+price has no trial period — but **add `TRIALING` to those checks before configuring one.**
+
+**Webhook events are not ordered.** Every signup emits `customer.subscription.created`
+(`incomplete`) and then `customer.subscription.updated` (`active`) seconds apart, and Stripe
+makes no delivery-order guarantee. Handling those in the wrong order would write FREE over
+PRO. `handleSubscriptionChange` therefore re-reads the subscription from Stripe instead of
+trusting the event payload — do not "optimise" that call away.
+
+**If a `Stripe.*` type ever fails to compile, check the API changelog before casting to
+`any`.** A TS2339 on a Stripe type is usually the compiler reporting a real API change, and
+casting converts a build error you can see into a runtime error you cannot. That is precisely
+how both bugs above shipped.
+
+`npm run typecheck` does **not** cover `amplify/` — its tsconfig only includes `src/`. To
+typecheck the Lambdas: `npx tsc --noEmit --project amplify/tsconfig.json`.

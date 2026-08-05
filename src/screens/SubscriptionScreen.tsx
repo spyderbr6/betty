@@ -18,7 +18,11 @@ import { colors, spacing, textStyles, typography } from '../styles';
 import { ModalHeader } from '../components/ui/ModalHeader';
 import { showAlert } from '../components/ui/CustomAlert';
 import { useAuth } from '../contexts/AuthContext';
-import { createSubscription, openCustomerPortal } from '../services/stripeService';
+import {
+  createSubscription,
+  openCustomerPortal,
+  waitForSubscriptionToActivate,
+} from '../services/stripeService';
 import { PRO_MONTHLY_DISPLAY, WITHDRAWAL_FEE_RATE, WINNINGS_FEE_RATE } from '../config/subscriptionConfig';
 
 // @ts-ignore — installed via: npx expo install @stripe/stripe-react-native
@@ -45,6 +49,20 @@ export const SubscriptionScreen: React.FC<SubscriptionScreenProps> = ({ onClose 
     setIsLoading(true);
     try {
       const result = await createSubscription();
+
+      // Already paying — the local tier is just stale. Refresh it instead of sending
+      // this user back through checkout for a subscription they already have.
+      if (result.alreadyActive) {
+        await refreshAuth({ silent: true });
+        showAlert(
+          "You're already Pro",
+          'Your Pro membership is active. No further payment is needed.',
+          [{ text: 'Got it', onPress: onClose }]
+        );
+        setIsLoading(false);
+        return;
+      }
+
       if (!result.success || !result.clientSecret) {
         showAlert('Error', result.error ?? 'Could not start subscription. Please try again.');
         setIsLoading(false);
@@ -72,15 +90,30 @@ export const SubscriptionScreen: React.FC<SubscriptionScreenProps> = ({ onClose 
         return;
       }
 
-      // Subscription created — webhook will update User.subscriptionTier async
-      // Refresh auth context to pick up the change if webhook already fired
+      // Stripe has the money, but the tier is set out of band by the stripe-webhook
+      // Lambda. Wait for that to land before claiming anything, so the confirmation
+      // reflects the account rather than the charge.
+      const activation = user?.userId
+        ? await waitForSubscriptionToActivate(user.userId)
+        : ({ status: 'TIMEOUT' } as const);
+
       await refreshAuth({ silent: true });
 
-      showAlert(
-        'Welcome to Pro!',
-        'Your Pro membership is now active. All platform fees have been removed.',
-        [{ text: 'Awesome!', onPress: onClose }]
-      );
+      if (activation.status === 'ACTIVE') {
+        showAlert(
+          'Welcome to Pro!',
+          'Your Pro membership is now active. All platform fees have been removed.',
+          [{ text: 'Awesome!', onPress: onClose }]
+        );
+      } else {
+        // Payment went through; only the confirmation is missing. Say exactly that —
+        // telling this user the upgrade failed would invite a second charge.
+        showAlert(
+          'Payment received',
+          'Your payment went through. Pro can take a moment to activate — reopen this screen shortly to confirm.',
+          [{ text: 'OK', onPress: onClose }]
+        );
+      }
     } catch (err) {
       console.error('[SubscriptionScreen] Upgrade error:', err);
       showAlert('Error', 'Something went wrong. Please try again.');
@@ -92,7 +125,10 @@ export const SubscriptionScreen: React.FC<SubscriptionScreenProps> = ({ onClose 
   const handleManage = async () => {
     setIsLoading(true);
     try {
-      await openCustomerPortal();
+      const result = await openCustomerPortal();
+      if (!result.success) {
+        showAlert('Error', result.error ?? 'Could not open subscription portal. Please try again.');
+      }
     } catch (err) {
       showAlert('Error', 'Could not open subscription portal. Please try again.');
     } finally {
