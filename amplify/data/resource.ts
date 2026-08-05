@@ -45,7 +45,11 @@ const schema = a.schema({
       privacyPolicyVersion: a.string(), // Version of Privacy Policy accepted (e.g., "1.0")
       // Subscription fields
       subscriptionTier: a.enum(['FREE', 'PRO']),
-      subscriptionStatus: a.enum(['ACTIVE', 'CANCELLED', 'PAST_DUE', 'TRIALING']),
+      // INCOMPLETE is the state every new subscription passes through: subscriptions are
+      // created with payment_behavior 'default_incomplete', so Stripe emits
+      // customer.subscription.created with status `incomplete` before the first payment
+      // is confirmed. Without it in this enum that very first event fails to write.
+      subscriptionStatus: a.enum(['ACTIVE', 'CANCELLED', 'PAST_DUE', 'TRIALING', 'INCOMPLETE']),
       subscriptionCurrentPeriodEnd: a.datetime(),
       stripeCustomerId: a.string(),
       stripeSubscriptionId: a.string(),
@@ -826,6 +830,12 @@ const schema = a.schema({
       clientSecret: a.string(),
       subscriptionId: a.string(),
       portalUrl: a.string(),
+      // Set when the caller asked to subscribe but already has a paid-up subscription.
+      // Distinguishes "nothing to charge you for" from a failure, which otherwise look
+      // identical to the client: both come back without a clientSecret.
+      alreadyActive: a.boolean(),
+      // User-safe failure text, or null on success. Never carries Stripe's own message.
+      error: a.string(),
     }))
     .handler(a.handler.function(stripeManage))
     .authorization((allow) => [allow.authenticated()]),

@@ -225,6 +225,71 @@ async function notifyDepositCompleted(userId: string, amountDollars: number) {
   }
 }
 
+/**
+ * Maps a Stripe subscription status onto the User.subscriptionStatus enum.
+ *
+ * This was previously `status.toUpperCase()`, which only happened to line up for three
+ * of Stripe's eight statuses. Every other value produced a string the enum does not
+ * accept, so the update was rejected and the user's tier silently stopped tracking
+ * Stripe — including on `canceled`, which upper-cases to CANCELED and the schema spells
+ * CANCELLED.
+ */
+function mapSubscriptionStatus(status: Stripe.Subscription.Status) {
+  switch (status) {
+    case 'active':
+      return 'ACTIVE';
+    case 'trialing':
+      return 'TRIALING';
+    // Stripe stops retrying an `unpaid` subscription, but from the user's side it is the
+    // same situation as past_due: we are waiting on a payment that has not landed.
+    case 'past_due':
+    case 'unpaid':
+      return 'PAST_DUE';
+    case 'incomplete':
+      return 'INCOMPLETE';
+    case 'canceled':
+    case 'incomplete_expired':
+    case 'paused':
+      return 'CANCELLED';
+    default:
+      // Stripe adds statuses over time. Treat anything unrecognised as not-subscribed
+      // rather than writing a value the enum will reject.
+      console.warn('[StripeWebhook] Unrecognised subscription status:', status);
+      return 'CANCELLED';
+  }
+}
+
+/**
+ * Reads the current period end, in seconds, from a subscription.
+ *
+ * `current_period_end` moved off the Subscription and onto its items in API version
+ * 2025-03-31.basil. Reading the old location returned undefined, and
+ * `new Date(undefined * 1000).toISOString()` throws a RangeError rather than producing a
+ * bad date — which failed this handler outright and left the tier unset even when the
+ * payment had gone through.
+ *
+ * A subscription can hold items on different billing cycles, so the soonest end is the
+ * one that matters: it is the point at which access is no longer guaranteed paid for.
+ */
+function getCurrentPeriodEnd(subscription: Stripe.Subscription): string | null {
+  const ends = (subscription.items?.data ?? [])
+    .map((item) => item.current_period_end)
+    .filter((end): end is number => typeof end === 'number' && Number.isFinite(end));
+
+  // Pre-basil subscriptions still carry the field at the top level.
+  const legacyEnd = (subscription as any).current_period_end;
+  if (!ends.length && typeof legacyEnd === 'number' && Number.isFinite(legacyEnd)) {
+    ends.push(legacyEnd);
+  }
+
+  if (!ends.length) {
+    console.warn('[StripeWebhook] No current_period_end on subscription:', subscription.id);
+    return null;
+  }
+
+  return new Date(Math.min(...ends) * 1000).toISOString();
+}
+
 async function handleSubscriptionChange(subscription: Stripe.Subscription, deleted: boolean) {
   // Find user by stripeCustomerId, through the index of the same name. Same reasoning as
   // the deposit lookup above: a filtered list is a paged Scan, not a lookup, so it would
@@ -250,28 +315,57 @@ async function handleSubscriptionChange(subscription: Stripe.Subscription, delet
   }
 
   if (deleted) {
-    await client.models.User.update({
+    const { errors: cancelErrors } = await client.models.User.update({
       id: user.id,
       subscriptionTier: 'FREE',
       subscriptionStatus: 'CANCELLED',
       stripeSubscriptionId: null,
       subscriptionCurrentPeriodEnd: null,
     });
+    if (cancelErrors?.length) {
+      console.error('[StripeWebhook] Cancellation update failed:', user.id, JSON.stringify(cancelErrors));
+      throw new Error('Cancellation update failed');
+    }
     console.log(`[StripeWebhook] Subscription cancelled for user ${user.id}`);
     return;
   }
 
-  const status = subscription.status;
-  const periodEnd = new Date((subscription as any).current_period_end * 1000).toISOString();
+  // Re-read the subscription rather than trusting the event payload.
+  //
+  // Stripe does not guarantee delivery order, and `payment_behavior: 'default_incomplete'`
+  // guarantees at least two events per signup seconds apart: `created` (incomplete) then
+  // `updated` (active). If those land out of order, the stale `incomplete` payload
+  // overwrites PRO with FREE and the user is charged but left on the Free tier — the very
+  // symptom this handler exists to prevent. A fresh read is always current, whenever it
+  // arrives.
+  const current = await stripe.subscriptions
+    .retrieve(subscription.id)
+    .catch((err: unknown) => {
+      // Fall back to the event payload. Slightly stale beats not recording the change.
+      console.warn('[StripeWebhook] Could not re-read subscription, using event payload:', err);
+      return subscription;
+    });
+
+  const status = current.status;
+  const periodEnd = getCurrentPeriodEnd(current);
   const isActive = status === 'active' || status === 'trialing';
 
-  await client.models.User.update({
+  const { errors: updateErrors } = await client.models.User.update({
     id: user.id,
     subscriptionTier: isActive ? 'PRO' : 'FREE',
-    subscriptionStatus: status.toUpperCase() as any,
+    subscriptionStatus: mapSubscriptionStatus(status),
     stripeSubscriptionId: subscription.id,
     subscriptionCurrentPeriodEnd: periodEnd,
   });
 
-  console.log(`[StripeWebhook] Subscription ${status} for user ${user.id} until ${periodEnd}`);
+  if (updateErrors?.length) {
+    // Throw so the outer catch returns a 500 and Stripe retries. Letting this pass
+    // quietly is what "the user is charged and stays on the Free tier" looks like: the
+    // Amplify client reports rejected writes in `errors` rather than throwing, so an
+    // unchecked update is indistinguishable from a successful one.
+    console.error('[StripeWebhook] Subscription update failed:', user.id, JSON.stringify(updateErrors));
+    throw new Error('Subscription update failed');
+  }
+
+  console.log(`[StripeWebhook] Subscription ${status} for user ${user.id} until ${periodEnd ?? 'unknown'}`);
 }
