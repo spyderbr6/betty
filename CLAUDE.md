@@ -1066,6 +1066,23 @@ example holds no credentials and points at a user pool that does not exist.
    confirm that test - and only that test - goes red, then restore. A test that
    has never failed has not been shown to test anything.
 
+### e2e/serve.mjs: never build a path from the request
+
+The static server resolves requests by looking the URL path up in a `Map` built
+by walking `dist/` at startup. It must stay that way. Do **not** "simplify" it
+to `join(root, urlPath)` with a containment check afterwards: that shape is what
+CodeQL's `js/path-injection` rule flags, and while a checked version did hold up
+against traversal probes, safety became a property of the checks rather than of
+the structure. Looking the path up in a prebuilt index means a traversal payload
+has nothing to traverse *to* — the only paths ever opened are ones the walk
+found.
+
+Also keep the `try/catch` around `decodeURIComponent`. Malformed percent-encoding
+(`/%zz`) throws a `URIError`, and unhandled in a request handler that terminates
+the whole process — one bad request would end the test run. The listener binds
+`127.0.0.1` explicitly; it serves a local build to a local browser and should
+never be reachable off the machine.
+
 ### Retries are off on purpose
 
 Every network call is mocked, so runs are deterministic and a failure is a real
