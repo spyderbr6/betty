@@ -11,7 +11,7 @@ import {
   Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { signUp, confirmSignUp } from 'aws-amplify/auth';
+import { signUp, confirmSignUp, autoSignIn } from 'aws-amplify/auth';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
 import { colors, spacing, textStyles, typography, commonStyles, shadows } from '../styles';
@@ -118,6 +118,10 @@ export const SignUp: React.FC<SignUpProps> = ({ onLoginPress, onSignUpSuccess })
             name: displayName.trim(),
             phone_number: formatted, // Add phone number (will be unverified)
           },
+          // Lets confirmSignUp hand straight off to autoSignIn() so a brand new
+          // user lands in the app instead of being bounced back to the login form
+          // to retype the credentials they just chose.
+          autoSignIn: true,
         },
       });
       setStep('confirm');
@@ -141,7 +145,7 @@ export const SignUp: React.FC<SignUpProps> = ({ onLoginPress, onSignUpSuccess })
 
     setIsLoading(true);
     try {
-      await confirmSignUp({
+      const { nextStep } = await confirmSignUp({
         username: email.trim(),
         confirmationCode: confirmationCode.trim(),
       });
@@ -151,6 +155,19 @@ export const SignUp: React.FC<SignUpProps> = ({ onLoginPress, onSignUpSuccess })
       // ensuring all new users have accepted current policies.
 
       setErrorMessage(''); // Clear any errors on success
+
+      if (nextStep.signUpStep === 'COMPLETE_AUTO_SIGN_IN') {
+        try {
+          await autoSignIn();
+          // AuthContext listens for the 'signedIn' Hub event and swaps in the
+          // authenticated navigator, so there is nothing further to do here.
+          return;
+        } catch (autoSignInError) {
+          // Auto sign-in is a convenience, not a requirement — the account is
+          // already confirmed at this point, so fall back to the manual prompt.
+          console.warn('Auto sign-in after confirmation failed:', autoSignInError);
+        }
+      }
 
       // Show success alert before navigating to login
       showAlert(

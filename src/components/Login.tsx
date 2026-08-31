@@ -17,10 +17,15 @@ import { colors, spacing, textStyles, typography, commonStyles, shadows } from '
 
 interface LoginProps {
   onSignUpPress: () => void;
+  onForgotPasswordPress: () => void;
   onLoginSuccess: () => void;
 }
 
-export const Login: React.FC<LoginProps> = ({ onSignUpPress, onLoginSuccess }) => {
+export const Login: React.FC<LoginProps> = ({
+  onSignUpPress,
+  onForgotPasswordPress,
+  onLoginSuccess,
+}) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -171,6 +176,16 @@ export const Login: React.FC<LoginProps> = ({ onSignUpPress, onLoginSuccess }) =
                   <Text style={styles.signInButtonText}>Sign In</Text>
                 )}
               </TouchableOpacity>
+
+              {/* Forgot Password Link */}
+              <TouchableOpacity
+                onPress={onForgotPasswordPress}
+                style={styles.forgotPasswordButton}
+                disabled={isLoading}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.forgotPasswordText}>Forgot password?</Text>
+              </TouchableOpacity>
             </View>
 
             {/* Footer Section */}
@@ -317,6 +332,18 @@ const styles = StyleSheet.create({
     ...textStyles.button,
     color: colors.background,
     textAlign: 'center',
+  },
+  forgotPasswordButton: {
+    alignSelf: 'center',
+    marginTop: spacing.md,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+  },
+  forgotPasswordText: {
+    ...textStyles.bodySmall,
+    color: colors.primary,
+    fontWeight: typography.fontWeight.medium,
+    textDecorationLine: 'underline',
   },
   footerContainer: {
     alignItems: 'center',
