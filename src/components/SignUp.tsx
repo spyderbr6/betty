@@ -239,6 +239,7 @@ export const SignUp: React.FC<SignUpProps> = ({ onLoginPress, onSignUpSuccess })
                     styles.input,
                     focusedField === 'confirmationCode' && styles.inputFocused,
                   ]}
+                  testID="signup-code"
                   placeholder="Enter 6-digit code"
                   placeholderTextColor={colors.textMuted}
                   value={confirmationCode}
@@ -258,6 +259,7 @@ export const SignUp: React.FC<SignUpProps> = ({ onLoginPress, onSignUpSuccess })
                   styles.signUpButton,
                   isLoading && styles.buttonDisabled
                 ]}
+                testID="signup-confirm-submit"
                 onPress={handleConfirmSignUp}
                 disabled={isLoading}
                 activeOpacity={0.8}
@@ -338,6 +340,7 @@ export const SignUp: React.FC<SignUpProps> = ({ onLoginPress, onSignUpSuccess })
                     styles.input,
                     focusedField === 'displayName' && styles.inputFocused,
                   ]}
+                  testID="signup-display-name"
                   placeholder="How you'll appear to friends"
                   placeholderTextColor={colors.textMuted}
                   value={displayName}
@@ -359,6 +362,7 @@ export const SignUp: React.FC<SignUpProps> = ({ onLoginPress, onSignUpSuccess })
                     styles.input,
                     focusedField === 'email' && styles.inputFocused,
                   ]}
+                  testID="signup-email"
                   placeholder="Enter your email"
                   placeholderTextColor={colors.textMuted}
                   value={email}
@@ -380,6 +384,7 @@ export const SignUp: React.FC<SignUpProps> = ({ onLoginPress, onSignUpSuccess })
                     styles.input,
                     focusedField === 'password' && styles.inputFocused,
                   ]}
+                  testID="signup-password"
                   placeholder="Create a secure password"
                   placeholderTextColor={colors.textMuted}
                   value={password}
@@ -399,6 +404,7 @@ export const SignUp: React.FC<SignUpProps> = ({ onLoginPress, onSignUpSuccess })
                 onChangeFormattedText={setFormattedPhoneNumber}
                 onChangeCountryCode={setCountryCode}
                 label="Phone Number"
+                testID="signup-phone"
                 placeholder="Enter your phone number"
                 required
                 disabled={isLoading}
@@ -419,7 +425,7 @@ export const SignUp: React.FC<SignUpProps> = ({ onLoginPress, onSignUpSuccess })
                   disabled={isLoading}
                   activeOpacity={0.7}
                 >
-                  <View style={[styles.checkbox, tosAccepted && styles.checkboxChecked]}>
+                  <View testID="signup-accept-tos" style={[styles.checkbox, tosAccepted && styles.checkboxChecked]}>
                     {tosAccepted && (
                       <Ionicons name="checkmark" size={16} color={colors.background} />
                     )}
@@ -445,7 +451,7 @@ export const SignUp: React.FC<SignUpProps> = ({ onLoginPress, onSignUpSuccess })
                   disabled={isLoading}
                   activeOpacity={0.7}
                 >
-                  <View style={[styles.checkbox, privacyAccepted && styles.checkboxChecked]}>
+                  <View testID="signup-accept-privacy" style={[styles.checkbox, privacyAccepted && styles.checkboxChecked]}>
                     {privacyAccepted && (
                       <Ionicons name="checkmark" size={16} color={colors.background} />
                     )}
@@ -471,6 +477,7 @@ export const SignUp: React.FC<SignUpProps> = ({ onLoginPress, onSignUpSuccess })
                   styles.signUpButton,
                   isLoading && styles.buttonDisabled
                 ]}
+                testID="signup-submit"
                 onPress={handleSignUp}
                 disabled={isLoading}
                 activeOpacity={0.8}

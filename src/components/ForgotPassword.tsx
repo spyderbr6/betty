@@ -159,14 +159,14 @@ export const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBackToLogin })
   const renderMessages = () => (
     <>
       {errorMessage ? (
-        <View style={styles.errorContainer}>
+        <View testID="forgot-error" style={styles.errorContainer}>
           <Ionicons name="alert-circle" size={16} color={colors.error} />
           <Text style={styles.errorText}>{errorMessage}</Text>
         </View>
       ) : null}
 
       {infoMessage ? (
-        <View style={styles.infoContainer}>
+        <View testID="forgot-info" style={styles.infoContainer}>
           <Ionicons name="checkmark-circle" size={16} color={colors.success} />
           <Text style={styles.infoText}>{infoMessage}</Text>
         </View>
@@ -189,6 +189,7 @@ export const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBackToLogin })
         <View style={styles.inputGroup}>
           <Text style={styles.inputLabel}>Email</Text>
           <TextInput
+            testID="forgot-email"
             style={[styles.input, focusedField === 'email' && styles.inputFocused]}
             placeholder="Enter your email"
             placeholderTextColor={colors.textMuted}
@@ -204,6 +205,7 @@ export const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBackToLogin })
         </View>
 
         <TouchableOpacity
+          testID="forgot-send-code"
           style={[styles.primaryButton, isLoading && styles.buttonDisabled]}
           onPress={() => handleRequestCode()}
           disabled={isLoading}
@@ -224,7 +226,7 @@ export const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBackToLogin })
       <View style={styles.headerContainer}>
         <Text style={styles.title}>Enter New Password</Text>
         {destination ? (
-          <Text style={styles.subtitle}>
+          <Text testID="forgot-destination" style={styles.subtitle}>
             We sent a reset code to{'\n'}
             <Text style={styles.emailHighlight}>{destination}</Text>
           </Text>
@@ -241,6 +243,7 @@ export const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBackToLogin })
         <View style={styles.inputGroup}>
           <Text style={styles.inputLabel}>Reset Code</Text>
           <TextInput
+            testID="forgot-code"
             style={[styles.input, focusedField === 'code' && styles.inputFocused]}
             placeholder="Enter 6-digit code"
             placeholderTextColor={colors.textMuted}
@@ -258,6 +261,7 @@ export const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBackToLogin })
         <View style={styles.inputGroup}>
           <Text style={styles.inputLabel}>New Password</Text>
           <TextInput
+            testID="forgot-new-password"
             style={[styles.input, focusedField === 'newPassword' && styles.inputFocused]}
             placeholder="Enter your new password"
             placeholderTextColor={colors.textMuted}
@@ -279,6 +283,7 @@ export const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBackToLogin })
         <View style={styles.inputGroup}>
           <Text style={styles.inputLabel}>Confirm New Password</Text>
           <TextInput
+            testID="forgot-confirm-password"
             style={[styles.input, focusedField === 'confirmPassword' && styles.inputFocused]}
             placeholder="Re-enter your new password"
             placeholderTextColor={colors.textMuted}
@@ -294,6 +299,7 @@ export const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBackToLogin })
         </View>
 
         <TouchableOpacity
+          testID="forgot-submit"
           style={[styles.primaryButton, isLoading && styles.buttonDisabled]}
           onPress={handleConfirmReset}
           disabled={isLoading}
@@ -307,6 +313,7 @@ export const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBackToLogin })
         </TouchableOpacity>
 
         <TouchableOpacity
+          testID="forgot-resend"
           onPress={() => handleRequestCode(true)}
           style={styles.resendButton}
           disabled={isLoading}
@@ -346,6 +353,7 @@ export const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBackToLogin })
             <View style={styles.footerContainer}>
               <Text style={styles.footerText}>Remembered your password?</Text>
               <TouchableOpacity
+                testID="forgot-back-to-login"
                 onPress={onBackToLogin}
                 style={styles.linkButton}
                 disabled={isLoading}

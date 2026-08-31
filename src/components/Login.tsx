@@ -113,7 +113,7 @@ export const Login: React.FC<LoginProps> = ({
             <View style={styles.formContainer}>
               {/* Error Message */}
               {errorMessage ? (
-                <View style={styles.errorContainer}>
+                <View testID="login-error" style={styles.errorContainer}>
                   <Ionicons name="alert-circle" size={16} color={colors.error} />
                   <Text style={styles.errorText}>{errorMessage}</Text>
                 </View>
@@ -127,6 +127,7 @@ export const Login: React.FC<LoginProps> = ({
                     styles.input,
                     focusedField === 'email' && styles.inputFocused,
                   ]}
+                  testID="login-email"
                   placeholder="Enter your email"
                   placeholderTextColor={colors.textMuted}
                   value={email}
@@ -148,6 +149,7 @@ export const Login: React.FC<LoginProps> = ({
                     styles.input,
                     focusedField === 'password' && styles.inputFocused,
                   ]}
+                  testID="login-password"
                   placeholder="Enter your password"
                   placeholderTextColor={colors.textMuted}
                   value={password}
@@ -162,6 +164,7 @@ export const Login: React.FC<LoginProps> = ({
 
               {/* Sign In Button */}
               <TouchableOpacity
+                testID="login-submit"
                 style={[
                   styles.signInButton,
                   isLoading && styles.buttonDisabled
@@ -179,6 +182,7 @@ export const Login: React.FC<LoginProps> = ({
 
               {/* Forgot Password Link */}
               <TouchableOpacity
+                testID="login-forgot-password"
                 onPress={onForgotPasswordPress}
                 style={styles.forgotPasswordButton}
                 disabled={isLoading}
@@ -193,8 +197,9 @@ export const Login: React.FC<LoginProps> = ({
               <Text style={styles.footerText}>
                 Don't have an account?
               </Text>
-              <TouchableOpacity 
-                onPress={onSignUpPress} 
+              <TouchableOpacity
+                testID="login-create-account"
+                onPress={onSignUpPress}
                 style={styles.linkButton}
                 disabled={isLoading}
                 activeOpacity={0.7}

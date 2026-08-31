@@ -9,6 +9,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with th
 - **iOS**: `npm run ios` - Run on iOS device/simulator
 - **TypeScript**: `npm run typecheck` - Check types
 - **Linting**: `npm run lint` - Run ESLint
+- **E2E tests**: `npm run test:e2e` - Build the web bundle and run the Playwright suite
+- **E2E (no rebuild)**: `npm run test:e2e:fast` - Re-run against the existing `dist/`. **Only valid if no source changed since the last build** - it will silently test stale code otherwise.
 - **EAS BUILD**: 'eas build -p android --profile production' - ASK FIRST DO NOT RUN YOURSELF
 
 ## Architecture Overview
@@ -50,6 +52,7 @@ src/
 - **[PUSH_NOTIFICATION_GUIDE.md](./PUSH_NOTIFICATION_GUIDE.md)**: Complete guide to push notification setup, testing, and troubleshooting
 - **[STRIPE_GUIDE.md](./STRIPE_GUIDE.md)**: Card deposits and Pro subscriptions — setup, test → production switchover, and payment troubleshooting
 - **todo.md**: Current tasks and project roadmap
+- **E2E Testing** (section below): Required reading before adding UI tests or changing auth screens
 
 ### UI Components & Alerts
 
@@ -952,6 +955,122 @@ This includes:
 - Anti-patterns to avoid
 - Code examples for all scenarios
 
+## End-to-End Testing (Playwright)
+
+The app is driven as a **real web page** in headless Chromium. `react-native-web`
+means the same React tree that renders on device also renders in a browser, so
+screen logic can be exercised without a device or a build.
+
+### Commands
+
+```bash
+npm run test:e2e        # ensure config -> expo export -> playwright test  (~90s)
+npm run test:e2e:fast   # playwright test only, against existing dist/     (~20s)
+npm run test:e2e:ui     # Playwright's interactive UI mode
+```
+
+**`test:e2e:fast` does not rebuild.** After any source edit it tests the *previous*
+bundle and will report stale results. Use it only for iterating on spec files.
+
+### What this covers and what it does not
+
+Covered: screen logic, navigation, form state, validation, Amplify API call
+handling, and error-to-copy mapping.
+
+**Not covered** - do not report a change as verified on these grounds alone:
+- Native modules, native layout, gestures, or anything platform-specific.
+- The JSC engine. `app.json` pins `jsEngine: "jsc"` on both platforms; the web
+  bundle runs in V8.
+- Real AWS. Every Cognito call is mocked (see below).
+- Visual fidelity. Screenshots are CSS rendering, not native.
+
+### Layout
+
+```
+e2e/
+├── auth.spec.ts          # Specs, grouped by flow with test.describe
+├── fixtures/cognito.ts   # HTTP-level Cognito mocks
+├── ensure-config.mjs     # Writes placeholder amplify_outputs.json if absent
+└── serve.mjs             # Dependency-free static server for dist/
+playwright.config.ts
+amplify_outputs.example.json   # Placeholder config, safe to commit
+```
+
+### Mocking AWS
+
+Cognito is faked at the **HTTP boundary** via `page.route`, not by mocking the
+`aws-amplify/auth` module. The real SDK still parses responses and the app still
+receives real `AuthError` shapes, so the test exercises the actual error branches.
+
+```typescript
+import { codeDelivery, fail, mockCognito, ok } from './fixtures/cognito';
+
+const { calls } = await mockCognito(page, {
+  ForgotPassword: codeDelivery('b***@g***.com'),
+  ConfirmForgotPassword: fail('CodeMismatchException', 'Invalid code.'),
+});
+// `calls` records every action seen - assert on it to prove a request was or
+// was not sent (e.g. that client-side validation short-circuited).
+```
+
+Handlers are keyed by the **exact** Cognito action from the `X-Amz-Target`
+header. Matching is exact, never substring: `'ConfirmForgotPassword'.includes('ForgotPassword')`
+is `true`, and a substring match silently answers the confirm call with the
+request call's response - turning a failing assertion green. An unhandled action
+returns a 500 and is recorded, so a missing handler fails loudly.
+
+**These fixtures encode our assumptions about the Cognito wire format.** If a
+test passes but the flow misbehaves against the real user pool, suspect the
+fixtures first: capture a real response and correct them.
+
+### Selectors: always use testID
+
+Query with `getByTestId`, never visible text. `testID` maps to `data-testid` on
+web, costs nothing at runtime, and survives copy changes.
+
+Convention is `<screen>-<element>`: `login-submit`, `forgot-new-password`,
+`signup-accept-tos`. Add a `testID` to any element a test touches, including
+error and info banners so their contents can be asserted.
+
+Two traps, both hit during the initial build:
+- **Anchor the testID to the element you actually want clicked.** The signup
+  policy rows contain an inline link that opens a modal; Playwright clicks an
+  element's centre, which landed on the link rather than the checkbox. The
+  testID belongs on the checkbox `View` - the click still bubbles to the row's
+  `onPress`.
+- **Wrapper components need a pass-through.** `PhoneInput` accepts an optional
+  `testID` prop and forwards it to its inner `TextInput`. Custom input wrappers
+  need the same.
+
+### Playwright version is pinned deliberately
+
+`@playwright/test` is pinned to `~1.56.0` because its bundled Chromium (build
+1194) matches the browser preinstalled in the Claude Code web sandbox, so the
+suite runs there with no download. **Do not bump it casually** - a newer
+Playwright wants a newer Chromium and every test fails with "Executable doesn't
+exist". Locally, `npx playwright install chromium` fetches the matching build.
+
+### Config bootstrap
+
+`expo export` cannot run without `amplify_outputs.json`, which is gitignored.
+`e2e/ensure-config.mjs` copies `amplify_outputs.example.json` into place **only
+when the real file is absent**, so a working config is never overwritten. The
+example holds no credentials and points at a user pool that does not exist.
+
+### Adding a test
+
+1. Add `testID`s to the elements the test will touch.
+2. Write the spec in `e2e/`, mocking only the actions the flow calls.
+3. Run `npm run test:e2e` (full, with rebuild).
+4. **Verify the test can fail.** Deliberately break the behaviour under test and
+   confirm that test - and only that test - goes red, then restore. A test that
+   has never failed has not been shown to test anything.
+
+### Retries are off on purpose
+
+Every network call is mocked, so runs are deterministic and a failure is a real
+failure. If a test becomes flaky, fix the test; do not add retries.
+
 ## Claude Workflow Instructions
 
 ### Solution Proposal Process
@@ -1071,5 +1190,6 @@ When encountering ANY errors, compilation failures, or build issues, **ALWAYS** 
 - `BashOutput` - Monitor ALL background build processes for errors
 - `Read` - Verify design system files contain referenced properties
 - `npm run android` - Test builds end-to-end  
+- `npm run test:e2e` - Exercise UI flows in a real browser (see End-to-End Testing)
 - `Bash` with build commands - Verify configuration changes
 
