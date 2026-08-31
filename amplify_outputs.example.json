@@ -1,0 +1,21 @@
+{
+  "_comment": "Placeholder Amplify config for e2e runs and first-time checkouts. Contains no real credentials and points at a user pool that does not exist. e2e/ensure-config.mjs copies this to amplify_outputs.json only when that file is absent, so a real config is never overwritten. Pull the real one with: npx ampx generate outputs --branch <branch> --app-id <id>",
+  "auth": {
+    "user_pool_id": "us-east-1_EXAMPLE00",
+    "aws_region": "us-east-1",
+    "user_pool_client_id": "exampleclientid000000000000",
+    "identity_pool_id": "us-east-1:00000000-0000-0000-0000-000000000000",
+    "username_attributes": ["email"],
+    "standard_required_attributes": ["email"],
+    "user_verification_types": ["email"],
+    "unauthenticated_identities_enabled": true,
+    "password_policy": {
+      "min_length": 8,
+      "require_lowercase": true,
+      "require_uppercase": true,
+      "require_numbers": true,
+      "require_symbols": true
+    }
+  },
+  "version": "1.3"
+}

@@ -30,6 +30,7 @@ import { EventCheckInProvider } from './src/contexts/EventCheckInContext';
 import { BetDataProvider } from './src/contexts/BetDataContext';
 import { Login } from './src/components/Login';
 import { SignUp } from './src/components/SignUp';
+import { ForgotPassword } from './src/components/ForgotPassword';
 import { AppNavigator } from './src/navigation/AppNavigator';
 import { colors } from './src/styles';
 import Toast from 'react-native-toast-message';
@@ -37,7 +38,7 @@ import { toastConfig } from './src/components/ui/ToastConfig';
 import { CustomAlertController } from './src/components/ui/CustomAlert';
 import { registerServiceWorker } from './src/utils/webPushUtils';
 
-type AuthScreen = 'login' | 'signup';
+type AuthScreen = 'login' | 'signup' | 'forgotPassword';
 
 function MainApp() {
   const { user, isLoading } = useAuth();
@@ -74,9 +75,14 @@ function MainApp() {
     );
   }
 
+  if (currentScreen === 'forgotPassword') {
+    return <ForgotPassword onBackToLogin={() => setCurrentScreen('login')} />;
+  }
+
   return (
     <Login
       onSignUpPress={() => setCurrentScreen('signup')}
+      onForgotPasswordPress={() => setCurrentScreen('forgotPassword')}
       onLoginSuccess={handleLoginSuccess}
     />
   );

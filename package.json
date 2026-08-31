@@ -9,7 +9,10 @@
     "web": "expo start --web",
     "build": "expo export --platform web",
     "typecheck": "npx tsc --noEmit",
-    "lint": "eslint . --ext .js,.jsx,.ts,.tsx"
+    "lint": "eslint . --ext .js,.jsx,.ts,.tsx",
+    "test:e2e": "node e2e/ensure-config.mjs && npm run build && playwright test",
+    "test:e2e:fast": "playwright test",
+    "test:e2e:ui": "playwright test --ui"
   },
   "dependencies": {
     "@aws-amplify/react-native": "^1.1.10",
@@ -57,6 +60,7 @@
     "@aws-amplify/backend-cli": "^1.8.0",
     "@babel/core": "^7.20.0",
     "@expo/cli": "~0.22.26",
+    "@playwright/test": "~1.56.0",
     "@types/aws-lambda": "^8.10.152",
     "@types/json-schema": "^7.0.15",
     "@types/node": "^24.4.0",

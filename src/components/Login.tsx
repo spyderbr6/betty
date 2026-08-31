@@ -17,10 +17,15 @@ import { colors, spacing, textStyles, typography, commonStyles, shadows } from '
 
 interface LoginProps {
   onSignUpPress: () => void;
+  onForgotPasswordPress: () => void;
   onLoginSuccess: () => void;
 }
 
-export const Login: React.FC<LoginProps> = ({ onSignUpPress, onLoginSuccess }) => {
+export const Login: React.FC<LoginProps> = ({
+  onSignUpPress,
+  onForgotPasswordPress,
+  onLoginSuccess,
+}) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -108,7 +113,7 @@ export const Login: React.FC<LoginProps> = ({ onSignUpPress, onLoginSuccess }) =
             <View style={styles.formContainer}>
               {/* Error Message */}
               {errorMessage ? (
-                <View style={styles.errorContainer}>
+                <View testID="login-error" style={styles.errorContainer}>
                   <Ionicons name="alert-circle" size={16} color={colors.error} />
                   <Text style={styles.errorText}>{errorMessage}</Text>
                 </View>
@@ -122,6 +127,7 @@ export const Login: React.FC<LoginProps> = ({ onSignUpPress, onLoginSuccess }) =
                     styles.input,
                     focusedField === 'email' && styles.inputFocused,
                   ]}
+                  testID="login-email"
                   placeholder="Enter your email"
                   placeholderTextColor={colors.textMuted}
                   value={email}
@@ -143,6 +149,7 @@ export const Login: React.FC<LoginProps> = ({ onSignUpPress, onLoginSuccess }) =
                     styles.input,
                     focusedField === 'password' && styles.inputFocused,
                   ]}
+                  testID="login-password"
                   placeholder="Enter your password"
                   placeholderTextColor={colors.textMuted}
                   value={password}
@@ -157,6 +164,7 @@ export const Login: React.FC<LoginProps> = ({ onSignUpPress, onLoginSuccess }) =
 
               {/* Sign In Button */}
               <TouchableOpacity
+                testID="login-submit"
                 style={[
                   styles.signInButton,
                   isLoading && styles.buttonDisabled
@@ -171,6 +179,17 @@ export const Login: React.FC<LoginProps> = ({ onSignUpPress, onLoginSuccess }) =
                   <Text style={styles.signInButtonText}>Sign In</Text>
                 )}
               </TouchableOpacity>
+
+              {/* Forgot Password Link */}
+              <TouchableOpacity
+                testID="login-forgot-password"
+                onPress={onForgotPasswordPress}
+                style={styles.forgotPasswordButton}
+                disabled={isLoading}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.forgotPasswordText}>Forgot password?</Text>
+              </TouchableOpacity>
             </View>
 
             {/* Footer Section */}
@@ -178,8 +197,9 @@ export const Login: React.FC<LoginProps> = ({ onSignUpPress, onLoginSuccess }) =
               <Text style={styles.footerText}>
                 Don't have an account?
               </Text>
-              <TouchableOpacity 
-                onPress={onSignUpPress} 
+              <TouchableOpacity
+                testID="login-create-account"
+                onPress={onSignUpPress}
                 style={styles.linkButton}
                 disabled={isLoading}
                 activeOpacity={0.7}
@@ -317,6 +337,18 @@ const styles = StyleSheet.create({
     ...textStyles.button,
     color: colors.background,
     textAlign: 'center',
+  },
+  forgotPasswordButton: {
+    alignSelf: 'center',
+    marginTop: spacing.md,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+  },
+  forgotPasswordText: {
+    ...textStyles.bodySmall,
+    color: colors.primary,
+    fontWeight: typography.fontWeight.medium,
+    textDecorationLine: 'underline',
   },
   footerContainer: {
     alignItems: 'center',

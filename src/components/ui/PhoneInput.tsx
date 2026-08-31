@@ -31,6 +31,7 @@ interface PhoneInputProps {
   required?: boolean;
   autoFocus?: boolean;
   defaultCountryCode?: CountryCode;
+  testID?: string;
 }
 
 export const PhoneInput: React.FC<PhoneInputProps> = ({
@@ -45,6 +46,7 @@ export const PhoneInput: React.FC<PhoneInputProps> = ({
   required = false,
   autoFocus = false,
   defaultCountryCode = 'US',
+  testID,
 }) => {
   const [isFocused, setIsFocused] = useState(false);
   const [internalError, setInternalError] = useState<string>('');
@@ -160,6 +162,7 @@ export const PhoneInput: React.FC<PhoneInputProps> = ({
             styles.textInput,
             disabled && styles.textInputDisabled,
           ]}
+          testID={testID}
           value={displayValue}
           onChangeText={handleChangeText}
           onFocus={() => setIsFocused(true)}
