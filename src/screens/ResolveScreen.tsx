@@ -623,7 +623,7 @@ export const ResolveScreen: React.FC = () => {
 
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.container} edges={['top']} testID="screen-resolve">
       <Header
         showBalance={true}
         onBalancePress={handleBalancePress}

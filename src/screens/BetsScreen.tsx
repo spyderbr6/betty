@@ -185,7 +185,7 @@ export const BetsScreen: React.FC = () => {
   const filteredBets = myBets.filter(bet => bet.status === 'ACTIVE');
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.container} edges={['top']} testID="screen-bets">
       <Header
         showBalance={true}
         onBalancePress={handleBalancePress}

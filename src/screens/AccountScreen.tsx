@@ -466,7 +466,7 @@ export const AccountScreen: React.FC = () => {
     .slice(0, 2) || '??';
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.container} edges={['top']} testID="screen-account">
       <Header
         showBalance={true}
       />

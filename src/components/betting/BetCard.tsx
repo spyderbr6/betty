@@ -435,6 +435,7 @@ export const BetCard: React.FC<BetCardProps> = ({
 
   return (
     <TouchableOpacity
+      testID={`bet-card-${bet.id}`}
       style={[
         styles.card,
         userParticipation.hasJoined && styles.cardParticipating,

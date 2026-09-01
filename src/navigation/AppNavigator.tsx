@@ -109,6 +109,7 @@ const TabNavigator = () => {
         component={BetsStackNavigator}
         options={{
           tabBarLabel: 'Active',
+          tabBarTestID: 'tab-bets',
         }}
       />
       <Tab.Screen
@@ -116,6 +117,7 @@ const TabNavigator = () => {
         component={ResolveStackNavigator}
         options={{
           tabBarLabel: 'Results',
+          tabBarTestID: 'tab-resolve',
         }}
       />
       <Tab.Screen
@@ -123,6 +125,7 @@ const TabNavigator = () => {
         component={CreateBetScreen}
         options={{
           tabBarLabel: 'Create',
+          tabBarTestID: 'tab-create',
         }}
       />
       <Tab.Screen
@@ -130,6 +133,7 @@ const TabNavigator = () => {
         component={LiveEventsScreen}
         options={{
           tabBarLabel: 'Join',
+          tabBarTestID: 'tab-live',
         }}
       />
       <Tab.Screen
@@ -137,6 +141,7 @@ const TabNavigator = () => {
         component={AccountScreen}
         options={{
           tabBarLabel: 'Account',
+          tabBarTestID: 'tab-account',
         }}
       />
     </Tab.Navigator>

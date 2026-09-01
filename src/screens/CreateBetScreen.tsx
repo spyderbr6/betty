@@ -645,7 +645,7 @@ export const CreateBetScreen: React.FC = () => {
   const currentTemplate = betTemplates.find(t => t.id === selectedTemplate) || betTemplates[0];
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.container} edges={['top']} testID="screen-create-bet">
       <Header
         showBalance={true}
         onBalancePress={handleBalancePress}
