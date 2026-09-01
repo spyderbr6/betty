@@ -17,7 +17,6 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.sidebet.app",
-      "jsEngine": "jsc",
       "buildNumber": "1"
     },
     "android": {
@@ -25,7 +24,6 @@
         "foregroundImage": "./assets/icon-512.png",
         "backgroundColor": "#111827"
       },
-      "jsEngine": "jsc",
       "package": "com.sidebet.app",
       "versionCode": 1
     },
