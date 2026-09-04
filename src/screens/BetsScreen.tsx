@@ -470,7 +470,7 @@ const BetInvitationCard: React.FC<BetInvitationCardProps> = ({
   const sideBCount = invitation.bet.sideBCount || 0;
 
   return (
-    <View style={[styles.betCard, styles.invitationCard]}>
+    <View testID={`invitation-card-${invitation.id}`} style={[styles.betCard, styles.invitationCard]}>
       {/* Invitation Header */}
       <View style={styles.invitationHeader}>
         <View style={styles.invitationFromUser}>
@@ -581,6 +581,7 @@ const BetInvitationCard: React.FC<BetInvitationCardProps> = ({
       {/* Action Buttons */}
       <View style={styles.invitationActions}>
         <TouchableOpacity
+          testID="invitation-decline"
           style={[styles.invitationButton, styles.declineButton]}
           onPress={onDecline}
           disabled={isProcessing}
@@ -599,6 +600,7 @@ const BetInvitationCard: React.FC<BetInvitationCardProps> = ({
         </TouchableOpacity>
 
         <TouchableOpacity
+          testID="invitation-accept"
           style={[
             styles.invitationButton,
             styles.acceptButton,

@@ -83,10 +83,10 @@ export const CustomAlert: React.FC<CustomAlertProps> = ({
         <View style={styles.alertContainer}>
           <View style={styles.alertContent}>
             {/* Title */}
-            <Text style={styles.title}>{title}</Text>
+            <Text testID="alert-title" style={styles.title}>{title}</Text>
 
             {/* Message */}
-            {message && <Text style={styles.message}>{message}</Text>}
+            {message && <Text testID="alert-message" style={styles.message}>{message}</Text>}
 
             {/* Buttons */}
             <View style={styles.buttonContainer}>

@@ -854,6 +854,7 @@ export const CreateBetScreen: React.FC = () => {
           <View style={styles.formGroup}>
             <Text style={styles.fieldLabel}>Bet Title *</Text>
             <TextInput
+              testID="create-title"
               style={styles.textInput}
               placeholder={currentTemplate.titlePlaceholder}
               placeholderTextColor={colors.textMuted}
@@ -875,6 +876,7 @@ export const CreateBetScreen: React.FC = () => {
               {selectedTemplate === 'over-under' ? 'Target Value *' : 'Description *'}
             </Text>
             <TextInput
+              testID="create-description"
               style={[styles.textInput, selectedTemplate !== 'over-under' && styles.textAreaInput]}
               placeholder={currentTemplate.descriptionPlaceholder}
               placeholderTextColor={colors.textMuted}
@@ -902,6 +904,7 @@ export const CreateBetScreen: React.FC = () => {
             <View style={styles.formGroupHalf}>
               <Text style={styles.fieldLabel}>Bet Amount*</Text>
               <TextInput
+                testID="create-amount"
                 style={styles.textInput}
                 placeholder="$0.00"
                 placeholderTextColor={colors.textMuted}
@@ -922,6 +925,7 @@ export const CreateBetScreen: React.FC = () => {
             <View style={styles.formGroupHalf}>
               <Text style={styles.fieldLabel}>Deadline (mins)</Text>
               <TextInput
+                testID="create-deadline"
                 style={styles.textInput}
                 placeholder="30"
                 placeholderTextColor={colors.textMuted}
@@ -945,6 +949,7 @@ export const CreateBetScreen: React.FC = () => {
 
           <View style={styles.sidesContainer}>
             <TouchableOpacity
+              testID="create-side-a"
               style={[
                 styles.sideCard,
                 selectedSide === 'A' && styles.sideCardSelected
@@ -959,6 +964,7 @@ export const CreateBetScreen: React.FC = () => {
                 Side A {selectedSide === 'A' && '✓'}
               </Text>
               <TextInput
+                testID="create-side-a-name"
                 style={[
                   styles.sideInput,
                   selectedSide === 'A' && styles.sideInputSelected
@@ -983,6 +989,7 @@ export const CreateBetScreen: React.FC = () => {
             </View>
 
             <TouchableOpacity
+              testID="create-side-b"
               style={[
                 styles.sideCard,
                 selectedSide === 'B' && styles.sideCardSelected
@@ -997,6 +1004,7 @@ export const CreateBetScreen: React.FC = () => {
                 Side B {selectedSide === 'B' && '✓'}
               </Text>
               <TextInput
+                testID="create-side-b-name"
                 style={[
                   styles.sideInput,
                   selectedSide === 'B' && styles.sideInputSelected
@@ -1065,6 +1073,7 @@ export const CreateBetScreen: React.FC = () => {
             );
             return (
               <TouchableOpacity
+                testID="create-submit"
                 style={[
                   styles.createButton,
                   disabled && styles.createButtonDisabled
