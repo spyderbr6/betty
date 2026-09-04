@@ -67,12 +67,15 @@ export async function getUserCheckedInEvent(userId: string): Promise<{
     console.log(`[EventService] Getting checked-in event for user ${userId}`);
 
     // Get user's active check-ins
-    const { data: checkIns, errors } = await client.models.EventCheckIn.list({
-      filter: {
-        userId: { eq: userId },
-        isActive: { eq: true }
-      }
-    });
+    // checkInsByUser rather than .list({filter}): the latter is a Scan, and
+    // EventCheckIn grows as users x events attended, so past the scan window
+    // this returned no check-in and the app concluded the user was not checked
+    // in anywhere. Sorted newest-first so the [0] pick below is the most recent
+    // active check-in rather than an arbitrary one from an unordered result.
+    const { data: checkIns, errors } = await client.models.EventCheckIn.checkInsByUser(
+      { userId },
+      { filter: { isActive: { eq: true } }, sortDirection: 'DESC' }
+    );
 
     if (errors || !checkIns || checkIns.length === 0) {
       console.log('[EventService] No active check-in found');

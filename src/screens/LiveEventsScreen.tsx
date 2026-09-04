@@ -3,7 +3,7 @@
  * Professional live betting interface with real-time prop bets
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   ScrollView,
@@ -24,6 +24,7 @@ import { BetInviteModal } from '../components/ui/BetInviteModal';
 import { Bet } from '../types/betting';
 import { useAuth } from '../contexts/AuthContext';
 import { useBetData } from '../contexts/BetDataContext';
+import { useEventCheckIn } from '../hooks/useEventCheckIn';
 import { QRScannerModal } from '../components/ui/QRScannerModal';
 import { getUpcomingEventsFromCache } from '../services/eventCacheService';
 import type { LiveEventData } from '../services/eventService';
@@ -47,27 +48,35 @@ interface SquaresGame {
   createdAt: string;
 }
 
-// Mock data removed — data now comes from BetDataContext
+/**
+ * A joinable item of either kind, plus whether it belongs to the event the
+ * viewer is currently checked into. Discriminated on `kind` so the list renders
+ * from one array instead of branching on a screen-level content-type toggle.
+ */
+type FeedItem =
+  | { kind: 'bet'; id: string; bet: Bet; createdAt: string; atMyEvent: boolean }
+  | { kind: 'squares'; id: string; game: SquaresGame; createdAt: string; atMyEvent: boolean };
 
 type BetsScreenNavigationProp = StackNavigationProp<BetsStackParamList, 'BetsList'>;
 
 export const LiveEventsScreen: React.FC = () => {
   const { user } = useAuth();
   const {
-    joinableBets,
     joinableFriendsBets,
-    joinableSquaresGames: allJoinableSquares,
     joinableFriendsSquaresGames: friendsJoinableSquares,
     isInitialLoading,
     isRefreshing,
     refresh,
   } = useBetData();
+  const { checkedInEvent } = useEventCheckIn();
   const navigation = useNavigation<BetsScreenNavigationProp>();
   const insets = useSafeAreaInsets();
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearch, setShowSearch] = useState(false);
-  const [viewMode, setViewMode] = useState<'friends' | 'all'>('friends');
-  const [contentType, setContentType] = useState<'bets' | 'squares'>('bets');
+  // The friends/all and bets/squares toggles are gone. Both were selections
+  // between pre-computed arrays rather than queries, which is why every state
+  // combination had to be resolved in JSX. One list, one loading state, one
+  // empty state -- items carry their own type and event affinity instead.
 
   // Invite modal state
   const [showInviteModal, setShowInviteModal] = useState(false);
@@ -79,9 +88,8 @@ export const LiveEventsScreen: React.FC = () => {
   // Recommended events state
   const [recommendedEvents, setRecommendedEvents] = useState<LiveEventData[]>([]);
 
-  // Data comes from BetDataContext — viewMode just selects which derived array to display
-  const liveBets = viewMode === 'friends' ? joinableFriendsBets : joinableBets;
-  const squaresGames = viewMode === 'friends' ? friendsJoinableSquares : allJoinableSquares;
+  const liveBets = joinableFriendsBets;
+  const squaresGames = friendsJoinableSquares;
   const isLoading = isInitialLoading;
   const refreshing = isRefreshing;
 
@@ -144,29 +152,49 @@ export const LiveEventsScreen: React.FC = () => {
     }
   };
 
-  // Filter liveBets by search query
-  const filteredLiveBets = liveBets.filter(bet => {
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase().trim();
-      const titleMatch = bet.title.toLowerCase().includes(query);
-      const descriptionMatch = bet.description.toLowerCase().includes(query);
-      const sideAMatch = bet.odds.sideAName.toLowerCase().includes(query);
-      const sideBMatch = bet.odds.sideBName.toLowerCase().includes(query);
-      return titleMatch || descriptionMatch || sideAMatch || sideBMatch;
-    }
-    return true;
-  });
+  const query = searchQuery.trim().toLowerCase();
 
-  // Filter squaresGames by search query
-  const filteredSquaresGames = squaresGames.filter(game => {
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase().trim();
-      const titleMatch = game.title.toLowerCase().includes(query);
-      const descriptionMatch = game.description?.toLowerCase().includes(query);
-      return titleMatch || descriptionMatch;
-    }
-    return true;
-  });
+  /**
+   * One list, both item kinds. The card to render is chosen from `kind` rather
+   * than from a screen-level toggle, and `atMyEvent` marks the items tied to the
+   * event the viewer is checked into so the card can lead with them.
+   *
+   * Items already joined, already owned, private-and-uninvited, or past their
+   * deadline are excluded upstream in BetDataContext.
+   */
+  const feedItems: FeedItem[] = useMemo(() => {
+    const matches = (...fields: (string | undefined)[]) =>
+      !query || fields.some(f => f?.toLowerCase().includes(query));
+
+    const items: FeedItem[] = [
+      ...liveBets
+        .filter(bet => matches(bet.title, bet.description, bet.odds.sideAName, bet.odds.sideBName))
+        .map(bet => ({
+          kind: 'bet' as const,
+          id: bet.id,
+          bet,
+          createdAt: bet.createdAt,
+          atMyEvent: Boolean(checkedInEvent?.id && bet.eventId === checkedInEvent.id),
+        })),
+      ...squaresGames
+        .filter(game => matches(game.title, game.description))
+        .map(game => ({
+          kind: 'squares' as const,
+          id: game.id,
+          game,
+          createdAt: game.createdAt,
+          atMyEvent: Boolean(checkedInEvent?.id && game.eventId === checkedInEvent.id),
+        })),
+    ];
+
+    // Items at the viewer's event first, then newest.
+    return items.sort((a, b) => {
+      if (a.atMyEvent !== b.atMyEvent) return a.atMyEvent ? -1 : 1;
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
+  }, [liveBets, squaresGames, query, checkedInEvent?.id]);
+
+  const atEventCount = feedItems.filter(i => i.atMyEvent).length;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']} testID="screen-live">
@@ -189,215 +217,120 @@ export const LiveEventsScreen: React.FC = () => {
           />
         }
       >
-        {/* Content Type Filter */}
-        <View style={styles.contentTypeFilterContainer}>
-          <TouchableOpacity
-            style={[
-              styles.contentTypeButton,
-              contentType === 'bets' && styles.contentTypeButtonActive
-            ]}
-            onPress={() => setContentType('bets')}
-            activeOpacity={0.7}
-          >
-            <Text style={[
-              styles.contentTypeButtonText,
-              contentType === 'bets' && styles.contentTypeButtonTextActive
-            ]}>
-              Bets
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[
-              styles.contentTypeButton,
-              contentType === 'squares' && styles.contentTypeButtonActive
-            ]}
-            onPress={() => setContentType('squares')}
-            activeOpacity={0.7}
-          >
-            <Text style={[
-              styles.contentTypeButtonText,
-              contentType === 'squares' && styles.contentTypeButtonTextActive
-            ]}>
-              Squares
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Friends' Bets Section */}
-        <View style={styles.liveBetsSection}>
-          <View style={styles.sectionHeader}>
-            {/* View Mode Toggle with Action Icons */}
-            <View style={styles.toggleWithActionsContainer}>
-              <View style={styles.toggleContainer}>
-                <TouchableOpacity
-                  style={[
-                    styles.toggleButton,
-                    viewMode === 'friends' && styles.toggleButtonActive
-                  ]}
-                  onPress={() => setViewMode('friends')}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons
-                    name="people"
-                    size={16}
-                    color={viewMode === 'friends' ? colors.background : colors.textSecondary}
-                  />
-                  <Text style={[
-                    styles.toggleButtonText,
-                    viewMode === 'friends' && styles.toggleButtonTextActive
-                  ]}>
-                    Friends
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[
-                    styles.toggleButton,
-                    styles.toggleButtonLast,
-                    viewMode === 'all' && styles.toggleButtonActive
-                  ]}
-                  onPress={() => setViewMode('all')}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons
-                    name="globe"
-                    size={16}
-                    color={viewMode === 'all' ? colors.background : colors.textSecondary}
-                  />
-                  <Text style={[
-                    styles.toggleButtonText,
-                    viewMode === 'all' && styles.toggleButtonTextActive
-                  ]}>
-                    All
-                  </Text>
-                </TouchableOpacity>
-              </View>
-
-              {/* Action Icons */}
-              <View style={styles.headerActions}>
-                <TouchableOpacity
-                  style={styles.actionIconButton}
-                  onPress={() => setShowQRScanner(true)}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons
-                    name="qr-code-outline"
-                    size={18}
-                    color={colors.textSecondary}
-                  />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.actionIconButton}
-                  onPress={handleSearchToggle}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons
-                    name={showSearch ? "close" : "search"}
-                    size={18}
-                    color={colors.textSecondary}
-                  />
-                </TouchableOpacity>
-              </View>
+        {/* Header: what this list is, and the event context if there is one */}
+        <View style={styles.feedHeader}>
+          <View style={styles.toggleWithActionsContainer}>
+            <View style={styles.feedTitleGroup}>
+              <Text style={styles.feedTitle} testID="feed-title">FRIENDS' BETS</Text>
+              {checkedInEvent && (
+                <Text style={styles.feedEventLine} testID="feed-event-context">
+                  {atEventCount > 0
+                    ? `${atEventCount} at ${checkedInEvent.awayTeam} @ ${checkedInEvent.homeTeam}`
+                    : `Checked in \u2022 ${checkedInEvent.awayTeam} @ ${checkedInEvent.homeTeam}`}
+                </Text>
+              )}
             </View>
 
-            <Text style={styles.sectionSubtitle}>
-              {contentType === 'bets' ? liveBets.length : squaresGames.length} available to join • Real-time updates
-            </Text>
+            <View style={styles.headerActions}>
+              <TouchableOpacity
+                style={styles.actionIconButton}
+                onPress={() => setShowQRScanner(true)}
+                activeOpacity={0.7}
+                testID="feed-qr"
+              >
+                <Ionicons name="qr-code-outline" size={18} color={colors.textSecondary} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.actionIconButton}
+                onPress={handleSearchToggle}
+                activeOpacity={0.7}
+                testID="feed-search-toggle"
+              >
+                <Ionicons name={showSearch ? 'close' : 'search'} size={18} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
           </View>
 
-          {/* Search Input (conditionally shown) */}
-          {showSearch && (
-            <View style={styles.searchContainer}>
-              <View style={styles.searchInputContainer}>
-                <Ionicons
-                  name="search"
-                  size={16}
-                  color={colors.textMuted}
-                  style={styles.searchIcon}
-                />
-                <TextInput
-                  style={styles.searchInput}
-                  placeholder={contentType === 'bets'
-                    ? (viewMode === 'friends' ? "Search friends' bets..." : "Search all bets...")
-                    : "Search squares games..."}
-                  placeholderTextColor={colors.textMuted}
-                  value={searchQuery}
-                  onChangeText={handleSearchChange}
-                  autoFocus={true}
-                />
-                {searchQuery.length > 0 && (
-                  <TouchableOpacity
-                    onPress={() => setSearchQuery('')}
-                    style={styles.clearButton}
-                  >
-                    <Ionicons
-                      name="close-circle"
-                      size={16}
-                      color={colors.textMuted}
-                    />
-                  </TouchableOpacity>
+          <Text style={styles.sectionSubtitle} testID="feed-count">
+            {feedItems.length} available to join
+          </Text>
+        </View>
+
+        {showSearch && (
+          <View style={styles.searchContainer}>
+            <View style={styles.searchInputContainer}>
+              <Ionicons name="search" size={16} color={colors.textMuted} style={styles.searchIcon} />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search friends' bets and squares..."
+                placeholderTextColor={colors.textMuted}
+                value={searchQuery}
+                onChangeText={handleSearchChange}
+                autoFocus={true}
+                testID="feed-search-input"
+              />
+              {searchQuery.length > 0 && (
+                <TouchableOpacity onPress={() => setSearchQuery('')} style={styles.clearButton}>
+                  <Ionicons name="close-circle" size={16} color={colors.textMuted} />
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        )}
+
+        {isLoading ? (
+          <View style={styles.loadingContainer} testID="feed-loading">
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={styles.loadingText}>Loading bets from your friends...</Text>
+          </View>
+        ) : feedItems.length === 0 ? (
+          <View style={styles.emptyContainer} testID="feed-empty">
+            <Text style={styles.emptyTitle}>
+              {query ? 'No Matches' : 'Nothing to Join Yet'}
+            </Text>
+            <Text style={styles.emptyDescription}>
+              {query
+                ? `Nothing matches "${searchQuery}". Try a different search term.`
+                : "None of your friends have anything open right now. Check back once they've created a bet."}
+            </Text>
+          </View>
+        ) : (
+          <View testID="feed-list">
+            {feedItems.map((item) => (
+              <View
+                key={item.id}
+                style={item.atMyEvent ? styles.feedItemAtEvent : undefined}
+                testID={item.atMyEvent ? `feed-item-at-event-${item.id}` : `feed-item-${item.id}`}
+              >
+                {item.atMyEvent && checkedInEvent && (
+                  <View style={styles.atEventChip} testID={`feed-chip-${item.id}`}>
+                    <Ionicons name="location" size={11} color={colors.background} />
+                    <Text style={styles.atEventChipText}>
+                      {checkedInEvent.awayTeamCode || checkedInEvent.awayTeam} @{' '}
+                      {checkedInEvent.homeTeamCode || checkedInEvent.homeTeam}
+                    </Text>
+                  </View>
+                )}
+                {item.kind === 'bet' ? (
+                  <BetCard
+                    bet={item.bet}
+                    onPress={handleBetPress}
+                    onJoinBet={handleJoinBet}
+                    onInviteFriends={(bet) => {
+                      setSelectedBetForInvite(bet);
+                      setShowInviteModal(true);
+                    }}
+                  />
+                ) : (
+                  <SquaresGameCard
+                    squaresGame={item.game}
+                    onPress={() => handleSquaresGamePress(item.game)}
+                  />
                 )}
               </View>
-            </View>
-          )}
-
-          {isLoading ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color={colors.primary} />
-              <Text style={styles.loadingText}>Loading joinable {contentType}...</Text>
-            </View>
-          ) : contentType === 'bets' ? (
-            filteredLiveBets.length > 0 ? (
-              filteredLiveBets.map((bet) => (
-                <BetCard
-                  key={bet.id}
-                  bet={bet}
-                  onPress={handleBetPress}
-                  onJoinBet={handleJoinBet}
-                  onInviteFriends={(bet) => {
-                    setSelectedBetForInvite(bet);
-                    setShowInviteModal(true);
-                  }}
-                />
-              ))
-            ) : (
-              <View style={styles.emptyContainer}>
-                <Text style={styles.emptyTitle}>
-                  {searchQuery.trim() ? 'No Matching Bets' : viewMode === 'friends' ? 'No Friends\' Bets' : 'No Joinable Bets'}
-                </Text>
-                <Text style={styles.emptyDescription}>
-                  {searchQuery.trim()
-                    ? `No bets match "${searchQuery}". Try a different search term.`
-                    : viewMode === 'friends'
-                      ? 'Your friends haven\'t created any bets you can join yet. Try switching to "All" to see bets from everyone!'
-                      : 'All current bets are either yours or you\'ve already joined them. Check back later for new opportunities!'
-                  }
-                </Text>
-              </View>
-            )
-          ) : (
-            filteredSquaresGames.length > 0 ? (
-              filteredSquaresGames.map((game) => (
-                <SquaresGameCard
-                  key={game.id}
-                  squaresGame={game}
-                  onPress={() => handleSquaresGamePress(game)}
-                />
-              ))
-            ) : (
-              <View style={styles.emptyContainer}>
-                <Text style={styles.emptyTitle}>
-                  {searchQuery.trim() ? 'No Matching Squares' : 'No Joinable Squares'}
-                </Text>
-                <Text style={styles.emptyDescription}>
-                  {searchQuery.trim()
-                    ? `No squares games match "${searchQuery}". Try a different search term.`
-                    : 'All current squares games are either yours or you\'ve already purchased squares. Check back later for new games!'
-                  }
-                </Text>
-              </View>
-            )
-          )}
-        </View>
+            ))}
+          </View>
+        )}
 
         {/* Joinable Bets Stats Summary - Always show overall stats, not filtered */}
         <View style={styles.liveStatsSection}>
@@ -546,6 +479,51 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
+  feedHeader: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.sm,
+  },
+  feedTitleGroup: {
+    flex: 1,
+  },
+  feedTitle: {
+    ...textStyles.label,
+    color: colors.textSecondary,
+    letterSpacing: 0.5,
+  },
+  feedEventLine: {
+    ...textStyles.caption,
+    color: colors.primary,
+    marginTop: spacing.xs,
+  },
+  // Items tied to the event the viewer is checked into get an accent rail so
+  // they read as "here, now" without being split into a separate section.
+  feedItemAtEvent: {
+    borderLeftWidth: 3,
+    borderLeftColor: colors.primary,
+    borderTopRightRadius: spacing.radius.md,
+    borderBottomRightRadius: spacing.radius.md,
+    backgroundColor: colors.surfaceLight,
+    marginBottom: spacing.sm,
+  },
+  atEventChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: colors.primary,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: spacing.radius.sm,
+    marginLeft: spacing.md,
+    marginTop: spacing.sm,
+  },
+  atEventChipText: {
+    ...textStyles.caption,
+    color: colors.background,
+    fontWeight: typography.fontWeight.semibold,
+    marginLeft: spacing.xs,
+  },
   // Content Type Filter
   contentTypeFilterContainer: {
     flexDirection: 'row',

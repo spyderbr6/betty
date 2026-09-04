@@ -358,6 +358,14 @@ export const CreateBetScreen: React.FC = () => {
       return;
     }
 
+    // Narrow `user` once for the whole submit path. useAuth types it nullable and
+    // everything below dereferences it, which is why this function carried ten
+    // separate "'user' is possibly null" errors.
+    if (!user?.userId) {
+      showAlert('Not Signed In', 'You need to be signed in to create a bet.');
+      return;
+    }
+
     setIsCreating(true);
 
     try {
@@ -396,6 +404,13 @@ export const CreateBetScreen: React.FC = () => {
         odds: oddsObject,
         deadline: deadlineDate.toISOString(),
         isPrivate: isPrivate, // Pass the private bet setting
+        // Tag the bet to whatever event the creator is currently checked into.
+        // Bet.eventId has existed on the model all along but nothing ever wrote
+        // it, so "bets at this game" matched nothing. Inferred rather than asked
+        // for: the check-in is already captured, and adding a picker would put a
+        // step back into a flow we are trying to shorten. Undefined when the
+        // creator is not checked in anywhere.
+        eventId: checkedInEvent?.id,
         sideACount: selectedSide === 'A' ? 1 : 0,
         sideBCount: selectedSide === 'B' ? 1 : 0,
         participantUserIds: [user.userId],

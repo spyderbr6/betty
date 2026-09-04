@@ -46,6 +46,9 @@ interface BetDataContextValue {
   joinableSquaresGames: SquaresGame[];
   joinableFriendsSquaresGames: SquaresGame[];
 
+  // Friend set, exposed so consumers can classify items without re-querying
+  friendIds: Set<string>;
+
   // Invitations
   betInvitations: BetInvitation[];
   squaresInvitations: SquaresInvitation[];
@@ -101,6 +104,9 @@ const transformAmplifyBet = (bet: any): Bet | null => {
     resolutionReason: bet.resolutionReason || undefined,
     disputeWindowEndsAt: bet.disputeWindowEndsAt || undefined,
     isPrivate: bet.isPrivate || false,
+    // Without this the field round-trips to the database and is dropped on read,
+    // so nothing downstream can tell which event a bet belongs to.
+    eventId: bet.eventId || undefined,
     sideACount: bet.sideACount || 0,
     sideBCount: bet.sideBCount || 0,
     participantUserIds: bet.participantUserIds || [],
@@ -169,20 +175,35 @@ export const BetDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
         friendships1Result,
         friendships2Result,
       ] = await Promise.all([
-        client.models.Bet.betsByStatus({ status: 'ACTIVE' as any }, { limit: 200 }),
-        client.models.Bet.betsByStatus({ status: 'PENDING_RESOLUTION' as any }, { limit: 200 }),
+        // sortDirection matters: the GSI sorts on createdAt and DynamoDB scans
+        // ascending by default, so without it `limit` returned the 200 OLDEST
+        // bets. The context then re-sorted newest-first in JS, which made the
+        // list look right while new bets fell off the end of the window.
+        client.models.Bet.betsByStatus({ status: 'ACTIVE' as any }, { limit: 200, sortDirection: 'DESC' }),
+        client.models.Bet.betsByStatus({ status: 'PENDING_RESOLUTION' as any }, { limit: 200, sortDirection: 'DESC' }),
         Promise.all([
-          client.models.SquaresGame.squaresGamesByStatus({ status: 'ACTIVE' as any }, { limit: 200 }),
-          client.models.SquaresGame.squaresGamesByStatus({ status: 'LOCKED' as any }, { limit: 200 }),
-          client.models.SquaresGame.squaresGamesByStatus({ status: 'LIVE' as any }, { limit: 200 }),
+          client.models.SquaresGame.squaresGamesByStatus({ status: 'ACTIVE' as any }, { limit: 200, sortDirection: 'DESC' }),
+          client.models.SquaresGame.squaresGamesByStatus({ status: 'LOCKED' as any }, { limit: 200, sortDirection: 'DESC' }),
+          client.models.SquaresGame.squaresGamesByStatus({ status: 'LIVE' as any }, { limit: 200, sortDirection: 'DESC' }),
         ]).then(([active, locked, live]) => ({
           data: [...(active.data || []), ...(locked.data || []), ...(live.data || [])],
         })),
-        client.models.SquaresPurchase.list({ filter: { userId: { eq: user.userId } } }),
-        client.models.SquaresInvitation.list({ filter: { toUserId: { eq: user.userId }, status: { eq: 'PENDING' } } }),
-        client.models.BetInvitation.list({ filter: { toUserId: { eq: user.userId }, status: { eq: 'PENDING' } } }),
-        client.models.Friendship.list({ filter: { user1Id: { eq: user.userId } } }),
-        client.models.Friendship.list({ filter: { user2Id: { eq: user.userId } } }),
+        // These four were .list({filter}) -- Scans. purchasesByBuyer and
+        // squaresInvitationsByToUser already existed and simply were not called;
+        // friendshipsByUser1/2 and betInvitationsByToUser are new. Status is now
+        // a server-side filter over an already-narrow partition rather than a
+        // predicate applied to whatever the scan happened to examine.
+        client.models.SquaresPurchase.purchasesByBuyer({ userId: user.userId }),
+        client.models.SquaresInvitation.squaresInvitationsByToUser(
+          { toUserId: user.userId },
+          { filter: { status: { eq: 'PENDING' } } }
+        ),
+        client.models.BetInvitation.betInvitationsByToUser(
+          { toUserId: user.userId },
+          { filter: { status: { eq: 'PENDING' } } }
+        ),
+        client.models.Friendship.friendshipsByUser1({ user1Id: user.userId }),
+        client.models.Friendship.friendshipsByUser2({ user2Id: user.userId }),
       ]);
 
       // Build bets map
@@ -327,6 +348,59 @@ export const BetDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
         if (friendId) fIds.add(friendId);
       }
       setFriendIds(fIds);
+
+      // Second pass: pull each friend's open items directly.
+      //
+      // The betsByStatus queries above are capped at 200, so a friend's bet
+      // sitting outside that window never reached the friends view no matter how
+      // recent it was -- the view was an intersection of two independently
+      // truncated sets. Querying per creator makes the friends feed complete by
+      // construction, and bounds the work by friend count rather than by how
+      // many bets exist platform-wide.
+      //
+      // isPrivate is filtered server-side: booleans cannot be indexed, but the
+      // per-creator partition is small enough that a filter over it is cheap,
+      // and it keeps private items from reaching the client at all.
+      //
+      // Note this supplements the platform-wide load rather than replacing it,
+      // because myBets is still derived from that set. Dropping it entirely
+      // needs myBets rebuilt on participantsByUser -- a follow-up, not this pass.
+      const friendItems = await Promise.all(
+        Array.from(fIds).map(async (friendId) => {
+          try {
+            const [betsResult, gamesResult] = await Promise.all([
+              client.models.Bet.betsByCreator(
+                { creatorId: friendId },
+                { filter: { status: { eq: 'ACTIVE' }, isPrivate: { eq: false } }, sortDirection: 'DESC', limit: 50 }
+              ),
+              client.models.SquaresGame.squaresGamesByCreator(
+                { creatorId: friendId },
+                { filter: { status: { eq: 'ACTIVE' }, isPrivate: { eq: false } }, sortDirection: 'DESC', limit: 50 }
+              ),
+            ]);
+            return { bets: betsResult.data || [], games: gamesResult.data || [] };
+          } catch (error) {
+            console.error(`Error loading items for friend ${friendId}:`, error);
+            return { bets: [], games: [] };
+          }
+        })
+      );
+
+      if (friendItems.length > 0) {
+        for (const { bets: fBets, games: fGames } of friendItems) {
+          for (const rawBet of fBets) {
+            if (rawBet.isTestBet) continue;
+            const bet = transformAmplifyBet(rawBet);
+            if (bet) betsMap.set(bet.id, bet);
+          }
+          for (const rawGame of fGames) {
+            const game = transformSquaresGame(rawGame);
+            if (game) gamesMap.set(game.id, game);
+          }
+        }
+        setAllBets(new Map(betsMap));
+        setAllSquaresGames(new Map(gamesMap));
+      }
 
       hasLoadedRef.current = true;
     } catch (error) {
@@ -671,6 +745,10 @@ export const BetDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return bets
       .filter((bet: Bet) => {
         if (bet.status !== 'ACTIVE') return false;
+        // status lags reality: scheduledBetChecker only sweeps expired bets every
+        // five minutes, so an ACTIVE bet past its deadline was still offered as
+        // joinable until the sweep caught up.
+        if (bet.deadline && new Date(bet.deadline).getTime() <= Date.now()) return false;
         if (bet.creatorId === user.userId) return false;
         if ((bet.participantUserIds || []).includes(user.userId)) return false;
         if (bet.isPrivate && !invitedBetIds.has(bet.id)) return false;
@@ -1083,6 +1161,7 @@ export const BetDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
     mySquaresGames,
     joinableSquaresGames,
     joinableFriendsSquaresGames,
+    friendIds,
     betInvitations,
     squaresInvitations,
     isInitialLoading,
@@ -1100,6 +1179,7 @@ export const BetDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
     mySquaresGames,
     joinableSquaresGames,
     joinableFriendsSquaresGames,
+    friendIds,
     betInvitations,
     squaresInvitations,
     isInitialLoading,
