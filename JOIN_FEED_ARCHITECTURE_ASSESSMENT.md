@@ -114,7 +114,11 @@ rewrite.
 
 ### F2 — `Friendship` and `BetInvitation` have no GSI; their queries are Scans 🔴
 
-`QUERY_OPTIMIZATION_AUDIT.md:427-430` says:
+*Verified directly against the current `amplify/data/resource.ts`, not inferred
+from the audit doc — see [Appendix A](#appendix-a--audit-verification) for the
+full index inventory and what the 2025 audit actually delivered.*
+
+`QUERY_OPTIMIZATION_AUDIT.md:427-430` still says, in the file as it stands today:
 
 > **14. Friendship Queries** — Status: Already using indexes properly (belongsTo
 > creates GSI). Decision: No changes needed ✅
@@ -239,9 +243,26 @@ Per pending invitation: 2 `.get()` calls. Per joined `BetCard`: 1 Scan to find
 out which side you're on — data that could simply be denormalized onto the bet
 alongside `participantUserIds`.
 
+### F11 — Three GSIs are provisioned and never called 🟡
+
+| Index | Call sites in `src/` |
+|-------|----------------------|
+| `Participant.participantsByUser` | 0 |
+| `SquaresPurchase.purchasesByBuyer` | 0 |
+| `SquaresInvitation.squaresInvitationsByToUser` | 0 |
+
+Every GSI costs storage plus write amplification on every write to its base
+table. These three are being paid for and returning nothing — while the code
+paths they were built for (`BetDataContext.tsx:181-182`,
+`DetailedStatsScreen`, `BettingHistoryScreen`) still Scan. Two of them are the
+Phase 0 free wins below.
+
 ---
 
-## Part 3 — Why the UI got complex
+## Part 3 — Why the UI got complex, and why it should be fixed *last*
+
+**To be clear up front: the UI work is necessary, not wasted. This is a claim
+about ordering, not value.**
 
 `LiveEventsScreen` is 859 lines; `BetCard` is 1203; `BetDataContext` is 1130.
 
@@ -261,8 +282,50 @@ resolution-acceptance widget — used across three screens in different modes,
 which is why it needs to fetch its own data and why it grew a second join
 implementation.
 
-Fixing the data layer removes most of the UI complexity as a side effect. Don't
-refactor the screen first.
+### Why order matters here
+
+The screen's complexity is *load-bearing against the current data shape*. Two
+concrete examples:
+
+- `viewMode` is not a query. It is
+  `liveBets = viewMode === 'friends' ? joinableFriendsBets : joinableBets` —
+  a selection between two arrays, both derived client-side from the same bag.
+- Search is a third client-side `.filter()` pass layered on top of that.
+
+So every one of the four axes has to be resolved in JSX. There is nowhere else
+for the branching to go.
+
+If you refactor that JSX **today**, you build a clean abstraction over
+`joinableBets` / `joinableFriendsBets` — and that abstraction bakes in three
+assumptions that Phase 1 invalidates:
+
+| Assumption in today's UI | After Phase 1 |
+|---|---|
+| The complete result set is in memory | It's a page + `nextToken` |
+| `.length` is a meaningful total | It's "however many loaded so far" |
+| Search can run locally over the array | It runs server-side or is page-scoped |
+
+You would then redo it. Do the data layer first and the same refactor is
+*smaller*, because roughly a third of the current branching stops existing:
+`viewMode` collapses into a query parameter, search moves off the client, and
+the stats block gets real server counts instead of a `reduce`.
+
+### What in the UI is safe to do at any time
+
+Not everything is order-dependent. These are independent of the data layer:
+
+- Splitting `BetCard`'s join orchestration out of the presentational card. That
+  is a separation-of-concerns fix, not a data-shape fix. **Caveat:** resolve the
+  duplicate join implementation first (Phase 0), or you risk extracting the
+  wrong one into a shared hook.
+- Empty-state copy moved from four inlined ternary branches into a lookup table.
+- Any design-system / `MODAL_STANDARDS.md` conformance cleanup.
+
+### Suggested order
+
+`Phase 0` (hours) → `BetCard` join dedup → `Phase 1` data layer → screen
+refactor. The screen refactor is genuinely worth doing; it is just cheaper and
+lands in a better shape after the data layer moves.
 
 ---
 
@@ -282,7 +345,8 @@ client to filter.
 | Switch `SquaresPurchase.list(filter)` → `purchasesByBuyer({userId})` | `BetDataContext.tsx:181` |
 | Switch `SquaresInvitation.list(filter)` → `squaresInvitationsByToUser({toUserId})` | `BetDataContext.tsx:182` |
 | Delete the dead `joinBet` in the context, or wire `BetCard` to it and delete `BetCard`'s copy | pick one — do not keep both |
-| Correct the Friendship entry in `QUERY_OPTIMIZATION_AUDIT.md` | it is actively misleading |
+| Switch the `betId`+`userId` participant lookup to `participantsByBet` | `BetCard.tsx:110`, `BetCard.tsx:246`, `BetDataContext.tsx:754` |
+| Correct item 14 in `QUERY_OPTIMIZATION_AUDIT.md`; mark P2/P3 items as still open | see Appendix A — the doc reads as more complete than it is |
 
 F1 alone is arguably the highest value-per-character change in the repo.
 
@@ -388,3 +452,79 @@ constraint here, the missing indexes are.
 Phase 3's UI work should come **last**, not first. Most of the complexity in
 `LiveEventsScreen` exists to compensate for the data layer; fix the data layer
 and a lot of it deletes itself.
+
+---
+
+## Appendix A — Audit verification
+
+`QUERY_OPTIMIZATION_AUDIT.md` (dated 2025-12-13) is **substantially
+implemented** — its Phase 1 shipped in full. It is not stale advice that was
+ignored. But the specific items this assessment depends on sit in its Phase 2
+and Phase 3, which did not ship.
+
+Verified against `amplify/data/resource.ts` at `6653676`, and against call sites
+in `src/`. "Index" = the GSI exists in the schema. "Used" = code actually calls
+the `queryField` rather than `.list({filter})`.
+
+### The audit's own phasing, scored
+
+| # | Audit item | Priority | Index | Used | Status |
+|---|-----------|----------|-------|------|--------|
+| 1 | Notification by userId | P1 | ✅ | ✅ | **Done** |
+| 2 | Bet by status | P1 | ✅ | ✅ | **Done** — but see F1 (no `sortDirection`) |
+| 3 | Participant by betId | P1 | ✅ | ✅ (10 sites) | **Done** — but the `betId`+`userId` lookup still Scans |
+| 4 | Transaction by userId | P1 | ✅ | ✅ | **Done** |
+| 5 | Transaction by status | P1 | ✅ | ✅ | **Done** |
+| 6 | PaymentMethod by userId | P2 | ❌ | — | **Not done** (`paymentMethodService.ts:123` Scans) |
+| 7 | BetInvitation by toUserId | P2 | ❌ | — | **Not done** ← gates private-bet visibility |
+| 8 | EventCheckIn by userId | P2 | ❌ | — | **Not done** (`eventService.ts:70` Scans) |
+| 9 | Dispute indexes | P3 | ❌ | — | **Not done** (6 Scan sites) |
+| 10 | TrustScoreHistory by userId | P3 | ❌ | — | **Not done** |
+| 11 | LiveEvent by status + time | P3 | ✅ | ✅ | **Done** (3 indexes) |
+| 12 | NotificationPreferences | P3 | ✅ | ✅ | **Addressed** via GSI, not the PK restructure the audit suggested |
+| 13 | Notification cleanup | Low | n/a | n/a | Correctly left alone |
+| 14 | **Friendship** | Low | ❌ | — | **Verdict is wrong** — see below |
+
+**Read: Phase 1 = 5/5 shipped. Phase 2 = 0/3. Phase 3 = 2/4.**
+
+### Indexes added *since* the audit, which it does not cover
+
+`usersByStripeCustomerId`, `transactionsByStripePaymentIntentId`,
+`pushTokensByUser`, and the entire Squares family (`squaresGamesByStatus`,
+`squaresGamesByEvent`, `squaresGamesByCreator`, `purchasesBySquaresGame`,
+`purchasesByBuyer`, `payoutsBySquaresGame`, `payoutsByUser`,
+`squaresInvitationsByToUser`, `squaresInvitationsByGame`,
+`squaresInvitationsByFromUser`). The indexing discipline clearly improved after
+the audit — which is what makes the two gaps below stand out rather than read as
+general neglect.
+
+### Models with no secondary index at all, today
+
+`Evidence`, `Dispute`, `TrustScoreHistory`, `UserStats`, `FriendRequest`,
+**`Friendship`**, **`BetInvitation`**, `PaymentMethod`, `EventCheckIn`.
+
+Every `.list({filter})` against these is a Scan. The two in bold are on the join
+page's critical path.
+
+### On item 14 specifically
+
+Item 14's "Already using indexes properly (belongsTo creates GSI) — No changes
+needed ✅" is the one *incorrect* verdict in the audit, as opposed to merely
+unimplemented. The reasoning is half-right: `hasMany`/`belongsTo` does create a
+backing index on the child table. But it is only reachable through the parent's
+relational field — `user.friendshipsAsUser1()` — and no code path uses that.
+All six `Friendship.list({filter})` call sites Scan.
+
+This matters more than its "Low priority" label suggests, because it is the
+query that resolves who your friends are, and it therefore gates the entire
+Friends view of the join page (F4).
+
+### Bearing on this assessment
+
+Findings F1, F3, F5, F6, F7, F8, F9, F10 and F11 were derived from reading the
+current code and schema; none depend on the audit. F2 and F4 cite the audit only
+to flag item 14's verdict as wrong — a claim about text still present in the
+file, quoted verbatim, and independently confirmed by the index inventory above.
+
+The assessment stands. The framing in the original draft undersold what the
+audit accomplished, and this appendix corrects that.
