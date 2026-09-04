@@ -169,7 +169,7 @@ export const LiveEventsScreen: React.FC = () => {
   });
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.container} edges={['top']} testID="screen-live">
       <Header
         showBalance={true}
         onBalancePress={handleBalancePress}

@@ -435,6 +435,7 @@ export const BetCard: React.FC<BetCardProps> = ({
 
   return (
     <TouchableOpacity
+      testID={`bet-card-${bet.id}`}
       style={[
         styles.card,
         userParticipation.hasJoined && styles.cardParticipating,
@@ -528,6 +529,7 @@ export const BetCard: React.FC<BetCardProps> = ({
               {/* Join button for Side A */}
               {canJoin && (
                 <TouchableOpacity
+                  testID="join-side-a"
                   style={styles.sideJoinButton}
                   onPress={() => handleJoinBet('A')}
                   activeOpacity={0.7}
@@ -584,6 +586,7 @@ export const BetCard: React.FC<BetCardProps> = ({
               {/* Join button for Side B */}
               {canJoin && (
                 <TouchableOpacity
+                  testID="join-side-b"
                   style={styles.sideJoinButton}
                   onPress={() => handleJoinBet('B')}
                   activeOpacity={0.7}

@@ -18,7 +18,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with th
 SideBet is a peer-to-peer betting platform built with React Native + Expo for mobile deployment, using AWS Amplify Gen2 for backend services.
 
 ### Core Technology Stack
-- **Frontend**: React Native + Expo SDK 52
+- **Frontend**: React Native 0.86 + Expo SDK 57 (React 19.2, Hermes, New Architecture)
 - **Backend**: AWS Amplify Gen2 with GraphQL API
 - **Database**: DynamoDB with real-time subscriptions
 - **Authentication**: AWS Cognito
@@ -104,7 +104,7 @@ The `CustomAlertController` is already mounted in `App.tsx` - no additional setu
 - **Database**: DynamoDB with GSI query patterns (`betsByStatus`, `squaresGamesByStatus`) and denormalized participant counts
 - **File Storage**: S3 with entity-based access controls
 - **Real-time**: Targeted GraphQL subscriptions (not `observeQuery`) for incremental state updates
-- **Optimistic Updates**: Immediate UI feedback on bet joins with server confirmation and rollback on failure
+- **Optimistic Updates**: Not currently in effect for bet joins. `BetDataContext.joinBet` implements one but has no callers; the UI joins through `BetCard.confirmJoinBet`, which writes to the server before the card changes.
 
 ### Scheduled Lambda Functions
 The app uses AWS Lambda functions with EventBridge schedules for automated background tasks:
@@ -229,7 +229,7 @@ async function yourMainFunction() {
 
 ### Core Betting System
 - **Bet Creation**: Template-based betting with custom side names
-- **Bet Joining**: Real balance validation and deduction with optimistic UI updates
+- **Bet Joining**: Confirmation sheet, then server-side balance validation and deduction. If the transaction fails after the participant row is written, the participant is deleted to compensate. No optimistic UI update — see the note under BetDataContext.
 - **Bet Resolution**: Creator-initiated resolution with automatic payouts
 - **Real-time Updates**: Targeted subscriptions via BetDataContext with denormalized participant counts (`sideACount`, `sideBCount`, `participantUserIds`) on the Bet record
 - **Bet Sorting**: Automatic sorting by creation time (newest first) with status priority (LIVE > ACTIVE > PENDING_RESOLUTION)
@@ -264,7 +264,7 @@ async function yourMainFunction() {
 - **Profile Pictures**: S3 upload with automatic cleanup
 
 ### Push Notification System
-- **Provider**: Expo Push Notification Service (no Firebase setup required)
+- **Provider**: Expo Push Notification Service. **Android push is currently non-functional** — verified on an emulator against the SDK 57 build, the app logs "Firebase not configured. Push notifications require Firebase setup for Android." and no token registers. Expo's service still needs FCM credentials uploaded to EAS for Android; only iOS works without extra setup. In-app notifications are unaffected.
 - **Backend**: AWS Lambda function sends via Expo Push API
 - **Platforms**: iOS (APNS) and Android (FCM) - fully managed by Expo
 - **Token Management**: Automatic registration on login, stored in DynamoDB
@@ -443,7 +443,7 @@ updateProfilePicture(userId, currentUrl?) -> {
 // 2. 11 targeted subscriptions: Bet/SquaresGame onCreate/onUpdate/onDelete,
 //    BetInvitation/SquaresInvitation onCreate/onUpdate, Friendship/SquaresPurchase onCreate
 // 3. Derived state via useMemo: Automatically recomputes filtered lists when underlying data changes
-// 4. Optimistic updates: Immediate UI feedback on bet joins with rollback on failure
+// 4. Optimistic updates: implemented in joinBet below, but DEAD — nothing calls it
 
 // Denormalized Bet Fields (eliminates participant queries for list views):
 //   sideACount: number    — count of Side A participants
@@ -461,7 +461,10 @@ betInvitations: BetInvitation[]        // Pending bet invitations for user
 squaresInvitations: SquaresInvitation[] // Pending squares invitations for user
 
 // Actions:
-joinBet(bet, side, amount) -> Promise<boolean>    // Optimistic update + server confirm
+joinBet(bet, side, amount) -> Promise<boolean>    // DEAD CODE — no callers anywhere in src.
+                                                  // Joining runs through BetCard.confirmJoinBet
+                                                  // instead, which has no optimistic update.
+                                                  // Delete this or route the UI through it.
 acceptBetInvitation(invitation, side) -> Promise<boolean>
 declineBetInvitation(invitation) -> Promise<void>
 refresh() -> Promise<void>                         // Force full reload
@@ -979,8 +982,11 @@ handling, and error-to-copy mapping.
 
 **Not covered** - do not report a change as verified on these grounds alone:
 - Native modules, native layout, gestures, or anything platform-specific.
-- The JSC engine. `app.json` pins `jsEngine: "jsc"` on both platforms; the web
-  bundle runs in V8.
+- The JS engine. The app runs Hermes — SDK 54 removed first-party JSC support and
+  the `jsEngine` pin was dropped — while the web bundle runs in V8, so nothing
+  here exercises the engine the app actually ships on.
+- The New Architecture and Android edge-to-edge layout, mandatory from SDK 55
+  and 54 respectively and both invisible to a web bundle.
 - Real AWS. Every Cognito call is mocked (see below).
 - Visual fidelity. Screenshots are CSS rendering, not native.
 
@@ -988,8 +994,15 @@ handling, and error-to-copy mapping.
 
 ```
 e2e/
-├── auth.spec.ts          # Specs, grouped by flow with test.describe
-├── fixtures/cognito.ts   # HTTP-level Cognito mocks
+├── auth.spec.ts          # Login, password reset, sign up (unauthenticated)
+├── app-shell.spec.ts     # Session boot, tab navigation, bet list rendering
+├── create-bet.spec.ts    # Create-bet form validation
+├── join-bet.spec.ts      # Joining: guards, success, compensating delete
+├── invitations.spec.ts   # Bet invitations listed and declined
+├── fixtures/cognito.ts   # HTTP-level Cognito mocks (unauthenticated flows)
+├── fixtures/session.ts   # Seeds a signed-in session (see below)
+├── fixtures/appsync.ts   # HTTP-level GraphQL mocks
+├── fixtures/data.ts      # Record shapes + the default handler set
 ├── ensure-config.mjs     # Writes placeholder amplify_outputs.json if absent
 └── serve.mjs             # Dependency-free static server for dist/
 playwright.config.ts
@@ -1022,6 +1035,52 @@ returns a 500 and is recorded, so a missing handler fails loudly.
 **These fixtures encode our assumptions about the Cognito wire format.** If a
 test passes but the flow misbehaves against the real user pool, suspect the
 fixtures first: capture a real response and correct them.
+
+### Testing signed-in screens
+
+`signInAs(page)` from `fixtures/session.ts` puts the app past the login screen.
+It seeds the token store Amplify reads on boot rather than driving the form,
+because sign-in defaults to SRP: the client derives a shared secret and verifies
+the server's proof, so a faked challenge response is rejected by the real SDK.
+
+Three things this has to get right, each of which fails silently:
+- **Answer the token refresh.** Amplify refreshes on boot via
+  `GetTokensFromRefreshToken` (older versions used `InitiateAuth`). An unanswered
+  refresh makes Amplify *clear* the stored tokens, and the app quietly shows the
+  login screen instead.
+- **Give the id token a real `iss`.** Amplify derives the identity-pool Logins
+  key from it; without one it throws `InvalidIdTokenException` and retries the
+  refresh endpoint in a tight loop.
+- **`fetchAuthSession` must succeed.** `AuthContext` bails to a signed-out state
+  if it throws, so the identity-pool call is mocked too.
+
+GraphQL is mocked the same way as Cognito, via `mockAppSync`, keyed by the
+operation name. Two traps:
+- **Match the endpoint by predicate, not glob.** The host is
+  `<id>.appsync-api.<region>.amazonaws.com`; a leading `**/` glob expects a `/`
+  where the URL has a `.`, so it matches nothing and every query escapes to the
+  real network while tests still appear to pass.
+- **Key on the first selected field, not the operation name.** Amplify sends
+  anonymous documents — `query ($filter: X) { listBets(...) }` — so the operation
+  name is empty on every request.
+
+Use `fixtures/data.ts` for record shapes; they follow what the app's transforms
+actually read, which is **not** always the schema documented above. `transformAmplifyBet`
+drops any bet without `category`, reads side names from the `odds` JSON blob, and
+uses `deadline` rather than `expiresAt`. Bets also load through the
+`betsByStatus` GSI query, not `listBets`.
+
+### Interacting with React Native Web
+
+- **Use `dispatchEvent('click')`, not `click()`,** for `TouchableOpacity`. RNW's
+  press handling does not respond to a synthesised coordinate click, and the tab
+  bar never satisfies Playwright's stability check, so `click()` times out on
+  elements that are present and perfectly clickable.
+- **`toBeDisabled()` does not work.** RNW renders `TouchableOpacity` as a
+  `<div aria-disabled="true">`, not a `<button disabled>`. Assert the attribute.
+- **Forms may arrive pre-filled.** The create-bet template seeds title and
+  description, and amount and deadline default to `'1'` and `'30'`. Reaching a
+  screen does not mean its form is blank.
 
 ### Selectors: always use testID
 
