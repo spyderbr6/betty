@@ -85,3 +85,70 @@ test('refuses the join when the balance will not cover the stake', async ({ page
   // checked before anything is written.)
   await expect(page.getByTestId('join-side-a')).toBeVisible();
 });
+
+/**
+ * Handlers for the write path. A successful join touches seven operations, which
+ * is why the guard tests above stop short of it: createParticipant, then the
+ * transaction (Transaction.create plus the User.update that debits the balance),
+ * then Bet.update for the denormalised counts, then the creator's notification.
+ */
+const joinWrites = (over: Record<string, (v: Record<string, unknown>) => unknown> = {}) => ({
+  createParticipant: () => ({ id: 'participant-1', status: 'ACCEPTED' }),
+  createTransaction: () => ({ id: 'transaction-1', status: 'COMPLETED' }),
+  updateUser: (variables: Record<string, unknown>) => ({ ...variables }),
+  updateBet: (variables: Record<string, unknown>) => ({ ...variables }),
+  deleteParticipant: (variables: Record<string, unknown>) => ({ ...variables }),
+  createNotification: () => ({ id: 'notification-1' }),
+  ...over,
+});
+
+const confirmJoin = async (page: Page) => {
+  await expect(page.getByTestId('join-side-a')).toBeVisible({ timeout: 15_000 });
+  await page.getByTestId('join-side-a').dispatchEvent('click');
+  await expect(page.getByTestId('alert-title')).toHaveText('Join Bet');
+  await page.getByTestId('alert-button-join').dispatchEvent('click');
+};
+
+test('a successful join takes the stake and marks the bet joined', async ({ page }) => {
+  await signInAs(page);
+  const { calls } = await mockAppSync(page, {
+    ...withOpenBet({ betAmount: 25 }, { balance: 250 }),
+    ...joinWrites(),
+  });
+  await openLiveTab(page);
+
+  await confirmJoin(page);
+
+  await expect(page.getByTestId('alert-title')).toHaveText('Joined Successfully!');
+  // The confirmation quotes the balance after the debit, so it is worth pinning:
+  // 250 - 25. A wrong figure here means the wrong amount left the account.
+  await expect(page.getByTestId('alert-message')).toContainText('$225.00');
+
+  expect(calls).toContain('createParticipant');
+  expect(calls).toContain('createTransaction');
+  expect(calls).toContain('updateBet');
+
+  // The card itself has to reflect it, not just the alert: the join controls are
+  // replaced by a JOINED marker once the side is recorded locally.
+  await expect(page.getByTestId('join-side-a')).toBeHidden();
+  await expect(page.getByTestId('bet-card-bet-open')).toContainText('JOINED');
+});
+
+test('a failed transaction deletes the participant it just created', async ({ page }) => {
+  await signInAs(page);
+  const { calls } = await mockAppSync(page, {
+    ...withOpenBet({ betAmount: 25 }, { balance: 250 }),
+    // The participant row is written first, so a transaction that fails after it
+    // would otherwise leave a participant in a bet they never paid into.
+    ...joinWrites({ createTransaction: () => null }),
+  });
+  await openLiveTab(page);
+
+  await confirmJoin(page);
+
+  await expect(page.getByTestId('alert-title')).toHaveText('Error');
+  expect(calls).toContain('createParticipant');
+  expect(calls).toContain('deleteParticipant');
+  // Never reached: the bet must not be updated when the stake was not taken.
+  expect(calls).not.toContain('updateBet');
+});
