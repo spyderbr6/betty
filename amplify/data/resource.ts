@@ -268,7 +268,16 @@ const schema = a.schema({
       // Allows: SELECT * WHERE status = 'ACTIVE' ORDER BY createdAt DESC
       index('status')
         .sortKeys(['createdAt'])
-        .queryField('betsByStatus')
+        .queryField('betsByStatus'),
+      // Per-creator feed. The friends view queries this once per friend rather
+      // than pulling every ACTIVE bet on the platform and filtering in JS, which
+      // silently dropped any friend's bet outside the fetched window.
+      // Duplicates the index User.betsCreated implies, but that one is only
+      // reachable through the relational field and takes no filter or sort
+      // direction. SquaresGame.squaresGamesByCreator already makes the same trade.
+      index('creatorId')
+        .sortKeys(['createdAt'])
+        .queryField('betsByCreator')
     ])
     .authorization((allow) => [
       allow.owner().to(['create', 'read', 'update', 'delete']),
@@ -420,6 +429,15 @@ const schema = a.schema({
       user1: a.belongsTo('User', 'user1Id'),
       user2: a.belongsTo('User', 'user2Id'),
     })
+    // Friendship rows were read with .list({filter}), which is a Scan: it applies
+    // the limit to rows examined, not rows returned, so past the first page a
+    // user's friends were drawn from an arbitrary slice of the table and the
+    // friends feed quietly under-reported. hasMany does not make .list({filter})
+    // indexed -- the index it creates is only reachable via the relational field.
+    .secondaryIndexes((index) => [
+      index('user1Id').sortKeys(['createdAt']).queryField('friendshipsByUser1'),
+      index('user2Id').sortKeys(['createdAt']).queryField('friendshipsByUser2'),
+    ])
     .authorization((allow) => [
       allow.owner(),
       allow.authenticated().to(['read', 'create', 'delete'])
@@ -442,6 +460,11 @@ const schema = a.schema({
       fromUser: a.belongsTo('User', 'fromUserId'),
       toUser: a.belongsTo('User', 'toUserId'),
     })
+    // Gates which private bets a user may see, and was a Scan with the same
+    // silent-truncation failure as Friendship above.
+    .secondaryIndexes((index) => [
+      index('toUserId').sortKeys(['createdAt']).queryField('betInvitationsByToUser'),
+    ])
     .authorization((allow) => [
       allow.owner(),
       allow.authenticated().to(['read', 'create', 'update'])
@@ -622,6 +645,13 @@ const schema = a.schema({
       user: a.belongsTo('User', 'userId'),
       event: a.belongsTo('LiveEvent', 'eventId'),
     })
+    // This table grows as users x events attended, faster than any other here,
+    // and was read only by Scan. checkInsByUser backs "am I checked in";
+    // checkInsByEvent backs "which of my friends is here too".
+    .secondaryIndexes((index) => [
+      index('userId').sortKeys(['checkInTime']).queryField('checkInsByUser'),
+      index('eventId').sortKeys(['checkInTime']).queryField('checkInsByEvent'),
+    ])
     .authorization((allow) => [
       allow.owner().to(['create', 'read', 'update', 'delete']),
       allow.authenticated().to(['read', 'create', 'update']) // Allow users to check in others (social features)
