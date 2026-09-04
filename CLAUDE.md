@@ -18,7 +18,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with th
 SideBet is a peer-to-peer betting platform built with React Native + Expo for mobile deployment, using AWS Amplify Gen2 for backend services.
 
 ### Core Technology Stack
-- **Frontend**: React Native + Expo SDK 52
+- **Frontend**: React Native 0.86 + Expo SDK 57 (React 19.2, Hermes, New Architecture)
 - **Backend**: AWS Amplify Gen2 with GraphQL API
 - **Database**: DynamoDB with real-time subscriptions
 - **Authentication**: AWS Cognito
@@ -982,8 +982,11 @@ handling, and error-to-copy mapping.
 
 **Not covered** - do not report a change as verified on these grounds alone:
 - Native modules, native layout, gestures, or anything platform-specific.
-- The JSC engine. `app.json` pins `jsEngine: "jsc"` on both platforms; the web
-  bundle runs in V8.
+- The JS engine. The app runs Hermes — SDK 54 removed first-party JSC support and
+  the `jsEngine` pin was dropped — while the web bundle runs in V8, so nothing
+  here exercises the engine the app actually ships on.
+- The New Architecture and Android edge-to-edge layout, mandatory from SDK 55
+  and 54 respectively and both invisible to a web bundle.
 - Real AWS. Every Cognito call is mocked (see below).
 - Visual fidelity. Screenshots are CSS rendering, not native.
 
