@@ -6,18 +6,12 @@
     "orientation": "portrait",
     "icon": "./assets/icon-1024.png",
     "userInterfaceStyle": "dark",
-    "splash": {
-      "image": "./assets/splash.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#111827"
-    },
     "assetBundlePatterns": [
       "**/*"
     ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.sidebet.app",
-      "jsEngine": "jsc",
       "buildNumber": "1"
     },
     "android": {
@@ -25,7 +19,6 @@
         "foregroundImage": "./assets/icon-512.png",
         "backgroundColor": "#111827"
       },
-      "jsEngine": "jsc",
       "package": "com.sidebet.app",
       "versionCode": 1
     },
@@ -69,15 +62,18 @@
         {
           "cameraPermission": "Allow SideBet to access your camera to scan QR codes for quick bet joining."
         }
+      ],
+      "expo-status-bar",
+      "expo-font",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#111827"
+        }
       ]
     ],
-    "notification": {
-      "icon": "./assets/icon-192.png",
-      "color": "#111827",
-      "iosDisplayInForeground": true,
-      "androidMode": "default",
-      "androidCollapsedTitle": "#{unread_notifications} new SideBet notifications"
-    },
     "scheme": "sidebet",
     "developmentClient": {
       "silentLaunch": false
