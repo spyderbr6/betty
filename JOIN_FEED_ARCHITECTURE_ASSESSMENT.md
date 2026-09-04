@@ -528,3 +528,226 @@ file, quoted verbatim, and independently confirmed by the index inventory above.
 
 The assessment stands. The framing in the original draft undersold what the
 audit accomplished, and this appendix corrects that.
+
+---
+
+## Appendix B — Two product scenarios, tested against the plan
+
+Both scenarios were checked against the current schema and call sites. One of
+them changes a recommendation made in Part 4; the other is blocked by something
+that isn't a query problem at all.
+
+### Scenario 1 — Friends only, all item types, invite-only hidden
+
+Three requirements that look similar but decompose very differently:
+
+| Requirement | Difficulty | Why |
+|---|---|---|
+| Hide invite-only | **Free** | Encode it in the index; see below |
+| Friends only | **Moderate** | "My friends" is an arbitrary per-user set with no natural partition key |
+| Regardless of item type | **Hard** | Requires merging two tables into one sorted, paginated stream |
+
+#### The UI half is a clear win
+
+Dropping the `viewMode` toggle (always friends) and the `contentType` toggle
+(unified list) removes two of the four state axes identified in Part 3. The
+nested ternary chain collapses to a single list with one loading state and one
+empty state. This is the simplification you're after, and it's real.
+
+It needs a discriminated union at the item level:
+
+```ts
+type FeedItem =
+  | { kind: 'bet';     item: Bet }
+  | { kind: 'squares'; item: SquaresGame };
+```
+
+and a `<FeedCard>` that switches once, over a shared card shell. Today `BetCard`
+and `SquaresGameCard` share no structure, so that shell has to be factored out.
+
+#### The data half gets *harder*, and it changes the Part 4 recommendation
+
+Part 4 (1d) proposed fan-out-on-read — `betsByCreator`, one query per friend —
+and explicitly said **not** to build a write-time fan-out table yet. **Scenario 1
+invalidates that.**
+
+With fan-out-on-read across two types you have `F friends × 2 tables = 2F`
+independently-sorted streams to merge. Merging N sorted streams *with
+pagination* requires a cursor holding N positions: `nextToken` becomes a blob of
+2F tokens, and every "load more" has to re-query streams that may not advance.
+This is precisely the problem write-time fan-out exists to solve, and it is not
+worth hand-rolling.
+
+**Revised recommendation for this scenario: a single `FeedItem` table.**
+
+```
+PK   audienceUserId
+SK   createdAt#itemId
+     itemType   'BET' | 'SQUARES'
+     itemId
+     creatorId
+     source     'FRIEND' | 'INVITE'
+     + slow-changing display fields (title, betAmount, side names)
+```
+
+Written by a Lambda on the DynamoDB stream from `Bet` and `SquaresGame`, one row
+per friend of the creator. One query returns both types, already interleaved,
+already sorted, trivially paginated.
+
+The visibility rules then become **write-time decisions made once**, rather than
+read-time decisions re-derived on every client:
+
+- **Fan out only when `isPrivate === false`.** "Invite-only doesn't show" is
+  structural — private items are never in anyone's feed, so there is no filter
+  to forget.
+- **Private items reach their audience through a second trigger:** on
+  `BetInvitation` / `SquaresInvitation` create, write one `FeedItem` for that
+  user with `source: 'INVITE'`. If you later want invited items visible here,
+  they already are; if not, filter on `source` — over a complete set, not a
+  truncated one.
+
+Net: the feed is one query, complete, correct, sorted, paginated, with **zero**
+client-side visibility logic.
+
+**Honest costs.** W writes per item, where W = creator's friend count. Bounded —
+friend graphs here are mutual and capped, so there's no celebrity fan-out
+problem. But: denormalized display fields go stale (store only slow-changing
+ones and fetch live counts for the visible page); existing data needs backfill;
+unfriending requires either deleting rows or a cheap read-time filter against
+the in-memory `friendIds`. It is the expensive, hard-to-reverse option — only
+build it if the unscoped friends feed is genuinely the product direction.
+
+#### Cheaper interim, if you want Scenario 1 without committing
+
+Dropping the "All" view means the working set is *only* friends' items. If
+typical friend counts are under ~50 and you accept a bounded window
+(`createdAt > now - 7d`) instead of true infinite scroll, fan-out-on-read works:
+2F bounded queries, merged in memory, **no pagination cursor needed because the
+window is bounded rather than paged.** Ship that, measure real friend counts and
+item volume, upgrade to the feed table only if the numbers demand it.
+
+#### A gap this exposed in Part 4
+
+Plain `betsByCreator` returns a creator's private bets too, which the client
+would then have to filter out — reintroducing fetch-then-filter at smaller
+scale. Whichever path you take, the creator index must be **sparse**:
+
+```ts
+// written at create/update time: creatorId when public, attribute absent when private
+publicCreatorKey: a.string(),
+index('publicCreatorKey').sortKeys(['createdAt']).queryField('publicBetsByCreator')
+```
+
+Same principle as the `feedKey` in Phase 1c: **derive the index attribute at
+write time so the index itself encodes the visibility predicate.**
+
+---
+
+### Scenario 2 — Same, but only friends checked into the same event
+
+#### Blocker: bets have no event
+
+`Bet.eventId` exists in the schema (`resource.ts:250`) and **is never written.**
+`CreateBetScreen.tsx:387` omits it from the `Bet.create` payload entirely. The
+event picker in that screen is gated behind `selectedTemplate === 'squares'`
+(line 698), so `selectedEvent` only ever reaches `SquaresGameService.createSquaresGame`
+(line 557). Confirmed: no code path anywhere writes `eventId` on a `Bet`.
+
+So today this filter returns empty by construction, for every bet. This is a
+**data-capture** change, not a query change, and it has to come first.
+
+Two ways to fix it, and the second is nicer:
+
+1. Add event selection to the standard bet form — more UI, which cuts against
+   the goal of simplifying.
+2. **Infer it.** If the creator has an active check-in when they create a bet,
+   stamp that `eventId` automatically. Zero added UI, and it makes "bets at this
+   game" populate itself from behaviour you already capture.
+
+#### Once that's fixed, this is *easier* than Scenario 1
+
+Counterintuitive but important: **adding the event constraint makes the query
+cheaper, not more expensive.**
+
+"My friends" is an arbitrary, unbounded, per-user set with no natural partition
+key — that is what forces fan-out. "Checked into event E" is a small, shared,
+**natural partition**. One event is one partition and a bounded candidate set.
+
+Query plan:
+
+| Step | Query | Count |
+|---|---|---|
+| 1 | `checkInsByUser(me, isActive)` → my event(s), typically 1 | 1 |
+| 2 | `betsByEvent(E)` + `squaresGamesByEvent(E)` → everything on that event | 2 |
+| 3 | Intersect creators with `friendIds` — already in memory from Phase 1a | 0 |
+| 4 | *(optional)* `checkInsByEvent(E)` to require the creator be *currently* present — also gives you "who's here" for the UI | 1 |
+
+**3–4 queries, constant, independent of friend count.** No feed table, no merge
+cursor, and the cross-type merge is trivial because both lists are short and
+scoped to one event.
+
+#### On client-side filtering in step 3
+
+Step 3 filters on the client, which this document has criticized elsewhere. The
+distinction matters: **client-side filtering is fine over a bounded, complete
+set; it is harmful over an arbitrarily-truncated one.** Scenario 2's candidate
+set is one event's items, fetched whole. Today's join page filters over "the 200
+bets that happened to load" (F1/F4). Same operation, opposite correctness.
+
+Note also that "is the creator *still* checked in" is time-varying, so it must
+be evaluated at read time — it cannot be baked into a feed row. Another reason
+fan-out doesn't help here.
+
+#### Indexes required
+
+| Index | Status |
+|---|---|
+| `Bet.index('eventId').sortKeys(['createdAt'])` → `betsByEvent` | ❌ missing |
+| `EventCheckIn.index('userId')` → `checkInsByUser` | ❌ missing (audit item 7, unshipped) |
+| `EventCheckIn.index('eventId')` → `checkInsByEvent` | ❌ missing |
+| `SquaresGame.squaresGamesByEvent` | ✅ exists |
+
+#### Related finding: `EventCheckIn` is the fastest-growing table and has zero indexes
+
+`getUserCheckedInEvent()` (`eventService.ts:70`) — the function this entire
+scenario pivots on, and the one behind the check-in banner — is a **Scan**:
+
+```ts
+client.models.EventCheckIn.list({
+  filter: { userId: { eq: userId }, isActive: { eq: true } }
+})
+```
+
+`EventCheckIn` grows as *users × events attended*, faster than any other table
+here, and has no secondary index at all. This is the same silent-truncation
+failure mode as `Friendship` (F2): past the scan window the app will conclude
+you are not checked in, with no error. It then takes `checkIns[0]` from an
+unordered scan result — if a stale active check-in exists, which one you get is
+arbitrary.
+
+#### Bonus: Scenario 2 fixes F8 for free
+
+The BETTING STATS block is currently "sum over whatever happened to load," and
+Part 4 flagged that pagination would make it worse. Scoped to one event, those
+aggregates are computed over a **complete bounded set** — so they become
+correct and genuinely meaningful ("$1,240 in play at this game") for the first
+time.
+
+---
+
+### Recommendation
+
+**Build Scenario 2 first, even if Scenario 1 is the eventual goal.**
+
+- It delivers the same UI simplification — one unified list, both toggles gone.
+- It needs 3 indexes and one data-capture fix. No new infrastructure.
+- Its result set is naturally small and more interesting than "everything my
+  friends did lately."
+- It defers the feed-table decision entirely, and buys you real numbers on
+  friend counts and item volume to make that decision with.
+
+The two also compose well: **Scenario 2 as the default view when you're checked
+in, Scenario 1 as the fallback when you're not.** That shape means Scenario 1
+only ever has to serve the un-checked-in case, which lowers the bar for it
+considerably — quite possibly below the threshold where the fan-out table is
+justified at all.
