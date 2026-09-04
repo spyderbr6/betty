@@ -264,7 +264,7 @@ async function yourMainFunction() {
 - **Profile Pictures**: S3 upload with automatic cleanup
 
 ### Push Notification System
-- **Provider**: Expo Push Notification Service (no Firebase setup required)
+- **Provider**: Expo Push Notification Service. **Android push is currently non-functional** — verified on an emulator against the SDK 57 build, the app logs "Firebase not configured. Push notifications require Firebase setup for Android." and no token registers. Expo's service still needs FCM credentials uploaded to EAS for Android; only iOS works without extra setup. In-app notifications are unaffected.
 - **Backend**: AWS Lambda function sends via Expo Push API
 - **Platforms**: iOS (APNS) and Android (FCM) - fully managed by Expo
 - **Token Management**: Automatic registration on login, stored in DynamoDB
