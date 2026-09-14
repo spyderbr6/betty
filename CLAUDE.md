@@ -51,6 +51,8 @@ src/
 - **[MODAL_STANDARDS.md](./MODAL_STANDARDS.md)**: **REQUIRED** reading before creating/modifying modals
 - **[PUSH_NOTIFICATION_GUIDE.md](./PUSH_NOTIFICATION_GUIDE.md)**: Complete guide to push notification setup, testing, and troubleshooting
 - **[STRIPE_GUIDE.md](./STRIPE_GUIDE.md)**: Card deposits and Pro subscriptions — setup, test → production switchover, and payment troubleshooting
+- **[SQUARES_GUIDE.md](./SQUARES_GUIDE.md)**: Betting squares — how a game runs, how winners are decided, and what automates it
+- **docs/archive/**: Finished implementation plans and audits, kept for reasoning only. Assume they are out of date.
 - **todo.md**: Current tasks and project roadmap
 - **E2E Testing** (section below): Required reading before adding UI tests or changing auth screens
 
@@ -1173,6 +1175,20 @@ When given a task or request, Claude should:
 - Maintain consistent code style with the existing codebase
 - Test changes immediately after implementation when possible
 - Explain any trade-offs or limitations of the chosen approach
+
+## Troubleshooting: ESPN API data issues
+
+Squares games and live scores are driven by the ESPN API via the `event-fetcher`
+and `live-score-updater` functions. When scores look wrong or missing for a date,
+re-run the fetcher over the suspect range from the Lambda test console (the event
+is usually pre-saved). The range may span more than one day:
+
+```json
+{
+  "startDate": "2026-01-12",
+  "endDate": "2026-01-12"
+}
+```
 
 ## Comprehensive Error Detection Process
 
