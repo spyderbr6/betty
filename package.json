@@ -10,6 +10,8 @@
     "build": "expo export --platform web",
     "typecheck": "npx tsc --noEmit",
     "lint": "eslint . --ext .js,.jsx,.ts,.tsx",
+    "test:unit": "vitest run",
+    "test:unit:watch": "vitest",
     "test:e2e": "node e2e/ensure-config.mjs && npm run build && playwright test",
     "test:e2e:fast": "playwright test",
     "test:e2e:ui": "playwright test --ui"
@@ -80,7 +82,8 @@
     "eslint-plugin-react-hooks": "^4.6.0",
     "eslint-plugin-react-refresh": "^0.4.20",
     "sharp": "^0.34.5",
-    "stripe": "^22.3.2"
+    "stripe": "^22.3.2",
+    "vitest": "^4.1.11"
   },
   "private": true
 }
