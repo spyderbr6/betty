@@ -9,6 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with th
 - **iOS**: `npm run ios` - Run on iOS device/simulator
 - **TypeScript**: `npm run typecheck` - Check types
 - **Linting**: `npm run lint` - Run ESLint
+- **Unit tests**: `npm run test:unit` - Vitest over the Lambda handlers (`amplify/**/__tests__`). `test:unit:watch` for iterating.
 - **E2E tests**: `npm run test:e2e` - Build the web bundle and run the Playwright suite
 - **E2E (no rebuild)**: `npm run test:e2e:fast` - Re-run against the existing `dist/`. **Only valid if no source changed since the last build** - it will silently test stale code otherwise.
 - **EAS BUILD**: 'eas build -p android --profile production' - ASK FIRST DO NOT RUN YOURSELF
@@ -51,6 +52,8 @@ src/
 - **[MODAL_STANDARDS.md](./MODAL_STANDARDS.md)**: **REQUIRED** reading before creating/modifying modals
 - **[PUSH_NOTIFICATION_GUIDE.md](./PUSH_NOTIFICATION_GUIDE.md)**: Complete guide to push notification setup, testing, and troubleshooting
 - **[STRIPE_GUIDE.md](./STRIPE_GUIDE.md)**: Card deposits and Pro subscriptions — setup, test → production switchover, and payment troubleshooting
+- **[SQUARES_GUIDE.md](./SQUARES_GUIDE.md)**: Betting squares — how a game runs, how winners are decided, and what automates it
+- **docs/archive/**: Finished implementation plans and audits, kept for reasoning only. Assume they are out of date.
 - **todo.md**: Current tasks and project roadmap
 - **E2E Testing** (section below): Required reading before adding UI tests or changing auth screens
 
@@ -958,6 +961,39 @@ This includes:
 - Anti-patterns to avoid
 - Code examples for all scenarios
 
+## Unit Testing (Vitest)
+
+```bash
+npm run test:unit         # Lambda handler logic
+npm run test:unit:watch
+```
+
+Scoped to `amplify/**/__tests__/**/*.test.ts` deliberately. Vitest and Playwright
+both define `test` and `expect`; if the globs overlap, one runner collects the
+other's specs and fails confusingly.
+
+### Handlers are not directly importable
+
+A Lambda handler cannot be imported by a test. It configures Amplify with a
+top-level `await`, imports `$amplify/env/<fn>` — a module that only exists after
+a build — and some call setup functions at module scope (`setVapidDetails`).
+Importing one in a test fails before any assertion runs.
+
+The pattern is to keep decision logic in a plain sibling module and let the
+handler do I/O around it. `push-notification-sender/pushLogic.ts` is the worked
+example: token partitioning, payload construction and ticket correlation are
+pure functions with tests, while the handler keeps the fetch and the writes.
+
+### Why this was worth doing
+
+The first tests written against `pushLogic` exposed a live bug. Expo returns one
+ticket per message in request order, so ticket `i` belongs to `tokens[i]`. The
+handler filtered tickets to the failures and then indexed the *unfiltered* token
+array with the filtered position — deactivating healthy registrations and leaving
+dead ones active, silently. `npm run typecheck` would never have caught it:
+`tsconfig.json` includes only `src/**` and `App.tsx`, so **no type checking covers
+`amplify/` at all**. These tests are the only automated check on Lambda code.
+
 ## End-to-End Testing (Playwright)
 
 The app is driven as a **real web page** in headless Chromium. `react-native-web`
@@ -1173,6 +1209,20 @@ When given a task or request, Claude should:
 - Maintain consistent code style with the existing codebase
 - Test changes immediately after implementation when possible
 - Explain any trade-offs or limitations of the chosen approach
+
+## Troubleshooting: ESPN API data issues
+
+Squares games and live scores are driven by the ESPN API via the `event-fetcher`
+and `live-score-updater` functions. When scores look wrong or missing for a date,
+re-run the fetcher over the suspect range from the Lambda test console (the event
+is usually pre-saved). The range may span more than one day:
+
+```json
+{
+  "startDate": "2026-01-12",
+  "endDate": "2026-01-12"
+}
+```
 
 ## Comprehensive Error Detection Process
 

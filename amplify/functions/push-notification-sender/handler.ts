@@ -6,6 +6,12 @@ import { getAmplifyDataClientConfig } from '@aws-amplify/backend/function/runtim
 // @ts-ignore - Generated at build time by Amplify
 import { env } from '$amplify/env/push-notification-sender';
 import webpush from 'web-push';
+import {
+  buildExpoMessages,
+  countSuccesses,
+  succeededTokenIds,
+  tokensToDeactivate,
+} from './pushLogic';
 
 // CRITICAL: Top-level await configuration - this is required for proper client initialization
 const { resourceConfig, libraryOptions } = await getAmplifyDataClientConfig(env);
@@ -93,16 +99,7 @@ async function sendViaExpoPush(
   priority: string
 ): Promise<number> {
   try {
-    const notifications = tokens.map((tokenRecord: any) => ({
-      to: tokenRecord.token!,
-      sound: 'default',
-      title,
-      body: message,
-      data: data || {},
-      badge: 1,
-      priority: priority === 'HIGH' ? 'high' : 'normal',
-      channelId: priority === 'HIGH' ? 'urgent' : 'default',
-    }));
+    const notifications = buildExpoMessages(tokens, title, message, data, priority);
 
     const response = await fetch('https://exp.host/--/api/v2/push/send', {
       method: 'POST',
@@ -121,40 +118,27 @@ async function sendViaExpoPush(
     const result = await response.json();
     console.log('[Expo Push] Result:', result);
 
-    // Update lastUsed timestamp for successful tokens
-    const successfulSends = result.data?.filter((r: any) => r.status === 'ok') || [];
-    if (successfulSends.length > 0) {
+    // Expo returns one ticket per message, in request order, so ticket i belongs
+    // to tokens[i]. Both branches below used to filter the tickets first and then
+    // index the unfiltered token array with the filtered position, which stamped
+    // and deactivated the wrong registrations. See pushLogic for the detail.
+    const succeededIds = succeededTokenIds(tokens, result.data);
+    if (succeededIds.length > 0) {
       const now = new Date().toISOString();
       await Promise.all(
-        successfulSends.map((_: any, index: number) =>
-          client.models.PushToken.update({
-            id: tokens[index].id!,
-            lastUsed: now,
-          })
-        )
+        succeededIds.map((id) => client.models.PushToken.update({ id, lastUsed: now }))
       );
     }
 
-    // Handle failed tokens
-    const failedSends = result.data?.filter((r: any) =>
-      r.status === 'error' && r.details?.error?.includes('DeviceNotRegistered')
-    ) || [];
-
-    if (failedSends.length > 0) {
-      console.log(`[Expo Push] Marking ${failedSends.length} tokens as inactive`);
+    const deadIds = tokensToDeactivate(tokens, result.data);
+    if (deadIds.length > 0) {
+      console.log(`[Expo Push] Marking ${deadIds.length} tokens as inactive`);
       await Promise.all(
-        failedSends.map((_: any, index: number) => {
-          if (tokens[index]) {
-            return client.models.PushToken.update({
-              id: tokens[index].id!,
-              isActive: false,
-            });
-          }
-        })
+        deadIds.map((id) => client.models.PushToken.update({ id, isActive: false }))
       );
     }
 
-    return successfulSends.length;
+    return countSuccesses(result.data);
 
   } catch (error) {
     console.error('[Expo Push] Error:', error);
