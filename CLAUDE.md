@@ -9,6 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with th
 - **iOS**: `npm run ios` - Run on iOS device/simulator
 - **TypeScript**: `npm run typecheck` - Check types
 - **Linting**: `npm run lint` - Run ESLint
+- **Unit tests**: `npm run test:unit` - Vitest over the Lambda handlers (`amplify/**/__tests__`). `test:unit:watch` for iterating.
 - **E2E tests**: `npm run test:e2e` - Build the web bundle and run the Playwright suite
 - **E2E (no rebuild)**: `npm run test:e2e:fast` - Re-run against the existing `dist/`. **Only valid if no source changed since the last build** - it will silently test stale code otherwise.
 - **EAS BUILD**: 'eas build -p android --profile production' - ASK FIRST DO NOT RUN YOURSELF
@@ -959,6 +960,39 @@ This includes:
 - Migration guide for existing modals
 - Anti-patterns to avoid
 - Code examples for all scenarios
+
+## Unit Testing (Vitest)
+
+```bash
+npm run test:unit         # Lambda handler logic
+npm run test:unit:watch
+```
+
+Scoped to `amplify/**/__tests__/**/*.test.ts` deliberately. Vitest and Playwright
+both define `test` and `expect`; if the globs overlap, one runner collects the
+other's specs and fails confusingly.
+
+### Handlers are not directly importable
+
+A Lambda handler cannot be imported by a test. It configures Amplify with a
+top-level `await`, imports `$amplify/env/<fn>` — a module that only exists after
+a build — and some call setup functions at module scope (`setVapidDetails`).
+Importing one in a test fails before any assertion runs.
+
+The pattern is to keep decision logic in a plain sibling module and let the
+handler do I/O around it. `push-notification-sender/pushLogic.ts` is the worked
+example: token partitioning, payload construction and ticket correlation are
+pure functions with tests, while the handler keeps the fetch and the writes.
+
+### Why this was worth doing
+
+The first tests written against `pushLogic` exposed a live bug. Expo returns one
+ticket per message in request order, so ticket `i` belongs to `tokens[i]`. The
+handler filtered tickets to the failures and then indexed the *unfiltered* token
+array with the filtered position — deactivating healthy registrations and leaving
+dead ones active, silently. `npm run typecheck` would never have caught it:
+`tsconfig.json` includes only `src/**` and `App.tsx`, so **no type checking covers
+`amplify/` at all**. These tests are the only automated check on Lambda code.
 
 ## End-to-End Testing (Playwright)
 

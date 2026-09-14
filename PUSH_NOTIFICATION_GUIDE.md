@@ -145,7 +145,11 @@ afterwards or local Gradle builds fail with "SDK location not found".
 
 ### Prerequisites
 
-1. **Physical device required** - Push notifications don't work in simulators/emulators
+1. **Device with Google Play services.** A physical device works; so does an
+   Android emulator *with* Google Play (verified 2026-09-13 on
+   `Medium_Phone_API_36.0` — an ExponentPushToken was issued). A plain AOSP image
+   without Play services cannot register for FCM. iOS genuinely does require
+   hardware.
 2. **EAS Build required** - Development builds have proper push credentials
 3. **User account** - Must be logged in to register push token
 
