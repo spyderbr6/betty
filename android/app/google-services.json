@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "658324398021",
+    "project_id": "sidebet-54783",
+    "storage_bucket": "sidebet-54783.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:658324398021:android:1ef73a5f56d9d88d5735ac",
+        "android_client_info": {
+          "package_name": "com.sidebet.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAywwqTmOyPM3UexbB2TQrkU8P0xRC7U4g"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

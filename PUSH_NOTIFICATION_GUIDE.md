@@ -88,26 +88,58 @@ await NotificationService.createNotification({
 // 4. Navigates user to appropriate screen/modal
 ```
 
-## Why No Firebase Setup Needed?
+## Firebase Setup IS Required (Android)
 
-**Expo manages FCM credentials for you automatically** when you use EAS Build:
+> This section previously claimed Expo manages FCM credentials automatically and
+> that no Firebase setup was needed. That is wrong, and it is why Android push
+> never worked. Running the SDK 57 build on an emulator produced:
+>
+> ```
+> [Push] Firebase not configured. Push notifications require Firebase setup for Android.
+> ```
+>
+> No token registers, so no Android device can receive a push.
 
-- **Development builds**: Expo provides development FCM credentials
-- **Production builds**: Expo generates production FCM credentials
-- **No google-services.json needed**: EAS Build handles this
-- **No Firebase Console access needed**: All managed by Expo
+Expo routes Android pushes through FCM, and since the FCM V1 migration you must
+supply your own credentials. **iOS** works without extra setup; **Android** does not.
 
-### How Expo Does This
+### Two files, easy to confuse
 
-1. When you run `eas build`, Expo's build servers:
-   - Create FCM project (if needed) linked to your EAS project
-   - Generate FCM server key and upload to Expo's push service
-   - Include FCM credentials in your APK/IPA
+| File | Contents | Handling |
+| --- | --- | --- |
+| `google-services.json` | Public identifiers | Committed at the repo root, referenced by `app.json` |
+| Service account JSON | **Private key** | Never commit — upload to EAS only (gitignored by pattern) |
 
-2. When you send push notifications:
-   - Your Lambda sends to Expo Push API
-   - Expo routes to FCM/APNS using managed credentials
-   - No Firebase setup required on your end
+### Setup
+
+1. Create a Firebase project and add an Android app with package name
+   `com.sidebet.app` — it must match `app.json` exactly or tokens will not register.
+2. Download `google-services.json` to the repo root. `app.json` already points at
+   it via `android.googleServicesFile`.
+3. Firebase Console -> Project Settings -> Service Accounts -> Generate new private
+   key. This is the secret half.
+4. Upload that key to EAS:
+
+```bash
+eas credentials
+# Android -> production -> Google Service Account
+# -> Manage your Google Service Account Key for Push Notifications (FCM V1)
+# -> Upload a new service account key
+```
+
+   Or via the EAS dashboard: Project Settings -> Credentials -> Android -> FCM V1.
+
+5. Rebuild. Credentials are baked in at build time, so an existing APK will not
+   pick them up.
+
+### Note on the native project
+
+`android/` is committed, so EAS does not run prebuild and the google-services
+Gradle plugin must already be applied there. Setting `googleServicesFile` in
+`app.json` alone is not enough — run `npx expo prebuild --platform android --clean`
+so the plugin and the file land in `android/`. That command also drops
+`android/local.properties`, which is gitignored; recreate it with your `sdk.dir`
+afterwards or local Gradle builds fail with "SDK location not found".
 
 ## Testing Push Notifications
 

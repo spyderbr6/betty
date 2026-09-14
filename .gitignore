@@ -59,3 +59,13 @@ test-results/
 playwright-report/
 blob-report/
 .playwright/
+
+# Firebase service account keys (FCM V1 push credentials).
+# These are PRIVATE — upload to EAS with `eas credentials`, never commit.
+# google-services.json is deliberately NOT ignored: it holds public
+# identifiers only, and EAS needs it in the repo because android/ is
+# committed (EAS does not prebuild, so the file must already be there).
+*service-account*.json
+*serviceAccount*.json
+*firebase-adminsdk*.json
+sidebet-*-*.json
