@@ -19,6 +19,10 @@ export const profile = (over: Record<string, unknown> = {}) => ({
   email: TEST_USER.email,
   displayName: TEST_USER.displayName,
   role: 'USER',
+  // Without this the app treats the account as new and puts a 3-step onboarding
+  // dialog over everything, so any assertion about feed content fails with the
+  // screen technically mounted but the content never rendered.
+  onboardingCompleted: true,
   balance: 250,
   trustScore: 100,
   totalBets: 0,
@@ -106,5 +110,21 @@ export const baseHandlers = (
   notificationsByUser: list(),
   listEventCheckIns: list(),
   activeEventsByTime: list(),
+  // Indexed replacements for the old filtered Scans. Both names are answered:
+  // the list* forms are what a regressed call site would reach for, so leaving
+  // them mapped keeps the unhandled-operation assertion meaningful rather than
+  // turning a regression into a silent empty screen.
+  friendshipsByUser1: list(),
+  friendshipsByUser2: list(),
+  betInvitationsByToUser: list(),
+  squaresInvitationsByToUser: list(),
+  purchasesByBuyer: list(),
+  purchasesBySquaresGame: list(),
+  checkInsByUser: list(),
+  checkInsByEvent: list(),
+  participantsByBet: list(),
+  participantsByUser: list(),
+  betsByCreator: list(),
+  squaresGamesByCreator: list(),
   ...over,
 });
