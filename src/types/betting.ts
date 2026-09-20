@@ -20,6 +20,8 @@ export interface User {
 }
 
 export interface Bet {
+  /** Event this bet is attached to, inferred from the creator's check-in. */
+  eventId?: string;
   id: string;
   title: string;
   description: string;

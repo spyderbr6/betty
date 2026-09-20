@@ -25,6 +25,23 @@ const openCreateTab = async (page: Page) => {
   await expect(page.getByTestId('screen-create-bet')).toBeVisible({ timeout: 15_000 });
 };
 
+
+/**
+ * Replace a numeric field value.
+ *
+ * fill() alone is unreliable on these inputs. They are controlled React Native
+ * Web TextInputs: fill() clears the DOM value, but React re-renders from state
+ * before the input event is handled, so the typed text can land after the
+ * existing value - filling 50 over the default 1 produced 150. Selecting the
+ * existing content first makes the replacement explicit.
+ */
+const replaceValue = async (page: Page, testId: string, value: string) => {
+  const field = page.getByTestId(testId);
+  await field.click();
+  await field.press('ControlOrMeta+a');
+  await field.fill(value);
+};
+
 const submit = (page: Page) => page.getByTestId('create-submit').dispatchEvent('click');
 
 const fillBasics = async (page: Page) => {
@@ -69,7 +86,7 @@ test('rejects a zero bet amount', async ({ page }) => {
   await openCreateTab(page);
 
   await fillBasics(page);
-  await page.getByTestId('create-amount').fill('0');
+  await replaceValue(page, 'create-amount', '0');
   await page.getByTestId('create-side-a').dispatchEvent('click');
   await submit(page);
 
@@ -82,7 +99,7 @@ test('rejects a zero deadline', async ({ page }) => {
   await openCreateTab(page);
 
   await fillBasics(page);
-  await page.getByTestId('create-deadline').fill('0');
+  await replaceValue(page, 'create-deadline', '0');
   await page.getByTestId('create-side-a').dispatchEvent('click');
   await submit(page);
 
@@ -95,7 +112,7 @@ test('blocks creation when the balance will not cover the stake', async ({ page 
   await openCreateTab(page);
 
   await fillBasics(page);
-  await page.getByTestId('create-amount').fill('50');
+  await replaceValue(page, 'create-amount', '50');
   await page.getByTestId('create-side-a').dispatchEvent('click');
   await submit(page);
 

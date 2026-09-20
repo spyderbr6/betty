@@ -43,7 +43,10 @@ const openLiveTab = async (page: Page) => {
 const withOpenBet = (over: Record<string, unknown> = {}, me: Record<string, unknown> = {}) =>
   baseHandlers(
     {
-      listFriendships: friendships,
+      // Indexed query; the friendships Scan is gone. The handler keys off which
+      // side the filter asked about, so the user does not become their own friend.
+      friendshipsByUser1: () => ({ items: [friendship], nextToken: null }),
+      friendshipsByUser2: () => ({ items: [], nextToken: null }),
       betsByStatus: (variables) => ({
         items: variables.status === 'ACTIVE' ? [joinableBet(over)] : [],
         nextToken: null,

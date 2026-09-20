@@ -15,7 +15,7 @@ import { signInAs } from './fixtures/session';
 
 const withInvitation = (over: Record<string, (v: Record<string, unknown>) => unknown> = {}) =>
   baseHandlers({
-    listBetInvitations: list([betInvitation()]),
+    betInvitationsByToUser: list([betInvitation()]),
     getBet: (variables) => (variables.id === 'bet-open' ? joinableBet() : null),
     updateBetInvitation: (variables) => ({ ...variables, status: 'DECLINED' }),
     createNotification: (variables) => ({ id: 'notification-1', ...variables }),

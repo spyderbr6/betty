@@ -55,69 +55,46 @@ export const EventCheckInProvider: React.FC<EventCheckInProviderProps> = ({ chil
     }
   }, [user?.userId]);
 
-  // Real-time subscription to EventCheckIn changes
+  // Real-time subscription to EventCheckIn changes.
+  //
+  // Filtered onCreate/onUpdate rather than observeQuery: observeQuery issues an
+  // initial listEventCheckIns, which is a filtered Scan — it applies its limit to
+  // rows examined rather than rows returned, so it goes quietly incomplete as the
+  // table grows. It also duplicated work, because the mount effect above already
+  // loads the current check-in through the indexed checkInsByUser query.
+  //
+  // Both subscriptions carry a userId filter so AppSync does not fan every
+  // check-in on the platform out to every connected device (assessment F7).
   useEffect(() => {
     if (!user?.userId) return;
 
-    console.log('[EventCheckIn] Setting up real-time subscription for user:', user.userId);
+    console.log('[EventCheckIn] Subscribing to check-in changes for user:', user.userId);
 
-    const subscription = client.models.EventCheckIn.observeQuery({
-      filter: {
-        userId: { eq: user.userId }
-      }
-    }).subscribe({
-      next: async ({ items }) => {
-        console.log('[EventCheckIn] Real-time update received:', items.length, 'check-ins');
+    const filter = { userId: { eq: user.userId } };
 
-        // Find active check-in
-        const activeCheckIn = items.find(checkIn => checkIn.isActive);
+    // Re-read through the indexed path rather than trusting the event payload:
+    // a check-in change can flip which row is active, and the query already
+    // resolves that plus the LiveEvent join in one place.
+    const onChange = () => {
+      fetchCheckedInEvent().catch((error) =>
+        console.error('[EventCheckIn] Error refreshing after change:', error)
+      );
+    };
 
-        if (activeCheckIn && activeCheckIn.eventId) {
-          // Fetch the full event details
-          const { data: event } = await client.models.LiveEvent.get({ id: activeCheckIn.eventId });
-          if (event) {
-            console.log('[EventCheckIn] User is checked into:', event.homeTeam, 'vs', event.awayTeam);
-            setCheckedInEvent({
-              id: event.id,
-              externalId: event.externalId,
-              sport: event.sport || 'OTHER',
-              league: event.league || '',
-              homeTeam: event.homeTeam,
-              awayTeam: event.awayTeam,
-              homeTeamCode: event.homeTeamCode || undefined,
-              awayTeamCode: event.awayTeamCode || undefined,
-              venue: event.venue || undefined,
-              city: event.city || undefined,
-              country: event.country || undefined,
-              homeScore: event.homeScore || 0,
-              awayScore: event.awayScore || 0,
-              status: event.status || 'UPCOMING',
-              quarter: event.quarter || undefined,
-              timeLeft: event.timeLeft || undefined,
-              scheduledTime: event.scheduledTime,
-              startTime: event.startTime || undefined,
-              endTime: event.endTime || undefined,
-              season: event.season || undefined,
-              round: event.round || undefined,
-              checkInCount: event.checkInCount || 0,
-              betCount: event.betCount || 0,
-              createdAt: event.createdAt,
-              updatedAt: event.updatedAt
-            });
-          }
-        } else {
-          console.log('[EventCheckIn] User has no active check-in');
-          setCheckedInEvent(null);
-        }
-      },
-      error: (error) => {
-        console.error('[EventCheckIn] Subscription error:', error);
-      }
-    });
+    const subscriptions = [
+      client.models.EventCheckIn.onCreate({ filter }).subscribe({
+        next: onChange,
+        error: (error: unknown) => console.error('[EventCheckIn] onCreate error:', error),
+      }),
+      client.models.EventCheckIn.onUpdate({ filter }).subscribe({
+        next: onChange,
+        error: (error: unknown) => console.error('[EventCheckIn] onUpdate error:', error),
+      }),
+    ];
 
     return () => {
-      console.log('[EventCheckIn] Cleaning up subscription');
-      subscription.unsubscribe();
+      console.log('[EventCheckIn] Cleaning up subscriptions');
+      subscriptions.forEach((s) => s.unsubscribe());
     };
   }, [user?.userId]);
 

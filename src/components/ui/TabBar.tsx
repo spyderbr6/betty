@@ -35,92 +35,84 @@ export const TabBar: React.FC<BottomTabBarProps> = ({
     friendRequests: 0,
   });
 
-  // Fetch real counts for badges (including squares games)
+  // Badge counts.
+  //
+  // This used to Scan every bet and squares game on the platform, then issue one
+  // more Scan per bet to find its participants — an N+1 whose cost grew with
+  // total bets rather than with this user's bets. It then re-ran the whole
+  // cascade from five *unfiltered* observeQuery subscriptions, so any write by
+  // any user anywhere re-scanned the tables on every connected client.
+  //
+  // Now: indexed status queries, participation read from the denormalized
+  // Bet.participantUserIds (which exists precisely to avoid the participant
+  // lookup), and subscriptions filtered to this user.
   useEffect(() => {
-    const fetchTabCounts = async () => {
-      if (!user?.userId) return;
+    if (!user?.userId) return;
+    const userId = user.userId;
 
+    const fetchTabCounts = async () => {
       try {
-        // Fetch user's active bets, squares games, and friend requests in parallel
         const [
-          { data: allBets },
-          { data: allSquaresGames },
+          activeBets,
+          liveBets,
+          pendingBets,
+          activeGames,
+          lockedGames,
+          liveGames,
           { data: userPurchases },
-          { data: pendingFriendRequests }
+          { data: pendingFriendRequests },
         ] = await Promise.all([
-          client.models.Bet.list({
-            filter: {
-              or: [
-                { status: { eq: 'ACTIVE' } },
-                { status: { eq: 'LIVE' } },
-                { status: { eq: 'PENDING_RESOLUTION' } }
-              ]
-            }
-          }),
-          client.models.SquaresGame.list({
-            filter: {
-              or: [
-                { status: { eq: 'ACTIVE' } },
-                { status: { eq: 'LOCKED' } },
-                { status: { eq: 'LIVE' } }
-              ]
-            }
-          }),
-          client.models.SquaresPurchase.list({
-            filter: { userId: { eq: user.userId } }
-          }),
+          client.models.Bet.betsByStatus({ status: 'ACTIVE' as any }, { limit: 200 }),
+          client.models.Bet.betsByStatus({ status: 'LIVE' as any }, { limit: 200 }),
+          client.models.Bet.betsByStatus({ status: 'PENDING_RESOLUTION' as any }, { limit: 200 }),
+          client.models.SquaresGame.squaresGamesByStatus({ status: 'ACTIVE' as any }, { limit: 200 }),
+          client.models.SquaresGame.squaresGamesByStatus({ status: 'LOCKED' as any }, { limit: 200 }),
+          client.models.SquaresGame.squaresGamesByStatus({ status: 'LIVE' as any }, { limit: 200 }),
+          client.models.SquaresPurchase.purchasesByBuyer({ userId }),
+          // FriendRequest has no GSI on toUserId yet, so this one is still a
+          // filtered Scan. It is bounded by pending requests for one user.
           client.models.FriendRequest.list({
-            filter: {
-              and: [
-                { toUserId: { eq: user.userId } },
-                { status: { eq: 'PENDING' } }
-              ]
-            }
-          })
+            filter: { and: [{ toUserId: { eq: userId } }, { status: { eq: 'PENDING' } }] },
+          }),
         ]);
 
-        // Get participants for filtering bets
-        const betsWithParticipants = await Promise.all(
-          (allBets || []).map(async (bet) => {
-            const { data: participants } = await client.models.Participant.list({
-              filter: { betId: { eq: bet.id! } }
-            });
-            return { bet, participants: participants || [] };
-          })
-        );
+        const allBets = [
+          ...(activeBets.data || []),
+          ...(liveBets.data || []),
+          ...(pendingBets.data || []),
+        ];
+        const allSquaresGames = [
+          ...(activeGames.data || []),
+          ...(lockedGames.data || []),
+          ...(liveGames.data || []),
+        ];
 
-        // Count user's bets (creator or participant) - exclude PENDING_RESOLUTION
-        const myBetsCount = betsWithParticipants.filter(({ bet, participants }) => {
-          const isCreator = bet.creatorId === user.userId;
-          const isParticipant = participants.some(p => p.userId === user.userId);
-          const isActiveBet = bet.status === 'ACTIVE' || bet.status === 'LIVE';
-          return (isCreator || isParticipant) && isActiveBet;
-        }).length;
+        // Denormalised on the Bet record — no per-bet participant query.
+        const joined = (bet: any) => (bet.participantUserIds || []).includes(userId);
+        const created = (bet: any) => bet.creatorId === userId;
+        const hasParticipants = (bet: any) => (bet.participantUserIds || []).length > 0;
 
-        // Count user's squares games (creator or has purchases)
-        const purchasedGameIds = new Set(
-          (userPurchases || []).map(p => p.squaresGameId).filter(Boolean)
-        );
-        const mySquaresCount = (allSquaresGames || []).filter(game =>
-          game.creatorId === user.userId || purchasedGameIds.has(game.id)
+        const myBetsCount = allBets.filter(
+          (bet) => (created(bet) || joined(bet)) && (bet.status === 'ACTIVE' || bet.status === 'LIVE')
         ).length;
 
-        // Count joinable bets (not creator, not participant)
-        const joinableBetsCount = betsWithParticipants.filter(({ bet, participants }) => {
-          const isCreator = bet.creatorId === user.userId;
-          const isParticipant = participants.some(p => p.userId === user.userId);
-          return !isCreator && !isParticipant && bet.status === 'ACTIVE';
-        }).length;
+        const purchasedGameIds = new Set(
+          (userPurchases || []).map((purchase: any) => purchase.squaresGameId).filter(Boolean)
+        );
+        const mySquaresCount = allSquaresGames.filter(
+          (game: any) => game.creatorId === userId || purchasedGameIds.has(game.id)
+        ).length;
 
-        // Count pending resolutions (user is creator)
-        const pendingResolutionsCount = betsWithParticipants.filter(({ bet, participants }) => {
-          const isCreator = bet.creatorId === user.userId;
-          const hasParticipants = participants.length > 0;
-          return isCreator && hasParticipants && bet.status === 'PENDING_RESOLUTION';
-        }).length;
+        const joinableBetsCount = allBets.filter(
+          (bet) => !created(bet) && !joined(bet) && bet.status === 'ACTIVE'
+        ).length;
+
+        const pendingResolutionsCount = allBets.filter(
+          (bet) => created(bet) && hasParticipants(bet) && bet.status === 'PENDING_RESOLUTION'
+        ).length;
 
         setTabCounts({
-          myBets: myBetsCount + mySquaresCount, // Include both bets and squares
+          myBets: myBetsCount + mySquaresCount,
           joinableBets: joinableBetsCount,
           pendingResolutions: pendingResolutionsCount,
           friendRequests: pendingFriendRequests?.length || 0,
@@ -132,60 +124,50 @@ export const TabBar: React.FC<BottomTabBarProps> = ({
 
     fetchTabCounts();
 
-    // Set up subscriptions for real-time updates
-    const betSubscription = client.models.Bet.observeQuery().subscribe({
-      next: () => {
+    // Coalesce bursts: a single join writes a Participant, updates the Bet and
+    // may settle a squares purchase, which would otherwise be three refetches.
+    let pending: ReturnType<typeof setTimeout> | null = null;
+    const refresh = () => {
+      if (pending) clearTimeout(pending);
+      pending = setTimeout(() => {
+        pending = null;
         fetchTabCounts();
-      },
-      error: (error) => {
-        console.error('Tab bet subscription error:', error);
-      }
-    });
+      }, 500);
+    };
+    const onError = (label: string) => (error: unknown) =>
+      console.error(`Tab ${label} subscription error:`, error);
 
-    const participantSubscription = client.models.Participant.observeQuery().subscribe({
-      next: () => {
-        fetchTabCounts();
-      },
-      error: (error) => {
-        console.error('Tab participant subscription error:', error);
-      }
-    });
-
-    const squaresGameSubscription = client.models.SquaresGame.observeQuery().subscribe({
-      next: () => {
-        fetchTabCounts();
-      },
-      error: (error) => {
-        console.error('Tab squares game subscription error:', error);
-      }
-    });
-
-    const squaresPurchaseSubscription = client.models.SquaresPurchase.observeQuery().subscribe({
-      next: () => {
-        fetchTabCounts();
-      },
-      error: (error) => {
-        console.error('Tab squares purchase subscription error:', error);
-      }
-    });
-
-    const friendRequestSubscription = client.models.FriendRequest.observeQuery().subscribe({
-      next: () => {
-        fetchTabCounts();
-      },
-      error: (error) => {
-        console.error('Tab friend request subscription error:', error);
-      }
-    });
+    // Filtered to this user. The joinable count can lag a stranger's new bet
+    // until the next mount or refresh, which is acceptable for a badge and is
+    // the trade the architecture assessment recommends (F7).
+    const subscriptions = [
+      client.models.Bet.onCreate({ filter: { creatorId: { eq: userId } } }).subscribe({
+        next: refresh,
+        error: onError('bet create'),
+      }),
+      client.models.Bet.onUpdate({ filter: { creatorId: { eq: userId } } }).subscribe({
+        next: refresh,
+        error: onError('bet update'),
+      }),
+      client.models.Participant.onCreate({ filter: { userId: { eq: userId } } }).subscribe({
+        next: refresh,
+        error: onError('participant'),
+      }),
+      client.models.SquaresPurchase.onCreate({ filter: { userId: { eq: userId } } }).subscribe({
+        next: refresh,
+        error: onError('squares purchase'),
+      }),
+      client.models.FriendRequest.onCreate({ filter: { toUserId: { eq: userId } } }).subscribe({
+        next: refresh,
+        error: onError('friend request'),
+      }),
+    ];
 
     return () => {
-      betSubscription.unsubscribe();
-      participantSubscription.unsubscribe();
-      squaresGameSubscription.unsubscribe();
-      squaresPurchaseSubscription.unsubscribe();
-      friendRequestSubscription.unsubscribe();
+      if (pending) clearTimeout(pending);
+      subscriptions.forEach((s) => s.unsubscribe());
     };
-  }, [user]);
+  }, [user?.userId]);
 
   const getTabIcon = (routeName: string, focused: boolean) => {
     let iconName: keyof typeof Ionicons.glyphMap;
