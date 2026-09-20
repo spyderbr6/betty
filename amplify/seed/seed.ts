@@ -20,7 +20,11 @@ import {
   CloudFormationClient,
   ListStackResourcesCommand,
 } from '@aws-sdk/client-cloudformation';
-import { BatchWriteCommand, DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import {
+  BatchWriteCommand,
+  DynamoDBDocumentClient,
+  type BatchWriteCommandInput,
+} from '@aws-sdk/lib-dynamodb';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -219,10 +223,18 @@ function makeBet(index: number, creatorId: string, creatorName: string) {
   };
 }
 
+/**
+ * The SDK's own request shape. Hand-rolling this as `{ Item: unknown }` is what
+ * broke the Amplify backend build: everything under amplify/ is type-checked
+ * with `strict` on by `amplify/tsconfig.json`, while `npm run typecheck` covers
+ * only src/ and App.tsx and so cannot see it. Run `npm run typecheck:backend`.
+ */
+type WriteRequests = NonNullable<BatchWriteCommandInput['RequestItems']>;
+
 /** BatchWrite in chunks of 25, retrying only what DynamoDB hands back. */
-async function writeAll(table: string, items: Array<Record<string, unknown>>) {
+async function writeAll(table: string, items: Array<Record<string, any>>) {
   for (let start = 0; start < items.length; start += 25) {
-    let request: Record<string, Array<{ PutRequest: { Item: unknown } }>> = {
+    let request: WriteRequests = {
       [table]: items.slice(start, start + 25).map((Item) => ({ PutRequest: { Item } })),
     };
     // BatchWrite can partially succeed; retry only the leftovers, backing off.
@@ -230,7 +242,7 @@ async function writeAll(table: string, items: Array<Record<string, unknown>>) {
       const result = await ddb.send(new BatchWriteCommand({ RequestItems: request }));
       const unprocessed = result.UnprocessedItems ?? {};
       if (!unprocessed[table]?.length) break;
-      request = unprocessed as typeof request;
+      request = unprocessed;
       await new Promise((r) => setTimeout(r, 2 ** attempt * 100));
     }
   }

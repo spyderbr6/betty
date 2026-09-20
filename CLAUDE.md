@@ -7,7 +7,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with th
 - **Development**: `npm start` - Start Expo development server
 - **Android**: `npm run android` - Run on Android device/emulator
 - **iOS**: `npm run ios` - Run on iOS device/simulator
-- **TypeScript**: `npm run typecheck` - Check types
+- **TypeScript**: `npm run typecheck` - Check types (**src/ and App.tsx only**)
+- **Backend types**: `npm run typecheck:backend` - Type-check `amplify/`. Amplify runs this on every deploy and **fails the build** on any error, so run it before pushing anything under `amplify/`.
 - **Linting**: `npm run lint` - Run ESLint
 - **Unit tests**: `npm run test:unit` - Vitest over the Lambda handlers (`amplify/**/__tests__`). `test:unit:watch` for iterating.
 - **E2E tests**: `npm run test:e2e` - Build the web bundle and run the Playwright suite
@@ -990,9 +991,18 @@ The first tests written against `pushLogic` exposed a live bug. Expo returns one
 ticket per message in request order, so ticket `i` belongs to `tokens[i]`. The
 handler filtered tickets to the failures and then indexed the *unfiltered* token
 array with the filtered position — deactivating healthy registrations and leaving
-dead ones active, silently. `npm run typecheck` would never have caught it:
-`tsconfig.json` includes only `src/**` and `App.tsx`, so **no type checking covers
-`amplify/` at all**. These tests are the only automated check on Lambda code.
+dead ones active, silently. `npm run typecheck` would never have caught it: `tsconfig.json` includes only
+`src/**` and `App.tsx`, so **it does not cover `amplify/` at all**. Use
+`npm run typecheck:backend`, which runs `tsc` over `amplify/tsconfig.json`
+(`strict: true`) — the same check Amplify runs on deploy.
+
+This gap has bitten production once: a hand-rolled `{ Item: unknown }` type in
+`amplify/seed/seed.ts` passed `npm run typecheck`, merged, and then failed the
+Amplify backend build — blocking the deploy of everything in that push. Type
+errors under `amplify/` do not surface locally unless you ask for them.
+
+Type checking still proves nothing about behaviour; these tests remain the only
+automated check on Lambda logic.
 
 ## End-to-End Testing (Playwright)
 
