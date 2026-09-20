@@ -179,7 +179,17 @@ export const BetDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
         // ascending by default, so without it `limit` returned the 200 OLDEST
         // bets. The context then re-sorted newest-first in JS, which made the
         // list look right while new bets fell off the end of the window.
-        client.models.Bet.betsByStatus({ status: 'ACTIVE' as any }, { limit: 200, sortDirection: 'DESC' }),
+        // ACTIVE and LIVE together. A bet that went LIVE was never loaded into
+        // allBets, so it vanished from My Bets and every view derived from it
+        // until it resolved. Squares already loaded its LIVE games this way;
+        // bets did not. joinableBets still filters to ACTIVE, so a live bet
+        // becomes visible without becoming joinable.
+        Promise.all([
+          client.models.Bet.betsByStatus({ status: 'ACTIVE' as any }, { limit: 200, sortDirection: 'DESC' }),
+          client.models.Bet.betsByStatus({ status: 'LIVE' as any }, { limit: 200, sortDirection: 'DESC' }),
+        ]).then(([active, live]) => ({
+          data: [...(active.data || []), ...(live.data || [])],
+        })),
         client.models.Bet.betsByStatus({ status: 'PENDING_RESOLUTION' as any }, { limit: 200, sortDirection: 'DESC' }),
         Promise.all([
           client.models.SquaresGame.squaresGamesByStatus({ status: 'ACTIVE' as any }, { limit: 200, sortDirection: 'DESC' }),
