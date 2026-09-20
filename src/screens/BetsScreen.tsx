@@ -49,11 +49,8 @@ export const BetsScreen: React.FC = () => {
     isInitialLoading: isLoading,
     isRefreshing: refreshing,
     refresh,
-    acceptBetInvitation: contextAcceptInvitation,
-    declineBetInvitation: contextDeclineInvitation,
-    declineSquaresInvitation: contextDeclineSquaresInvitation,
   } = useBetData();
-  const [processingInvitations, setProcessingInvitations] = useState<Set<string>>(new Set());
+  const pendingInvitationCount = betInvitations.length + squaresInvitations.length;
 
   // Toast state
   const [showToast, setShowToast] = useState(false);
@@ -62,66 +59,6 @@ export const BetsScreen: React.FC = () => {
   // Invite modal state
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [selectedBetForInvite, setSelectedBetForInvite] = useState<Bet | null>(null);
-
-  // Handle bet invitation acceptance via context
-  const acceptBetInvitation = async (invitation: BetInvitation, selectedSide: string) => {
-    if (!user?.userId || !invitation.bet || !selectedSide) return;
-
-    const betAmount = invitation.bet.betAmount || 0;
-
-    try {
-      setProcessingInvitations(prev => new Set(prev).add(invitation.id));
-
-      const success = await contextAcceptInvitation(invitation, selectedSide);
-
-      if (success) {
-        const betOdds = invitation.bet.odds || { sideAName: 'Side A', sideBName: 'Side B' };
-        const joinedSideName = selectedSide === 'A' ? (betOdds.sideAName || 'Side A') : (betOdds.sideBName || 'Side B');
-        setToastMessage(`Joined "${invitation.bet.title}" on ${joinedSideName}! $${betAmount.toFixed(2)} deducted.`);
-        setShowToast(true);
-        setTimeout(() => setShowToast(false), 3000);
-      }
-    } finally {
-      setProcessingInvitations(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(invitation.id);
-        return newSet;
-      });
-    }
-  };
-
-  // Handle bet invitation decline via context
-  const declineBetInvitation = async (invitation: BetInvitation) => {
-    try {
-      setProcessingInvitations(prev => new Set(prev).add(invitation.id));
-      await contextDeclineInvitation(invitation);
-    } finally {
-      setProcessingInvitations(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(invitation.id);
-        return newSet;
-      });
-    }
-  };
-
-  // Handle squares invitation decline via context
-  const declineSquaresInvitation = async (invitation: SquaresInvitation) => {
-    try {
-      setProcessingInvitations(prev => new Set(prev).add(invitation.id));
-      await contextDeclineSquaresInvitation(invitation);
-    } finally {
-      setProcessingInvitations(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(invitation.id);
-        return newSet;
-      });
-    }
-  };
-
-  // Handle refresh via context
-  const onRefresh = async () => {
-    await refresh();
-  };
 
   const handleSquaresGamePress = (gameId: string) => {
     console.log('[BetsScreen] Navigating to squares game:', gameId);
@@ -212,91 +149,23 @@ export const BetsScreen: React.FC = () => {
           />
         }
       >
-        {/* Bet Invitations Section */}
-        {betInvitations.length > 0 && (
-          <>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>PENDING INVITATIONS</Text>
-              <View style={styles.invitationBadge}>
-                <Text style={styles.invitationBadgeText}>{betInvitations.length}</Text>
-              </View>
-            </View>
-
-            {betInvitations.map((invitation) => (
-              <BetInvitationCard
-                key={invitation.id}
-                invitation={invitation}
-                onAccept={(side) => acceptBetInvitation(invitation, side)}
-                onDecline={() => declineBetInvitation(invitation)}
-                isProcessing={processingInvitations.has(invitation.id)}
-              />
-            ))}
-          </>
-        )}
-
-        {/* Squares Invitations Section */}
-        {squaresInvitations.length > 0 && (
-          <>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>SQUARES INVITATIONS</Text>
-              <View style={styles.invitationBadge}>
-                <Text style={styles.invitationBadgeText}>{squaresInvitations.length}</Text>
-              </View>
-            </View>
-
-            {squaresInvitations.map((invitation: SquaresInvitation) => (
-              <View key={invitation.id} style={styles.squaresInvitationCard}>
-                <TouchableOpacity
-                  style={styles.squaresInvitationTappable}
-                  onPress={() => handleSquaresGamePress(invitation.squaresGameId)}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.squaresInvitationContent}>
-                    <View style={styles.squaresInvitationHeader}>
-                      <Ionicons name="grid-outline" size={20} color={colors.primary} />
-                      <Text style={styles.squaresInvitationTitle} numberOfLines={1}>
-                        {invitation.squaresGame?.title || 'Squares Game'}
-                      </Text>
-                    </View>
-                    <Text style={styles.squaresInvitationFrom}>
-                      From {invitation.fromUser?.displayName || invitation.fromUser?.username || 'Unknown'}
-                    </Text>
-                    {invitation.squaresGame?.pricePerSquare != null && (
-                      <Text style={styles.squaresInvitationPrice}>
-                        ${invitation.squaresGame.pricePerSquare} per square
-                      </Text>
-                    )}
-                  </View>
-                  <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
-                </TouchableOpacity>
-                <View style={styles.squaresInvitationActions}>
-                  <TouchableOpacity
-                    style={styles.squaresDeclineButton}
-                    onPress={() => declineSquaresInvitation(invitation)}
-                    disabled={processingInvitations.has(invitation.id)}
-                    activeOpacity={0.7}
-                  >
-                    {processingInvitations.has(invitation.id) ? (
-                      <ActivityIndicator size="small" color={colors.error} />
-                    ) : (
-                      <>
-                        <Ionicons name="close" size={14} color={colors.error} />
-                        <Text style={styles.squaresDeclineText}>Decline</Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.squaresViewButton}
-                    onPress={() => handleSquaresGamePress(invitation.squaresGameId)}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons name="eye-outline" size={14} color={colors.background} />
-                    <Text style={styles.squaresViewText}>View & Join</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ))}
-          </>
+        {/* Invitations live on the Join tab now: that is where a bet is
+            actually accepted, so the badge announcing one and the screen that
+            clears it are the same place. This only points there. */}
+        {pendingInvitationCount > 0 && (
+          <TouchableOpacity
+            style={styles.pendingPointer}
+            onPress={() => navigation.getParent()?.navigate('Live')}
+            activeOpacity={0.8}
+            testID="bets-pending-pointer"
+          >
+            <Ionicons name="mail-unread-outline" size={18} color={colors.primary} />
+            <Text style={styles.pendingPointerText}>
+              {pendingInvitationCount} pending invitation
+              {pendingInvitationCount === 1 ? '' : 's'} on the Join tab
+            </Text>
+            <Ionicons name="chevron-forward" size={18} color={colors.primary} />
+          </TouchableOpacity>
         )}
 
         {/* Loading State */}
@@ -424,215 +293,7 @@ export const BetsScreen: React.FC = () => {
   );
 };
 
-// Bet Invitation Card Component
-interface BetInvitationCardProps {
-  invitation: BetInvitation;
-  onAccept: (side: string) => void;
-  onDecline: () => void;
-  isProcessing: boolean;
-}
 
-const BetInvitationCard: React.FC<BetInvitationCardProps> = ({
-  invitation,
-  onAccept,
-  onDecline,
-  isProcessing,
-}) => {
-  const [selectedSide, setSelectedSide] = React.useState<string | null>(null);
-
-  if (!invitation.bet) return null;
-
-  const parseBetOdds = (odds: any) => {
-    try {
-      const parsedOdds = typeof odds === 'string' ? JSON.parse(odds) : odds;
-      return {
-        sideAName: parsedOdds?.sideAName || 'Side A',
-        sideBName: parsedOdds?.sideBName || 'Side B',
-      };
-    } catch {
-      return {
-        sideAName: 'Side A',
-        sideBName: 'Side B',
-      };
-    }
-  };
-
-  const betOdds = parseBetOdds(invitation.bet.odds);
-  const hasSpecificSide = invitation.invitedSide && invitation.invitedSide.trim() !== '';
-  const invitedSideName = hasSpecificSide
-    ? (invitation.invitedSide === 'A' ? betOdds.sideAName : betOdds.sideBName)
-    : null;
-  const timeUntilExpiry = new Date(invitation.expiresAt).getTime() - new Date().getTime();
-  const hoursLeft = Math.max(0, Math.floor(timeUntilExpiry / (1000 * 60 * 60)));
-
-  // Use denormalized counts from bet record
-  const sideACount = invitation.bet.sideACount || 0;
-  const sideBCount = invitation.bet.sideBCount || 0;
-
-  return (
-    <View testID={`invitation-card-${invitation.id}`} style={[styles.betCard, styles.invitationCard]}>
-      {/* Invitation Header */}
-      <View style={styles.invitationHeader}>
-        <View style={styles.invitationFromUser}>
-          <View style={styles.userAvatarSmall}>
-            <Text style={styles.userAvatarTextSmall}>
-              {(invitation.fromUser?.displayName || invitation.fromUser?.email?.split('@')[0] || '?')[0].toUpperCase()}
-            </Text>
-          </View>
-          <Text style={styles.invitationFromText}>
-            {invitation.fromUser?.displayName || invitation.fromUser?.email?.split('@')[0]} invited you
-          </Text>
-        </View>
-        <View style={styles.expiryContainer}>
-          <Ionicons name="time-outline" size={12} color={colors.warning} />
-          <Text style={styles.expiryText}>{hoursLeft}h left</Text>
-        </View>
-      </View>
-
-      {/* Bet Details */}
-      <View style={styles.invitationBetDetails}>
-        <View style={styles.invitationTitleRow}>
-          <Text style={styles.invitationBetTitle}>{invitation.bet.title}</Text>
-          <Text style={styles.invitationAmount}>${invitation.bet.betAmount || 0}</Text>
-        </View>
-        <Text style={styles.invitationBetDescription} numberOfLines={2}>
-          {invitation.bet.description}
-        </Text>
-
-        {hasSpecificSide && (
-          <View style={styles.invitationSideInfo}>
-            <Text style={styles.invitationSideLabel}>Your side:</Text>
-            <Text style={styles.invitationSideName}>{invitedSideName}</Text>
-          </View>
-        )}
-
-        {/* Side Selection - only show if no specific side is invited */}
-        {!hasSpecificSide && (
-          <View style={styles.sideSelectionContainer}>
-            <Text style={styles.sideSelectionLabel}>Choose your side:</Text>
-            <View style={styles.sideOptions}>
-              <TouchableOpacity
-                style={[
-                  styles.sideOption,
-                  selectedSide === 'A' && styles.sideOptionSelected
-                ]}
-                onPress={() => setSelectedSide('A')}
-                activeOpacity={0.7}
-              >
-                <View style={[
-                  styles.sideOptionIndicator,
-                  selectedSide === 'A' && styles.sideOptionIndicatorSelected
-                ]} />
-                <View style={styles.sideOptionContent}>
-                  <Text style={[
-                    styles.sideOptionText,
-                    selectedSide === 'A' && styles.sideOptionTextSelected
-                  ]}>
-                    {betOdds.sideAName}
-                  </Text>
-                  <View style={styles.sideOptionParticipants}>
-                    <Ionicons name="people-outline" size={11} color={selectedSide === 'A' ? colors.background : colors.textMuted} />
-                    <Text style={[
-                      styles.sideOptionParticipantCount,
-                      selectedSide === 'A' && styles.sideOptionParticipantCountSelected
-                    ]}>
-                      {sideACount}
-                    </Text>
-                  </View>
-                </View>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.sideOption,
-                  styles.sideOptionLast,
-                  selectedSide === 'B' && styles.sideOptionSelected
-                ]}
-                onPress={() => setSelectedSide('B')}
-                activeOpacity={0.7}
-              >
-                <View style={[
-                  styles.sideOptionIndicator,
-                  selectedSide === 'B' && styles.sideOptionIndicatorSelected
-                ]} />
-                <View style={styles.sideOptionContent}>
-                  <Text style={[
-                    styles.sideOptionText,
-                    selectedSide === 'B' && styles.sideOptionTextSelected
-                  ]}>
-                    {betOdds.sideBName}
-                  </Text>
-                  <View style={styles.sideOptionParticipants}>
-                    <Ionicons name="people-outline" size={11} color={selectedSide === 'B' ? colors.background : colors.textMuted} />
-                    <Text style={[
-                      styles.sideOptionParticipantCount,
-                      selectedSide === 'B' && styles.sideOptionParticipantCountSelected
-                    ]}>
-                      {sideBCount}
-                    </Text>
-                  </View>
-                </View>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
-      </View>
-
-      {/* Action Buttons */}
-      <View style={styles.invitationActions}>
-        <TouchableOpacity
-          testID="invitation-decline"
-          style={[styles.invitationButton, styles.declineButton]}
-          onPress={onDecline}
-          disabled={isProcessing}
-          activeOpacity={0.7}
-        >
-          {isProcessing ? (
-            <ActivityIndicator size="small" color={colors.error} />
-          ) : (
-            <>
-              <Ionicons name="close" size={16} color={colors.error} />
-              <Text style={[styles.invitationButtonText, styles.declineButtonText]}>
-                Decline
-              </Text>
-            </>
-          )}
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          testID="invitation-accept"
-          style={[
-            styles.invitationButton,
-            styles.acceptButton,
-            (!hasSpecificSide && !selectedSide) && styles.acceptButtonDisabled
-          ]}
-          onPress={() => onAccept(hasSpecificSide ? invitation.invitedSide : selectedSide!)}
-          disabled={isProcessing || (!hasSpecificSide && !selectedSide)}
-          activeOpacity={0.7}
-        >
-          {isProcessing ? (
-            <ActivityIndicator size="small" color={colors.background} />
-          ) : (
-            <>
-              <Ionicons
-                name="checkmark"
-                size={16}
-                color={(!hasSpecificSide && !selectedSide) ? colors.textMuted : colors.background}
-              />
-              <Text style={[
-                styles.invitationButtonText,
-                styles.acceptButtonText,
-                (!hasSpecificSide && !selectedSide) && styles.acceptButtonTextDisabled
-              ]}>
-                Accept & Join
-              </Text>
-            </>
-          )}
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-};
 
 const styles = StyleSheet.create({
   container: {
@@ -644,6 +305,23 @@ const styles = StyleSheet.create({
 
 
   // Section Header (for invitations)
+  pendingPointer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.sm,
+    padding: spacing.md,
+    borderRadius: spacing.radius.md,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.primary,
+  },
+  pendingPointerText: {
+    ...textStyles.bodySmall,
+    color: colors.textPrimary,
+    flex: 1,
+    marginLeft: spacing.sm,
+  },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -781,109 +459,15 @@ const styles = StyleSheet.create({
   },
 
   // Bet Card Base
-  betCard: {
-    backgroundColor: colors.surface,
-    borderRadius: spacing.radius.md,
-    marginHorizontal: spacing.md,
-    marginBottom: spacing.sm,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
 
   // Invitation Card Styles
-  invitationCard: {
-    borderColor: colors.primary,
-    borderWidth: 2,
-    backgroundColor: colors.primary + '08',
-  },
-  invitationHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: spacing.sm,
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.xs,
-  },
-  invitationFromUser: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  userAvatarSmall: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: spacing.xs,
-  },
-  userAvatarTextSmall: {
-    ...textStyles.caption,
-    color: colors.background,
-    fontSize: 10,
-    fontWeight: typography.fontWeight.bold,
-  },
-  invitationFromText: {
-    ...textStyles.caption,
-    color: colors.textSecondary,
-    fontWeight: typography.fontWeight.medium,
-  },
-  expiryContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  expiryText: {
-    ...textStyles.caption,
-    color: colors.warning,
-    fontSize: 11,
-    marginLeft: spacing.xs / 2,
-    fontWeight: typography.fontWeight.medium,
-  },
 
   // Invitation Bet Details
-  invitationBetDetails: {
-    paddingHorizontal: spacing.sm,
-    paddingBottom: spacing.sm,
-  },
-  invitationTitleRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: spacing.xs / 2,
-  },
-  invitationBetTitle: {
-    ...textStyles.h4,
-    color: colors.textPrimary,
-    fontWeight: typography.fontWeight.semibold,
-    flex: 1,
-    marginRight: spacing.sm,
-  },
-  invitationBetDescription: {
-    ...textStyles.body,
-    color: colors.textSecondary,
-    fontSize: typography.fontSize.sm,
-    marginBottom: spacing.sm,
-    lineHeight: 18,
-  },
   invitationBetInfo: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: spacing.xs,
-  },
-  invitationSideInfo: {
-    flex: 1,
-  },
-  invitationSideLabel: {
-    ...textStyles.caption,
-    color: colors.textMuted,
-    fontSize: 11,
-  },
-  invitationSideName: {
-    ...textStyles.button,
-    color: colors.primary,
-    fontWeight: typography.fontWeight.semibold,
   },
   invitationAmountInfo: {
     alignItems: 'flex-end',
@@ -892,12 +476,6 @@ const styles = StyleSheet.create({
     ...textStyles.caption,
     color: colors.textMuted,
     fontSize: 11,
-  },
-  invitationAmount: {
-    ...textStyles.pot,
-    color: colors.warning,
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.bold,
   },
   invitationMessage: {
     backgroundColor: colors.surface,
@@ -914,126 +492,8 @@ const styles = StyleSheet.create({
   },
 
   // Invitation Actions
-  invitationActions: {
-    flexDirection: 'row',
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-  },
-  invitationButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: spacing.sm,
-  },
-  declineButton: {
-    backgroundColor: colors.surface,
-    borderBottomLeftRadius: spacing.radius.md,
-    borderRightWidth: 1,
-    borderRightColor: colors.border,
-  },
-  acceptButton: {
-    backgroundColor: colors.primary,
-    borderBottomRightRadius: spacing.radius.md,
-  },
-  invitationButtonText: {
-    ...textStyles.button,
-    marginLeft: spacing.xs / 2,
-    fontWeight: typography.fontWeight.semibold,
-  },
-  declineButtonText: {
-    color: colors.error,
-  },
-  acceptButtonText: {
-    color: colors.background,
-  },
-  acceptButtonDisabled: {
-    backgroundColor: colors.border,
-    borderColor: colors.border,
-  },
-  acceptButtonTextDisabled: {
-    color: colors.textMuted,
-  },
 
   // Side Selection Styles
-  sideSelectionContainer: {
-    marginTop: spacing.sm,
-    paddingTop: spacing.sm,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-  },
-  sideSelectionLabel: {
-    ...textStyles.caption,
-    color: colors.textSecondary,
-    fontSize: 12,
-    fontWeight: typography.fontWeight.medium,
-    marginBottom: spacing.xs,
-  },
-  sideOptions: {
-    flexDirection: 'row',
-  },
-  sideOption: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.sm,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: spacing.radius.sm,
-    marginRight: spacing.sm,
-  },
-  sideOptionLast: {
-    marginRight: 0,
-  },
-  sideOptionSelected: {
-    backgroundColor: colors.primary + '15',
-    borderColor: colors.primary,
-  },
-  sideOptionIndicator: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    borderWidth: 2,
-    borderColor: colors.border,
-    marginRight: spacing.xs,
-    backgroundColor: colors.background,
-  },
-  sideOptionIndicatorSelected: {
-    borderColor: colors.primary,
-    backgroundColor: colors.primary,
-  },
-  sideOptionContent: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  sideOptionText: {
-    ...textStyles.button,
-    color: colors.textSecondary,
-    fontWeight: typography.fontWeight.medium,
-  },
-  sideOptionTextSelected: {
-    color: colors.primary,
-    fontWeight: typography.fontWeight.semibold,
-  },
-  sideOptionParticipants: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginLeft: spacing.xs,
-  },
-  sideOptionParticipantCount: {
-    ...textStyles.caption,
-    color: colors.textMuted,
-    fontSize: 11,
-    marginLeft: 3,
-  },
-  sideOptionParticipantCountSelected: {
-    color: colors.background,
-    fontWeight: typography.fontWeight.semibold,
-  },
 
   // Toast Banner
   toastBanner: {
