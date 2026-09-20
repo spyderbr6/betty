@@ -78,7 +78,21 @@ const cfn = new CloudFormationClient({ region: REGION });
 const STACK_NAME =
   process.env.SEED_STACK_NAME ?? 'amplify-sidebet-Desktop-sandbox-a3098e7c95';
 
-async function findTable(model: string): Promise<string> {
+let tableCache: Promise<string[]> | null = null;
+
+/**
+ * Walk once and cache. Looking each model up independently meant traversing
+ * the whole nested stack tree once per model, in parallel, which CloudFormation
+ * throttles ("Rate exceeded") before any row is written.
+ */
+function listTables(): Promise<string[]> {
+  // Cache the promise, not the result: the three lookups run concurrently, so
+  // caching only the resolved value still lets all three start their own walk.
+  if (!tableCache) tableCache = walkStack();
+  return tableCache;
+}
+
+async function walkStack(): Promise<string[]> {
   const tables: string[] = [];
 
   // Nested stacks: data resources sit several levels below the root.
@@ -109,7 +123,11 @@ async function findTable(model: string): Promise<string> {
   };
 
   await walk(STACK_NAME, 0);
+  return tables;
+}
 
+async function findTable(model: string): Promise<string> {
+  const tables = await listTables();
   const matches = tables.filter((t) => t.startsWith(`${model}-`));
   if (matches.length !== 1) {
     throw new Error(
@@ -188,7 +206,11 @@ function makeBet(index: number, creatorId: string, creatorName: string) {
     // The creator only. The viewer is deliberately absent, so every seeded bet
     // is joinable — a bet you are already in is filtered out of the feed.
     participantUserIds: [creatorId],
-    isTestBet: true,
+    // Must be false. isTestBet means "exclude from real bet lists" and
+    // BetDataContext drops those rows outright, so seeding them true made the
+    // join feed render empty while the tab badge still counted 20. Seeded rows
+    // stay identifiable by their seed-bet- ids and the tag in description.
+    isTestBet: false,
     // Spread createdAt backwards so ordering is stable and DESC sorting is
     // observable rather than every row sharing one timestamp.
     createdAt: new Date(now - index * 1000).toISOString(),
