@@ -24,7 +24,7 @@ import { Header } from '../components/ui/Header';
 import { BetCard } from '../components/betting/BetCard';
 import { SquaresGameCard } from '../components/betting/SquaresGameCard';
 import { BetInviteModal } from '../components/ui/BetInviteModal';
-import { Bet, BetInvitation, SquaresInvitation } from '../types/betting';
+import { Bet } from '../types/betting';
 import { BetsStackParamList } from '../types/navigation';
 import { useAuth } from '../contexts/AuthContext';
 import { useBetData } from '../contexts/BetDataContext';
@@ -59,6 +59,10 @@ export const BetsScreen: React.FC = () => {
   // Invite modal state
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [selectedBetForInvite, setSelectedBetForInvite] = useState<Bet | null>(null);
+
+  const onRefresh = async () => {
+    await refresh();
+  };
 
   const handleSquaresGamePress = (gameId: string) => {
     console.log('[BetsScreen] Navigating to squares game:', gameId);
