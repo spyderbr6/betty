@@ -6,7 +6,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
-  ScrollView,
+  FlatList,
   Text,
   TextInput,
   StyleSheet,
@@ -25,6 +25,7 @@ import { Bet } from '../types/betting';
 import { useAuth } from '../contexts/AuthContext';
 import { useBetData } from '../contexts/BetDataContext';
 import { useEventCheckIn } from '../hooks/useEventCheckIn';
+import { PendingInvitations } from '../components/betting/PendingInvitations';
 import { QRScannerModal } from '../components/ui/QRScannerModal';
 import { getUpcomingEventsFromCache } from '../services/eventCacheService';
 import type { LiveEventData } from '../services/eventService';
@@ -73,6 +74,9 @@ export const LiveEventsScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearch, setShowSearch] = useState(false);
+  // Off by default: the feed still leads with event items via the atMyEvent
+  // sort, so hiding everything else is a deliberate narrowing, not the norm.
+  const [onlyMyEvent, setOnlyMyEvent] = useState(false);
   // The friends/all and bets/squares toggles are gone. Both were selections
   // between pre-computed arrays rather than queries, which is why every state
   // combination had to be resolved in JSX. One list, one loading state, one
@@ -196,6 +200,51 @@ export const LiveEventsScreen: React.FC = () => {
 
   const atEventCount = feedItems.filter(i => i.atMyEvent).length;
 
+  // The toggle filters the already-built list rather than re-querying: every
+  // item already carries atMyEvent, so this costs nothing. It self-clears when
+  // the viewer is not checked in, so the control can never strand an empty feed.
+  const visibleItems = useMemo(
+    () => (onlyMyEvent && checkedInEvent ? feedItems.filter(i => i.atMyEvent) : feedItems),
+    [feedItems, onlyMyEvent, checkedInEvent]
+  );
+
+  // One row of the feed. FlatList virtualizes these; the screen previously
+  // mapped every item into a ScrollView, so all of them mounted at once and
+  // only BetDataContext's limit:200 kept that bounded.
+  const renderFeedItem = ({ item }: { item: FeedItem }) => (
+              <View
+                key={item.id}
+                style={item.atMyEvent ? styles.feedItemAtEvent : undefined}
+                testID={item.atMyEvent ? `feed-item-at-event-${item.id}` : `feed-item-${item.id}`}
+              >
+                {item.atMyEvent && checkedInEvent && (
+                  <View style={styles.atEventChip} testID={`feed-chip-${item.id}`}>
+                    <Ionicons name="location" size={11} color={colors.background} />
+                    <Text style={styles.atEventChipText}>
+                      {checkedInEvent.awayTeamCode || checkedInEvent.awayTeam} @{' '}
+                      {checkedInEvent.homeTeamCode || checkedInEvent.homeTeam}
+                    </Text>
+                  </View>
+                )}
+                {item.kind === 'bet' ? (
+                  <BetCard
+                    bet={item.bet}
+                    onPress={handleBetPress}
+                    onJoinBet={handleJoinBet}
+                    onInviteFriends={(bet) => {
+                      setSelectedBetForInvite(bet);
+                      setShowInviteModal(true);
+                    }}
+                  />
+                ) : (
+                  <SquaresGameCard
+                    squaresGame={item.game}
+                    onPress={() => handleSquaresGamePress(item.game)}
+                  />
+                )}
+              </View>
+  );
+
   return (
     <SafeAreaView style={styles.container} edges={['top']} testID="screen-live">
       <Header
@@ -204,7 +253,7 @@ export const LiveEventsScreen: React.FC = () => {
         variant="default"
       />
       
-      <ScrollView
+      <FlatList
         style={styles.content}
         contentContainerStyle={{ paddingBottom: spacing.navigation.baseHeight + insets.bottom }}
         showsVerticalScrollIndicator={false}
@@ -216,7 +265,12 @@ export const LiveEventsScreen: React.FC = () => {
             colors={[colors.primary]}
           />
         }
-      >
+        data={isLoading ? [] : visibleItems}
+        keyExtractor={(feedItem) => feedItem.id}
+        renderItem={renderFeedItem}
+        testID="feed-list"
+        ListHeaderComponent={
+          <>
         {/* Header: what this list is, and the event context if there is one */}
         <View style={styles.feedHeader}>
           <View style={styles.toggleWithActionsContainer}>
@@ -252,9 +306,34 @@ export const LiveEventsScreen: React.FC = () => {
           </View>
 
           <Text style={styles.sectionSubtitle} testID="feed-count">
-            {feedItems.length} available to join
+            {visibleItems.length} available to join
           </Text>
+
+          {checkedInEvent && atEventCount > 0 && (
+            <TouchableOpacity
+              style={[styles.eventFilter, onlyMyEvent && styles.eventFilterOn]}
+              onPress={() => setOnlyMyEvent(v => !v)}
+              activeOpacity={0.7}
+              accessibilityRole="switch"
+              accessibilityState={{ checked: onlyMyEvent }}
+              testID="feed-event-filter"
+            >
+              <Ionicons
+                name={onlyMyEvent ? 'checkbox' : 'square-outline'}
+                size={14}
+                color={onlyMyEvent ? colors.background : colors.textSecondary}
+              />
+              <Text style={[styles.eventFilterText, onlyMyEvent && styles.eventFilterTextOn]}>
+                Only this event
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
+
+        {/* Requests waiting on the viewer come before anything on offer. */}
+        <PendingInvitations
+          onSquaresPress={(gameId) => navigation.navigate('SquaresGameDetail', { gameId })}
+        />
 
         {showSearch && (
           <View style={styles.searchContainer}>
@@ -278,12 +357,15 @@ export const LiveEventsScreen: React.FC = () => {
           </View>
         )}
 
-        {isLoading ? (
+          </>
+        }
+        ListEmptyComponent={
+          isLoading ? (
           <View style={styles.loadingContainer} testID="feed-loading">
             <ActivityIndicator size="large" color={colors.primary} />
             <Text style={styles.loadingText}>Loading bets from your friends...</Text>
           </View>
-        ) : feedItems.length === 0 ? (
+          ) : (
           <View style={styles.emptyContainer} testID="feed-empty">
             <Text style={styles.emptyTitle}>
               {query ? 'No Matches' : 'Nothing to Join Yet'}
@@ -294,43 +376,10 @@ export const LiveEventsScreen: React.FC = () => {
                 : "None of your friends have anything open right now. Check back once they've created a bet."}
             </Text>
           </View>
-        ) : (
-          <View testID="feed-list">
-            {feedItems.map((item) => (
-              <View
-                key={item.id}
-                style={item.atMyEvent ? styles.feedItemAtEvent : undefined}
-                testID={item.atMyEvent ? `feed-item-at-event-${item.id}` : `feed-item-${item.id}`}
-              >
-                {item.atMyEvent && checkedInEvent && (
-                  <View style={styles.atEventChip} testID={`feed-chip-${item.id}`}>
-                    <Ionicons name="location" size={11} color={colors.background} />
-                    <Text style={styles.atEventChipText}>
-                      {checkedInEvent.awayTeamCode || checkedInEvent.awayTeam} @{' '}
-                      {checkedInEvent.homeTeamCode || checkedInEvent.homeTeam}
-                    </Text>
-                  </View>
-                )}
-                {item.kind === 'bet' ? (
-                  <BetCard
-                    bet={item.bet}
-                    onPress={handleBetPress}
-                    onJoinBet={handleJoinBet}
-                    onInviteFriends={(bet) => {
-                      setSelectedBetForInvite(bet);
-                      setShowInviteModal(true);
-                    }}
-                  />
-                ) : (
-                  <SquaresGameCard
-                    squaresGame={item.game}
-                    onPress={() => handleSquaresGamePress(item.game)}
-                  />
-                )}
-              </View>
-            ))}
-          </View>
-        )}
+          )
+        }
+        ListFooterComponent={
+          <>
 
         {/* Joinable Bets Stats Summary - Always show overall stats, not filtered */}
         <View style={styles.liveStatsSection}>
@@ -447,7 +496,9 @@ export const LiveEventsScreen: React.FC = () => {
             })}
           </View>
         )}
-      </ScrollView>
+          </>
+        }
+      />
 
       {/* Bet Invite Modal */}
       {selectedBetForInvite && (
@@ -479,6 +530,30 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
+  eventFilter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    marginTop: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: spacing.radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  eventFilterOn: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  eventFilterText: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    marginLeft: spacing.xs,
+  },
+  eventFilterTextOn: {
+    color: colors.background,
+  },
   feedHeader: {
     paddingHorizontal: spacing.md,
     paddingTop: spacing.md,

@@ -3,7 +3,7 @@
  * Professional sportsbook-style bottom navigation
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -17,6 +17,7 @@ import type { Schema } from '../../../amplify/data/resource';
 import { colors, typography, spacing, textStyles, shadows } from '../../styles';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../contexts/AuthContext';
+import { useBetData } from '../../contexts/BetDataContext';
 
 // Initialize GraphQL client
 const client = generateClient<Schema>();
@@ -28,145 +29,60 @@ export const TabBar: React.FC<BottomTabBarProps> = ({
 }) => {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
-  const [tabCounts, setTabCounts] = useState({
-    myBets: 0,
-    joinableBets: 0,
-    pendingResolutions: 0,
-    friendRequests: 0,
-  });
+  // Badge counts come from BetDataContext, which sits directly above this
+  // component in App.tsx and has already loaded every bet, squares game and
+  // invitation this bar needs. TabBar used to re-query all of it: three
+  // betsByStatus, three squaresGamesByStatus and purchasesByBuyer, up to 1200
+  // records on every mount, re-run from its own debounced subscriptions. That
+  // was a duplicate of the context's own load, not an independent source.
+  //
+  // FriendRequest is the one exception. It is not in the context, and it has no
+  // GSI on toUserId, so it stays a bounded filtered Scan for a single user.
+  const { myBets, betInvitations, squaresInvitations } = useBetData();
+  const [friendRequests, setFriendRequests] = useState(0);
 
-  // Badge counts.
-  //
-  // This used to Scan every bet and squares game on the platform, then issue one
-  // more Scan per bet to find its participants — an N+1 whose cost grew with
-  // total bets rather than with this user's bets. It then re-ran the whole
-  // cascade from five *unfiltered* observeQuery subscriptions, so any write by
-  // any user anywhere re-scanned the tables on every connected client.
-  //
-  // Now: indexed status queries, participation read from the denormalized
-  // Bet.participantUserIds (which exists precisely to avoid the participant
-  // lookup), and subscriptions filtered to this user.
+  // What is waiting on the viewer. Badges answer "does this tab need me?", so
+  // platform inventory - how many bets exist to join - is deliberately not
+  // counted: it never reaches zero and so never signals anything.
+  const pendingRequests = betInvitations.length + squaresInvitations.length;
+
+  const pendingResolutions = useMemo(
+    () =>
+      myBets.filter(
+        (bet) =>
+          bet.creatorId === user?.userId &&
+          bet.status === 'PENDING_RESOLUTION' &&
+          (bet.participantUserIds || []).length > 0
+      ).length,
+    [myBets, user?.userId]
+  );
+
   useEffect(() => {
     if (!user?.userId) return;
     const userId = user.userId;
 
-    const fetchTabCounts = async () => {
+    const fetchFriendRequests = async () => {
       try {
-        const [
-          activeBets,
-          liveBets,
-          pendingBets,
-          activeGames,
-          lockedGames,
-          liveGames,
-          { data: userPurchases },
-          { data: pendingFriendRequests },
-        ] = await Promise.all([
-          client.models.Bet.betsByStatus({ status: 'ACTIVE' as any }, { limit: 200 }),
-          client.models.Bet.betsByStatus({ status: 'LIVE' as any }, { limit: 200 }),
-          client.models.Bet.betsByStatus({ status: 'PENDING_RESOLUTION' as any }, { limit: 200 }),
-          client.models.SquaresGame.squaresGamesByStatus({ status: 'ACTIVE' as any }, { limit: 200 }),
-          client.models.SquaresGame.squaresGamesByStatus({ status: 'LOCKED' as any }, { limit: 200 }),
-          client.models.SquaresGame.squaresGamesByStatus({ status: 'LIVE' as any }, { limit: 200 }),
-          client.models.SquaresPurchase.purchasesByBuyer({ userId }),
-          // FriendRequest has no GSI on toUserId yet, so this one is still a
-          // filtered Scan. It is bounded by pending requests for one user.
-          client.models.FriendRequest.list({
-            filter: { and: [{ toUserId: { eq: userId } }, { status: { eq: 'PENDING' } }] },
-          }),
-        ]);
-
-        const allBets = [
-          ...(activeBets.data || []),
-          ...(liveBets.data || []),
-          ...(pendingBets.data || []),
-        ];
-        const allSquaresGames = [
-          ...(activeGames.data || []),
-          ...(lockedGames.data || []),
-          ...(liveGames.data || []),
-        ];
-
-        // Denormalised on the Bet record — no per-bet participant query.
-        const joined = (bet: any) => (bet.participantUserIds || []).includes(userId);
-        const created = (bet: any) => bet.creatorId === userId;
-        const hasParticipants = (bet: any) => (bet.participantUserIds || []).length > 0;
-
-        const myBetsCount = allBets.filter(
-          (bet) => (created(bet) || joined(bet)) && (bet.status === 'ACTIVE' || bet.status === 'LIVE')
-        ).length;
-
-        const purchasedGameIds = new Set(
-          (userPurchases || []).map((purchase: any) => purchase.squaresGameId).filter(Boolean)
-        );
-        const mySquaresCount = allSquaresGames.filter(
-          (game: any) => game.creatorId === userId || purchasedGameIds.has(game.id)
-        ).length;
-
-        const joinableBetsCount = allBets.filter(
-          (bet) => !created(bet) && !joined(bet) && bet.status === 'ACTIVE'
-        ).length;
-
-        const pendingResolutionsCount = allBets.filter(
-          (bet) => created(bet) && hasParticipants(bet) && bet.status === 'PENDING_RESOLUTION'
-        ).length;
-
-        setTabCounts({
-          myBets: myBetsCount + mySquaresCount,
-          joinableBets: joinableBetsCount,
-          pendingResolutions: pendingResolutionsCount,
-          friendRequests: pendingFriendRequests?.length || 0,
+        const result = await client.models.FriendRequest.list({
+          filter: { and: [{ toUserId: { eq: userId } }, { status: { eq: 'PENDING' } }] },
         });
+        setFriendRequests((result.data || []).length);
       } catch (error) {
-        console.error('Error fetching tab counts:', error);
+        console.error('Error fetching friend request count:', error);
       }
     };
 
-    fetchTabCounts();
+    fetchFriendRequests();
 
-    // Coalesce bursts: a single join writes a Participant, updates the Bet and
-    // may settle a squares purchase, which would otherwise be three refetches.
-    let pending: ReturnType<typeof setTimeout> | null = null;
-    const refresh = () => {
-      if (pending) clearTimeout(pending);
-      pending = setTimeout(() => {
-        pending = null;
-        fetchTabCounts();
-      }, 500);
-    };
-    const onError = (label: string) => (error: unknown) =>
-      console.error(`Tab ${label} subscription error:`, error);
+    const subscription = client.models.FriendRequest.onCreate({
+      filter: { toUserId: { eq: userId } },
+    }).subscribe({
+      next: fetchFriendRequests,
+      error: (error: unknown) =>
+        console.error('Tab friend request subscription error:', error),
+    });
 
-    // Filtered to this user. The joinable count can lag a stranger's new bet
-    // until the next mount or refresh, which is acceptable for a badge and is
-    // the trade the architecture assessment recommends (F7).
-    const subscriptions = [
-      client.models.Bet.onCreate({ filter: { creatorId: { eq: userId } } }).subscribe({
-        next: refresh,
-        error: onError('bet create'),
-      }),
-      client.models.Bet.onUpdate({ filter: { creatorId: { eq: userId } } }).subscribe({
-        next: refresh,
-        error: onError('bet update'),
-      }),
-      client.models.Participant.onCreate({ filter: { userId: { eq: userId } } }).subscribe({
-        next: refresh,
-        error: onError('participant'),
-      }),
-      client.models.SquaresPurchase.onCreate({ filter: { userId: { eq: userId } } }).subscribe({
-        next: refresh,
-        error: onError('squares purchase'),
-      }),
-      client.models.FriendRequest.onCreate({ filter: { toUserId: { eq: userId } } }).subscribe({
-        next: refresh,
-        error: onError('friend request'),
-      }),
-    ];
-
-    return () => {
-      if (pending) clearTimeout(pending);
-      subscriptions.forEach((s) => s.unsubscribe());
-    };
+    return () => subscription.unsubscribe();
   }, [user?.userId]);
 
   const getTabIcon = (routeName: string, focused: boolean) => {
@@ -214,18 +130,24 @@ export const TabBar: React.FC<BottomTabBarProps> = ({
 
   const getTabCount = (routeName: string): number | null => {
     switch (routeName) {
-      case 'Bets':
-        return tabCounts.myBets > 0 ? tabCounts.myBets : null;
+      // 'Bets' deliberately has no count. It used to show how many open bets
+      // the viewer had, which is inventory rather than a request, and it never
+      // dropped to zero. It carries a dot instead - see getTabHasPending.
       case 'Live':
-        return tabCounts.joinableBets > 0 ? tabCounts.joinableBets : null;
+        return pendingRequests > 0 ? pendingRequests : null;
       case 'Resolve':
-        return tabCounts.pendingResolutions > 0 ? tabCounts.pendingResolutions : null;
+        return pendingResolutions > 0 ? pendingResolutions : null;
       case 'Account':
-        return tabCounts.friendRequests > 0 ? tabCounts.friendRequests : null;
+        return friendRequests > 0 ? friendRequests : null;
       default:
         return null;
     }
   };
+
+  // Invitations are accepted on the Join tab now, so My Bets only hints that
+  // something is waiting: a dot, with no number, pointing at another screen.
+  const getTabHasPending = (routeName: string): boolean =>
+    routeName === 'Bets' && pendingRequests > 0;
 
   return (
     <View style={[styles.container, { paddingBottom: insets.bottom }]}>
@@ -258,6 +180,7 @@ export const TabBar: React.FC<BottomTabBarProps> = ({
         // Special styling for different tabs
         const isCreateTab = route.name === 'Create';
         const hasBadge = count !== null && count > 0;
+        const hasPendingDot = getTabHasPending(route.name);
 
         return (
           <TouchableOpacity
@@ -307,6 +230,11 @@ export const TabBar: React.FC<BottomTabBarProps> = ({
                     {count > 99 ? '99+' : count.toString()}
                   </Text>
                 </View>
+              )}
+
+              {/* Pending invitations live on the Join tab; this only points there. */}
+              {hasPendingDot && !hasBadge && !isCreateTab && (
+                <View style={styles.pendingDot} testID="tab-bets-pending-dot" />
               )}
             </View>
             
@@ -408,6 +336,19 @@ const styles = StyleSheet.create({
   },
 
   // Notification badges
+  // A dot, not a count: it signals that something is pending on another tab
+  // without implying the number is actionable here.
+  pendingDot: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    width: spacing.sm,
+    height: spacing.sm,
+    borderRadius: spacing.radius.sm,
+    backgroundColor: colors.primary,
+    borderWidth: 1,
+    borderColor: colors.background,
+  },
   badge: {
     position: 'absolute',
     top: -4,

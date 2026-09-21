@@ -200,3 +200,43 @@ test('with no check-in the feed still lists friends items, unmarked', async ({ p
   await expect(page.getByTestId('feed-item-bet-open')).toBeVisible({ timeout: 15_000 });
   await expect(page.getByTestId('feed-event-context')).toHaveCount(0);
 });
+
+test('the event filter narrows the feed to the checked-in event', async ({ page }) => {
+  await signInAs(page);
+  await mockAppSync(
+    page,
+    handlers({
+      friendBets: [
+        joinableBet({ id: 'bet-here', eventId: EVENT_ID }),
+        joinableBet({ id: 'bet-there', eventId: OTHER_EVENT_ID }),
+      ],
+    })
+  );
+  await openFeed(page);
+
+  // Both are offered by default: the event only sorts and marks, it does not hide.
+  await expect(page.getByTestId('feed-item-at-event-bet-here')).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId('feed-item-bet-there')).toBeVisible();
+
+  await page.getByTestId('feed-event-filter').dispatchEvent('click');
+
+  await expect(page.getByTestId('feed-item-at-event-bet-here')).toBeVisible();
+  await expect(page.getByTestId('feed-item-bet-there')).toHaveCount(0);
+
+  // And back, so the control cannot strand the viewer in a narrowed feed.
+  await page.getByTestId('feed-event-filter').dispatchEvent('click');
+  await expect(page.getByTestId('feed-item-bet-there')).toBeVisible();
+});
+
+test('the event filter is absent when nothing is at your event', async ({ page }) => {
+  await signInAs(page);
+  await mockAppSync(
+    page,
+    handlers({ friendBets: [joinableBet({ id: 'bet-there', eventId: OTHER_EVENT_ID })] })
+  );
+  await openFeed(page);
+
+  await expect(page.getByTestId('feed-item-bet-there')).toBeVisible({ timeout: 15_000 });
+  // Offering a filter that would empty the list is worse than offering none.
+  await expect(page.getByTestId('feed-event-filter')).toHaveCount(0);
+});
