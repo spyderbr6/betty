@@ -372,9 +372,9 @@ export const BetDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
       // per-creator partition is small enough that a filter over it is cheap,
       // and it keeps private items from reaching the client at all.
       //
-      // Note this supplements the platform-wide load rather than replacing it,
-      // because myBets is still derived from that set. Dropping it entirely
-      // needs myBets rebuilt on participantsByUser -- a follow-up, not this pass.
+      // This supplements the platform-wide load rather than replacing it. The
+      // third pass below now covers the viewer's own bets by creator and by
+      // participation, so myBets no longer depends on that window either.
       const friendItems = await Promise.all(
         Array.from(fIds).map(async (friendId) => {
           try {
@@ -410,6 +410,56 @@ export const BetDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
         }
         setAllBets(new Map(betsMap));
         setAllSquaresGames(new Map(gamesMap));
+      }
+
+      // Third pass: the viewer's own items, queried directly.
+      //
+      // myBets was derived purely by filtering the platform-wide newest-200
+      // window, with no per-viewer query behind it. Once the platform carried
+      // more than 200 open bets, a viewer's own bet outside that window simply
+      // vanished from My Bets - not truncated at the end of a list, absent.
+      // Querying by creator and by participation bounds this by the viewer's own
+      // activity rather than by how many bets exist platform-wide, which is the
+      // same trade the friends pass above already makes.
+      try {
+        const [createdResult, participationResult] = await Promise.all([
+          client.models.Bet.betsByCreator(
+            { creatorId: user.userId },
+            { sortDirection: 'DESC', limit: 100 }
+          ),
+          client.models.Participant.participantsByUser({ userId: user.userId }, { limit: 100 }),
+        ]);
+
+        for (const rawBet of createdResult.data || []) {
+          if (rawBet.isTestBet) continue;
+          const bet = transformAmplifyBet(rawBet);
+          if (bet) betsMap.set(bet.id, bet);
+        }
+
+        // Bets joined rather than created. participantUserIds is denormalised on
+        // the Bet, but an array field cannot be a key, so the participant rows
+        // are the only way in. Only ids the map is still missing are fetched.
+        const joinedIds = [
+          ...new Set(
+            ((participationResult.data || [])
+              .map((participant) => participant.betId)
+              .filter(Boolean) as string[])
+          ),
+        ].filter((id) => !betsMap.has(id));
+
+        const joined = await Promise.all(
+          joinedIds.map((id) => client.models.Bet.get({ id }).catch(() => null))
+        );
+        for (const result of joined) {
+          const rawBet = result?.data;
+          if (!rawBet || rawBet.isTestBet) continue;
+          const bet = transformAmplifyBet(rawBet);
+          if (bet) betsMap.set(bet.id, bet);
+        }
+
+        setAllBets(new Map(betsMap));
+      } catch (error) {
+        console.error('Error loading your own bets:', error);
       }
 
       hasLoadedRef.current = true;

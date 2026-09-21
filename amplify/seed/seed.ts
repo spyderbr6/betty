@@ -22,6 +22,7 @@ import {
 } from '@aws-sdk/client-cloudformation';
 import {
   BatchWriteCommand,
+  QueryCommand,
   DynamoDBDocumentClient,
   type BatchWriteCommandInput,
 } from '@aws-sdk/lib-dynamodb';
@@ -51,6 +52,20 @@ const DEADLINE_MAX_DAYS = Number(process.env.SEED_DEADLINE_MAX_DAYS ?? 7);
  * looks empty until you switch to All.
  */
 const VIEWER_ID = process.env.SEED_USER_ID ?? '';
+
+/**
+ * Balance for the viewer, and bets they own.
+ *
+ * Creating a bet through the UI checks the balance covers the stake, so a
+ * sandbox account sitting at 0 cannot exercise that flow at all.
+ *
+ * The viewer's bets are deliberately aged *older* than every bulk-seeded bet.
+ * myBets is derived by filtering the newest 200 ACTIVE bets platform-wide,
+ * with no per-viewer query behind it, so a bet outside that window silently
+ * disappears from My Bets. Ageing them reproduces that on purpose.
+ */
+const VIEWER_BALANCE = Number(process.env.SEED_VIEWER_BALANCE ?? 500);
+const VIEWER_BET_COUNT = Number(process.env.SEED_VIEWER_BET_COUNT ?? 3);
 
 /** Marks every seeded row so it can be found and removed again. */
 const SEED_TAG = 'seed:scale-test';
@@ -248,11 +263,84 @@ async function writeAll(table: string, items: Array<Record<string, any>>) {
   }
 }
 
+/**
+ * Credit the viewer and give them bets of their own.
+ *
+ * The balance is an UpdateItem, never a Put: the viewer's User row is a real
+ * record carrying owner, ToS acceptance, onboarding state and profile fields,
+ * and a PutRequest replaces the whole item, which would silently destroy all of
+ * it. Seeded *fake* users are Put because nothing else owns them.
+ */
+async function seedViewer(userTable: string, betTable: string, txTable: string) {
+  const now = Date.now();
+
+  // Read-modify-write rather than UpdateItem, which this seed user is not
+  // granted. Safe only because the read returns the complete item: the viewer's
+  // User row carries owner, ToS acceptance, onboarding state and profile fields,
+  // and writing a partial item would destroy them.
+  //
+  // The trade-off is a small lost-update window - a change made in the app
+  // between this read and write is overwritten. Granting dynamodb:UpdateItem on
+  // the sandbox tables would make this atomic and is the better fix.
+  const existing = await ddb.send(
+    new QueryCommand({
+      TableName: userTable,
+      KeyConditionExpression: 'id = :id',
+      ExpressionAttributeValues: { ':id': VIEWER_ID },
+    })
+  );
+  const viewer = (existing.Items ?? [])[0];
+  if (!viewer) {
+    throw new Error(
+      `No User row for ${VIEWER_ID}. Sign in once so the app creates your ` +
+        'profile; this seed will not fabricate one, because a Put would then be ' +
+        'the record the app trusts.'
+    );
+  }
+  await writeAll(userTable, [
+    { ...viewer, balance: VIEWER_BALANCE, updatedAt: new Date(now).toISOString() },
+  ]);
+
+  // Gives the balance a provenance so the history screen is not just a number
+  // that appeared from nowhere.
+  await writeAll(txTable, [
+    {
+      id: `seed-tx-deposit-${VIEWER_ID}`,
+      userId: VIEWER_ID,
+      type: 'DEPOSIT',
+      status: 'COMPLETED',
+      amount: VIEWER_BALANCE,
+      balanceBefore: 0,
+      balanceAfter: VIEWER_BALANCE,
+      notes: `${SEED_TAG} — seeded balance for sandbox testing`,
+      createdAt: new Date(now).toISOString(),
+      completedAt: new Date(now).toISOString(),
+      updatedAt: new Date(now).toISOString(),
+      __typename: 'Transaction',
+    },
+  ]);
+
+  const bets = Array.from({ length: VIEWER_BET_COUNT }, (_, i) => {
+    const bet = makeBet(900000 + i, VIEWER_ID, 'You');
+    // Days older than anything else seeded, so these fall outside the
+    // newest-200 window that myBets is built from.
+    bet.createdAt = new Date(now - (i + 1) * 86_400_000).toISOString();
+    bet.id = `seed-bet-viewer-${String(i).padStart(3, '0')}`;
+    return bet;
+  });
+  await writeAll(betTable, bets);
+
+  console.log(
+    `Viewer:      ${VIEWER_BALANCE} balance, ${bets.length} own bets (aged outside the 200 window)`
+  );
+}
+
 async function main() {
-  const [betTable, userTable, friendshipTable] = await Promise.all([
+  const [betTable, userTable, friendshipTable, txTable] = await Promise.all([
     findTable('Bet'),
     findTable('User'),
     findTable('Friendship'),
+    findTable('Transaction'),
   ]);
 
   const friends = Array.from({ length: FRIEND_COUNT }, (_, i) => friendId(i));
@@ -292,6 +380,10 @@ async function main() {
   console.log(`Bets:        ${bets.length} (${friendBets} from friends) into ${betTable}`);
   console.log(`Deadlines:   ${DEADLINE_MIN_DAYS}-${DEADLINE_MAX_DAYS} days out, all ACTIVE`);
   await writeAll(betTable, bets);
+
+  if (VIEWER_ID) {
+    await seedViewer(userTable, betTable, txTable);
+  }
 
   console.log(`Done. Everything tagged "${SEED_TAG}".`);
 }

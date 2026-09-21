@@ -56,15 +56,20 @@ const checkIn = {
 
 /** Records the variables each operation was called with, for filter assertions. */
 type Seen = Record<string, Record<string, unknown>>;
+/** Every call, not just the last. betsByCreator is now issued per friend *and*
+ *  for the viewer, so last-wins capture cannot say which call was filtered. */
+type SeenAll = Record<string, Record<string, unknown>[]>;
 
 const handlers = (opts: {
   friendBets?: unknown[];
   friendGames?: unknown[];
   checkedIn?: boolean;
   seen?: Seen;
+  seenAll?: SeenAll;
 }) => {
   const capture = (name: string, value: unknown) => (variables: Record<string, unknown>) => {
     if (opts.seen) opts.seen[name] = variables;
+    if (opts.seenAll) (opts.seenAll[name] ||= []).push(variables);
     return value;
   };
 
@@ -117,12 +122,19 @@ test('the feed is built from indexed queries, not scans', async ({ page }) => {
 
 test('private items are excluded by the server, not the client', async ({ page }) => {
   await signInAs(page);
-  const seen: Seen = {};
-  await mockAppSync(page, handlers({ friendBets: [joinableBet()], seen }));
+  const seenAll: SeenAll = {};
+  await mockAppSync(page, handlers({ friendBets: [joinableBet()], seenAll }));
   await openFeed(page);
   await expect(page.getByTestId('feed-list')).toBeVisible({ timeout: 15_000 });
 
-  const filter = seen.betsByCreator?.filter as Record<string, any> | undefined;
+  // The viewer also queries betsByCreator for their own bets, deliberately
+  // unfiltered - you are entitled to see your own private bets. Assert on the
+  // friend's call specifically rather than on whichever happened to land last.
+  const friendCall = (seenAll.betsByCreator ?? []).find(
+    (variables) => variables.creatorId === OTHER_USER.id
+  );
+  expect(friendCall, 'no betsByCreator call for the friend').toBeTruthy();
+  const filter = friendCall?.filter as Record<string, any> | undefined;
   expect(filter?.isPrivate).toEqual({ eq: false });
   expect(filter?.status).toEqual({ eq: 'ACTIVE' });
 });

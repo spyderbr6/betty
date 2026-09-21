@@ -69,3 +69,47 @@ test('renders a bet returned by the data layer', async ({ page }) => {
   await expect(page.getByTestId('bet-card-bet-1')).toBeVisible({ timeout: 15_000 });
   await expect(page.getByText('Chiefs cover the spread')).toBeVisible();
 });
+
+/**
+ * myBets used to be derived purely by filtering the platform-wide newest-200
+ * ACTIVE window. There was no per-viewer query behind it, so once the platform
+ * carried more than 200 open bets, a viewer's own older bet was not truncated at
+ * the end of a list - it was absent. These two cover the passes that fixed it,
+ * by answering the status window with nothing at all.
+ */
+test('a bet you created outside the status window still reaches My Bets', async ({ page }) => {
+  await signInAs(page);
+  await mockAppSync(page, {
+    ...baseHandlers(),
+    betsByStatus: list(),
+    betsByCreator: (variables) =>
+      variables.creatorId === TEST_USER.userId
+        ? { items: [bet({ id: 'bet-mine' })], nextToken: null }
+        : { items: [], nextToken: null },
+  });
+
+  await openApp(page);
+
+  await expect(page.getByTestId('bet-card-bet-mine')).toBeVisible({ timeout: 15_000 });
+});
+
+test('a bet you joined outside the status window still reaches My Bets', async ({ page }) => {
+  await signInAs(page);
+  await mockAppSync(page, {
+    ...baseHandlers(),
+    betsByStatus: list(),
+    // Joined, not created: participantUserIds is denormalised onto the Bet but an
+    // array cannot be a key, so the participant row is the only route in.
+    participantsByUser: list([
+      { id: 'participant-1', betId: 'bet-joined', userId: TEST_USER.userId, side: 'A', amount: 25 },
+    ]),
+    getBet: (variables) =>
+      variables.id === 'bet-joined'
+        ? bet({ id: 'bet-joined', creatorId: 'someone-else', creatorName: 'Someone Else' })
+        : null,
+  });
+
+  await openApp(page);
+
+  await expect(page.getByTestId('bet-card-bet-joined')).toBeVisible({ timeout: 15_000 });
+});
