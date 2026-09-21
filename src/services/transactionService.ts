@@ -906,7 +906,7 @@ export class TransactionService {
     userId: string,
     amount: number,
     squaresGameId: string,
-    payoutId: string,
+    _payoutId: string,
     period: string
   ): Promise<Transaction | null> {
     // Platform fee already calculated in SquaresGameService
@@ -929,7 +929,7 @@ export class TransactionService {
     userId: string,
     amount: number,
     squaresGameId: string,
-    purchaseId: string
+    _purchaseId: string
   ): Promise<Transaction | null> {
     return await this.createTransaction({
       userId,

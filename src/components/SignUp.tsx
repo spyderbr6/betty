@@ -12,17 +12,13 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { signUp, confirmSignUp, autoSignIn } from 'aws-amplify/auth';
-import { generateClient } from 'aws-amplify/data';
-import type { Schema } from '../../amplify/data/resource';
 import { colors, spacing, textStyles, typography, commonStyles, shadows } from '../styles';
 import { PhoneInput } from './ui/PhoneInput';
 import { PolicyModal } from './ui/PolicyModal';
 import { formatPhoneNumber, validatePhoneNumber } from '../utils/phoneValidation';
-import { CURRENT_TOS_VERSION, CURRENT_PRIVACY_VERSION } from '../constants/policies';
 import type { CountryCode } from 'libphonenumber-js';
 import { showAlert } from './ui/CustomAlert';
 
-const client = generateClient<Schema>();
 
 interface SignUpProps {
   onLoginPress: () => void;
@@ -34,7 +30,7 @@ export const SignUp: React.FC<SignUpProps> = ({ onLoginPress, onSignUpSuccess })
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
-  const [formattedPhoneNumber, setFormattedPhoneNumber] = useState('');
+  const [, setFormattedPhoneNumber] = useState('');
   const [countryCode, setCountryCode] = useState<CountryCode>('US');
   const [confirmationCode, setConfirmationCode] = useState('');
   const [isLoading, setIsLoading] = useState(false);

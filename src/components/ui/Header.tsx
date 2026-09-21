@@ -3,7 +3,7 @@
  * Professional sportsbook header with balance, notifications, and branding
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,

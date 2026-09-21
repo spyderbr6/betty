@@ -12,7 +12,6 @@ import {
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
-  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ModalHeader } from '../components/ui/ModalHeader';
@@ -25,7 +24,6 @@ import {
   runFullDiagnostics
 } from '../utils/testEventFetcher';
 import { NotificationService } from '../services/notificationService';
-import { TransactionService } from '../services/transactionService';
 import { formatCurrency } from '../utils/formatting';
 import { showAlert } from '../components/ui/CustomAlert';
 import { generateClient } from 'aws-amplify/data';

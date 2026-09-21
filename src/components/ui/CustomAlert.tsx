@@ -12,8 +12,6 @@ import {
   StyleSheet,
   Modal,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
 import { colors, typography, spacing, textStyles } from '../../styles';
 
 export interface AlertButton {
@@ -186,7 +184,7 @@ const styles = StyleSheet.create({
     zIndex: 9999, // Ensure alert appears above all other modals
   },
   backdropTouchable: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     zIndex: 9999,
   },

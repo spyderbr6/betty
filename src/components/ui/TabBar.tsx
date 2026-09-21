@@ -188,7 +188,11 @@ export const TabBar: React.FC<BottomTabBarProps> = ({
             accessibilityRole="button"
             accessibilityState={isFocused ? { selected: true } : {}}
             accessibilityLabel={options.tabBarAccessibilityLabel}
-            testID={(options as any).tabBarTestID}
+            // Derived, not configured. Every screen set tabBarTestID to exactly
+            // `tab-<lowercased route name>`, and BottomTabNavigationOptions is a
+            // type alias rather than an interface, so the custom option could not
+            // be declared and needed an `as any` at every read.
+            testID={`tab-${route.name.toLowerCase()}`}
             onPress={onPress}
             onLongPress={onLongPress}
             style={[

@@ -5,7 +5,7 @@
  * Shows the grid, game info, purchase flow, and winners.
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
