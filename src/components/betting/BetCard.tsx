@@ -19,6 +19,7 @@ import { colors, typography, spacing, textStyles, shadows } from '../../styles';
 import { Bet, BetStatus } from '../../types/betting';
 import { formatCurrency } from '../../utils/formatting';
 import { useAuth } from '../../contexts/AuthContext';
+import { useBetData } from '../../contexts/BetDataContext';
 import { NotificationService } from '../../services/notificationService';
 import { TransactionService } from '../../services/transactionService';
 import { BetAcceptanceService } from '../../services/betAcceptanceService';
@@ -94,6 +95,7 @@ export const BetCard: React.FC<BetCardProps> = ({
   onEndBet,
 }) => {
   const { user } = useAuth();
+  const { myParticipation } = useBetData();
   const [isJoining, setIsJoining] = useState(false);
   const [selectedSide, setSelectedSide] = useState<'A' | 'B' | null>(null);
   // Derive user participation from denormalized participantUserIds on the bet
@@ -101,31 +103,21 @@ export const BetCard: React.FC<BetCardProps> = ({
   const [joinedSide, setJoinedSide] = useState<'A' | 'B' | null>(null);
   const [joinedAmount, setJoinedAmount] = useState(0);
 
-  // Fetch participant record to determine which side the user joined
-  useEffect(() => {
-    if (!hasJoined || joinedSide !== null || !user?.userId) return;
-
-    const fetchParticipant = async () => {
-      try {
-        const { data: participants } = await client.models.Participant.list({
-          filter: { betId: { eq: bet.id }, userId: { eq: user.userId } }
-        });
-        if (participants && participants.length > 0) {
-          setJoinedSide(participants[0].side as 'A' | 'B');
-          setJoinedAmount(participants[0].amount || 0);
-        }
-      } catch (error) {
-        console.warn('Failed to fetch participant side:', error);
-      }
-    };
-
-    fetchParticipant();
-  }, [hasJoined, joinedSide, user?.userId, bet.id]);
+  // Which side the viewer took comes from BetDataContext, which loads every
+  // participant row the viewer owns in one indexed participantsByUser query.
+  // This used to be a Participant.list({ betId, userId }) here - a filtered Scan,
+  // run once per joined card, and on My Bets every card is one.
+  //
+  // Local state is still kept because joining updates it optimistically before
+  // the context reloads; it wins while set, and the context is the fallback.
+  const contextParticipation = myParticipation.get(bet.id);
+  const effectiveSide = joinedSide ?? ((contextParticipation?.side as 'A' | 'B' | undefined) ?? null);
+  const effectiveAmount = joinedSide !== null ? joinedAmount : contextParticipation?.amount ?? 0;
 
   const userParticipation = {
-    hasJoined: hasJoined || joinedSide !== null,
-    side: joinedSide,
-    amount: joinedAmount,
+    hasJoined: hasJoined || effectiveSide !== null,
+    side: effectiveSide,
+    amount: effectiveAmount,
   };
 
   const [timeRemaining, setTimeRemaining] = useState<string>('');

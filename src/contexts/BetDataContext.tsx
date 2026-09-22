@@ -46,6 +46,11 @@ interface BetDataContextValue {
   joinableSquaresGames: SquaresGame[];
   joinableFriendsSquaresGames: SquaresGame[];
 
+  // Which side the viewer took on each bet they joined, and for how much.
+  // Keyed by betId. Comes from one indexed participantsByUser query, so a card
+  // can render the viewer's stake without a lookup of its own.
+  myParticipation: Map<string, { side: string; amount: number }>;
+
   // Friend set, exposed so consumers can classify items without re-querying
   friendIds: Set<string>;
 
@@ -69,6 +74,27 @@ interface BetDataContextValue {
 const BetDataContext = createContext<BetDataContextValue | null>(null);
 
 // ─── Transform helpers ───────────────────────────────────────────────────────
+
+/**
+ * Which side the viewer took on each bet they joined, keyed by betId.
+ *
+ * Module scope with an `any[]` parameter, which keeps it cheap to type-check.
+ * That is hygiene, not a fix for anything: TS2590 in this codebase is a single
+ * global instantiation budget being exhausted by Amplify's generated schema
+ * types, and it is reported wherever the checker happens to be when the budget
+ * runs out. Deleting bulkLoadingService.ts moved six of them out of two
+ * services and into this file without changing the total. Do not chase them
+ * site by site - the cause is the size of the generated Schema type.
+ */
+const buildParticipationMap = (rows: any[] | null | undefined) => {
+  const map = new Map<string, { side: string; amount: number }>();
+  for (const row of rows || []) {
+    if (row?.betId && row?.side) {
+      map.set(row.betId, { side: row.side, amount: row.amount || 0 });
+    }
+  }
+  return map;
+};
 
 const transformAmplifyBet = (bet: any): Bet | null => {
   if (!bet.id || !bet.title || !bet.description || !bet.category || !bet.status) {
@@ -143,6 +169,9 @@ export const BetDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [allBets, setAllBets] = useState<Map<string, Bet>>(new Map());
   const [allSquaresGames, setAllSquaresGames] = useState<Map<string, SquaresGame>>(new Map());
   const [myPurchasedSquaresGameIds, setMyPurchasedSquaresGameIds] = useState<Set<string>>(new Set());
+  const [myParticipation, setMyParticipation] = useState<
+    Map<string, { side: string; amount: number }>
+  >(new Map());
   const [invitedSquaresGameIds, setInvitedSquaresGameIds] = useState<Set<string>>(new Set());
   const [squaresInvitationsMap, setSquaresInvitationsMap] = useState<Map<string, SquaresInvitation>>(new Map());
   const [invitedBetIds, setInvitedBetIds] = useState<Set<string>>(new Set());
@@ -439,6 +468,8 @@ export const BetDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
         // Bets joined rather than created. participantUserIds is denormalised on
         // the Bet, but an array field cannot be a key, so the participant rows
         // are the only way in. Only ids the map is still missing are fetched.
+        setMyParticipation(buildParticipationMap(participationResult.data));
+
         const joinedIds = [
           ...new Set(
             ((participationResult.data || [])
@@ -1221,6 +1252,7 @@ export const BetDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
     mySquaresGames,
     joinableSquaresGames,
     joinableFriendsSquaresGames,
+    myParticipation,
     friendIds,
     betInvitations,
     squaresInvitations,
@@ -1239,6 +1271,7 @@ export const BetDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
     mySquaresGames,
     joinableSquaresGames,
     joinableFriendsSquaresGames,
+    myParticipation,
     friendIds,
     betInvitations,
     squaresInvitations,

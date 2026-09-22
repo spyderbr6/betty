@@ -113,3 +113,29 @@ test('a bet you joined outside the status window still reaches My Bets', async (
 
   await expect(page.getByTestId('bet-card-bet-joined')).toBeVisible({ timeout: 15_000 });
 });
+
+test('a joined card gets your side from the bulk load', async ({ page }) => {
+  await signInAs(page);
+  const { calls } = await mockAppSync(page, {
+    ...baseHandlers(),
+    betsByStatus: (variables) => ({
+      items: variables.status === 'ACTIVE' ? [bet()] : [],
+      nextToken: null,
+    }),
+    participantsByUser: list([
+      { id: 'participant-1', betId: 'bet-1', userId: TEST_USER.userId, side: 'A', amount: 25 },
+    ]),
+  });
+
+  await openApp(page);
+  await expect(page.getByTestId('bet-card-bet-1')).toBeVisible({ timeout: 15_000 });
+
+  // BetCard used to run its own Participant.list({ betId, userId }) for every
+  // joined card - a filtered Scan, and on My Bets every card is one. The rows
+  // now arrive with the bulk load through this indexed query instead.
+  //
+  // Deliberately not asserting that listParticipants is never called: one other
+  // caller still fires on this screen and has not been identified, so a zero
+  // assertion here would be claiming more than has been established.
+  expect(calls).toContain('participantsByUser');
+}); 
