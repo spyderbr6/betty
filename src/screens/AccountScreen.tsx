@@ -686,12 +686,14 @@ export const AccountScreen: React.FC = () => {
         animationType="slide"
         presentationStyle="pageSheet"
       >
-        <ProfileEditor
-          user={userProfile}
-          onSave={handleSaveProfile}
-          onCancel={handleCancelProfileEdit}
-          loading={isUpdatingProfile}
-        />
+        {showProfileEditor && (
+          <ProfileEditor
+            user={userProfile}
+            onSave={handleSaveProfile}
+            onCancel={handleCancelProfileEdit}
+            loading={isUpdatingProfile}
+          />
+        )}
       </Modal>
 
       {/* Friends Screen Modal */}
@@ -701,13 +703,15 @@ export const AccountScreen: React.FC = () => {
         presentationStyle="fullScreen"
         onRequestClose={() => setShowFriendsScreen(false)}
       >
-        <FriendsScreen
-          onClose={() => {
-            setShowFriendsScreen(false);
-            setFriendsInitialShowRequests(false);
-          }}
-          initialShowRequests={friendsInitialShowRequests}
-        />
+        {showFriendsScreen && (
+          <FriendsScreen
+            onClose={() => {
+              setShowFriendsScreen(false);
+              setFriendsInitialShowRequests(false);
+            }}
+            initialShowRequests={friendsInitialShowRequests}
+          />
+        )}
       </Modal>
 
       {/* Detailed Stats Modal */}
@@ -717,7 +721,9 @@ export const AccountScreen: React.FC = () => {
         presentationStyle="fullScreen"
         onRequestClose={() => setShowDetailedStats(false)}
       >
-        <DetailedStatsScreen onClose={() => setShowDetailedStats(false)} />
+        {showDetailedStats && (
+          <DetailedStatsScreen onClose={() => setShowDetailedStats(false)} />
+        )}
       </Modal>
 
       {/* Betting History Modal */}
@@ -727,10 +733,12 @@ export const AccountScreen: React.FC = () => {
         presentationStyle="fullScreen"
         onRequestClose={() => setShowBettingHistory(false)}
       >
-        <BettingHistoryScreen
-          onClose={() => setShowBettingHistory(false)}
-          navigation={navigation}
-        />
+        {showBettingHistory && (
+          <BettingHistoryScreen
+            onClose={() => setShowBettingHistory(false)}
+            navigation={navigation}
+          />
+        )}
       </Modal>
 
       {/* Payment Methods Modal */}
@@ -740,7 +748,9 @@ export const AccountScreen: React.FC = () => {
         presentationStyle="fullScreen"
         onRequestClose={() => setShowPaymentMethods(false)}
       >
-        <PaymentMethodsScreen onClose={() => setShowPaymentMethods(false)} />
+        {showPaymentMethods && (
+          <PaymentMethodsScreen onClose={() => setShowPaymentMethods(false)} />
+        )}
       </Modal>
 
       {/* Trust & Safety Modal */}
@@ -750,7 +760,9 @@ export const AccountScreen: React.FC = () => {
         presentationStyle="fullScreen"
         onRequestClose={() => setShowTrustSafety(false)}
       >
-        <TrustSafetyScreen onClose={() => setShowTrustSafety(false)} />
+        {showTrustSafety && (
+          <TrustSafetyScreen onClose={() => setShowTrustSafety(false)} />
+        )}
       </Modal>
 
       {/* Settings Modal */}
@@ -760,7 +772,9 @@ export const AccountScreen: React.FC = () => {
         presentationStyle="fullScreen"
         onRequestClose={() => setShowSettings(false)}
       >
-        <SettingsScreen onClose={() => setShowSettings(false)} />
+        {showSettings && (
+          <SettingsScreen onClose={() => setShowSettings(false)} />
+        )}
       </Modal>
 
       {/* Support Modal */}
@@ -770,7 +784,9 @@ export const AccountScreen: React.FC = () => {
         presentationStyle="fullScreen"
         onRequestClose={() => setShowSupport(false)}
       >
-        <SupportScreen onClose={() => setShowSupport(false)} />
+        {showSupport && (
+          <SupportScreen onClose={() => setShowSupport(false)} />
+        )}
       </Modal>
 
       {/* About Modal */}
@@ -780,7 +796,9 @@ export const AccountScreen: React.FC = () => {
         presentationStyle="fullScreen"
         onRequestClose={() => setShowAbout(false)}
       >
-        <AboutScreen onClose={() => setShowAbout(false)} />
+        {showAbout && (
+          <AboutScreen onClose={() => setShowAbout(false)} />
+        )}
       </Modal>
 
       {/* Admin Dashboard Modal */}
@@ -790,7 +808,9 @@ export const AccountScreen: React.FC = () => {
         presentationStyle="fullScreen"
         onRequestClose={() => setShowAdminDashboard(false)}
       >
-        <AdminDashboardScreen onClose={() => setShowAdminDashboard(false)} />
+        {showAdminDashboard && (
+          <AdminDashboardScreen onClose={() => setShowAdminDashboard(false)} />
+        )}
       </Modal>
 
       {/* Admin Dispute Modal */}
@@ -806,7 +826,9 @@ export const AccountScreen: React.FC = () => {
           presentationStyle="fullScreen"
           onRequestClose={() => setShowAdminTesting(false)}
         >
-          <AdminTestingScreen onClose={() => setShowAdminTesting(false)} />
+          {showAdminTesting && (
+            <AdminTestingScreen onClose={() => setShowAdminTesting(false)} />
+          )}
         </Modal>
       )}
 
@@ -817,7 +839,9 @@ export const AccountScreen: React.FC = () => {
         presentationStyle="fullScreen"
         onRequestClose={() => setShowSubscription(false)}
       >
-        <SubscriptionScreen onClose={() => setShowSubscription(false)} />
+        {showSubscription && (
+          <SubscriptionScreen onClose={() => setShowSubscription(false)} />
+        )}
       </Modal>
 
       {/* Sign Out Confirmation Modal */}
@@ -827,31 +851,33 @@ export const AccountScreen: React.FC = () => {
         animationType="fade"
         onRequestClose={cancelSignOut}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.confirmModal}>
-            <View style={styles.confirmHeader}>
-              <Ionicons name="log-out-outline" size={32} color={colors.error} />
-              <Text style={styles.confirmTitle}>Sign Out</Text>
-            </View>
-            <Text style={styles.confirmMessage}>Are you sure?</Text>
-            <View style={styles.confirmButtons}>
-              <TouchableOpacity
-                style={[styles.confirmButton, styles.cancelButton]}
-                onPress={cancelSignOut}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.cancelButtonText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.confirmButton, styles.signOutConfirmButton]}
-                onPress={confirmSignOut}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.signOutConfirmButtonText}>Sign Out</Text>
-              </TouchableOpacity>
+        {showSignOutConfirm && (
+          <View style={styles.modalOverlay}>
+            <View style={styles.confirmModal}>
+              <View style={styles.confirmHeader}>
+                <Ionicons name="log-out-outline" size={32} color={colors.error} />
+                <Text style={styles.confirmTitle}>Sign Out</Text>
+              </View>
+              <Text style={styles.confirmMessage}>Are you sure?</Text>
+              <View style={styles.confirmButtons}>
+                <TouchableOpacity
+                  style={[styles.confirmButton, styles.cancelButton]}
+                  onPress={cancelSignOut}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.cancelButtonText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.confirmButton, styles.signOutConfirmButton]}
+                  onPress={confirmSignOut}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.signOutConfirmButtonText}>Sign Out</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
-        </View>
+        )}
       </Modal>
     </SafeAreaView>
   );

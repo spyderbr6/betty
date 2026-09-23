@@ -134,8 +134,10 @@ test('a joined card gets your side from the bulk load', async ({ page }) => {
   // joined card - a filtered Scan, and on My Bets every card is one. The rows
   // now arrive with the bulk load through this indexed query instead.
   //
-  // Deliberately not asserting that listParticipants is never called: one other
-  // caller still fires on this screen and has not been identified, so a zero
-  // assertion here would be claiming more than has been established.
+  // The zero assertion holds now. The call that used to survive here came from
+  // UserBalance in the header, which ran Participant.observeQuery - observeQuery
+  // issues an initial filtered list before it streams, so every screen paid for
+  // a listUsers and a listParticipants Scan just to show a balance.
   expect(calls).toContain('participantsByUser');
+  expect(calls).not.toContain('listParticipants');
 }); 

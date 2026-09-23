@@ -57,9 +57,11 @@ export const DetailedStatsScreen: React.FC<DetailedStatsScreenProps> = ({ onClos
     try {
       setIsLoading(true);
 
-      // Fetch user's participations
-      const { data: participations } = await client.models.Participant.list({
-        filter: { userId: { eq: user.userId } }
+      // Indexed, not a filtered Scan. participantsByUser is the GSI for exactly
+      // this lookup; .list({ filter }) applies its limit to rows examined rather
+      // than rows returned, so it goes quietly incomplete as the table grows.
+      const { data: participations } = await client.models.Participant.participantsByUser({
+        userId: user.userId,
       });
 
       // Fetch all related bets

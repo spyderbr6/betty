@@ -60,37 +60,35 @@ export const UserBalance: React.FC<UserBalanceProps> = ({
 
     fetchBalance();
 
-    // Set up real-time subscription for balance updates
-    const userSubscription = client.models.User.observeQuery({
-      filter: { id: { eq: user.userId } }
-    }).subscribe({
-      next: (data) => {
-        const userData = data.items.find(u => u.id === user.userId);
-        if (userData) {
-          setBalance(userData.balance || 0);
-        }
-      },
-      error: (error) => {
-        console.error('Balance subscription error:', error);
-      }
-    });
+    // Targeted subscriptions, not observeQuery. observeQuery issues an initial
+    // list before it streams - listUsers and listParticipants here, both filtered
+    // Scans - and this component sits in the header, so every screen paid for
+    // them on mount. The initial value already comes from fetchBalance above;
+    // these only need to say "something changed, read it again".
+    const onError = (label: string) => (error: unknown) =>
+      console.error(`Balance ${label} subscription error:`, error);
 
-    // Also listen for participant changes that might affect balance
-    const participantSubscription = client.models.Participant.observeQuery({
-      filter: { userId: { eq: user.userId } }
-    }).subscribe({
-      next: () => {
-        // Refetch balance when participant data changes
-        fetchBalance();
-      },
-      error: (error) => {
-        console.error('Participant subscription error for balance:', error);
-      }
-    });
+    const subscriptions = [
+      client.models.User.onUpdate({ filter: { id: { eq: user.userId } } }).subscribe({
+        next: (updated: any) => {
+          if (updated?.balance != null) setBalance(updated.balance);
+        },
+        error: onError('user'),
+      }),
+      // A join or a refund changes the balance without touching the User row in
+      // a way this component sees first, so re-read rather than guess.
+      client.models.Participant.onCreate({ filter: { userId: { eq: user.userId } } }).subscribe({
+        next: () => fetchBalance(),
+        error: onError('participant create'),
+      }),
+      client.models.Participant.onUpdate({ filter: { userId: { eq: user.userId } } }).subscribe({
+        next: () => fetchBalance(),
+        error: onError('participant update'),
+      }),
+    ];
 
     return () => {
-      userSubscription.unsubscribe();
-      participantSubscription.unsubscribe();
+      subscriptions.forEach((subscription) => subscription.unsubscribe());
     };
   }, [user]);
 
