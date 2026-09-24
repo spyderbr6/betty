@@ -1,4 +1,5 @@
 import { EventBridgeHandler } from 'aws-lambda';
+import { decideExpiry } from './expiryLogic';
 import { generateClient } from 'aws-amplify/api';
 import type { Schema } from '../../data/resource';
 import { Amplify } from 'aws-amplify';
@@ -72,15 +73,14 @@ async function updateExpiredBets(): Promise<{ updated: number; cancelled: number
           continue;
         }
 
-        // Check if bet has participants
-        const { data: participants } = await client.models.Participant.list({
-          filter: { betId: { eq: bet.id } }
+        // Indexed; this was a filtered Scan per expired bet.
+        const { data: participants } = await client.models.Participant.participantsByBet({
+          betId: bet.id
         });
 
-        const hasParticipants = participants && participants.length > 0;
+        const outcome = decideExpiry(bet.creatorId, participants);
 
-        if (hasParticipants) {
-          // Update to PENDING_RESOLUTION if there are participants
+        if (outcome.action === 'RESOLVE') {
           await client.models.Bet.update({
             id: bet.id,
             status: 'PENDING_RESOLUTION'
@@ -88,12 +88,48 @@ async function updateExpiredBets(): Promise<{ updated: number; cancelled: number
 
           updated++;
         } else {
-          // Cancel bet if no participants joined
           await client.models.Bet.update({
             id: bet.id,
             status: 'CANCELLED',
-            resolutionReason: 'No participants joined before deadline'
+            resolutionReason: outcome.reason
           });
+
+          // Return every stake. The old cancellation path set the status and
+          // notified, and refunded nobody - which was survivable only because it
+          // was unreachable. It is reachable now.
+          for (const refund of outcome.refunds) {
+            try {
+              const { data: participantUser } = await client.models.User.get({ id: refund.userId });
+              const balanceBefore = participantUser?.balance || 0;
+              const balanceAfter = balanceBefore + refund.amount;
+
+              // Same shape as the squares refund in scheduled-squares-checker,
+              // which is the existing precedent for returning a stake.
+              const refundedAt = new Date().toISOString();
+              await client.models.Transaction.create({
+                userId: refund.userId,
+                type: 'BET_CANCELLED',
+                status: 'COMPLETED',
+                amount: refund.amount,
+                platformFee: 0,
+                balanceBefore,
+                balanceAfter,
+                relatedBetId: bet.id,
+                relatedParticipantId: refund.participantId,
+                notes: `Refund: ${outcome.reason}`,
+                createdAt: refundedAt,
+                completedAt: refundedAt,
+              });
+
+              await client.models.User.update({ id: refund.userId, balance: balanceAfter });
+              console.log(`💸 Refunded $${refund.amount} to ${refund.userId} for bet ${bet.id}`);
+            } catch (refundError) {
+              // Keep going: one failed refund must not strand the others, and the
+              // bet is already CANCELLED so it will not be paid out twice.
+              console.error(`❌ Failed to refund ${refund.userId} for bet ${bet.id}:`, refundError);
+              errors++;
+            }
+          }
 
           // Notify bet creator that their bet was cancelled
           try {
@@ -101,7 +137,7 @@ async function updateExpiredBets(): Promise<{ updated: number; cancelled: number
               userId: bet.creatorId!,
               type: 'BET_CANCELLED',
               title: 'Bet Cancelled',
-              message: `"${bet.title}" was cancelled because no one joined before the deadline`,
+              message: `"${bet.title}" was cancelled because no one took the other side. Your stake has been refunded.`,
               isRead: false,
               priority: 'MEDIUM',
               actionType: 'view_bet',
