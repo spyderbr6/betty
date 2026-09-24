@@ -14,6 +14,7 @@ import type { Schema } from '../../amplify/data/resource';
 import { TransactionService } from './transactionService';
 import { NotificationService } from './notificationService';
 import { netWinnings } from '../config/subscriptionConfig';
+import { cancelRefusalReason } from './cancelRules';
 
 const client = generateClient<Schema>();
 
@@ -446,9 +447,20 @@ export class SquaresGameService {
         throw new Error('Game not found');
       }
 
+      // Refuse if any period has already paid out. Cancelling refunds every
+      // stake in full, so doing that after a payout distributes the same money
+      // twice: the winner keeps their payout and gets their stake back, funded by
+      // stakes that have already been handed out. A part-played game needs its
+      // remaining scores, not a cancellation.
+      const { data: existingPayouts } = await client.models.SquaresPayout.payoutsBySquaresGame({
+        squaresGameId,
+      });
+      const refusal = cancelRefusalReason(existingPayouts);
+      if (refusal) throw new Error(refusal);
+
       // Get all purchases
-      const { data: purchases } = await client.models.SquaresPurchase.list({
-        filter: { squaresGameId: { eq: squaresGameId } },
+      const { data: purchases } = await client.models.SquaresPurchase.purchasesBySquaresGame({
+        squaresGameId,
       });
 
       // Refund buyers if any purchases exist

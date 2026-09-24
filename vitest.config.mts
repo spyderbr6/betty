@@ -11,6 +11,7 @@ export default defineConfig({
     include: [
       'amplify/**/__tests__/**/*.test.ts',
       'src/config/__tests__/**/*.test.ts',
+      'src/services/__tests__/**/*.test.ts',
     ],
     environment: 'node',
   },

@@ -125,21 +125,25 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
     try {
       console.log('[AdminDashboard] Loading squares games...');
 
-      // Load all active and locked squares games
-      const { data: activeGames } = await client.models.SquaresGame.list({
-        filter: {
-          or: [
-            { status: { eq: 'ACTIVE' } },
-            { status: { eq: 'LOCKED' } },
-            { status: { eq: 'LIVE' } },
-          ]
-        }
-      });
+      // PENDING_RESOLUTION included deliberately. A game whose event never
+      // delivered period scores sits there indefinitely - the checker skips it on
+      // every run - and it was invisible here, so the one admin action that could
+      // release the money could not reach it.
+      //
+      // Indexed per status rather than a filtered Scan, which applies its limit
+      // to rows examined rather than rows returned.
+      const statuses = ['ACTIVE', 'LOCKED', 'LIVE', 'PENDING_RESOLUTION'] as const;
+      const results = await Promise.all(
+        statuses.map((status) =>
+          client.models.SquaresGame.squaresGamesByStatus({ status: status as any }, { limit: 200 })
+        )
+      );
+      const activeGames = results.flatMap((result) => result.data || []);
 
       if (activeGames) {
         // Sort by creation date (newest first)
         const sortedGames = activeGames.sort((a, b) =>
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime()
         );
         setSquaresGames(sortedGames);
         console.log('[AdminDashboard] Loaded', sortedGames.length, 'squares games');
@@ -477,7 +481,8 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
     const isProcessing = processingId === game.id;
 
     return (
-      <View key={game.id} style={styles.transactionCard}>
+      <View key={game.id} style={styles.transactionCard} testID={`admin-squares-${game.id}`}>
+
         <View style={styles.transactionHeader}>
           <View style={[
             styles.transactionIcon,
@@ -506,6 +511,7 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
             <TouchableOpacity
               style={[styles.actionButton, styles.rejectButton]}
               onPress={() => handleCancelGame(game)}
+              testID={`admin-cancel-${game.id}`}
               disabled={isProcessing}
               activeOpacity={0.7}
             >
@@ -545,7 +551,7 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
 
   if (isLoading) {
     return (
-      <SafeAreaView style={styles.container} edges={['top']}>
+      <SafeAreaView testID="screen-admin" style={styles.container} edges={['top']}>
         <ModalHeader title="Admin Dashboard" onClose={onClose} />
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
@@ -558,7 +564,7 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
   const filteredTransactions = getFilteredTransactions();
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView testID="screen-admin" style={styles.container} edges={['top']}>
       <ModalHeader title="Admin Dashboard" onClose={onClose} />
 
       {/* Warning Banner */}
@@ -581,6 +587,7 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
         <TouchableOpacity
           style={[styles.filterButton, section === 'SQUARES' && styles.filterButtonActive]}
           onPress={() => setSection('SQUARES')}
+          testID="admin-tab-squares"
           activeOpacity={0.7}
         >
           <Text style={[styles.filterButtonText, section === 'SQUARES' && styles.filterButtonTextActive]}>
@@ -941,7 +948,8 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
                   numberOfLines={3}
                   textAlignVertical="top"
                   autoFocus
-                />
+                  testID="admin-cancel-reason"
+                  />
 
                 <View style={styles.rejectModalActions}>
                   <TouchableOpacity
@@ -958,6 +966,7 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
                       !cancelReason.trim() && styles.rejectModalConfirmButtonDisabled
                     ]}
                     onPress={handleConfirmCancelGame}
+                    testID="admin-confirm-cancel"
                     disabled={!cancelReason.trim()}
                     activeOpacity={0.7}
                   >

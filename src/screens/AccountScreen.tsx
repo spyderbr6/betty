@@ -544,6 +544,7 @@ export const AccountScreen: React.FC = () => {
               <TouchableOpacity
                 style={styles.menuOption}
                 onPress={handleAdminDashboardPress}
+                testID="account-admin-dashboard"
                 activeOpacity={0.7}
               >
                 <View style={styles.menuOptionLeft}>
