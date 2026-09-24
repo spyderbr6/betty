@@ -134,9 +134,14 @@ export const ResolveScreen: React.FC = () => {
     try {
       const [createdBets, myParticipation, myPurchases, createdGames] = await Promise.all([
         client.models.Bet.betsByCreator({ creatorId: userId }, { sortDirection: 'DESC', limit: 100 }),
-        client.models.Participant.participantsByUser({ userId }, { limit: 100 }),
+        // Newest first - see the note in BetDataContext. Ascending would hide
+        // the most recently joined bets from the resolve list entirely.
+        client.models.Participant.participantsByUser({ userId }, { limit: 200, sortDirection: 'DESC' }),
         client.models.SquaresPurchase.purchasesByBuyer({ userId }),
-        client.models.SquaresGame.squaresGamesByCreator({ creatorId: userId }, { limit: 100 }),
+        client.models.SquaresGame.squaresGamesByCreator(
+          { creatorId: userId },
+          { limit: 100, sortDirection: 'DESC' }
+        ),
       ]);
 
       // --- Bets: created by the viewer, plus any they joined ---

@@ -84,3 +84,25 @@ test('with nothing pending the Bets tab shows no pointer', async ({ page }) => {
   // Guards the inverse: the pointer is a request indicator, not decoration.
   await expect(page.getByTestId('bets-pending-pointer')).toBeHidden();
 });
+
+test('the Bets tab shows a dot while an invitation is pending', async ({ page }) => {
+  await signInAs(page);
+  await mockAppSync(page, withInvitation());
+
+  await page.goto('/');
+  await expect(page.getByTestId('screen-bets')).toBeVisible({ timeout: 30_000 });
+
+  // The dot is the only signal on this tab: its old count was the viewer's own
+  // open bets, which never reached zero and so never meant anything.
+  await expect(page.getByTestId('tab-bets-pending-dot')).toBeVisible({ timeout: 15_000 });
+});
+
+test('the Bets tab has no dot when nothing is pending', async ({ page }) => {
+  await signInAs(page);
+  await mockAppSync(page, baseHandlers());
+
+  await page.goto('/');
+  await expect(page.getByTestId('screen-bets')).toBeVisible({ timeout: 30_000 });
+
+  await expect(page.getByTestId('tab-bets-pending-dot')).toHaveCount(0);
+});

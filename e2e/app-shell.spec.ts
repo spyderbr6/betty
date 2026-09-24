@@ -141,3 +141,26 @@ test('a joined card gets your side from the bulk load', async ({ page }) => {
   expect(calls).toContain('participantsByUser');
   expect(calls).not.toContain('listParticipants');
 }); 
+
+test('participation is fetched newest-first, not oldest-first', async ({ page }) => {
+  await signInAs(page);
+  const seen: Record<string, unknown>[] = [];
+  await mockAppSync(page, {
+    ...baseHandlers(),
+    participantsByUser: (variables) => {
+      seen.push(variables);
+      return { items: [], nextToken: null };
+    },
+  });
+
+  await openApp(page);
+  await expect(page.getByTestId('screen-bets')).toBeVisible({ timeout: 15_000 });
+
+  // The GSI sorts on joinedAt and DynamoDB scans ascending by default, so a
+  // `limit` without sortDirection returns the OLDEST participations. The viewer's
+  // most recent bets then have no side, and their cards fall back to showing
+  // RESOLVED instead of WON/LOST. The mock cannot reproduce that ordering, so the
+  // only honest check is that the request asked for DESC.
+  expect(seen.length, 'participantsByUser was never called').toBeGreaterThan(0);
+  expect(seen[0].sortDirection).toBe('DESC');
+});

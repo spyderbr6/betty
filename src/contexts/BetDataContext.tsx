@@ -96,6 +96,16 @@ const buildParticipationMap = (rows: any[] | null | undefined) => {
   return map;
 };
 
+/**
+ * Statuses this context keeps in allBets.
+ *
+ * Must match what the bulk load queries. The subscription handlers listed these
+ * inline and drifted: LIVE was added to the load but not to them, so a bet going
+ * live was deleted from state by the very update announcing it.
+ */
+const TRACKED_STATUSES = ['ACTIVE', 'LIVE', 'PENDING_RESOLUTION'];
+const isTracked = (status?: string | null) => TRACKED_STATUSES.includes(status ?? '');
+
 const transformAmplifyBet = (bet: any): Bet | null => {
   if (!bet.id || !bet.title || !bet.description || !bet.category || !bet.status) {
     return null;
@@ -456,7 +466,14 @@ export const BetDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
             { creatorId: user.userId },
             { sortDirection: 'DESC', limit: 100 }
           ),
-          client.models.Participant.participantsByUser({ userId: user.userId }, { limit: 100 }),
+          // sortDirection matters: the GSI sorts on joinedAt and DynamoDB scans
+          // ascending by default, so without it `limit` returns the 100 OLDEST
+          // participations. A recently joined bet then has no side in the map,
+          // and its card falls back to showing RESOLVED instead of WON/LOST.
+          client.models.Participant.participantsByUser(
+            { userId: user.userId },
+            { limit: 200, sortDirection: 'DESC' }
+          ),
         ]);
 
         for (const rawBet of createdResult.data || []) {
@@ -538,7 +555,7 @@ export const BetDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
         next: (rawBet) => {
           if (rawBet.isTestBet) return;
           const bet = transformAmplifyBet(rawBet);
-          if (bet && (bet.status === 'ACTIVE' || bet.status === 'PENDING_RESOLUTION')) {
+          if (bet && isTracked(bet.status)) {
             setAllBets(prev => {
               const updated = new Map(prev);
               updated.set(bet.id, bet);
@@ -559,10 +576,10 @@ export const BetDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
           setAllBets(prev => {
             const updated = new Map(prev);
-            if (bet.status === 'ACTIVE' || bet.status === 'PENDING_RESOLUTION') {
+            if (isTracked(bet.status)) {
               updated.set(bet.id, bet);
             } else {
-              // Bet moved to RESOLVED/CANCELLED — remove from active tracking
+              // RESOLVED or CANCELLED — no longer tracked here
               updated.delete(bet.id);
             }
             return updated;
