@@ -28,6 +28,30 @@ export function calculateDepositFee(depositDollars: number): number {
 export const WITHDRAWAL_FEE_RATE = 0.02; // 2% charged on withdrawals
 export const WINNINGS_FEE_RATE = 0.03; // 3% charged on bet/squares winnings
 
+/**
+ * Platform fee on winnings. The only place this multiplication should happen.
+ *
+ * Pro waives it. Call sites used to compute the fee inline - ResolveScreen with
+ * a hardcoded 0.03, squaresGameService with the rate constant - and neither
+ * asked whether the winner was Pro, so Pro members were charged on both. The
+ * squares path was worse than an oversight: its comment said Pro was "handled at
+ * transaction level", and recordSquaresPayout said the fee was "already
+ * calculated in SquaresGameService". Each deferred to the other and nobody
+ * checked.
+ *
+ * Takes isPro rather than a userId so it stays pure and callers are forced to
+ * have looked the subscription up.
+ */
+export function winningsFee(grossPayout: number, isPro: boolean): number {
+  if (isPro || grossPayout <= 0) return 0;
+  return Math.round(grossPayout * WINNINGS_FEE_RATE * 100) / 100;
+}
+
+/** Net winnings after the platform fee. */
+export function netWinnings(grossPayout: number, isPro: boolean): number {
+  return Math.round((grossPayout - winningsFee(grossPayout, isPro)) * 100) / 100;
+}
+
 // --- Pro subscription ------------------------------------------------------
 export const PRO_SUBSCRIPTION_PRICE_CENTS = 499; // $4.99/month — update here to change price
 export const PRO_MONTHLY_DISPLAY = '$4.99';

@@ -13,7 +13,7 @@ import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
 import { TransactionService } from './transactionService';
 import { NotificationService } from './notificationService';
-import { WINNINGS_FEE_RATE } from '../config/subscriptionConfig';
+import { netWinnings } from '../config/subscriptionConfig';
 
 const client = generateClient<Schema>();
 
@@ -368,8 +368,10 @@ export class SquaresGameService {
         return null;
       }
 
-      // Calculate payout
-      const payoutAmount = this.calculatePayout(period, game.totalPot, game.payoutStructure as any);
+      // Gross, then the winner's own subscription decides the fee.
+      const grossPayout = this.calculatePayout(period, game.totalPot, game.payoutStructure as any);
+      const isPro = await TransactionService.isProSubscriber(winningPurchase.userId);
+      const payoutAmount = netWinnings(grossPayout, isPro);
 
       // Create payout record
       const now = new Date().toISOString();
@@ -611,11 +613,12 @@ export class SquaresGameService {
 
     const grossPayout = totalPot * percentage;
 
-    // Apply platform fee (rate defined in subscriptionConfig — Pro subscribers handled at transaction level)
-    const platformFee = grossPayout * WINNINGS_FEE_RATE;
-    const netPayout = grossPayout - platformFee;
-
-    return Math.round(netPayout * 100) / 100;
+    // Returns GROSS. The fee used to be taken here, with a comment claiming Pro
+    // was "handled at transaction level" - while recordSquaresPayout said the fee
+    // was "already calculated in SquaresGameService". Each deferred to the other
+    // and no one checked, so Pro members paid it. The fee is applied by the
+    // caller, which is the only place that knows whose payout this is.
+    return Math.round(grossPayout * 100) / 100;
   }
 
   /**

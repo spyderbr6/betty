@@ -25,6 +25,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { formatCurrency } from '../utils/formatting';
 import { NotificationService } from '../services/notificationService';
 import { TransactionService } from '../services/transactionService';
+import { winningsFee } from '../config/subscriptionConfig';
 import { showAlert } from '../components/ui/CustomAlert';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
@@ -334,9 +335,6 @@ export const ResolveScreen: React.FC = () => {
               payout = totalPot * winnerShare;
             }
 
-            // Calculate platform fee (3% of winnings) for winners
-            const platformFee = isWinner && payout > 0 ? Math.round(payout * 0.03 * 100) / 100 : 0;
-            const netPayout = payout - platformFee;
 
             // Update participant record with calculated payout (gross amount)
             await client.models.Participant.update({
@@ -345,15 +343,19 @@ export const ResolveScreen: React.FC = () => {
               status: isWinner ? 'ACCEPTED' : 'DECLINED'
             });
 
+            // Pro waives the fee. Both the transaction below and the notification
+            // further down used to hardcode 0.03 and never ask, so Pro members were
+            // charged on every bet they won and then told the reduced figure.
+            // Looked up once so the two cannot disagree.
+            const isPro = await TransactionService.isProSubscriber(participant.userId);
+            const platformFee = winningsFee(payout, isPro);
+            const netPayout = payout - platformFee;
+
             // Create PENDING transactions (will be completed by payout-processor after 48h)
             if (isWinner && payout > 0) {
               // Get current balance for transaction record
               const { data: userData } = await client.models.User.get({ id: participant.userId });
               const currentBalance = userData?.balance || 0;
-
-              // Calculate platform fee (3% of winnings) - will be applied when payout-processor completes transaction
-              const platformFee = Math.round(payout * 0.03 * 100) / 100;
-              const netPayout = payout - platformFee;
 
               await client.models.Transaction.create({
                 userId: participant.userId,
@@ -361,7 +363,7 @@ export const ResolveScreen: React.FC = () => {
                 status: 'PENDING', // NOT COMPLETED - awaiting dispute window
                 amount: payout, // Gross payout amount (before fees) - consistent with deposits
                 actualAmount: netPayout, // Net amount received after platform fee
-                platformFee: platformFee, // 3% platform fee
+                platformFee, // 0 for Pro
                 balanceBefore: currentBalance,
                 balanceAfter: currentBalance + netPayout, // Projected balance (after fee)
                 relatedBetId: bet.id,
@@ -384,8 +386,8 @@ export const ResolveScreen: React.FC = () => {
             // Send bet resolved notification to participant
             if (participant.userId !== user?.userId) {
               try {
-                // Calculate net payout for winner notification
-                const netPayoutForNotification = isWinner ? payout - Math.round(payout * 0.03 * 100) / 100 : 0;
+                // Same figure the transaction recorded, fee and all.
+                const netPayoutForNotification = isWinner ? netPayout : 0;
 
                 await NotificationService.createNotification({
                   userId: participant.userId,

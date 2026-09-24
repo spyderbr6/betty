@@ -1,4 +1,8 @@
 import { EventBridgeHandler } from 'aws-lambda';
+
+/** Mirrors WINNINGS_FEE_RATE in src/config/subscriptionConfig.ts. A Lambda
+ *  cannot import from src/, so changing the rate means changing both. */
+const WINNINGS_FEE_RATE = 0.03;
 import { generateClient } from 'aws-amplify/api';
 import type { Schema } from '../../data/resource';
 import { Amplify } from 'aws-amplify';
@@ -510,7 +514,16 @@ async function processPeriodScoresForLiveGames(): Promise<number> {
         // Credit buyer's account
         const { data: user } = await client.models.User.get({ id: winningPurchase.userId });
         if (user) {
-          const newBalance = user.balance + payoutAmount;
+          // Pro waives the platform fee. This is the only place the winner is
+          // known, which is why the fee is taken here rather than inside
+          // calculatePayout. The fee is also recorded rather than reported as 0:
+          // it used to be deducted silently, so the history screen - which only
+          // shows a fee when platformFee > 0 - never mentioned it.
+          const isPro = user.subscriptionTier === 'PRO' && user.subscriptionStatus === 'ACTIVE';
+          const platformFee = isPro ? 0 : Math.round(payoutAmount * WINNINGS_FEE_RATE * 100) / 100;
+          const netPayout = Math.round((payoutAmount - platformFee) * 100) / 100;
+
+          const newBalance = user.balance + netPayout;
           await client.models.User.update({
             id: winningPurchase.userId,
             balance: newBalance,
@@ -522,7 +535,8 @@ async function processPeriodScoresForLiveGames(): Promise<number> {
             type: 'SQUARES_PAYOUT',
             status: 'COMPLETED',
             amount: payoutAmount,
-            platformFee: 0, // Already deducted
+            actualAmount: netPayout,
+            platformFee,
             balanceBefore: user.balance,
             balanceAfter: newBalance,
             relatedSquaresGameId: fullGame.id,
@@ -863,9 +877,10 @@ function calculatePayout(period: number, totalPot: number, payoutStructure: any)
 
   const grossPayout = totalPot * percentage;
 
-  // Apply 3% platform fee
-  const platformFee = grossPayout * 0.03;
-  const netPayout = grossPayout - platformFee;
+  // Returns GROSS. The fee is applied at the payout site, where the winner is
+  // known and their subscription can be read - it was taken here, blind, so Pro
+  // members paid it on every square they won.
+  const netPayout = grossPayout;
 
   return Math.round(netPayout * 100) / 100;
 }

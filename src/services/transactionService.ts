@@ -75,7 +75,8 @@ export interface CreateTransactionParams {
 }
 
 export class TransactionService {
-  private static async isProSubscriber(userId: string): Promise<boolean> {
+  /** Public: callers that build their own payout transactions must be able to ask. */
+  static async isProSubscriber(userId: string): Promise<boolean> {
     try {
       const { data: user } = await client.models.User.get({ id: userId });
       return user?.subscriptionTier === 'PRO' && user?.subscriptionStatus === 'ACTIVE';
@@ -909,8 +910,8 @@ export class TransactionService {
     _payoutId: string,
     period: string
   ): Promise<Transaction | null> {
-    // Platform fee already calculated in SquaresGameService
-    // Amount passed here is already net of fee
+    // The caller applies the fee, because it is the only place that knows whose
+    // payout this is and whether they are Pro. The amount here is already net.
     return await this.createTransaction({
       userId,
       type: 'SQUARES_PAYOUT',
