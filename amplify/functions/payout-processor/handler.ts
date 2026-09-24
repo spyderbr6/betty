@@ -1,4 +1,5 @@
 import { EventBridgeHandler } from 'aws-lambda';
+import { isReadyForPayout, payoutSkipReason } from './payoutLogic';
 import { generateClient } from 'aws-amplify/api';
 import type { Schema } from '../../data/resource';
 import { Amplify } from 'aws-amplify';
@@ -65,25 +66,25 @@ async function processCompletedDisputeWindows(): Promise<{
     for (const bet of pendingBets) {
       if (!bet.id || !bet.creatorId) continue;
 
-      // Check if dispute window has expired
-      const disputeWindowExpired = bet.disputeWindowEndsAt && new Date(bet.disputeWindowEndsAt) < now;
-
-      // Check if there are any non-creator participants
-      const { data: participants } = await client.models.Participant.list({
-        filter: { betId: { eq: bet.id } }
+      // Indexed lookup; this was a filtered Scan per bet.
+      const { data: participants } = await client.models.Participant.participantsByBet({
+        betId: bet.id
       });
 
       const nonCreatorParticipants = participants?.filter((p: any) => p.userId !== bet.creatorId) || [];
-      const hasNonCreatorParticipants = nonCreatorParticipants.length > 0;
+      const candidate = {
+        winningSide: bet.winningSide,
+        disputeWindowEndsAt: bet.disputeWindowEndsAt,
+        hasNonCreatorParticipants: nonCreatorParticipants.length > 0,
+      };
 
-      // Process if:
-      // 1. Dispute window expired, OR
-      // 2. No non-creator participants (creator-only bet - no one to dispute)
-      if (disputeWindowExpired || !hasNonCreatorParticipants) {
-        if (!hasNonCreatorParticipants) {
-          console.log(`🎯 [Payout] Bet ${bet.id} has no non-creator participants - processing immediately`);
+      if (isReadyForPayout(candidate, now)) {
+        if (!candidate.hasNonCreatorParticipants) {
+          console.log(`🎯 [Payout] Bet ${bet.id} has no non-creator participants - no dispute window to wait for`);
         }
         betsReadyForPayout.push(bet);
+      } else {
+        console.log(`⏭️ [Payout] Skipping bet ${bet.id}: ${payoutSkipReason(candidate, now)}`);
       }
     }
 
