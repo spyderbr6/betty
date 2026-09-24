@@ -557,6 +557,7 @@ export const ResolveScreen: React.FC = () => {
                         isResolving === bet.id && styles.resolutionButtonDisabled
                       ]}
                       onPress={() => handleSideSelection(bet, 'A')}
+                      testID={`resolve-side-A-${bet.id}`}
                       disabled={isResolving === bet.id}
                     >
                       <>
@@ -583,6 +584,7 @@ export const ResolveScreen: React.FC = () => {
                         isResolving === bet.id && styles.resolutionButtonDisabled
                       ]}
                       onPress={() => handleSideSelection(bet, 'B')}
+                      testID={`resolve-side-B-${bet.id}`}
                       disabled={isResolving === bet.id}
                     >
                       <>
@@ -610,6 +612,7 @@ export const ResolveScreen: React.FC = () => {
                         isResolving === bet.id && styles.confirmButtonDisabled
                       ]}
                       onPress={() => handleConfirmResolution(bet)}
+                      testID={`resolve-confirm-${bet.id}`}
                       disabled={isResolving === bet.id}
                     >
                       {isResolving === bet.id ? (
