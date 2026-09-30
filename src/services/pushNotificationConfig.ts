@@ -7,12 +7,16 @@ import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import { NotificationType } from '../types/betting';
 
-// Configure how notifications are handled when the app is running
+// How a push is presented while the app is in the foreground. No system banner or sound:
+// the same notification also arrives through NotificationContext's subscription, which
+// shows the in-app toast, so showing both displayed every foreground notification twice.
+// It still goes into the notification list so it isn't lost if the toast is missed.
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
+    shouldShowBanner: false,
+    shouldShowList: true,
+    shouldPlaySound: false,
+    shouldSetBadge: false,
   }),
 });
 

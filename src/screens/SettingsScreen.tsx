@@ -11,7 +11,7 @@ import { colors, spacing, textStyles } from '../styles';
 import { ModalHeader } from '../components/ui/ModalHeader';
 import { useAuth } from '../contexts/AuthContext';
 import { NotificationPreferencesService } from '../services/notificationPreferencesService';
-import { NotificationService } from '../services/notificationService';
+import { NotificationService, DevicePushPermission } from '../services/notificationService';
 import { NotificationPreferences } from '../types/betting';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
@@ -29,41 +29,43 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
   const [allowPhoneDiscovery, setAllowPhoneDiscovery] = useState(false);
   const [isPublic, setIsPublic] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
+  const [devicePermission, setDevicePermission] = useState<DevicePushPermission>('undetermined');
+  const [isEnablingDevice, setIsEnablingDevice] = useState(false);
 
   useEffect(() => {
     loadPreferences();
     loadPrivacySettings();
+    refreshDevicePermission();
   }, []);
 
-  // Auto-trigger permission prompt if push is enabled but no token for this device
-  useEffect(() => {
-    const checkAndRegisterToken = async () => {
-      if (!user || !preferences || !preferences.pushEnabled) return;
+  const refreshDevicePermission = async () => {
+    setDevicePermission(await NotificationService.getDevicePushPermission());
+  };
 
-      try {
-        // Check if this device already has an active token
-        const { data: tokens } = await client.models.PushToken.list({
-          filter: {
-            userId: { eq: user.userId },
-            platform: { eq: Platform.OS.toUpperCase() as 'IOS' | 'ANDROID' | 'WEB' },
-            isActive: { eq: true }
+  // Ask for permission on this device and register it. Must run from a tap: browsers only
+  // show the permission prompt in response to a user gesture.
+  const handleEnableThisDevice = async () => {
+    if (!user || isEnablingDevice) return;
+    setIsEnablingDevice(true);
+    try {
+      const token = await NotificationService.registerPushToken(user.userId, { prompt: true, force: true });
+      const permission = await NotificationService.getDevicePushPermission();
+      setDevicePermission(permission);
+
+      if (token) {
+        // Enabling the device implies wanting push, so turn the account switch on too.
+        if (preferences && !preferences.pushEnabled) {
+          if (await NotificationPreferencesService.updatePreference(user.userId, 'pushEnabled', true)) {
+            setPreferences(prev => (prev ? { ...prev, pushEnabled: true } : prev));
           }
-        });
-
-        // If push is enabled but no token exists for this device, auto-register
-        if (!tokens || tokens.length === 0) {
-          console.log('[Settings] Push enabled but no token for this device, auto-registering...');
-          await NotificationService.registerPushToken(user.userId);
-          console.log('[Settings] ✅ Auto-registration complete');
         }
-      } catch (error) {
-        console.error('[Settings] Auto-registration failed:', error);
-        // Silent fail - user can manually toggle if needed
+      } else if (permission === 'denied') {
+        showAlert('Notifications Blocked', blockedInstructions());
       }
-    };
-
-    checkAndRegisterToken();
-  }, [user, preferences]);
+    } finally {
+      setIsEnablingDevice(false);
+    }
+  };
 
   const loadPreferences = async () => {
     if (!user) {
@@ -105,7 +107,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
 
       try {
         // Try to register push token (will prompt for permission)
-        const token = await NotificationService.registerPushToken(user.userId);
+        const token = await NotificationService.registerPushToken(user.userId, { prompt: true, force: true });
+        refreshDevicePermission();
 
         if (!token) {
           console.log('[Settings] Push token registration failed or permission denied');
@@ -277,13 +280,35 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
             onValueChange={(val) => handleToggle('inAppEnabled', val)}
           />
 
-          <SettingRow
-            icon="mail-outline"
-            title="Email Notifications"
-            subtitle="Receive email updates (coming soon)"
-            value={preferences.emailEnabled}
-            onValueChange={(val) => handleToggle('emailEnabled', val)}
-          />
+<View style={styles.settingRow} testID="settings-device-push">
+            <View style={styles.settingRowLeft}>
+              <Ionicons
+                name={devicePermission === 'granted' ? 'checkmark-circle-outline' : 'alert-circle-outline'}
+                size={22}
+                color={devicePermission === 'granted' ? colors.success : colors.textSecondary}
+              />
+              <View style={styles.settingRowText}>
+                <Text style={styles.settingRowTitle}>This Device</Text>
+                <Text style={styles.settingRowSubtitle} testID="settings-device-push-status">
+                  {deviceStatusText(devicePermission)}
+                </Text>
+              </View>
+            </View>
+            {devicePermission === 'undetermined' && (
+              <TouchableOpacity
+                style={styles.deviceButton}
+                onPress={handleEnableThisDevice}
+                disabled={isEnablingDevice}
+                testID="settings-enable-device-push"
+              >
+                {isEnablingDevice ? (
+                  <ActivityIndicator size="small" color={colors.textInverse} />
+                ) : (
+                  <Text style={styles.deviceButtonText}>Enable</Text>
+                )}
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
 
         {/* Notification Types */}
@@ -446,6 +471,26 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
   );
 };
 
+const blockedInstructions = () =>
+  Platform.OS === 'web'
+    ? 'Notifications are blocked for this site. Allow them in your browser\'s site settings, then come back here.'
+    : 'Notifications are turned off for SideBet. Turn them on in your device Settings > Notifications > SideBet.';
+
+const deviceStatusText = (permission: DevicePushPermission): string => {
+  switch (permission) {
+    case 'granted':
+      return 'Push notifications are allowed on this device';
+    case 'denied':
+      return blockedInstructions();
+    case 'unsupported':
+      return Platform.OS === 'web'
+        ? 'This browser does not support push notifications'
+        : 'Push notifications are not available on this device';
+    default:
+      return 'Allow notifications to get alerts on this device';
+  }
+};
+
 interface SettingRowProps {
   icon: keyof typeof Ionicons.glyphMap;
   title: string;
@@ -544,6 +589,17 @@ const styles = StyleSheet.create({
     ...textStyles.caption,
     color: colors.textMuted,
     marginTop: 2,
+  },
+  deviceButton: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: spacing.radius.md,
+    marginLeft: spacing.sm,
+  },
+  deviceButtonText: {
+    ...textStyles.button,
+    color: colors.textInverse,
   },
   dndTimeContainer: {
     paddingHorizontal: spacing.lg,

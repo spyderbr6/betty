@@ -101,18 +101,28 @@ async function sendViaExpoPush(
   try {
     const notifications = buildExpoMessages(tokens, title, message, data, priority);
 
+    const headers: Record<string, string> = {
+      Accept: 'application/json',
+      'Accept-encoding': 'gzip, deflate',
+      'Content-Type': 'application/json',
+    };
+    // Expo requires this when "Enhanced Security for Push Notifications" is on for the
+    // project. The secret was configured but never sent.
+    if (env.EXPO_ACCESS_TOKEN) {
+      headers.Authorization = `Bearer ${env.EXPO_ACCESS_TOKEN}`;
+    }
+
     const response = await fetch('https://exp.host/--/api/v2/push/send', {
       method: 'POST',
-      headers: {
-        Accept: 'application/json',
-        'Accept-encoding': 'gzip, deflate',
-        'Content-Type': 'application/json',
-      },
+      headers,
       body: JSON.stringify(notifications),
     });
 
     if (!response.ok) {
-      throw new Error(`Expo push service responded with status: ${response.status}`);
+      // Include the body: a 401 here means EXPO_ACCESS_TOKEN is wrong or revoked, and
+      // Expo says so in the response rather than the status alone.
+      const body = await response.text().catch(() => '');
+      throw new Error(`Expo push service responded with status: ${response.status} ${body}`);
     }
 
     const result = await response.json();

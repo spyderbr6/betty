@@ -255,6 +255,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signOut = useCallback(async () => {
     try {
+      // Deactivate this device's push registration while still authenticated, so a shared
+      // device stops receiving the previous user's pushes. Capped so a slow or failed
+      // network call never blocks signing out.
+      try {
+        const { userId } = await getCurrentUser();
+        await Promise.race([
+          NotificationService.unregisterThisDevice(userId),
+          new Promise((resolve) => setTimeout(resolve, 4000)),
+        ]);
+      } catch (pushError) {
+        console.warn('Failed to unregister this device from push:', pushError);
+      }
+
       await amplifySignOut();
       if (isMountedRef.current) {
         setUser(null);

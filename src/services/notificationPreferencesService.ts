@@ -31,6 +31,17 @@ const NOTIFICATION_TYPE_TO_PREFERENCE_KEY: Record<NotificationType, keyof Notifi
   'WITHDRAWAL_FAILED': 'paymentNotificationsEnabled',
   'PAYMENT_METHOD_VERIFIED': 'paymentNotificationsEnabled',
   'SYSTEM_ANNOUNCEMENT': 'systemAnnouncementsEnabled',
+  // Squares types were missing from this map, and an unmapped type read as "disabled",
+  // so squares notifications raised by the app were silently dropped. Interim mapping
+  // onto the existing switches until the category model in docs/NOTIFICATIONS_PLAN.md.
+  'SQUARES_INVITATION_RECEIVED': 'betInvitationsEnabled',
+  'SQUARES_INVITATION_ACCEPTED': 'betInvitationsEnabled',
+  'SQUARES_INVITATION_DECLINED': 'betInvitationsEnabled',
+  'SQUARES_PURCHASE_CONFIRMED': 'betJoinedEnabled',
+  'SQUARES_GRID_LOCKED': 'betJoinedEnabled',
+  'SQUARES_GAME_LIVE': 'betDeadlineEnabled',
+  'SQUARES_PERIOD_WINNER': 'betResolvedEnabled',
+  'SQUARES_GAME_CANCELLED': 'betCancelledEnabled',
 };
 
 export class NotificationPreferencesService {
@@ -241,7 +252,9 @@ export class NotificationPreferencesService {
         return true;
       }
 
-      const isEnabled = preferences[preferenceKey] as boolean;
+      // Anything that isn't an explicit `false` counts as enabled: a missing value must never
+      // silently suppress a notification.
+      const isEnabled = preferences[preferenceKey] !== false;
       console.log(`[NotificationPreferences] Notification type ${type} is ${isEnabled ? 'enabled' : 'disabled'} for user ${userId}`);
       return isEnabled;
     } catch (error) {

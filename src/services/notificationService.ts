@@ -5,120 +5,61 @@
 
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
-import { NotificationType, NotificationPriority, Notification } from '../types/betting';
+import type { NotificationType, NotificationPriority, Notification } from '../types/betting';
 import * as Notifications from 'expo-notifications';
-import { getCurrentUser } from 'aws-amplify/auth';
 // Temporarily remove Device import to avoid native module issues
 // import * as Device from 'expo-device';
 // Removed Constants import to avoid dependency issues
 // import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import { NotificationPreferencesService } from './notificationPreferencesService';
-import ToastNotificationService from './toastNotificationService';
-import { subscribeToWebPush, isWebPushSupported, unsubscribeFromWebPush } from '../utils/webPushUtils';
+import { subscribeToWebPush, isWebPushSupported } from '../utils/webPushUtils';
+import { getInstallationId } from './installationId';
+import { planTokenUpsert, rowsForDeviceSignOut, PushTokenRow } from './pushRegistrationLogic';
 
 const client = generateClient<Schema>();
 
+export type DevicePushPermission = 'granted' | 'denied' | 'undetermined' | 'unsupported';
+
+/** Who this device registered for in this session, so resume/refresh doesn't re-register. */
+let sessionRegistration: { userId: string; token: string } | null = null;
+
 export class NotificationService {
   /**
-   * Register push token for user (platform-aware: Expo for mobile, Web Push for web)
+   * Register this device's push token for the user (Expo on mobile, Web Push on web).
+   *
+   * Upserts by token value, so calling this on every launch, resume and auth refresh
+   * no longer adds a row each time (see pushRegistrationLogic). Runs at most once per
+   * session per user unless `force` is set.
+   *
+   * `prompt` controls whether the OS/browser permission dialog may be shown. It defaults
+   * to false on web: browsers only honour the prompt from a user gesture (Safari rejects
+   * it outright, Chrome penalises the site), so web prompts come from a tap in Settings.
    */
-  static async registerPushToken(userId: string): Promise<string | null> {
+  static async registerPushToken(
+    userId: string,
+    options: { prompt?: boolean; force?: boolean } = {}
+  ): Promise<string | null> {
+    const prompt = options.prompt ?? Platform.OS !== 'web';
+
+    if (!options.force && sessionRegistration?.userId === userId) {
+      return sessionRegistration.token;
+    }
+
     try {
-      console.log('[Push] 🚀 registerPushToken called for user:', userId);
-      console.log('[Push] Platform.OS:', Platform.OS);
+      const token = await this.getDevicePushToken(prompt);
+      if (!token) return null;
 
-      // WEB PLATFORM: Use Web Push API
-      // React Native Web always sets Platform.OS to 'web'
-      const isWeb = Platform.OS === 'web';
-
-      console.log('[Push] Is web?', isWeb);
-
-      if (isWeb) {
-        console.log('[Push] ✅ Detected web platform, registering web push token...');
-
-        if (!isWebPushSupported()) {
-          console.log('[Push] ❌ Web push not supported in this browser');
-          console.log('[Push] serviceWorker in navigator?', 'serviceWorker' in navigator);
-          console.log('[Push] PushManager in window?', 'PushManager' in window);
-          console.log('[Push] Notification in window?', 'Notification' in window);
-          return null;
-        }
-
-        try {
-          console.log('[Push] 🔔 Starting web push subscription process...');
-          // Subscribe to web push notifications
-          const webPushSubscription = await subscribeToWebPush();
-
-          console.log('[Push] 💾 Saving subscription to database...');
-          // Store the subscription in database
-          await client.models.PushToken.create({
-            userId,
-            token: webPushSubscription,
-            platform: 'WEB',
-            deviceId: `web-${navigator.userAgent.substring(0, 50)}`,
-            appVersion: '1.0.0',
-            isActive: true,
-            lastUsed: new Date().toISOString(),
-          });
-
-          console.log('[Push] ✅ Web push token registered successfully!');
-          return webPushSubscription;
-        } catch (webError) {
-          console.error('[Push] ❌ Web push registration failed:', webError);
-          return null;
-        }
-      }
-
-      // MOBILE PLATFORMS: Use Expo Push Notifications
-      console.log('[Push] Registering Expo push token...');
-
-      // Check if push notifications are supported in this environment
-      if (!Notifications.getExpoPushTokenAsync) {
-        console.log('[Push] Notifications not supported in this environment');
-        return null;
-      }
-
-      const { status: existingStatus } = await Notifications.getPermissionsAsync();
-      let finalStatus = existingStatus;
-
-      if (existingStatus !== 'granted') {
-        const { status } = await Notifications.requestPermissionsAsync();
-        finalStatus = status;
-      }
-
-      if (finalStatus !== 'granted') {
-        console.log('[Push] Permission not granted for push notifications');
-        return null;
-      }
-
-      // Try to get expo push token with proper project ID
-      const token = await Notifications.getExpoPushTokenAsync({
-        projectId: 'f26fa72b-c85a-4174-90bb-1b14c526ed05' // EAS project ID from app.json
-      });
-
-      // Store the token in database
-      const deviceId = Platform.OS === 'ios' ? 'iOS-Device' : 'Android-Device';
-      const platform = Platform.OS.toUpperCase() as 'IOS' | 'ANDROID';
-
-      await client.models.PushToken.create({
-        userId,
-        token: token.data,
-        platform,
-        deviceId,
-        appVersion: '1.0.0', // Simplified to avoid Constants dependency issues
-        isActive: true,
-        lastUsed: new Date().toISOString(),
-      });
-
-      console.log('[Push] Token registered successfully:', token.data);
-      return token.data;
-    } catch (error: any) {
-      // Handle Firebase initialization error specifically
-      if (error?.code === 'E_REGISTRATION_FAILED') {
-        console.warn('[Push] Firebase not configured. Push notifications require Firebase setup for Android.');
-        console.warn('[Push] For development: in-app notifications will still work');
-        console.warn('[Push] To enable push: Follow guide at https://docs.expo.dev/push-notifications/fcm-credentials/');
+      await this.saveDeviceToken(userId, token);
+      sessionRegistration = { userId, token };
+      console.log('[Push] Device token registered for user', userId);
+      return token;
+    } catch (error) {
+      if ((error as { code?: string } | null)?.code === 'E_REGISTRATION_FAILED') {
+        // FCM credentials are configured (google-services.json + FCM V1 key on EAS), so
+        // this almost always means the device has no Google Play services — e.g. an AOSP
+        // emulator image — or the installed build predates the credentials.
+        console.warn('[Push] Native push registration failed (E_REGISTRATION_FAILED). Check the device has Google Play services and the build includes FCM credentials. In-app notifications still work.');
       } else {
         console.error('[Push] Error registering push token:', error);
       }
@@ -127,38 +68,134 @@ export class NotificationService {
   }
 
   /**
-   * Unregister push token for user (platform-aware)
+   * This device's push token, or null when push is unsupported or permission is not granted.
+   * Only shows a permission dialog when `prompt` is true.
    */
-  static async unregisterPushToken(userId: string): Promise<void> {
+  static async getDevicePushToken(prompt: boolean): Promise<string | null> {
+    if (Platform.OS === 'web') {
+      if (!isWebPushSupported()) {
+        console.log('[Push] Web push not supported in this browser');
+        return null;
+      }
+      if (window.Notification.permission !== 'granted' && !prompt) {
+        return null;
+      }
+      // Requests permission when not yet granted, then reuses or creates the subscription.
+      return await subscribeToWebPush();
+    }
+
+    if (!Notifications.getExpoPushTokenAsync) {
+      console.log('[Push] Notifications not supported in this environment');
+      return null;
+    }
+
+    let { status } = await Notifications.getPermissionsAsync();
+    if (status !== 'granted' && prompt) {
+      ({ status } = await Notifications.requestPermissionsAsync());
+    }
+    if (status !== 'granted') {
+      console.log('[Push] Notification permission not granted');
+      return null;
+    }
+
+    const token = await Notifications.getExpoPushTokenAsync({
+      projectId: 'f26fa72b-c85a-4174-90bb-1b14c526ed05', // EAS project ID from app.json
+    });
+    return token.data;
+  }
+
+  /**
+   * Permission state for push on this device, for the Settings screen.
+   */
+  static async getDevicePushPermission(): Promise<DevicePushPermission> {
     try {
       if (Platform.OS === 'web') {
-        // Unsubscribe from web push
-        await unsubscribeFromWebPush();
-        console.log('[Push] Web push unsubscribed');
+        if (!isWebPushSupported()) return 'unsupported';
+        if (window.Notification.permission === 'granted') return 'granted';
+        if (window.Notification.permission === 'denied') return 'denied';
+        return 'undetermined';
       }
-
-      // Deactivate tokens in database
-      const { data: tokens } = await client.models.PushToken.list({
-        filter: {
-          userId: { eq: userId },
-          isActive: { eq: true }
-        }
-      });
-
-      if (tokens && tokens.length > 0) {
-        await Promise.all(
-          tokens.map(token =>
-            client.models.PushToken.update({
-              id: token.id!,
-              isActive: false,
-            })
-          )
-        );
-        console.log(`[Push] Deactivated ${tokens.length} push tokens`);
-      }
-    } catch (error) {
-      console.error('[Push] Error unregistering push token:', error);
+      const { status, canAskAgain } = await Notifications.getPermissionsAsync();
+      if (status === 'granted') return 'granted';
+      if (status === 'denied' && !canAskAgain) return 'denied';
+      return 'undetermined';
+    } catch {
+      return 'unsupported';
     }
+  }
+
+  /**
+   * Record `token` for the user: one row per token, duplicates deactivated.
+   */
+  private static async saveDeviceToken(userId: string, token: string): Promise<void> {
+    const rows = await this.listUserTokenRows(userId);
+    const plan = planTokenUpsert(rows, token, new Date());
+    const now = new Date().toISOString();
+    const installationId = await getInstallationId();
+
+    if (plan.create) {
+      await client.models.PushToken.create({
+        userId,
+        token,
+        platform: Platform.OS.toUpperCase() as 'IOS' | 'ANDROID' | 'WEB',
+        deviceId: installationId,
+        appVersion: '1.0.0',
+        isActive: true,
+        lastUsed: now,
+      });
+    } else if (plan.keepId && plan.touchKept) {
+      await client.models.PushToken.update({
+        id: plan.keepId,
+        isActive: true,
+        lastUsed: now,
+        deviceId: installationId,
+      });
+    }
+
+    if (plan.deactivateIds.length > 0) {
+      console.log(`[Push] Deactivating ${plan.deactivateIds.length} duplicate token rows`);
+      await Promise.all(
+        plan.deactivateIds.map((id) => client.models.PushToken.update({ id, isActive: false }))
+      );
+    }
+  }
+
+  /**
+   * Deactivate this device's push registration for the user. Called before sign-out so a
+   * shared device stops receiving the previous user's pushes. The user's other devices are
+   * left alone.
+   */
+  static async unregisterThisDevice(userId: string): Promise<void> {
+    try {
+      const token = sessionRegistration?.token ?? (await this.getDevicePushToken(false).catch(() => null));
+      const installationId = await getInstallationId();
+      const rows = await this.listUserTokenRows(userId);
+      const ids = rowsForDeviceSignOut(rows, { token, installationId });
+
+      await Promise.all(ids.map((id) => client.models.PushToken.update({ id, isActive: false })));
+      console.log(`[Push] Deactivated ${ids.length} token rows for this device`);
+    } catch (error) {
+      console.error('[Push] Error unregistering this device:', error);
+    } finally {
+      sessionRegistration = null;
+    }
+  }
+
+  /**
+   * All of the user's token rows, through the userId index. Pages through results: before
+   * registration was an upsert, one device could hold dozens of duplicate rows.
+   */
+  private static async listUserTokenRows(userId: string): Promise<PushTokenRow[]> {
+    const rows: PushTokenRow[] = [];
+    let nextToken: string | null | undefined;
+    do {
+      // Cast as elsewhere in this layer: the index query trips TS2590 on the generated types.
+      const response: { data?: PushTokenRow[] | null; nextToken?: string | null } =
+        await (client.models.PushToken as any).pushTokensByUser({ userId }, { limit: 200, nextToken });
+      rows.push(...(response.data ?? []));
+      nextToken = response.nextToken;
+    } while (nextToken);
+    return rows;
   }
 
   /**
@@ -185,37 +222,6 @@ export class NotificationService {
     } catch (error) {
       console.error('Error sending push notification:', error);
       return false;
-    }
-  }
-
-  /**
-   * Cleanup inactive push tokens
-   */
-  static async cleanupInactiveTokens(userId: string, daysInactive: number = 30): Promise<void> {
-    try {
-      const cutoffDate = new Date();
-      cutoffDate.setDate(cutoffDate.getDate() - daysInactive);
-
-      const { data: inactiveTokens } = await client.models.PushToken.list({
-        filter: {
-          userId: { eq: userId },
-          lastUsed: { lt: cutoffDate.toISOString() }
-        }
-      });
-
-      if (inactiveTokens && inactiveTokens.length > 0) {
-        await Promise.all(
-          inactiveTokens.map(token =>
-            client.models.PushToken.update({
-              id: token.id!,
-              isActive: false,
-            })
-          )
-        );
-        console.log(`Deactivated ${inactiveTokens.length} inactive push tokens`);
-      }
-    } catch (error) {
-      console.error('Error cleaning up inactive tokens:', error);
     }
   }
 
@@ -347,48 +353,9 @@ export class NotificationService {
           });
         }
 
-        // Show in-app toast if:
-        // 1. User wants in-app notifications (preferences.inAppEnabled)
-        // 2. Not in DND window
-        // 3. Not LOW priority (LOW = DB record only)
-        // 4. Notification is for the currently logged-in user
-        if (preferences.inAppEnabled && !inDndWindow && priority !== 'LOW') {
-          console.log('[Notification] Checking if should show in-app toast...');
-          try {
-            // Only show toast if notification is for the current logged-in user
-            const currentUser = await getCurrentUser();
-            if (currentUser.userId === userId) {
-              console.log('[Notification] Showing in-app toast for current user');
-              await ToastNotificationService.showToast(
-                type,
-                title,
-                message,
-                priority,
-                {
-                  notificationId: notification.id,
-                  actionType,
-                  actionData,
-                  relatedBetId,
-                  relatedUserId,
-                }
-              );
-            } else {
-              console.log('[Notification] Skipping toast - notification is for different user:', {
-                notificationUserId: userId,
-                currentUserId: currentUser.userId
-              });
-            }
-          } catch (toastError) {
-            console.warn('[Notification] In-app toast failed:', toastError);
-            // Don't fail the whole notification creation if toast fails
-          }
-        } else {
-          console.log('[Notification] Skipping in-app toast:', {
-            inAppEnabled: preferences.inAppEnabled,
-            inDndWindow,
-            priority
-          });
-        }
+        // No toast here. NotificationContext's onCreate subscription is the single place
+        // in-app banners come from; showing one here as well toasted every notification a
+        // user raised for themselves twice.
 
         return notification;
       }
@@ -528,33 +495,6 @@ export class NotificationService {
     } catch (error) {
       console.error('[Notification] Error getting unread count:', error);
       return 0;
-    }
-  }
-
-  /**
-   * Delete old notifications (cleanup)
-   */
-  static async deleteOldNotifications(userId: string, daysOld: number = 30): Promise<void> {
-    try {
-      const cutoffDate = new Date();
-      cutoffDate.setDate(cutoffDate.getDate() - daysOld);
-
-      const { data } = await client.models.Notification.list({
-        filter: {
-          userId: { eq: userId },
-          createdAt: { lt: cutoffDate.toISOString() }
-        }
-      });
-
-      if (data && data.length > 0) {
-        await Promise.all(
-          data.map(notification =>
-            client.models.Notification.delete({ id: notification.id! })
-          )
-        );
-      }
-    } catch (error) {
-      console.error('Error deleting old notifications:', error);
     }
   }
 

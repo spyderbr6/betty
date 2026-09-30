@@ -653,6 +653,7 @@ export const AccountScreen: React.FC = () => {
             title="Settings"
             subtitle="App preferences and notifications"
             onPress={handleSettingsPress}
+            testID="account-settings"
           />
           <MenuOption
             icon="help-circle-outline"
@@ -674,6 +675,7 @@ export const AccountScreen: React.FC = () => {
             style={styles.signOutButton}
             onPress={handleSignOut}
             activeOpacity={0.8}
+            testID="account-sign-out"
           >
             <Ionicons name="log-out-outline" size={20} color={colors.error} />
             <Text style={styles.signOutText}>Sign Out</Text>
@@ -871,6 +873,7 @@ export const AccountScreen: React.FC = () => {
                 <TouchableOpacity
                   style={[styles.confirmButton, styles.signOutConfirmButton]}
                   onPress={confirmSignOut}
+                  testID="account-sign-out-confirm"
                   activeOpacity={0.8}
                 >
                   <Text style={styles.signOutConfirmButtonText}>Sign Out</Text>
@@ -891,6 +894,7 @@ interface MenuOptionProps {
   subtitle: string;
   onPress?: () => void;
   showArrow?: boolean;
+  testID?: string;
 }
 
 const MenuOption: React.FC<MenuOptionProps> = ({
@@ -899,12 +903,14 @@ const MenuOption: React.FC<MenuOptionProps> = ({
   subtitle,
   onPress,
   showArrow = true,
+  testID,
 }) => {
   return (
     <TouchableOpacity 
       style={styles.menuOption}
       onPress={onPress}
       activeOpacity={0.7}
+      testID={testID}
     >
       <View style={styles.menuOptionLeft}>
         <View style={styles.menuIconContainer}>

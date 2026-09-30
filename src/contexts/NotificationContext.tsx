@@ -10,6 +10,8 @@ import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
 import { NotificationService } from '../services/notificationService';
 import ToastNotificationService from '../services/toastNotificationService';
+import { NotificationPreferencesService } from '../services/notificationPreferencesService';
+import type { NotificationPriority, NotificationType } from '../types/betting';
 import { useAuth } from './AuthContext';
 
 const client = generateClient<Schema>();
@@ -111,6 +113,39 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     // Initial count fetch
     refreshUnreadCount();
 
+    const userId = user.userId;
+
+    // The only place in-app banners come from. It runs on the recipient's own device, so
+    // the in-app switch and quiet hours are checked against the recipient's own clock.
+    const showToastIfAllowed = async (notification: Schema['Notification']['type']) => {
+      try {
+        const prefs = await NotificationPreferencesService.getUserPreferences(userId);
+        if (!prefs.inAppEnabled || NotificationPreferencesService.isInDndWindow(prefs)) {
+          return;
+        }
+
+        // Parse actionData if it's a JSON string
+        let parsedActionData = notification.actionData;
+        if (typeof notification.actionData === 'string') {
+          try {
+            parsedActionData = JSON.parse(notification.actionData);
+          } catch {
+            // If parsing fails, use as-is
+          }
+        }
+
+        ToastNotificationService.showToast(
+          notification.type as NotificationType,
+          notification.title,
+          notification.message,
+          notification.priority as NotificationPriority,
+          parsedActionData
+        );
+      } catch (toastError) {
+        console.warn('[NotificationContext] Failed to show toast for new notification:', toastError);
+      }
+    };
+
     // Subscribe to new notifications (onCreate)
     const createSubscription = client.models.Notification.onCreate({
       filter: {
@@ -124,30 +159,9 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
           setUnreadCount(prev => prev + 1);
         }
 
-        // Show in-app toast for new notifications (from Lambda or other sources)
+        // Show in-app toast for new notifications, from any source
         if (notification.priority !== 'LOW') {
-          try {
-            // Parse actionData if it's a JSON string
-            let parsedActionData = notification.actionData;
-            if (typeof notification.actionData === 'string') {
-              try {
-                parsedActionData = JSON.parse(notification.actionData);
-              } catch {
-                // If parsing fails, use as-is
-              }
-            }
-
-            // Show toast
-            ToastNotificationService.showToast(
-              notification.type,
-              notification.title,
-              notification.message,
-              notification.priority,
-              parsedActionData
-            );
-          } catch (toastError) {
-            console.warn('[NotificationContext] Failed to show toast for new notification:', toastError);
-          }
+          showToastIfAllowed(notification);
         }
       },
       error: (error) => {

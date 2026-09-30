@@ -53,6 +53,7 @@ src/
 - **[MODAL_STANDARDS.md](./MODAL_STANDARDS.md)**: **REQUIRED** reading before creating/modifying modals
 - **[PUSH_NOTIFICATION_GUIDE.md](./PUSH_NOTIFICATION_GUIDE.md)**: Complete guide to push notification setup, testing, and troubleshooting
 - **[STRIPE_GUIDE.md](./STRIPE_GUIDE.md)**: Card deposits and Pro subscriptions — setup, test → production switchover, and payment troubleshooting
+- **[docs/NOTIFICATIONS_PLAN.md](./docs/NOTIFICATIONS_PLAN.md)**: Notifications overhaul — decisions, target design, phased checklist
 - **[SQUARES_GUIDE.md](./SQUARES_GUIDE.md)**: Betting squares — how a game runs, how winners are decided, and what automates it
 - **docs/archive/**: Finished implementation plans and audits, kept for reasoning only. Assume they are out of date.
 - **todo.md**: Current tasks and project roadmap
@@ -268,9 +269,10 @@ async function yourMainFunction() {
 - **Profile Pictures**: S3 upload with automatic cleanup
 
 ### Push Notification System
-- **Provider**: Expo Push Notification Service. **Android push is currently non-functional** — verified on an emulator against the SDK 57 build, the app logs "Firebase not configured. Push notifications require Firebase setup for Android." and no token registers. Expo's service still needs FCM credentials uploaded to EAS for Android; only iOS works without extra setup. In-app notifications are unaffected.
+- **Provider**: Expo Push Notification Service. **Android FCM is configured**: `google-services.json` is committed and the FCM V1 service-account key is uploaded to EAS. Registration needs a device or emulator with Google Play services (a plain AOSP image fails with `E_REGISTRATION_FAILED`). iOS needs an APNs key once the Apple developer account exists. Web uses Web Push with VAPID keys.
+- **Overhaul in progress**: [docs/NOTIFICATIONS_PLAN.md](./docs/NOTIFICATIONS_PLAN.md) is the working plan for delivery, preferences, devices and data retention. Read it before changing anything notification-related.
 - **Backend**: AWS Lambda function sends via Expo Push API
-- **Platforms**: iOS (APNS) and Android (FCM) - fully managed by Expo
+- **Platforms**: iOS (APNS) and Android (FCM) via Expo; web via Web Push
 - **Token Management**: Automatic registration on login, stored in DynamoDB
 - **Deep Linking**: Push notification taps navigate to relevant screens (bets, friend requests, transactions)
 - **User Preferences**: Configurable notification types, Do Not Disturb mode
@@ -1045,6 +1047,7 @@ e2e/
 ├── create-bet.spec.ts    # Create-bet form validation
 ├── join-bet.spec.ts      # Joining: guards, success, compensating delete
 ├── invitations.spec.ts   # Bet invitations listed and declined
+├── notification-settings.spec.ts # Push prompt timing, This Device row, sign-out scope
 ├── fixtures/cognito.ts   # HTTP-level Cognito mocks (unauthenticated flows)
 ├── fixtures/session.ts   # Seeds a signed-in session (see below)
 ├── fixtures/appsync.ts   # HTTP-level GraphQL mocks
