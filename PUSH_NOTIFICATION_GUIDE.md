@@ -41,10 +41,18 @@ await NotificationService.registerPushToken(userId);
 ```
 
 **What it does:**
-- Requests notification permissions from OS
-- Gets Expo push token from Expo servers
-- Stores token in DynamoDB `PushToken` table
+- Requests notification permission from the OS (mobile only — on web the prompt
+  only comes from a tap on **Settings → This Device → Enable**, because browsers
+  ignore or penalise prompts without a user gesture)
+- Gets the Expo push token (mobile) or Web Push subscription (web)
+- **Upserts** it into the `PushToken` table: one row per token, duplicate rows
+  deactivated, `deviceId` set to a stable per-installation id
+- Runs once per session per user; later auth refreshes and resumes reuse the result
 - Token format: `ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]`
+
+**Sign-out** calls `NotificationService.unregisterThisDevice(userId)`, which
+deactivates only this device's rows so a shared device stops receiving the
+previous user's pushes.
 
 ### 2. Notification Creation
 ```typescript
@@ -88,17 +96,17 @@ await NotificationService.createNotification({
 // 4. Navigates user to appropriate screen/modal
 ```
 
-## Firebase Setup IS Required (Android)
+## Firebase Setup (Android) — done
 
-> This section previously claimed Expo manages FCM credentials automatically and
-> that no Firebase setup was needed. That is wrong, and it is why Android push
-> never worked. Running the SDK 57 build on an emulator produced:
+> **Status (2026-09-30): configured.** `google-services.json` is committed and the
+> FCM V1 service-account key is uploaded to EAS. An earlier note here said Android
+> push "never worked" because FCM was missing; that described the state before
+> this setup and is no longer true. If registration fails with
+> `E_REGISTRATION_FAILED`, the device almost certainly lacks Google Play services
+> (see Prerequisites below), or the installed build predates the credentials.
 >
-> ```
-> [Push] Firebase not configured. Push notifications require Firebase setup for Android.
-> ```
->
-> No token registers, so no Android device can receive a push.
+> The steps below are kept for reference — e.g. if the key is rotated or the
+> Firebase project is recreated.
 
 Expo routes Android pushes through FCM, and since the FCM V1 migration you must
 supply your own credentials. **iOS** works without extra setup; **Android** does not.
@@ -176,7 +184,7 @@ npx eas build --profile development --platform ios
 1. Sign in to your account
 2. Check logs for:
    ```
-   [Push] Token registered successfully: ExponentPushToken[xxxxxx...]
+   [Push] Device token registered for user <userId>
    ```
 
 3. Verify token in database:
@@ -280,11 +288,12 @@ console.log('Active tokens:', tokens);
 2. Verify notification data includes `type` field
 3. Check AppNavigator wired up correctly
 
-### "Firebase error on Android"
-**Cause:** Using `expo start` or `expo run:android` instead of EAS build
+### "E_REGISTRATION_FAILED on Android"
+**Cause:** Almost always a device or emulator without Google Play services, or a build
+made before the FCM credentials were configured.
 **Fix:**
-- Use EAS development build: `npx eas build --profile development --platform android`
-- Development client includes proper FCM credentials
+- Use a physical device or a Google Play emulator image
+- Rebuild with EAS so the build includes the current credentials
 
 ## Production Deployment
 
@@ -373,7 +382,7 @@ console.log(`Push notifications sent: ${sent?.length}`);
 ## FAQ
 
 ### Q: Do I need a Firebase project?
-**A:** No! Expo manages FCM credentials for you when using EAS Build.
+**A:** Yes, for Android, and it's already set up — see "Firebase Setup (Android)" above.
 
 ### Q: Can I test on iOS Simulator?
 **A:** No, push notifications only work on physical devices.
@@ -382,7 +391,7 @@ console.log(`Push notifications sent: ${sent?.length}`);
 **A:** Check:
 1. Using EAS development build (not Expo Go)
 2. Logged in and push token registered
-3. Notification priority is HIGH or URGENT
+3. Notification priority is HIGH or URGENT (until the dispatcher in docs/NOTIFICATIONS_PLAN.md replaces this rule)
 4. Not in Do Not Disturb window
 5. Notifications enabled in device settings
 
@@ -412,7 +421,7 @@ const { data } = await client.mutations.sendPushNotification({
 ## Summary
 
 ✅ **Push notifications fully integrated** - Token registration, Lambda sender, navigation
-✅ **No Firebase setup needed** - Expo manages FCM credentials
+✅ **Firebase configured** - `google-services.json` committed, FCM V1 key on EAS
 ✅ **Cross-platform** - Works on iOS (APNS) and Android (FCM)
 ✅ **Deep linking** - Tapping notifications navigates to relevant screens
 ✅ **User preferences** - Respects notification settings and DND mode
@@ -530,8 +539,8 @@ await NotificationService.registerPushToken(userId);
 // On web: Creates Web Push subscription
 // On mobile: Gets Expo Push Token
 
-// New method for unregistering
-await NotificationService.unregisterPushToken(userId);
+// On sign-out: deactivates this device's rows only
+await NotificationService.unregisterThisDevice(userId);
 ```
 
 ### 4. Service Worker (`public/service-worker.js`)
@@ -648,13 +657,13 @@ npm start
 2. Sign in to your account
 3. Check browser console for:
    ```
-   [Push] Registering web push token...
+   [Push] (web) checking permission and subscription...
    [Web Push] Service worker registered
    [Web Push] New subscription created
-   [Push] Web push token registered successfully
+   [Push] Device token registered for user <userId>
    ```
 
-4. Browser should prompt for notification permission
+4. Open **Settings → This Device → Enable** (the browser only prompts from a tap)
 5. Click "Allow"
 
 ### Step 3: Verify Token in Database
@@ -694,11 +703,11 @@ await client.mutations.sendPushNotification({
 ### Expected Console Output (Successful Registration)
 
 ```
-[Push] Registering web push token...
+[Push] (web) checking permission and subscription...
 [Web Push] Service worker registered: https://localhost:8081/
 [Web Push] Service worker ready
 [Web Push] New subscription created
-[Push] Web push token registered successfully
+[Push] Device token registered for user <userId>
 ```
 
 ### Expected Console Output (Receiving Notification)
@@ -815,7 +824,8 @@ Web push subscriptions can expire. The Lambda function handles this by:
 
 1. **User signs in** → `AuthContext` calls `NotificationService.registerPushToken()`
 2. **Platform detection** → Detects `Platform.OS === 'web'`
-3. **Request permission** → Browser shows notification permission prompt
+3. **Permission** → if already granted, continue silently; otherwise stop here until
+   the user taps **Settings → This Device → Enable**, which shows the browser prompt
 4. **Register service worker** → `navigator.serviceWorker.register('/service-worker.js')`
 5. **Subscribe to push** → `pushManager.subscribe()` with VAPID public key
 6. **Store subscription** → Save to DynamoDB with `platform: 'WEB'`

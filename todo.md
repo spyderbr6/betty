@@ -23,7 +23,7 @@
 - **Friend Discovery**: Search by username, email, display name
 - **Bet Invitations**: Invite friends to existing bets with one tap
 - **Profile System**: Editable display names and profile pictures with S3 storage
-- **Notification System**: Complete preference system with in-app toasts, database records, and push notification infrastructure (needs Firebase setup)
+- **Notification System**: Complete preference system with in-app toasts, database records, and push notification infrastructure (overhaul in progress — see docs/NOTIFICATIONS_PLAN.md)
 
 #### **Complete Account Menu System**
 - **Detailed Stats Screen**: Comprehensive analytics with win/loss streaks, financial tracking, performance metrics
@@ -88,45 +88,16 @@ Remaining Stripe work is Phase 2 below.
 
 ---
 
-## 🔔 KNOWN ISSUE: PUSH NOTIFICATIONS ARE HALF-WIRED
+## 🔔 NOTIFICATIONS OVERHAUL — IN PROGRESS
 
-**Status: investigated, not fixed. Picked apart 2026-08-03 — resume here.**
+**The plan and checklist live in [docs/NOTIFICATIONS_PLAN.md](./docs/NOTIFICATIONS_PLAN.md).**
+It absorbed the "push is half-wired" analysis that used to be here (Lambda-raised
+notifications never push, HIGH-only push, DND can't be evaluated server-side, missing
+squares mappings) plus the 2026-09-30 audit, and records the decisions: per-account
+categories + per-device switch, nothing un-mutable, key categories always in the feed,
+one server-side dispatcher, automatic data retention.
 
-Push works for notifications raised by the app and does nothing for notifications raised by
-the backend. The backend ones are the ones that matter: they fire while the user is *away*.
-
-### What is broken
-
-**1. Lambda-raised notifications never push at all.** `sendPushNotification` is called from
-exactly one place in the codebase — `notificationService.ts:323`, inside `createNotification`,
-which is client-side only. The four backend Lambdas (`payout-processor`,
-`scheduled-bet-checker`, `scheduled-squares-checker`, `stripe-webhook`) call
-`client.models.Notification.create(...)` directly across 11 call sites and never touch the
-push mutation. So these types create a record and never push:
-
-`BET_RESOLVED` · `BET_CANCELLED` · `SQUARES_PERIOD_WINNER` · `SQUARES_GAME_LIVE` ·
-`SQUARES_GRID_LOCKED` · `SQUARES_GAME_CANCELLED` · `DEPOSIT_COMPLETED`
-
-Meanwhile what *does* push — friend requests, bet invitations — is raised while the user is
-already looking at the app. Push is working in exactly the cases that need it least.
-
-**2. The mutation's authorization blocks the fix.** `sendPushNotification` is scoped
-`allow.authenticated()` (Cognito user pools). Lambdas authenticate with IAM, so a Lambda
-calling it today would be denied. Any fix has to add `allow.resource(...)` for each function.
-
-**3. Only HIGH/URGENT priority ever pushes** (`notificationService.ts:320`). Deliberate, but
-worth revisiting alongside the above — plenty of MEDIUM notifications are push-worthy.
-
-**4. Do Not Disturb cannot be evaluated server-side.** `dndStartHour`/`dndEndHour` are stored
-as the user's *local* hours and no timezone is recorded anywhere on `User`. A Lambda can only
-compare against UTC, which would suppress notifications at the wrong hours rather than the
-right ones. Pushing from the backend needs a `timezone` field on User first, or DND has to be
-explicitly out of scope for backend-raised push.
-
-**5. `NOTIFICATION_TYPE_TO_PREFERENCE` is missing all 8 squares types**
-(`notificationPreferencesService.ts:16` — it is the one remaining type error in that file).
-`isNotificationEnabled` looks up an unmapped key, gets `undefined`, and squares notifications
-are likely suppressed as a result. Independent of push, worth fixing on its own.
+Phase 0 (stop the bleeding) is done. Phase 1 (catalog, `PushDevice`, `registerDevice`) is next.
 
 ### Already fixed (do not re-investigate)
 
@@ -141,25 +112,6 @@ are likely suppressed as a result. Independent of push, worth fixing on its own.
   suspect this pattern first** — `.list({ filter })` is a paged Scan, never a lookup.
 - `isInDndWindow` had its two branches inverted (a 9-to-17 window returned true for every hour
   of the day; a 22-to-7 window returned false always), and treated hour 0 as unset.
-
-### Options considered for fixing #1
-
-- **DynamoDB stream on the Notification table → one fan-out Lambda that sends the push.**
-  Every notification pushes regardless of origin, because there is one choke point that a
-  future call site cannot forget. Preference and priority logic lives in one place instead of
-  being duplicated into 4 Lambdas. Client-side push gets removed so nothing double-sends.
-  More work, and the version that stays correct. *Recommended.*
-- **Each Lambda calls the mutation after `Notification.create`.** Incremental and easy to
-  review, but duplicates the preference/priority checks across 11 call sites, and the next
-  Lambda to raise a notification will silently forget to push — which is precisely how this
-  gap appeared in the first place.
-
-### Also worth confirming before building either
-
-Whether push reaches devices *at all* today: that tokens register, that the Expo and web-push
-send paths succeed, and that VAPID/Expo credentials are configured. The older blockers listed
-under Priority 2 below (Firebase config, `EXPO_ACCESS_TOKEN`) were never confirmed resolved.
-No point building a fan-out on top of a send path that may itself be broken.
 
 ---
 
@@ -191,10 +143,10 @@ No point building a fan-out on top of a send path that may itself be broken.
   - [x] Snackbar-style UI with priority-based display
   - [x] Type-specific navigation handlers
   - [x] Integration with notification creation flow
-  - [ ] **BLOCKERS for Push Notifications:** — see [Known Issue: Push Notifications](#-known-issue-push-notifications-are-half-wired) above for the full picture
-    - [ ] Firebase configuration for Android (E_REGISTRATION_FAILED)
-    - [ ] EXPO_ACCESS_TOKEN environment variable in Lambda
-    - [ ] Backend-raised notifications never push (the big one — see section above)
+  - [ ] **BLOCKERS for Push Notifications:** — see [docs/NOTIFICATIONS_PLAN.md](./docs/NOTIFICATIONS_PLAN.md)
+    - [x] Firebase configuration for Android — FCM V1 configured (google-services.json + key on EAS)
+    - [x] EXPO_ACCESS_TOKEN sent by the Lambda (Phase 0)
+    - [ ] Backend-raised notifications never push — Phase 3 (dispatcher)
   - [ ] **Notification Triggers:**
     - [ ] BET_JOINED (add to BetsScreen.tsx when user joins)
     - [x] BET_RESOLVED — raised by `payout-processor` (record only, no push)
@@ -224,8 +176,7 @@ No point building a fan-out on top of a send path that may itself be broken.
   - [x] Priority-based display (URGENT > HIGH > MEDIUM)
   - [x] Queue overflow protection (5+ → batch message)
   - [x] Auto-dismiss based on priority (5s/4s/3s)
-- [ ] Push notifications configuration
-  - Infrastructure complete, needs Firebase setup + EXPO_ACCESS_TOKEN
+- [ ] Push notifications — tracked in docs/NOTIFICATIONS_PLAN.md (FCM and EXPO_ACCESS_TOKEN done)
 - [ ] Instant balance updates after payouts and joins
 - [ ] Add missing notification event triggers (bet events, payment events)
 
@@ -563,8 +514,8 @@ src/
     - Optimistic UI updates with error rollback
     - Comprehensive logging for debugging
   - **Known Blockers:**
-    - Push notifications need Firebase configuration for Android
-    - EXPO_ACCESS_TOKEN needed in Lambda function
+    - ~~Push notifications need Firebase configuration for Android~~ (configured)
+    - ~~EXPO_ACCESS_TOKEN needed in Lambda function~~ (sent since Phase 0)
     - Missing notification triggers for bet events and payment events
 - ✅ **P1 Bug Fixes & UX Improvements** (2025-10-25)
   - Event check-in integration with bet creation (auto-fills team names)
