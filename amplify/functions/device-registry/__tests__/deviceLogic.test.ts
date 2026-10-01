@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  cleanTimezone,
+  ownsDevice,
   DEVICE_RETENTION_DAYS,
   deviceExpiresAt,
   deviceIdFor,
@@ -62,5 +64,27 @@ describe('rowsToRelease', () => {
 
   it('handles no rows', () => {
     expect(rowsToRelease(null, 'x')).toEqual([]);
+  });
+});
+
+describe('ownsDevice', () => {
+  it('only lets the row’s own user change it', () => {
+    expect(ownsDevice({ userId: 'user-1' }, 'user-1')).toBe(true);
+    expect(ownsDevice({ userId: 'user-2' }, 'user-1')).toBe(false);
+    expect(ownsDevice(null, 'user-1')).toBe(false);
+  });
+});
+
+describe('cleanTimezone', () => {
+  it('keeps IANA zone names', () => {
+    for (const tz of ['America/New_York', 'UTC', 'Etc/GMT+5', 'America/Argentina/Buenos_Aires']) {
+      expect(cleanTimezone(tz)).toBe(tz);
+    }
+  });
+
+  it('drops anything else', () => {
+    for (const tz of ['', null, undefined, 'x'.repeat(65), 'America/New York', '<script>', '../etc']) {
+      expect(cleanTimezone(tz as string | null | undefined)).toBeUndefined();
+    }
   });
 });

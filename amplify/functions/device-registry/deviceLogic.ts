@@ -62,3 +62,18 @@ export function rowsToRelease(rowsWithToken: DeviceRow[] | null | undefined, kee
     .filter((r) => r.isActive && r.id && r.id !== keepId)
     .map((r) => r.id as string);
 }
+
+/** True when `userId` owns the device row and may change it. */
+export function ownsDevice(row: { userId?: string | null } | null | undefined, userId: string): boolean {
+  return !!row && row.userId === userId;
+}
+
+/**
+ * The timezone as reported, if it looks like an IANA zone ("America/New_York", "UTC",
+ * "Etc/GMT+5"). Anything else is dropped rather than stored, since quiet hours are
+ * computed from it.
+ */
+export function cleanTimezone(timezone: string | null | undefined): string | undefined {
+  if (!timezone || timezone.length > 64) return undefined;
+  return /^[A-Za-z][A-Za-z0-9_+\-]*(\/[A-Za-z0-9_+\-]+)*$/.test(timezone) ? timezone : undefined;
+}

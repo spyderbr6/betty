@@ -12,6 +12,7 @@ import { NotificationService } from '../services/notificationService';
 import ToastNotificationService from '../services/toastNotificationService';
 import { NotificationPreferencesService } from '../services/notificationPreferencesService';
 import type { NotificationPriority, NotificationType } from '../types/betting';
+import { isFeedVisible, shouldAlert } from '../../amplify/shared/notificationPreferencesLogic';
 import { useAuth } from './AuthContext';
 
 const client = generateClient<Schema>();
@@ -115,15 +116,27 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
     const userId = user.userId;
 
-    // The only place in-app banners come from. It runs on the recipient's own device, so
-    // the in-app switch and quiet hours are checked against the recipient's own clock.
-    const showToastIfAllowed = async (notification: Schema['Notification']['type']) => {
+    // Count and banner for a newly arrived notification, according to the recipient's own
+    // preferences: it counts toward unread only if it shows in their feed, and it shows a
+    // banner only if its category may alert. This is the only place in-app banners come from.
+    const handleNewNotification = async (notification: Schema['Notification']['type']) => {
+      let prefs;
       try {
-        const prefs = await NotificationPreferencesService.getUserPreferences(userId);
-        if (!prefs.inAppEnabled || NotificationPreferencesService.isInDndWindow(prefs)) {
-          return;
-        }
+        prefs = await NotificationPreferencesService.getUserPreferences(userId);
+      } catch (error) {
+        console.warn('[NotificationContext] Could not load preferences:', error);
+        return;
+      }
 
+      if (!notification.isRead && isFeedVisible(notification, prefs)) {
+        setUnreadCount(prev => prev + 1);
+      }
+
+      if (!shouldAlert(notification.type as NotificationType, prefs, 'banner')) {
+        return;
+      }
+
+      try {
         // Parse actionData if it's a JSON string
         let parsedActionData = notification.actionData;
         if (typeof notification.actionData === 'string') {
@@ -154,15 +167,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     }).subscribe({
       next: (notification) => {
         console.log('[NotificationContext] New notification received:', notification);
-        // Only increment if notification is unread
-        if (!notification.isRead) {
-          setUnreadCount(prev => prev + 1);
-        }
-
-        // Show in-app toast for new notifications, from any source
-        if (notification.priority !== 'LOW') {
-          showToastIfAllowed(notification);
-        }
+        handleNewNotification(notification);
       },
       error: (error) => {
         console.error('[NotificationContext] onCreate subscription error:', error);

@@ -35,6 +35,25 @@ export const profile = (over: Record<string, unknown> = {}) => ({
  * transformAmplifyBet drops any record without `category`, reads side names out
  * of the `odds` JSON blob, and uses `deadline` rather than `expiresAt`.
  */
+/**
+ * The signed-in user's notification preferences, in the category format: nothing muted.
+ * Read at boot — the unread count only counts what the feed shows (see
+ * notificationPreferencesLogic.isFeedVisible).
+ */
+export const notificationPreferences = (over: Record<string, unknown> = {}) => ({
+  id: 'prefs-1',
+  userId: TEST_USER.userId,
+  pushEnabled: true,
+  inAppEnabled: true,
+  alertMutedCategories: [],
+  feedMutedCategories: [],
+  dndEnabled: false,
+  quietStartMinute: null,
+  quietEndMinute: null,
+  timezone: 'America/New_York',
+  ...over,
+});
+
 export const bet = (over: Record<string, unknown> = {}) => ({
   id: 'bet-1',
   title: 'Chiefs cover the spread',
@@ -108,6 +127,7 @@ export const baseHandlers = (
   listFriendships: list(),
   listFriendRequests: list(),
   notificationsByUser: list(),
+  notificationPreferencesByUser: list([notificationPreferences()]),
   listEventCheckIns: list(),
   activeEventsByTime: list(),
   // Indexed replacements for the old filtered Scans. Both names are answered:

@@ -7,6 +7,8 @@ import { getAmplifyDataClientConfig } from '@aws-amplify/backend/function/runtim
 import { env } from '$amplify/env/device-registry';
 import {
   type DevicePlatform,
+  cleanTimezone,
+  ownsDevice,
   deviceExpiresAt,
   deviceIdFor,
   rowsToRelease,
@@ -34,10 +36,15 @@ interface UnregisterDeviceArgs {
   installationId: string;
 }
 
-type DeviceRegistryArgs = RegisterDeviceArgs | UnregisterDeviceArgs;
+interface SetDevicePushArgs {
+  deviceId: string;
+  pushEnabled: boolean;
+}
+
+type DeviceRegistryArgs = RegisterDeviceArgs | UnregisterDeviceArgs | SetDevicePushArgs;
 
 /**
- * Resolver for registerDevice and unregisterDevice. The caller's identity comes from
+ * Resolver for registerDevice, unregisterDevice and setDevicePush. The caller's identity comes from
  * Cognito, never from the arguments, so a user can only touch their own devices.
  */
 export const handler: AppSyncResolverHandler<DeviceRegistryArgs, string | boolean> = async (event) => {
@@ -51,6 +58,8 @@ export const handler: AppSyncResolverHandler<DeviceRegistryArgs, string | boolea
       return registerDevice(userId, event.arguments as RegisterDeviceArgs);
     case 'unregisterDevice':
       return unregisterDevice(userId, event.arguments as UnregisterDeviceArgs);
+    case 'setDevicePush':
+      return setDevicePush(userId, event.arguments as SetDevicePushArgs);
     default:
       throw new Error(`Unexpected field: ${event.info.fieldName}`);
   }
@@ -76,7 +85,7 @@ async function registerDevice(userId: string, args: RegisterDeviceArgs): Promise
     token: args.token,
     deviceName: args.deviceName ?? undefined,
     appVersion: args.appVersion ?? undefined,
-    timezone: args.timezone ?? undefined,
+    timezone: cleanTimezone(args.timezone),
     isActive: true,
     lastSeenAt: now.toISOString(),
     expiresAt: deviceExpiresAt(now),
@@ -101,6 +110,8 @@ async function registerDevice(userId: string, args: RegisterDeviceArgs): Promise
     released.map((otherId) => client.models.PushDevice.update({ id: otherId, isActive: false }))
   );
 
+  await copyTimezoneToPreferences(userId, fields.timezone);
+
   console.log(
     `[DeviceRegistry] ${existing ? 'Updated' : 'Created'} ${id} (${args.platform})` +
       (released.length ? `, released token from ${released.length} other row(s)` : '')
@@ -121,4 +132,38 @@ async function unregisterDevice(userId: string, args: UnregisterDeviceArgs): Pro
   await client.models.PushDevice.update({ id, isActive: false });
   console.log(`[DeviceRegistry] Deactivated ${id}`);
   return true;
+}
+
+/**
+ * Turn push on or off for one of the caller's devices (the switch in Settings). Users
+ * can't update PushDevice rows directly — that would let them reassign userId — so the
+ * switch goes through here, with ownership checked against the caller's identity.
+ */
+async function setDevicePush(userId: string, args: SetDevicePushArgs): Promise<boolean> {
+  const { data: device } = await client.models.PushDevice.get({ id: args.deviceId });
+  if (!ownsDevice(device, userId)) {
+    // Same answer whether the row is missing or someone else's, so ids can't be probed.
+    throw new Error('Device not found');
+  }
+  await client.models.PushDevice.update({ id: args.deviceId, pushEnabled: args.pushEnabled === true });
+  console.log(`[DeviceRegistry] ${args.deviceId} push ${args.pushEnabled ? 'on' : 'off'}`);
+  return true;
+}
+
+/**
+ * Quiet hours are read in the user's timezone, which only devices know. Keep the
+ * preferences row in step with the device the user most recently registered from.
+ * Best-effort: a failure here must not fail the registration.
+ */
+async function copyTimezoneToPreferences(userId: string, timezone: string | undefined): Promise<void> {
+  if (!timezone) return;
+  try {
+    const { data: rows } = await client.models.NotificationPreferences.notificationPreferencesByUser({ userId });
+    const prefs = rows?.[0];
+    if (prefs && prefs.timezone !== timezone) {
+      await client.models.NotificationPreferences.update({ id: prefs.id, timezone });
+    }
+  } catch (error) {
+    console.warn('[DeviceRegistry] Could not copy timezone to preferences:', error);
+  }
 }

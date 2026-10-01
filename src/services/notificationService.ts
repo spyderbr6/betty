@@ -17,6 +17,7 @@ import { subscribeToWebPush, isWebPushSupported } from '../utils/webPushUtils';
 import { getInstallationId } from './installationId';
 import { describeUserAgent, planTokenUpsert, rowsForDeviceSignOut, PushTokenRow } from './pushRegistrationLogic';
 import { notificationMeta } from '../../amplify/shared/notificationCatalog';
+import { isFeedVisible, shouldAlert } from '../../amplify/shared/notificationPreferencesLogic';
 
 const client = generateClient<Schema>();
 
@@ -324,23 +325,10 @@ export class NotificationService {
     try {
       console.log('[Notification] Creating notification:', { userId, type, title, message, priority });
 
-      // Check if user has this notification type enabled
-      const isEnabled = await NotificationPreferencesService.isNotificationEnabled(userId, type);
-      if (!isEnabled) {
-        console.log(`[Notification] User ${userId} has ${type} notifications disabled - skipping`);
-        return null;
-      }
-
-      // Get user preferences to check DND and delivery methods
+      // Every notification is written: the feed is the record, and whether it *shows* there
+      // is decided when the feed is read (isFeedVisible). Preferences only decide whether it
+      // may interrupt — see the push decision below.
       const preferences = await NotificationPreferencesService.getUserPreferences(userId);
-
-      // Check if in Do Not Disturb window
-      const inDndWindow = NotificationPreferencesService.isInDndWindow(preferences);
-      if (inDndWindow) {
-        console.log(`[Notification] User ${userId} is in DND window - creating DB record but no push/in-app`);
-        sendPush = false;
-        // Note: in-app notifications will also be skipped (we'll add this feature in Phase 4)
-      }
 
       console.log('[Notification] Full params:', {
         userId, type, title, message, priority, actionType, actionData,
@@ -387,12 +375,12 @@ export class NotificationService {
           createdAt: data.createdAt || new Date().toISOString(),
         };
 
-        // Send push notification if:
-        // 1. User wants push notifications (preferences.pushEnabled)
-        // 2. Not in DND window
-        // 3. High/Urgent priority
-        // 4. sendPush parameter is true
-        if (sendPush && preferences.pushEnabled && (priority === 'HIGH' || priority === 'URGENT')) {
+        // Push when the recipient's preferences allow this type to alert on push: the type
+        // alerts at all, push is on, its category isn't muted, and it isn't quiet hours in
+        // the recipient's timezone. This replaces the old HIGH/URGENT-only rule, which
+        // depended on a priority each call site picked by hand. Moves server-side in Phase 3.
+        const pushAllowed = shouldAlert(type, preferences, 'push');
+        if (sendPush && pushAllowed) {
           console.log('[Notification] Sending push notification...');
           try {
             await this.sendPushNotification(
@@ -407,19 +395,14 @@ export class NotificationService {
                 relatedBetId,
                 relatedUserId,
               },
-              priority === 'URGENT' ? 'HIGH' : 'MEDIUM'
+              priority === 'URGENT' || priority === 'HIGH' ? 'HIGH' : 'MEDIUM'
             );
           } catch (pushError) {
             console.warn('[Notification] Push notification failed, but in-app notification was created:', pushError);
             // Don't fail the whole notification creation if push fails
           }
         } else {
-          console.log('[Notification] Skipping push notification:', {
-            sendPush,
-            pushEnabled: preferences.pushEnabled,
-            priority,
-            inDndWindow
-          });
+          console.log('[Notification] Skipping push notification:', { sendPush, pushAllowed });
         }
 
         // No toast here. NotificationContext's onCreate subscription is the single place
@@ -475,12 +458,19 @@ export class NotificationService {
         const response: any = await client.models.Notification.notificationsByUser({
           userId: userId
         }, {
-          limit: requestedLimit,
+          limit: requestedLimit * 2, // Fetch extra to account for feed filtering below
           sortDirection: 'DESC' // Newest first
         });
         data = response.data || [];
         console.log(`[Notification] GSI query returned ${data.length} notifications`);
       }
+
+      // Hide categories the user has taken out of their feed. Feed-locked categories (money,
+      // results, refunds, disputes) always show. Applied at read time, so changing the
+      // preference applies to notifications already received, and the unread count — which
+      // comes through here too — only counts what the feed shows.
+      const preferences = await NotificationPreferencesService.getUserPreferences(userId);
+      data = data.filter((n: any) => isFeedVisible(n, preferences));
 
       // Apply type filter client-side if specified
       if (options.type) {

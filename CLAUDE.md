@@ -275,7 +275,7 @@ async function yourMainFunction() {
 - **Platforms**: iOS (APNS) and Android (FCM) via Expo; web via Web Push
 - **Token Management**: Automatic registration on login, stored in DynamoDB
 - **Deep Linking**: Push notification taps navigate to relevant screens (bets, friend requests, transactions)
-- **User Preferences**: Configurable notification types, Do Not Disturb mode
+- **User Preferences**: Per-category alerts and feed visibility (money, results, refunds and disputes always stay in the feed), quiet hours in the user's timezone, per-device push switch. Logic in `amplify/shared/notificationPreferencesLogic.ts`
 - **Testing**: Requires EAS development build on physical device
 - **Documentation**: See [PUSH_NOTIFICATION_GUIDE.md](./PUSH_NOTIFICATION_GUIDE.md) for complete setup and testing guide
 
@@ -1047,7 +1047,8 @@ e2e/
 ├── create-bet.spec.ts    # Create-bet form validation
 ├── join-bet.spec.ts      # Joining: guards, success, compensating delete
 ├── invitations.spec.ts   # Bet invitations listed and declined
-├── notification-settings.spec.ts # Push prompt timing, This Device row, sign-out scope
+├── notification-settings.spec.ts # Push prompt timing, device registration, sign-out scope
+├── notification-preferences.spec.ts # Category alerts/feed, quiet hours, device list, feed filtering
 ├── fixtures/cognito.ts   # HTTP-level Cognito mocks (unauthenticated flows)
 ├── fixtures/session.ts   # Seeds a signed-in session (see below)
 ├── fixtures/appsync.ts   # HTTP-level GraphQL mocks

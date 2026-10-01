@@ -114,6 +114,7 @@ export const Header: React.FC<HeaderProps> = ({
               style={styles.actionButton}
               onPress={handleNotificationPress}
               activeOpacity={0.7}
+              testID="header-notifications"
             >
               <Ionicons
                 name="notifications-outline"
@@ -122,7 +123,7 @@ export const Header: React.FC<HeaderProps> = ({
               />
               {(notificationCount ?? unreadCount) > 0 && (
                 <View style={styles.notificationBadge}>
-                  <Text style={styles.notificationBadgeText}>
+                  <Text style={styles.notificationBadgeText} testID="header-notifications-count">
                     {(notificationCount ?? unreadCount) > 99 ? '99+' : (notificationCount ?? unreadCount)}
                   </Text>
                 </View>

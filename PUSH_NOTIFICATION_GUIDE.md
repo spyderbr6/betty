@@ -398,9 +398,10 @@ console.log(`Push notifications sent: ${sent?.length}`);
 **A:** Check:
 1. Using EAS development build (not Expo Go)
 2. Logged in and push token registered
-3. Notification priority is HIGH or URGENT (until the dispatcher in docs/NOTIFICATIONS_PLAN.md replaces this rule)
-4. Not in Do Not Disturb window
-5. Notifications enabled in device settings
+3. The notification's category isn't muted for alerts, and the type alerts at all (feed-only types like "declined" never push)
+4. Not in quiet hours (read in the user's timezone)
+5. Push is on for the account *and* for this device (Settings → Your Devices)
+6. Notifications enabled in device settings
 
 ### Q: How do I send a notification from Lambda?
 **A:** Use the GraphQL mutation:

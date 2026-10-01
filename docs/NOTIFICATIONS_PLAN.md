@@ -1,6 +1,6 @@
 # Notifications Overhaul Plan
 
-**Status:** approved 2026-09-30. Phases 0 and 1 are done; Phase 2 is next.
+**Status:** approved 2026-09-30. Phases 0–2 are done; Phase 3 (server-side dispatcher) is next.
 This is the working plan for rebuilding notification delivery and preferences
 across web, Android and (later) iOS. It replaces the "Push notifications are
 half-wired" analysis in `todo.md`. Tick items off here as they land.
@@ -91,17 +91,20 @@ It's typed `satisfies Record<NotificationType, …>`, so adding a type without c
 
 ### 3.3 Preferences model
 
-These are new fields on `NotificationPreferences`. The eight `*Enabled` booleans are read for one release as a migration fallback, then dropped.
+New fields on `NotificationPreferences`, alongside existing ones that kept their meaning:
 
 ```
-alertMutedCategories: string[]   // no push, no in-app banner
-feedMutedCategories:  string[]   // hidden from the feed; ignored for feedLocked categories
-inAppBannersEnabled:  boolean
-quietHoursEnabled:    boolean
-quietStartMinute:     int        // 0–1439, local to `timezone`
-quietEndMinute:       int
-timezone:             string     // IANA, e.g. "America/New_York"
+alertMutedCategories: string[]   // new — no push, no in-app banner
+feedMutedCategories:  string[]   // new — hidden from the feed; ignored for feedLocked categories
+quietStartMinute:     int        // new — 0–1439, local to `timezone`
+quietEndMinute:       int        // new
+timezone:             string     // new — IANA, e.g. "America/New_York"; written by device-registry
+pushEnabled:          boolean    // existing — account-wide push switch
+inAppEnabled:         boolean    // existing — the in-app banners switch
+dndEnabled:           boolean    // existing — the quiet hours switch
 ```
+
+A row is in the new format once `alertMutedCategories` has been written (even empty). Until then, `resolvePreferences()` derives mutes from the eight legacy `*Enabled` switches (off → alert *and* feed mute, since off used to mean "don't create it at all") and quiet hours from `dndStartHour`/`dndEndHour`. Every save writes both lists, so a row migrates the first time its owner changes anything; new rows are created in the new format. The legacy columns can be dropped once rows have migrated. All of this lives in `amplify/shared/notificationPreferencesLogic.ts`, shared with the Phase 3 dispatcher.
 
 The lists store what's **muted**, not what's enabled. A new category therefore starts switched on with no schema change or backfill. The old column-per-type layout is how the squares types were missed.
 
@@ -207,23 +210,29 @@ Each phase ships on its own and leaves the app working.
 - **Old app versions:** installs that predate this keep writing `PushToken`. The sender still reads it, so they keep getting push.
 - **Timezone storage:** the timezone is on `PushDevice` for now. Phase 2 copies the most recent one onto preferences for quiet hours.
 
-### Phase 2: preferences model and Settings UI
-- [ ] New preference fields (3.3), with a read-time fallback from the old booleans. `device-registry` writes the reporting device's timezone onto preferences.
-- [ ] `setDevicePush` on `device-registry` for the device switch (users cannot update `PushDevice` directly — see 3.6).
-- [ ] Rebuild the Settings notifications screen:
-  - "This device" card: permission state, enable or unblock steps, device switch, send test.
-  - Per-category rows: **Alerts** switch, plus a **Show in feed** switch (shown as always-on, with an explanation, for locked categories).
-  - Quiet hours with real time pickers.
-  - In-app banners switch.
-  - "Your devices" list with remove.
-- [ ] Filter the feed and unread count by feed mutes (3.4).
-- [ ] Playwright coverage for the screen and the feed filter.
+### Phase 2: preferences model and Settings UI ✅
+- [x] New preference fields (3.3), with a read-time fallback from the old booleans (`resolvePreferences`). `device-registry` copies the reporting device's timezone onto preferences.
+- [x] `setDevicePush` on `device-registry` for the device switch, with an ownership check.
+- [x] Settings rebuilt around `src/components/settings/NotificationPreferencesPanel.tsx`:
+  - **This device:** permission state, enable or unblock steps, and the device's own push switch. "Send test" waits for `sendTestPush` in Phase 3.
+  - **Alerts:** account-wide push, and in-app banners.
+  - **Categories:** per-category **Alerts** and **Feed** switches. Locked categories show "Always" instead of a feed switch.
+  - **Quiet hours:** 30-minute steppers (no native time picker dependency), shown with the timezone they're read in.
+  - **Your devices:** name, last active, push switch, remove.
+- [x] Feed and unread count filtered by feed mutes (`isFeedVisible`), in both `getUserNotifications` and the live count in `NotificationContext`.
+- [x] Every notification is written, and preferences only gate interruptions. The app's push decision now uses `shouldAlert` (category mutes, quiet hours in the recipient's timezone, the catalog's `alert`) instead of the HIGH/URGENT priority rule. stripe-webhook no longer skips money notifications.
+- [x] Playwright (`e2e/notification-preferences.spec.ts`): categories, locked feed, legacy carry-over, quiet hours, devices, feed filtering and unread count. Vitest: `notificationPreferencesLogic` including timezones and DST, settings formatting, `deviceLogic`.
+
+**Rollout notes for Phase 2**
+- **More pushes:** push is now decided per category, not by priority. MEDIUM notifications (friend requests, bet joins, reminders) push unless muted.
+- **Legacy switches:** someone who had turned off a legacy switch now has that category muted for alerts and hidden from the feed. Money, results, refunds and disputes are the exception: they now show in the feed regardless, which is intended.
+- **Banners and quiet hours:** in-app banners now ignore quiet hours. They only appear while the user has the app open.
 
 ### Phase 3: server-side dispatcher
 - [ ] `notification-dispatcher` Lambda on the Notification table stream (INSERT filter). Decision logic lives in a pure module with Vitest coverage: mutes, quiet hours across timezones and DST, per-transport payloads.
 - [ ] Expo: chunking, receipts (in the next dispatcher run or a small scheduled check), deactivation on `DeviceNotRegistered`.
 - [ ] Web-push: TTL, urgency, deep-link URL in the payload.
-- [ ] Remove push from `createNotification`, remove `sendPushNotification`, add `sendTestPush` (own devices only), and remove stripe-webhook's duplicate preference check.
+- [ ] Remove push from `createNotification` (the dispatcher applies the same `shouldAlert`), remove `sendPushNotification`, and add `sendTestPush` (own devices only) plus the "Send test" button in Settings.
 
 ### Phase 4: retention backfill
 - [x] ~~Enable TTL~~ (done in Phase 1).

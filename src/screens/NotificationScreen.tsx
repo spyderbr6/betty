@@ -111,6 +111,7 @@ const NotificationItem: React.FC<NotificationItemProps> = ({
       ]}
       onPress={() => onPress(notification)}
       activeOpacity={0.7}
+      testID={`notification-item-${notification.id}`}
     >
       <View style={styles.notificationContent}>
         <View style={styles.notificationHeader}>

@@ -188,18 +188,8 @@ async function handlePaymentIntentSucceeded(paymentIntent: Stripe.PaymentIntent)
  */
 async function notifyDepositCompleted(userId: string, amountDollars: number) {
   try {
-    // Read preferences through the userId index; absent preferences mean the user has never
-    // opened notification settings, so fall back to the schema defaults (enabled).
-    const { data: prefsList } = await client.models.NotificationPreferences.notificationPreferencesByUser({
-      userId,
-    });
-    const prefs = prefsList?.[0];
-
-    if (prefs?.paymentNotificationsEnabled === false) {
-      console.log('[StripeWebhook] Payment notifications disabled for user, skipping:', userId);
-      return;
-    }
-
+    // Always written, whatever the user's preferences: MONEY is a feed-locked category, so a
+    // deposit always appears in the feed. Preferences only decide whether it may alert.
     const title = 'Deposit Successful';
     const message = `Your deposit of $${amountDollars.toFixed(2)} has been completed`;
 

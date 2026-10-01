@@ -228,9 +228,19 @@ const schema = a.schema({
       systemAnnouncementsEnabled: a.boolean().default(true), // System announcements and updates
 
       // Do Not Disturb schedule
-      dndEnabled: a.boolean().default(false),        // Enable quiet hours
-      dndStartHour: a.integer(),                     // Start hour (0-23, e.g., 22 = 10 PM)
-      dndEndHour: a.integer(),                       // End hour (0-23, e.g., 7 = 7 AM)
+      dndEnabled: a.boolean().default(false),        // Enable quiet hours (still the on/off switch)
+      dndStartHour: a.integer(),                     // Legacy: start hour (0-23). Read only as a fallback.
+      dndEndHour: a.integer(),                       // Legacy: end hour (0-23). Read only as a fallback.
+
+      // Category preferences (Phase 2 of docs/NOTIFICATIONS_PLAN.md). Lists of what is
+      // *muted*, so a new category starts switched on with no migration. Until
+      // alertMutedCategories is first written, mutes are derived from the legacy
+      // *Enabled switches above (see amplify/shared/notificationPreferencesLogic.ts).
+      alertMutedCategories: a.string().array(),      // No push or in-app banner. Any category can be muted.
+      feedMutedCategories: a.string().array(),       // Hidden from the feed; ignored for feed-locked categories
+      quietStartMinute: a.integer(),                 // Quiet hours start, minutes after local midnight (0-1439)
+      quietEndMinute: a.integer(),                   // Quiet hours end
+      timezone: a.string(),                          // IANA zone the quiet hours are read in; set by device-registry
 
       createdAt: a.datetime(),
       updatedAt: a.datetime(),
@@ -859,6 +869,18 @@ const schema = a.schema({
       timezone: a.string(),
     })
     .returns(a.string())
+    .handler(a.handler.function(deviceRegistry))
+    .authorization((allow) => [allow.authenticated()]),
+
+  // The per-device push switch in Settings. Users can't update PushDevice directly (see
+  // the model), so this checks the caller owns the device and flips it.
+  setDevicePush: a
+    .mutation()
+    .arguments({
+      deviceId: a.string().required(),
+      pushEnabled: a.boolean().required(),
+    })
+    .returns(a.boolean())
     .handler(a.handler.function(deviceRegistry))
     .authorization((allow) => [allow.authenticated()]),
 

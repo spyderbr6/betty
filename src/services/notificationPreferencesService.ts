@@ -1,348 +1,97 @@
 /**
  * Notification Preferences Service
- * Centralized service for managing user notification preferences
+ *
+ * Loads and saves a user's notification preferences. What they *mean* — whether a
+ * notification may alert, whether it shows in the feed, quiet hours — lives in
+ * amplify/shared/notificationPreferencesLogic.ts, shared with the server, so the app and
+ * the dispatcher decide the same way. See docs/NOTIFICATIONS_PLAN.md §3.3.
  */
 
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
-import { NotificationType, NotificationPreferences } from '../types/betting';
+import {
+  resolvePreferences,
+  toStoredPreferences,
+  type ResolvedPreferences,
+  type StoredPreferences,
+} from '../../amplify/shared/notificationPreferencesLogic';
 
 const client = generateClient<Schema>();
 
-/**
- * Mapping of notification types to preference fields
- * This allows us to check if a specific notification type is enabled
- */
-const NOTIFICATION_TYPE_TO_PREFERENCE_KEY: Record<NotificationType, keyof NotificationPreferences> = {
-  'FRIEND_REQUEST_RECEIVED': 'friendRequestsEnabled',
-  'FRIEND_REQUEST_ACCEPTED': 'friendRequestsEnabled',
-  'FRIEND_REQUEST_DECLINED': 'friendRequestsEnabled',
-  'BET_INVITATION_RECEIVED': 'betInvitationsEnabled',
-  'BET_INVITATION_ACCEPTED': 'betInvitationsEnabled',
-  'BET_INVITATION_DECLINED': 'betInvitationsEnabled',
-  'BET_JOINED': 'betJoinedEnabled',
-  'BET_RESOLVED': 'betResolvedEnabled',
-  'BET_CANCELLED': 'betCancelledEnabled',
-  'BET_DISPUTED': 'betResolvedEnabled', // Treat disputes same as resolutions
-  'BET_DEADLINE_APPROACHING': 'betDeadlineEnabled',
-  'DEPOSIT_COMPLETED': 'paymentNotificationsEnabled',
-  'DEPOSIT_FAILED': 'paymentNotificationsEnabled',
-  'WITHDRAWAL_COMPLETED': 'paymentNotificationsEnabled',
-  'WITHDRAWAL_FAILED': 'paymentNotificationsEnabled',
-  'PAYMENT_METHOD_VERIFIED': 'paymentNotificationsEnabled',
-  'SYSTEM_ANNOUNCEMENT': 'systemAnnouncementsEnabled',
-  // Squares types were missing from this map, and an unmapped type read as "disabled",
-  // so squares notifications raised by the app were silently dropped. Interim mapping
-  // onto the existing switches until the category model in docs/NOTIFICATIONS_PLAN.md.
-  'SQUARES_INVITATION_RECEIVED': 'betInvitationsEnabled',
-  'SQUARES_INVITATION_ACCEPTED': 'betInvitationsEnabled',
-  'SQUARES_INVITATION_DECLINED': 'betInvitationsEnabled',
-  'SQUARES_PURCHASE_CONFIRMED': 'betJoinedEnabled',
-  'SQUARES_GRID_LOCKED': 'betJoinedEnabled',
-  'SQUARES_GAME_LIVE': 'betDeadlineEnabled',
-  'SQUARES_PERIOD_WINNER': 'betResolvedEnabled',
-  'SQUARES_GAME_CANCELLED': 'betCancelledEnabled',
-};
+/** Resolved preferences plus the row they came from (null when there is no row yet). */
+export interface UserNotificationPreferences extends ResolvedPreferences {
+  id: string | null;
+  userId: string;
+}
+
+// Cast as elsewhere in the services layer: the userId index widened the generated model
+// type enough to trip TS2590 ("union type too complex").
+const prefsModel = () => (client as any).models.NotificationPreferences;
 
 export class NotificationPreferencesService {
   /**
-   * Get user's notification preferences, creating defaults if they don't exist
+   * The user's preferences, creating the row with defaults if it doesn't exist.
+   * On any failure, returns defaults (nothing muted) rather than throwing: a lookup
+   * problem must never silently suppress a user's notifications.
    */
-  static async getUserPreferences(userId: string): Promise<NotificationPreferences> {
+  static async getUserPreferences(userId: string): Promise<UserNotificationPreferences> {
     try {
-      // Fetch through the userId index. This was a filtered list, which is a paged DynamoDB
-      // Scan rather than a lookup — once the table outgrew a scan page a user's own row
-      // could stop being returned, and absent preferences are indistinguishable from
-      // "everything disabled", silently suppressing that user's notifications.
-      const { data: preferencesList } = await (client as any).models.NotificationPreferences
-        .notificationPreferencesByUser({ userId });
-
-      if (preferencesList && preferencesList.length > 0) {
-        const prefs = preferencesList[0];
-        return {
-          id: prefs.id!,
-          userId: prefs.userId!,
-          pushEnabled: prefs.pushEnabled ?? true,
-          inAppEnabled: prefs.inAppEnabled ?? true,
-          emailEnabled: prefs.emailEnabled ?? false,
-          friendRequestsEnabled: prefs.friendRequestsEnabled ?? true,
-          betInvitationsEnabled: prefs.betInvitationsEnabled ?? true,
-          betJoinedEnabled: prefs.betJoinedEnabled ?? true,
-          betResolvedEnabled: prefs.betResolvedEnabled ?? true,
-          betCancelledEnabled: prefs.betCancelledEnabled ?? true,
-          betDeadlineEnabled: prefs.betDeadlineEnabled ?? true,
-          paymentNotificationsEnabled: prefs.paymentNotificationsEnabled ?? true,
-          systemAnnouncementsEnabled: prefs.systemAnnouncementsEnabled ?? true,
-          dndEnabled: prefs.dndEnabled ?? false,
-          dndStartHour: prefs.dndStartHour ?? undefined,
-          dndEndHour: prefs.dndEndHour ?? undefined,
-          createdAt: prefs.createdAt || new Date().toISOString(),
-          updatedAt: prefs.updatedAt || new Date().toISOString(),
-        };
+      // Through the userId index. A filtered list is a paged DynamoDB Scan, and once the
+      // table outgrew a scan page a user's own row could stop being returned.
+      const { data } = await prefsModel().notificationPreferencesByUser({ userId });
+      const row = (data ?? [])[0] as (StoredPreferences & { id: string }) | undefined;
+      if (row) {
+        return { ...resolvePreferences(row), id: row.id, userId };
       }
-
-      // No preferences exist, create defaults
-      console.log('[NotificationPreferences] No preferences found for user, creating defaults');
       return await this.createDefaultPreferences(userId);
     } catch (error) {
       console.error('[NotificationPreferences] Error fetching preferences:', error);
-      // Return safe defaults if there's an error
-      return this.getDefaultPreferences(userId);
+      return { ...resolvePreferences(null), id: null, userId };
     }
   }
 
   /**
-   * Create default preferences for a user
+   * Create the preferences row with defaults. New rows start in the category format
+   * (empty mute lists), so the legacy switches are never consulted for them.
    */
-  static async createDefaultPreferences(userId: string): Promise<NotificationPreferences> {
+  static async createDefaultPreferences(userId: string): Promise<UserNotificationPreferences> {
+    const defaults = resolvePreferences(null);
     try {
-      // Cast as elsewhere in the services layer: adding the userId secondary index widened
-      // the generated model type enough to trip TS2590 ("union type too complex") here.
-      const { data } = await (client as any).models.NotificationPreferences.create({
+      const { data } = await prefsModel().create({
         userId,
-        pushEnabled: true,
-        inAppEnabled: true,
-        emailEnabled: false,
-        friendRequestsEnabled: true,
-        betInvitationsEnabled: true,
-        betJoinedEnabled: true,
-        betResolvedEnabled: true,
-        betCancelledEnabled: true,
-        betDeadlineEnabled: true,
-        paymentNotificationsEnabled: true,
-        systemAnnouncementsEnabled: true,
-        dndEnabled: false,
+        ...toStoredPreferences(defaults),
       });
-
       if (data) {
         console.log('[NotificationPreferences] Created default preferences for user:', userId);
-        return {
-          id: data.id!,
-          userId: data.userId!,
-          pushEnabled: data.pushEnabled ?? true,
-          inAppEnabled: data.inAppEnabled ?? true,
-          emailEnabled: data.emailEnabled ?? false,
-          friendRequestsEnabled: data.friendRequestsEnabled ?? true,
-          betInvitationsEnabled: data.betInvitationsEnabled ?? true,
-          betJoinedEnabled: data.betJoinedEnabled ?? true,
-          betResolvedEnabled: data.betResolvedEnabled ?? true,
-          betCancelledEnabled: data.betCancelledEnabled ?? true,
-          betDeadlineEnabled: data.betDeadlineEnabled ?? true,
-          paymentNotificationsEnabled: data.paymentNotificationsEnabled ?? true,
-          systemAnnouncementsEnabled: data.systemAnnouncementsEnabled ?? true,
-          dndEnabled: data.dndEnabled ?? false,
-          dndStartHour: data.dndStartHour ?? undefined,
-          dndEndHour: data.dndEndHour ?? undefined,
-          createdAt: data.createdAt || new Date().toISOString(),
-          updatedAt: data.updatedAt || new Date().toISOString(),
-        };
+        return { ...resolvePreferences(data), id: data.id, userId };
       }
-
-      // Fallback to in-memory defaults if creation fails
-      return this.getDefaultPreferences(userId);
     } catch (error) {
       console.error('[NotificationPreferences] Error creating default preferences:', error);
-      return this.getDefaultPreferences(userId);
     }
+    return { ...defaults, id: null, userId };
   }
 
   /**
-   * Get default preferences (in-memory, not saved to database)
+   * Save `prefs` in full. Writing both mute lists moves a legacy row to the new format,
+   * so the old per-type switches stop being consulted from here on.
    */
-  private static getDefaultPreferences(userId: string): NotificationPreferences {
-    return {
-      id: 'temp-id',
-      userId,
-      pushEnabled: true,
-      inAppEnabled: true,
-      emailEnabled: false,
-      friendRequestsEnabled: true,
-      betInvitationsEnabled: true,
-      betJoinedEnabled: true,
-      betResolvedEnabled: true,
-      betCancelledEnabled: true,
-      betDeadlineEnabled: true,
-      paymentNotificationsEnabled: true,
-      systemAnnouncementsEnabled: true,
-      dndEnabled: false,
-      dndStartHour: undefined,
-      dndEndHour: undefined,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-  }
-
-  /**
-   * Update a single preference
-   */
-  static async updatePreference(
-    userId: string,
-    key: keyof NotificationPreferences,
-    value: boolean | number
-  ): Promise<boolean> {
+  static async savePreferences(userId: string, prefs: ResolvedPreferences): Promise<boolean> {
     try {
-      const preferences = await this.getUserPreferences(userId);
-
-      if (preferences.id === 'temp-id') {
-        // Preferences don't exist yet, create them first
-        await this.createDefaultPreferences(userId);
-        // Try again
-        return await this.updatePreference(userId, key, value);
+      let { id } = await this.getUserPreferences(userId);
+      if (!id) {
+        ({ id } = await this.createDefaultPreferences(userId));
       }
+      if (!id) return false;
 
-      const updateData: any = { id: preferences.id };
-      updateData[key] = value;
-
-      // Cast for the same reason as the other model calls here — see createDefaultPreferences.
-      await (client as any).models.NotificationPreferences.update(updateData);
-
-      console.log(`[NotificationPreferences] Updated ${key} to ${value} for user ${userId}`);
+      const { errors } = await prefsModel().update({ id, ...toStoredPreferences(prefs) });
+      if (errors?.length) {
+        console.error('[NotificationPreferences] Save failed:', errors);
+        return false;
+      }
       return true;
     } catch (error) {
-      console.error('[NotificationPreferences] Error updating preference:', error);
+      console.error('[NotificationPreferences] Error saving preferences:', error);
       return false;
-    }
-  }
-
-  /**
-   * Batch update multiple preferences
-   */
-  static async updatePreferences(
-    userId: string,
-    updates: Partial<NotificationPreferences>
-  ): Promise<boolean> {
-    try {
-      const preferences = await this.getUserPreferences(userId);
-
-      if (preferences.id === 'temp-id') {
-        // Preferences don't exist yet, create them first
-        await this.createDefaultPreferences(userId);
-        // Try again
-        return await this.updatePreferences(userId, updates);
-      }
-
-      const updateData: any = { id: preferences.id, ...updates };
-      delete updateData.userId; // Don't update userId
-      delete updateData.createdAt; // Don't update createdAt
-
-      // Cast for the same reason as the other model calls here — see createDefaultPreferences.
-      await (client as any).models.NotificationPreferences.update(updateData);
-
-      console.log(`[NotificationPreferences] Batch updated preferences for user ${userId}`);
-      return true;
-    } catch (error) {
-      console.error('[NotificationPreferences] Error batch updating preferences:', error);
-      return false;
-    }
-  }
-
-  /**
-   * Check if a specific notification type is enabled for a user
-   */
-  static async isNotificationEnabled(
-    userId: string,
-    type: NotificationType
-  ): Promise<boolean> {
-    try {
-      const preferences = await this.getUserPreferences(userId);
-      const preferenceKey = NOTIFICATION_TYPE_TO_PREFERENCE_KEY[type];
-
-      if (!preferenceKey) {
-        console.warn(`[NotificationPreferences] Unknown notification type: ${type}, allowing by default`);
-        return true;
-      }
-
-      // Anything that isn't an explicit `false` counts as enabled: a missing value must never
-      // silently suppress a notification.
-      const isEnabled = preferences[preferenceKey] !== false;
-      console.log(`[NotificationPreferences] Notification type ${type} is ${isEnabled ? 'enabled' : 'disabled'} for user ${userId}`);
-      return isEnabled;
-    } catch (error) {
-      console.error('[NotificationPreferences] Error checking notification enabled:', error);
-      // Default to enabled if there's an error
-      return true;
-    }
-  }
-
-  /**
-   * Check if currently in Do Not Disturb window
-   */
-  static isInDndWindow(preferences: NotificationPreferences): boolean {
-    // Compare against null, not falsiness: hour 0 is midnight, a legitimate boundary that
-    // `!preferences.dndStartHour` would treat as unset and silently disable DND.
-    if (
-      !preferences.dndEnabled ||
-      preferences.dndStartHour == null ||
-      preferences.dndEndHour == null
-    ) {
-      return false;
-    }
-
-    const currentHour = new Date().getHours();
-    const start = preferences.dndStartHour;
-    const end = preferences.dndEndHour;
-
-    if (start < end) {
-      // Window sits inside one day, e.g. 9 -> 17 is 9 AM to 5 PM.
-      return currentHour >= start && currentHour < end;
-    }
-
-    // Window wraps midnight, e.g. 22 -> 7 is 10 PM to 7 AM. start === end is treated as
-    // wrapping too, which makes it a full 24 hours rather than an empty window.
-    return currentHour >= start || currentHour < end;
-  }
-
-  /**
-   * Check if user should receive push notifications
-   */
-  static async shouldSendPush(userId: string, type: NotificationType): Promise<boolean> {
-    try {
-      const preferences = await this.getUserPreferences(userId);
-
-      // Check master push switch
-      if (!preferences.pushEnabled) {
-        console.log(`[NotificationPreferences] Push disabled for user ${userId}`);
-        return false;
-      }
-
-      // Check if in DND window
-      if (this.isInDndWindow(preferences)) {
-        console.log(`[NotificationPreferences] User ${userId} is in DND window`);
-        return false;
-      }
-
-      // Check if this specific notification type is enabled
-      return await this.isNotificationEnabled(userId, type);
-    } catch (error) {
-      console.error('[NotificationPreferences] Error checking should send push:', error);
-      return true; // Default to sending if there's an error
-    }
-  }
-
-  /**
-   * Check if user should receive in-app notifications
-   */
-  static async shouldShowInApp(userId: string, type: NotificationType): Promise<boolean> {
-    try {
-      const preferences = await this.getUserPreferences(userId);
-
-      // Check master in-app switch
-      if (!preferences.inAppEnabled) {
-        console.log(`[NotificationPreferences] In-app notifications disabled for user ${userId}`);
-        return false;
-      }
-
-      // In-app notifications respect DND as well
-      if (this.isInDndWindow(preferences)) {
-        console.log(`[NotificationPreferences] User ${userId} is in DND window`);
-        return false;
-      }
-
-      // Check if this specific notification type is enabled
-      return await this.isNotificationEnabled(userId, type);
-    } catch (error) {
-      console.error('[NotificationPreferences] Error checking should show in-app:', error);
-      return true; // Default to showing if there's an error
     }
   }
 }

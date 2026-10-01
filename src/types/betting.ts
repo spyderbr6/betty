@@ -288,33 +288,6 @@ export interface Notification {
   createdAt: string;
 }
 
-export interface NotificationPreferences {
-  id: string;
-  userId: string;
-
-  // Global notification controls
-  pushEnabled: boolean;
-  inAppEnabled: boolean;
-  emailEnabled: boolean;
-
-  // Notification type preferences - grouped by category
-  friendRequestsEnabled: boolean;
-  betInvitationsEnabled: boolean;
-  betJoinedEnabled: boolean;
-  betResolvedEnabled: boolean;
-  betCancelledEnabled: boolean;
-  betDeadlineEnabled: boolean;
-  paymentNotificationsEnabled: boolean;
-  systemAnnouncementsEnabled: boolean;
-
-  // Do Not Disturb schedule
-  dndEnabled: boolean;
-  dndStartHour?: number;
-  dndEndHour?: number;
-
-  createdAt: string;
-  updatedAt: string;
-}
 // Squares Game Types
 export interface SquaresInvitation {
   id: string;

@@ -1,18 +1,16 @@
 /**
  * Settings Screen
- * App preferences and notification settings
+ * Notification settings, privacy and app preferences
  */
 
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, StyleSheet, Switch, TouchableOpacity, ActivityIndicator, Platform } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, Switch, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, textStyles } from '../styles';
 import { ModalHeader } from '../components/ui/ModalHeader';
 import { useAuth } from '../contexts/AuthContext';
-import { NotificationPreferencesService } from '../services/notificationPreferencesService';
-import { NotificationService, DevicePushPermission } from '../services/notificationService';
-import { NotificationPreferences } from '../types/betting';
+import { NotificationPreferencesPanel } from '../components/settings/NotificationPreferencesPanel';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
 import { showAlert } from '../components/ui/CustomAlert';
@@ -25,64 +23,12 @@ interface SettingsScreenProps {
 
 export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
   const { user } = useAuth();
-  const [preferences, setPreferences] = useState<NotificationPreferences | null>(null);
   const [allowPhoneDiscovery, setAllowPhoneDiscovery] = useState(false);
   const [isPublic, setIsPublic] = useState(true);
-  const [isLoading, setIsLoading] = useState(true);
-  const [devicePermission, setDevicePermission] = useState<DevicePushPermission>('undetermined');
-  const [isEnablingDevice, setIsEnablingDevice] = useState(false);
 
   useEffect(() => {
-    loadPreferences();
     loadPrivacySettings();
-    refreshDevicePermission();
   }, []);
-
-  const refreshDevicePermission = async () => {
-    setDevicePermission(await NotificationService.getDevicePushPermission());
-  };
-
-  // Ask for permission on this device and register it. Must run from a tap: browsers only
-  // show the permission prompt in response to a user gesture.
-  const handleEnableThisDevice = async () => {
-    if (!user || isEnablingDevice) return;
-    setIsEnablingDevice(true);
-    try {
-      const token = await NotificationService.registerPushToken(user.userId, { prompt: true, force: true });
-      const permission = await NotificationService.getDevicePushPermission();
-      setDevicePermission(permission);
-
-      if (token) {
-        // Enabling the device implies wanting push, so turn the account switch on too.
-        if (preferences && !preferences.pushEnabled) {
-          if (await NotificationPreferencesService.updatePreference(user.userId, 'pushEnabled', true)) {
-            setPreferences(prev => (prev ? { ...prev, pushEnabled: true } : prev));
-          }
-        }
-      } else if (permission === 'denied') {
-        showAlert('Notifications Blocked', blockedInstructions());
-      }
-    } finally {
-      setIsEnablingDevice(false);
-    }
-  };
-
-  const loadPreferences = async () => {
-    if (!user) {
-      setIsLoading(false);
-      return;
-    }
-
-    try {
-      const prefs = await NotificationPreferencesService.getUserPreferences(user.userId);
-      setPreferences(prefs);
-    } catch (error) {
-      console.error('[SettingsScreen] Error loading preferences:', error);
-      showAlert('Error', 'Failed to load notification settings');
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   const loadPrivacySettings = async () => {
     if (!user) return;
@@ -95,83 +41,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
       }
     } catch (error) {
       console.error('[SettingsScreen] Error loading privacy settings:', error);
-    }
-  };
-
-  const handleToggle = async (key: keyof NotificationPreferences, value: boolean) => {
-    if (!user || !preferences) return;
-
-    // Special handling for pushEnabled toggle
-    if (key === 'pushEnabled' && value === true) {
-      console.log('[Settings] Push notifications being enabled, requesting permission...');
-
-      try {
-        // Try to register push token (will prompt for permission)
-        const token = await NotificationService.registerPushToken(user.userId, { prompt: true, force: true });
-        refreshDevicePermission();
-
-        if (!token) {
-          console.log('[Settings] Push token registration failed or permission denied');
-
-          // Save preference anyway - user might grant permission later
-          const success = await NotificationPreferencesService.updatePreference(
-            user.userId,
-            key,
-            value
-          );
-
-          if (success) {
-            setPreferences(prev => prev ? { ...prev, [key]: value } : null);
-          }
-
-          // Show platform-specific message
-          const isWeb = Platform.OS === 'web';
-          showAlert(
-            'Permission Required',
-            isWeb
-              ? 'Push notifications are now enabled, but you need to allow notifications in your browser. You can do this in your browser settings.'
-              : 'Push notifications are now enabled, but you need to allow notifications for this app. You can do this in your device Settings > Notifications > SideBet.'
-          );
-          return;
-        }
-
-        console.log('[Settings] Push token registered successfully');
-      } catch (error) {
-        console.error('[Settings] Error registering push token:', error);
-
-        // Still save the preference
-        const success = await NotificationPreferencesService.updatePreference(
-          user.userId,
-          key,
-          value
-        );
-
-        if (success) {
-          setPreferences(prev => prev ? { ...prev, [key]: value } : null);
-        }
-
-        showAlert(
-          'Notifications Enabled',
-          'Push notifications preference saved. If you denied permission, you can enable it later in your device settings.'
-        );
-        return;
-      }
-    }
-
-    // Optimistic update
-    setPreferences(prev => prev ? { ...prev, [key]: value } : null);
-
-    // Save to database
-    const success = await NotificationPreferencesService.updatePreference(
-      user.userId,
-      key,
-      value
-    );
-
-    if (!success) {
-      // Revert on failure
-      await loadPreferences();
-      showAlert('Error', 'Failed to update preference. Please try again.');
     }
   };
 
@@ -228,182 +97,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
       showAlert('Error', 'Failed to update account privacy. Please try again.');
     }
   };
-
-  if (isLoading) {
-    return (
-      <SafeAreaView style={styles.container} edges={['top']}>
-        <ModalHeader title="Settings" onClose={onClose} />
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={styles.loadingText}>Loading settings...</Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  if (!preferences) {
-    return (
-      <SafeAreaView style={styles.container} edges={['top']}>
-        <ModalHeader title="Settings" onClose={onClose} />
-        <View style={styles.loadingContainer}>
-          <Text style={styles.errorText}>Failed to load settings</Text>
-          <TouchableOpacity style={styles.retryButton} onPress={loadPreferences}>
-            <Text style={styles.retryButtonText}>Retry</Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <ModalHeader title="Notification Settings" onClose={onClose} />
+      <ModalHeader title="Settings" onClose={onClose} />
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Master Controls */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>MASTER CONTROLS</Text>
-
-          <SettingRow
-            icon="notifications-outline"
-            title="Push Notifications"
-            subtitle="Master switch for all push notifications"
-            value={preferences.pushEnabled}
-            onValueChange={(val) => handleToggle('pushEnabled', val)}
-          />
-
-          <SettingRow
-            icon="phone-portrait-outline"
-            title="In-App Notifications"
-            subtitle="Show toast notifications while using app"
-            value={preferences.inAppEnabled}
-            onValueChange={(val) => handleToggle('inAppEnabled', val)}
-          />
-
-<View style={styles.settingRow} testID="settings-device-push">
-            <View style={styles.settingRowLeft}>
-              <Ionicons
-                name={devicePermission === 'granted' ? 'checkmark-circle-outline' : 'alert-circle-outline'}
-                size={22}
-                color={devicePermission === 'granted' ? colors.success : colors.textSecondary}
-              />
-              <View style={styles.settingRowText}>
-                <Text style={styles.settingRowTitle}>This Device</Text>
-                <Text style={styles.settingRowSubtitle} testID="settings-device-push-status">
-                  {deviceStatusText(devicePermission)}
-                </Text>
-              </View>
-            </View>
-            {devicePermission === 'undetermined' && (
-              <TouchableOpacity
-                style={styles.deviceButton}
-                onPress={handleEnableThisDevice}
-                disabled={isEnablingDevice}
-                testID="settings-enable-device-push"
-              >
-                {isEnablingDevice ? (
-                  <ActivityIndicator size="small" color={colors.textInverse} />
-                ) : (
-                  <Text style={styles.deviceButtonText}>Enable</Text>
-                )}
-              </TouchableOpacity>
-            )}
-          </View>
-        </View>
-
-        {/* Notification Types */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>NOTIFICATION TYPES</Text>
-
-          <SettingRow
-            icon="people-outline"
-            title="Friend Requests"
-            subtitle="New friend requests and acceptances"
-            value={preferences.friendRequestsEnabled}
-            onValueChange={(val) => handleToggle('friendRequestsEnabled', val)}
-          />
-
-          <SettingRow
-            icon="mail-open-outline"
-            title="Bet Invitations"
-            subtitle="Invitations to join bets"
-            value={preferences.betInvitationsEnabled}
-            onValueChange={(val) => handleToggle('betInvitationsEnabled', val)}
-          />
-
-          <SettingRow
-            icon="person-add-outline"
-            title="Bet Activity"
-            subtitle="When someone joins your bets"
-            value={preferences.betJoinedEnabled}
-            onValueChange={(val) => handleToggle('betJoinedEnabled', val)}
-          />
-
-          <SettingRow
-            icon="trophy-outline"
-            title="Bet Results"
-            subtitle="When bets are resolved (won/lost)"
-            value={preferences.betResolvedEnabled}
-            onValueChange={(val) => handleToggle('betResolvedEnabled', val)}
-          />
-
-          <SettingRow
-            icon="close-circle-outline"
-            title="Bet Cancellations"
-            subtitle="When bets are cancelled"
-            value={preferences.betCancelledEnabled}
-            onValueChange={(val) => handleToggle('betCancelledEnabled', val)}
-          />
-
-          <SettingRow
-            icon="time-outline"
-            title="Bet Deadlines"
-            subtitle="Reminders for expiring bets"
-            value={preferences.betDeadlineEnabled}
-            onValueChange={(val) => handleToggle('betDeadlineEnabled', val)}
-          />
-
-          <SettingRow
-            icon="wallet-outline"
-            title="Payment Updates"
-            subtitle="Deposits, withdrawals, and payment method verifications"
-            value={preferences.paymentNotificationsEnabled}
-            onValueChange={(val) => handleToggle('paymentNotificationsEnabled', val)}
-          />
-
-          <SettingRow
-            icon="megaphone-outline"
-            title="System Announcements"
-            subtitle="App updates and important announcements"
-            value={preferences.systemAnnouncementsEnabled}
-            onValueChange={(val) => handleToggle('systemAnnouncementsEnabled', val)}
-          />
-        </View>
-
-        {/* Do Not Disturb */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>DO NOT DISTURB</Text>
-
-          <SettingRow
-            icon="moon-outline"
-            title="Do Not Disturb"
-            subtitle={
-              preferences.dndEnabled && preferences.dndStartHour !== undefined && preferences.dndEndHour !== undefined
-                ? `Quiet hours: ${preferences.dndStartHour}:00 - ${preferences.dndEndHour}:00`
-                : 'Silence notifications during specific hours'
-            }
-            value={preferences.dndEnabled}
-            onValueChange={(val) => handleToggle('dndEnabled', val)}
-          />
-
-          {preferences.dndEnabled && (
-            <View style={styles.dndTimeContainer}>
-              <Text style={styles.dndTimeLabel}>
-                DND time configuration coming soon. Default: 10 PM - 7 AM
-              </Text>
-            </View>
-          )}
-        </View>
+        {user && <NotificationPreferencesPanel userId={user.userId} />}
 
         {/* Privacy */}
         <View style={styles.section}>
@@ -471,26 +170,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
   );
 };
 
-const blockedInstructions = () =>
-  Platform.OS === 'web'
-    ? 'Notifications are blocked for this site. Allow them in your browser\'s site settings, then come back here.'
-    : 'Notifications are turned off for SideBet. Turn them on in your device Settings > Notifications > SideBet.';
-
-const deviceStatusText = (permission: DevicePushPermission): string => {
-  switch (permission) {
-    case 'granted':
-      return 'Push notifications are allowed on this device';
-    case 'denied':
-      return blockedInstructions();
-    case 'unsupported':
-      return Platform.OS === 'web'
-        ? 'This browser does not support push notifications'
-        : 'Push notifications are not available on this device';
-    default:
-      return 'Allow notifications to get alerts on this device';
-  }
-};
-
 interface SettingRowProps {
   icon: keyof typeof Ionicons.glyphMap;
   title: string;
@@ -524,33 +203,6 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-  },
-  loadingText: {
-    ...textStyles.body,
-    color: colors.textSecondary,
-    marginTop: spacing.md,
-  },
-  errorText: {
-    ...textStyles.body,
-    color: colors.error,
-    textAlign: 'center',
-    marginBottom: spacing.md,
-  },
-  retryButton: {
-    backgroundColor: colors.primary,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
-    borderRadius: spacing.radius.md,
-  },
-  retryButtonText: {
-    ...textStyles.button,
-    color: colors.textInverse,
   },
   section: {
     paddingVertical: spacing.md,
@@ -589,27 +241,6 @@ const styles = StyleSheet.create({
     ...textStyles.caption,
     color: colors.textMuted,
     marginTop: 2,
-  },
-  deviceButton: {
-    backgroundColor: colors.primary,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: spacing.radius.md,
-    marginLeft: spacing.sm,
-  },
-  deviceButtonText: {
-    ...textStyles.button,
-    color: colors.textInverse,
-  },
-  dndTimeContainer: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
-    backgroundColor: colors.background,
-  },
-  dndTimeLabel: {
-    ...textStyles.caption,
-    color: colors.textSecondary,
-    fontStyle: 'italic',
   },
   menuItem: {
     flexDirection: 'row',
