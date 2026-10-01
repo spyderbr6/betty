@@ -25,6 +25,7 @@ import { User, FriendListItem } from '../../types/betting';
 import { ModalHeader } from './ModalHeader';
 import { getProfilePictureUrl } from '../../services/imageUploadService';
 import { showAlert } from './CustomAlert';
+import { notificationMeta } from '../../../amplify/shared/notificationCatalog';
 
 const client = generateClient<Schema>();
 
@@ -225,6 +226,7 @@ export const SquaresInviteModal: React.FC<SquaresInviteModalProps> = ({
           await client.models.Notification.create({
             userId: friend.user.id,
             type: 'SQUARES_INVITATION_RECEIVED',
+            ...notificationMeta('SQUARES_INVITATION_RECEIVED'),
             title: 'Squares Game Invitation',
             message: `${currentUserDisplayName} invited you to join their squares game!`,
             priority: 'HIGH',

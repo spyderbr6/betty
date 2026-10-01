@@ -45,14 +45,21 @@ await NotificationService.registerPushToken(userId);
   only comes from a tap on **Settings → This Device → Enable**, because browsers
   ignore or penalise prompts without a user gesture)
 - Gets the Expo push token (mobile) or Web Push subscription (web)
-- **Upserts** it into the `PushToken` table: one row per token, duplicate rows
-  deactivated, `deviceId` set to a stable per-installation id
+- Calls the `registerDevice` mutation (`device-registry` Lambda), which upserts one
+  `PushDevice` row per installation (id `<userId>#<installationId>`) with a device name
+  and timezone, and takes the token over from any other user on a shared device.
+  Legacy `PushToken` rows for this device are then deactivated. (If the bundled
+  `amplify_outputs.json` predates `registerDevice`, it falls back to upserting `PushToken`.)
 - Runs once per session per user; later auth refreshes and resumes reuse the result
 - Token format: `ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]`
 
-**Sign-out** calls `NotificationService.unregisterThisDevice(userId)`, which
-deactivates only this device's rows so a shared device stops receiving the
-previous user's pushes.
+**Sign-out** calls `NotificationService.unregisterThisDevice(userId)`, which calls
+`unregisterDevice` and retires legacy rows — only this device's, so a shared device
+stops receiving the previous user's pushes and the user's other devices are untouched.
+
+The sender reads `PushDevice` and falls back to legacy `PushToken` rows, sending to each
+token once. Notifications are deleted automatically after 90–180 days (DynamoDB TTL on
+`expiresAt`); devices after 120 days unseen. See docs/NOTIFICATIONS_PLAN.md.
 
 ### 2. Notification Creation
 ```typescript

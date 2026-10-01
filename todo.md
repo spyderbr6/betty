@@ -97,7 +97,21 @@ squares mappings) plus the 2026-09-30 audit, and records the decisions: per-acco
 categories + per-device switch, nothing un-mutable, key categories always in the feed,
 one server-side dispatcher, automatic data retention.
 
-Phase 0 (stop the bleeding) is done. Phase 1 (catalog, `PushDevice`, `registerDevice`) is next.
+Phases 0 (stop the bleeding) and 1 (catalog, `PushDevice`, `device-registry`, TTL on notifications) are done. Phase 2 (preferences model + Settings rebuild) is next.
+
+### Not covered by the overhaul: old sports events are never cleaned up
+
+`LiveEvent` (ESPN games from `event-fetcher`) and `EventCheckIn` grow forever. The
+fetcher only marks finished games `isActive = 0` and deletes duplicates; nothing removes
+old games. Not part of notification retention (that covers the `Notification` log and
+device registrations only).
+
+- [ ] Daily cleanup of games finished more than ~30 days ago, found by Query on
+      `activeEventsByTime` with `isActive = 0` (never a Scan), deleting their check-ins too.
+- [ ] Keep any game still referenced by an unsettled Bet or SquaresGame. `Bet.eventId`
+      has no index — add `betsByEvent`, or rely on `LiveEvent.betCount` — and
+      `squaresGamesByEvent` already exists.
+- [ ] Confirm bet and squares history screens render when their event is gone.
 
 ### Already fixed (do not re-investigate)
 

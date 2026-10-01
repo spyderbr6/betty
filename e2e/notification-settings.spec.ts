@@ -19,22 +19,41 @@ type PromptCountingWindow = Window & { __permissionPrompts: number };
 
 /**
  * Replace the browser's Notification permission with a controllable fake that
- * counts prompts. The prompt answers "denied", so no subscription is attempted.
+ * counts permission dialogs. A dialog answers "denied", so no subscription is attempted.
  */
-const fakeNotificationPermission = (page: Page) =>
-  page.addInitScript(() => {
-    let permission: NotificationPermission = 'default';
+const fakeNotificationPermission = (page: Page, initial: NotificationPermission = 'default') =>
+  page.addInitScript((start) => {
+    let permission: NotificationPermission = start;
     const w = window as unknown as PromptCountingWindow;
     w.__permissionPrompts = 0;
     Object.defineProperty(window.Notification, 'permission', {
       configurable: true,
       get: () => permission,
     });
+    // Browsers only show a dialog when permission is still 'default'; once decided,
+    // requestPermission resolves immediately. Count dialogs, not calls.
     window.Notification.requestPermission = async () => {
-      w.__permissionPrompts += 1;
-      permission = 'denied';
+      if (permission === 'default') {
+        w.__permissionPrompts += 1;
+        permission = 'denied';
+      }
       return permission;
     };
+  }, initial);
+
+/**
+ * Stand in for the browser's push service, which headless Chromium does not have: every
+ * subscribe/getSubscription returns the same fake subscription.
+ */
+const fakePushSubscription = (page: Page) =>
+  page.addInitScript(() => {
+    const subscription = {
+      endpoint: 'https://push.example.test/sub-e2e',
+      toJSON: () => ({ endpoint: 'https://push.example.test/sub-e2e', keys: { p256dh: 'p', auth: 'a' } }),
+      unsubscribe: async () => true,
+    };
+    PushManager.prototype.getSubscription = async () => subscription as unknown as PushSubscription;
+    PushManager.prototype.subscribe = async () => subscription as unknown as PushSubscription;
   });
 
 const preferences = {
@@ -78,6 +97,42 @@ test('signing in on the web never shows the permission prompt on its own', async
   expect(calls).not.toContain('createPushToken');
 });
 
+test('a browser that already allows notifications registers itself as a device', async ({ page }) => {
+  await fakeNotificationPermission(page, 'granted');
+  await fakePushSubscription(page);
+  await page.addInitScript((id) => window.localStorage.setItem('sidebet.installationId', id), INSTALLATION_ID);
+  await signInAs(page);
+
+  const registrations: Record<string, unknown>[] = [];
+  const { calls } = await mockAppSync(
+    page,
+    baseHandlers({
+      registerDevice: (variables) => {
+        registrations.push(variables);
+        return `${TEST_USER.userId}#${INSTALLATION_ID}`;
+      },
+      pushTokensByUser: list([]),
+    })
+  );
+
+  await page.goto('/');
+  await expect(page.getByTestId('screen-bets')).toBeVisible({ timeout: 30_000 });
+
+  await expect.poll(() => registrations.length).toBe(1);
+  const [registration] = registrations;
+  expect(registration).toMatchObject({
+    installationId: INSTALLATION_ID,
+    platform: 'WEB',
+  });
+  // Named from the user agent; Playwright's Desktop Chrome profile reports Windows.
+  expect(registration.deviceName).toMatch(/^Chrome on /);
+  expect(JSON.parse(registration.token as string).endpoint).toBe('https://push.example.test/sub-e2e');
+  expect(typeof registration.timezone).toBe('string');
+  // Permission was already granted, so no prompt; and nothing goes to the legacy table.
+  expect(await promptCount(page)).toBe(0);
+  expect(calls).not.toContain('createPushToken');
+});
+
 test('Settings offers to enable this device, and prompts only when tapped', async ({ page }) => {
   await fakeNotificationPermission(page);
   await signInAs(page);
@@ -106,9 +161,14 @@ test('signing out deactivates this device only, not the user’s other devices',
   await signInAs(page);
 
   const deactivated: unknown[] = [];
+  const unregistered: unknown[] = [];
   await mockAppSync(
     page,
     baseHandlers({
+      unregisterDevice: (variables) => {
+        unregistered.push(variables);
+        return true;
+      },
       pushTokensByUser: list([
         { id: 'this-device', userId: TEST_USER.userId, token: 'sub-this', deviceId: INSTALLATION_ID, isActive: true },
         { id: 'other-device', userId: TEST_USER.userId, token: 'sub-other', deviceId: 'inst-phone', isActive: true },
@@ -125,6 +185,11 @@ test('signing out deactivates this device only, not the user’s other devices',
   await page.getByTestId('account-sign-out').dispatchEvent('click');
   await page.getByTestId('account-sign-out-confirm').dispatchEvent('click');
 
+  // The server deactivates this installation's PushDevice row (identity comes from the
+  // caller's token, so only the installation id is sent)...
+  await expect.poll(() => unregistered.length).toBe(1);
+  expect(unregistered).toEqual([{ installationId: INSTALLATION_ID }]);
+  // ...and this device's legacy PushToken row is retired, but not the phone's.
   await expect.poll(() => deactivated.length).toBe(1);
   expect(deactivated).toEqual([{ id: 'this-device', isActive: false }]);
 });

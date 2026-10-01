@@ -7,6 +7,8 @@ import { payoutProcessor } from "../functions/payout-processor/resource";
 import { stripePaymentIntent } from "../functions/stripe-payment-intent/resource";
 import { stripeWebhook } from "../functions/stripe-webhook/resource";
 import { stripeManage } from "../functions/stripe-manage/resource";
+import { deviceRegistry } from "../functions/device-registry/resource";
+import { NOTIFICATION_TYPES, NOTIFICATION_CATEGORIES } from "../shared/notificationCatalog";
 
 /*== SIDEBET BETTING PLATFORM SCHEMA =======================================
 This schema defines the core data models for the SideBet peer-to-peer betting
@@ -66,6 +68,7 @@ const schema = a.schema({
       receivedBetInvitations: a.hasMany('BetInvitation', 'toUserId'),
       notifications: a.hasMany('Notification', 'userId'),
       pushTokens: a.hasMany('PushToken', 'userId'),
+      pushDevices: a.hasMany('PushDevice', 'userId'),
       notificationPreferences: a.hasOne('NotificationPreferences', 'userId'),
       paymentMethods: a.hasMany('PaymentMethod', 'userId'),
       transactions: a.hasMany('Transaction', 'userId'),
@@ -94,33 +97,15 @@ const schema = a.schema({
     .model({
       id: a.id(),
       userId: a.id().required(), // Who receives this notification
-      type: a.enum([
-        'FRIEND_REQUEST_RECEIVED',
-        'FRIEND_REQUEST_ACCEPTED',
-        'FRIEND_REQUEST_DECLINED',
-        'BET_INVITATION_RECEIVED',
-        'BET_INVITATION_ACCEPTED',
-        'BET_INVITATION_DECLINED',
-        'BET_JOINED',
-        'BET_RESOLVED',
-        'BET_CANCELLED',
-        'BET_DISPUTED',
-        'BET_DEADLINE_APPROACHING',
-        'DEPOSIT_COMPLETED',
-        'DEPOSIT_FAILED',
-        'WITHDRAWAL_COMPLETED',
-        'WITHDRAWAL_FAILED',
-        'PAYMENT_METHOD_VERIFIED',
-        'SYSTEM_ANNOUNCEMENT',
-        'SQUARES_GRID_LOCKED',        // Grid filled, numbers assigned
-        'SQUARES_PERIOD_WINNER',      // You won a period!
-        'SQUARES_GAME_LIVE',          // Game starting soon
-        'SQUARES_GAME_CANCELLED',     // Game cancelled
-        'SQUARES_PURCHASE_CONFIRMED', // Purchase confirmed
-        'SQUARES_INVITATION_RECEIVED', // Friend invited you to squares game
-        'SQUARES_INVITATION_ACCEPTED', // Friend accepted your squares invite
-        'SQUARES_INVITATION_DECLINED'  // Friend declined your squares invite
-      ]),
+      // Built from the notification catalog so the enum, the app and the Lambdas can never
+      // disagree about which types exist (see amplify/shared/notificationCatalog.ts).
+      type: a.enum(NOTIFICATION_TYPES),
+      // Derived from `type` via the catalog and written with every notification, so the
+      // feed can filter by category without the client re-deriving it.
+      category: a.enum(NOTIFICATION_CATEGORIES),
+      // Epoch seconds. DynamoDB TTL deletes the row after this (enabled in backend.ts).
+      // Set by notificationMeta() at write time from the category's retention period.
+      expiresAt: a.integer(),
       title: a.string().required(), // Short notification title
       message: a.string().required(), // Notification content
       isRead: a.boolean().default(false),
@@ -175,6 +160,43 @@ const schema = a.schema({
     .authorization((allow) => [
       allow.owner().to(['create', 'read', 'update', 'delete']),
       allow.authenticated().to(['create']) // Allow users to register tokens for others (admin use)
+    ]),
+
+  // One row per app installation (or browser profile) that can receive push. Replaces
+  // PushToken, which had no stable device identity and collected a duplicate row on every
+  // app launch. The id is `${userId}#${installationId}`, so registering is idempotent.
+  // Rows are written only by the device-registry Lambda, which upserts and takes a token
+  // over from another user when a device changes hands. See docs/NOTIFICATIONS_PLAN.md §3.6.
+  PushDevice: a
+    .model({
+      id: a.id().required(),
+      userId: a.id().required(),
+      installationId: a.string().required(),
+      platform: a.enum(['IOS', 'ANDROID', 'WEB']),
+      transport: a.enum(['EXPO', 'WEBPUSH']),
+      token: a.string().required(), // Expo push token, or a Web Push subscription as JSON
+      deviceName: a.string(), // e.g. "Chrome on Windows", "Google Pixel 8"
+      appVersion: a.string(),
+      timezone: a.string(), // IANA zone reported by the device, e.g. "America/New_York"
+      pushEnabled: a.boolean().default(true), // The per-device switch in Settings
+      mutedCategories: a.string().array(), // Reserved for per-device category mutes; not built
+      isActive: a.boolean().default(true), // False after sign-out, takeover, or a dead token
+      lastSeenAt: a.datetime(),
+      lastSuccessAt: a.datetime(),
+      failureCount: a.integer().default(0),
+      expiresAt: a.integer(), // Epoch seconds; DynamoDB TTL removes devices unseen for 120 days
+      user: a.belongsTo('User', 'userId'),
+    })
+    .secondaryIndexes((index) => [
+      index('userId').queryField('pushDevicesByUser'),
+      // Lets device-registry find another user's row for the same token (a shared device).
+      index('token').queryField('pushDevicesByToken'),
+    ])
+    .authorization((allow) => [
+      // userId is the Cognito sub. Users may read and remove their own devices, but never
+      // update them directly: with update, an owner can rewrite userId to someone else's
+      // sub and receive their pushes. Every write goes through device-registry instead.
+      allow.ownerDefinedIn('userId').identityClaim('sub').to(['read', 'delete']),
     ]),
 
   // User notification preferences for controlling which notifications to receive
@@ -824,6 +846,33 @@ const schema = a.schema({
     .handler(a.handler.function(pushNotificationSender))
     .authorization((allow) => [allow.authenticated()]),
 
+  // Register this device for push. Upserts the caller's PushDevice row and deactivates
+  // any other user's row holding the same token. Returns the device id.
+  registerDevice: a
+    .mutation()
+    .arguments({
+      installationId: a.string().required(),
+      token: a.string().required(),
+      platform: a.enum(['IOS', 'ANDROID', 'WEB']),
+      deviceName: a.string(),
+      appVersion: a.string(),
+      timezone: a.string(),
+    })
+    .returns(a.string())
+    .handler(a.handler.function(deviceRegistry))
+    .authorization((allow) => [allow.authenticated()]),
+
+  // Stop pushing to this device for the caller (sign-out). Keeps the row, and the user's
+  // per-device switch with it, so signing back in restores the device as it was.
+  unregisterDevice: a
+    .mutation()
+    .arguments({
+      installationId: a.string().required(),
+    })
+    .returns(a.boolean())
+    .handler(a.handler.function(deviceRegistry))
+    .authorization((allow) => [allow.authenticated()]),
+
   // Manual Event Fetch Function (for testing)
   fetchEventsManually: a
     .query()
@@ -880,6 +929,7 @@ const schema = a.schema({
   allow.resource(stripePaymentIntent).to(["query", "listen", "mutate"]),
   allow.resource(stripeWebhook).to(["query", "listen", "mutate"]),
   allow.resource(stripeManage).to(["query", "listen", "mutate"]),
+  allow.resource(deviceRegistry).to(["query", "mutate"]),
 ]);
 
 export type Schema = ClientSchema<typeof schema>;

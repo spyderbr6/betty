@@ -112,3 +112,53 @@ export function succeededTokenIds(
 export function countSuccesses(tickets: ExpoTicket[] | null | undefined): number {
   return (tickets ?? []).filter((t) => t?.status === 'ok').length;
 }
+
+/** A PushDevice row, as the sender reads it. */
+export interface PushDeviceRecord {
+  id?: string | null;
+  token?: string | null;
+  platform?: Platform | null;
+  isActive?: boolean | null;
+  pushEnabled?: boolean | null;
+}
+
+/** One place to send a push, and which table its row lives in (for lastUsed / deactivation). */
+export interface PushTarget {
+  id: string;
+  token: string;
+  platform: Platform;
+  source: 'device' | 'legacy';
+}
+
+/**
+ * Where to send a user's pushes, during the move from PushToken to PushDevice.
+ *
+ * PushDevice is authoritative for any token it knows about, whatever that row's state:
+ * a device the user switched off, or one deactivated at sign-out, must not keep receiving
+ * pushes through an old PushToken row for the same token. Legacy rows still cover devices
+ * running an app build from before PushDevice existed. Each token is sent to once.
+ */
+export function resolvePushTargets(
+  devices: PushDeviceRecord[] | null | undefined,
+  legacyTokens: PushTokenRecord[] | null | undefined
+): PushTarget[] {
+  const targets: PushTarget[] = [];
+  const seen = new Set<string>();
+  const known = new Set((devices ?? []).map((d) => d.token).filter((t): t is string => !!t));
+
+  for (const d of devices ?? []) {
+    if (!d.id || !d.token || !d.platform || !d.isActive || d.pushEnabled === false) continue;
+    if (seen.has(d.token)) continue;
+    seen.add(d.token);
+    targets.push({ id: d.id, token: d.token, platform: d.platform, source: 'device' });
+  }
+
+  for (const t of legacyTokens ?? []) {
+    if (!t.id || !t.token || !t.platform || !t.isActive) continue;
+    if (known.has(t.token) || seen.has(t.token)) continue;
+    seen.add(t.token);
+    targets.push({ id: t.id, token: t.token, platform: t.platform, source: 'legacy' });
+  }
+
+  return targets;
+}

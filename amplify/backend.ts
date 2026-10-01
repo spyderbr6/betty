@@ -10,6 +10,7 @@ import { payoutProcessor } from './functions/payout-processor/resource';
 import { stripePaymentIntent } from './functions/stripe-payment-intent/resource';
 import { stripeWebhook } from './functions/stripe-webhook/resource';
 import { stripeManage } from './functions/stripe-manage/resource';
+import { deviceRegistry } from './functions/device-registry/resource';
 import { FunctionUrlAuthType, CfnPermission } from 'aws-cdk-lib/aws-lambda';
 import { HttpApi, HttpMethod } from 'aws-cdk-lib/aws-apigatewayv2';
 import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
@@ -27,8 +28,18 @@ const backend = defineBackend({
   stripePaymentIntent,
   stripeWebhook,
   stripeManage,
+  deviceRegistry,
   // Note: liveScoreUpdater removed - TheSportsDB score updates are too unreliable
 });
+
+// Data retention: DynamoDB deletes rows once their `expiresAt` (epoch seconds) has passed,
+// at no cost and with no scheduled job. Notifications get expiresAt from notificationMeta()
+// at write time (per-category retention); devices from device-registry on every
+// registration. Rows without the attribute are never touched. See
+// docs/NOTIFICATIONS_PLAN.md §3.7.
+const tables = backend.data.resources.cfnResources.amplifyDynamoDbTables;
+tables['Notification'].timeToLiveAttribute = { attributeName: 'expiresAt', enabled: true };
+tables['PushDevice'].timeToLiveAttribute = { attributeName: 'expiresAt', enabled: true };
 
 // Force CloudFormation to generate a new AppSync API Key (fixes expired/missing key on production stack)
 backend.data.resources.cfnResources.cfnApiKey?.overrideLogicalId('recoverApiKey20260726');

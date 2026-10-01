@@ -15,11 +15,34 @@ import { Platform } from 'react-native';
 import { NotificationPreferencesService } from './notificationPreferencesService';
 import { subscribeToWebPush, isWebPushSupported } from '../utils/webPushUtils';
 import { getInstallationId } from './installationId';
-import { planTokenUpsert, rowsForDeviceSignOut, PushTokenRow } from './pushRegistrationLogic';
+import { describeUserAgent, planTokenUpsert, rowsForDeviceSignOut, PushTokenRow } from './pushRegistrationLogic';
+import { notificationMeta } from '../../amplify/shared/notificationCatalog';
 
 const client = generateClient<Schema>();
 
 export type DevicePushPermission = 'granted' | 'denied' | 'undetermined' | 'unsupported';
+
+/** Name shown in Settings' device list, e.g. "Chrome on Windows" or "Google Pixel 8". */
+function describeThisDevice(): string {
+  if (Platform.OS === 'web') {
+    return describeUserAgent(typeof navigator !== 'undefined' ? navigator.userAgent : '');
+  }
+  if (Platform.OS === 'ios') {
+    return Platform.isPad ? 'iPad' : 'iPhone';
+  }
+  const { Brand, Model } = (Platform.constants ?? {}) as { Brand?: string; Model?: string };
+  const brand = Brand ? Brand.charAt(0).toUpperCase() + Brand.slice(1) : '';
+  return [brand, Model].filter(Boolean).join(' ') || 'Android device';
+}
+
+/** The device's IANA timezone, used later to apply quiet hours in the user's local time. */
+function currentTimezone(): string | undefined {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 /** Who this device registered for in this session, so resume/refresh doesn't re-register. */
 let sessionRegistration: { userId: string; token: string } | null = null;
@@ -125,13 +148,42 @@ export class NotificationService {
   }
 
   /**
-   * Record `token` for the user: one row per token, duplicates deactivated.
+   * Record this device's token for the user.
+   *
+   * Goes through the registerDevice mutation, which upserts the PushDevice row for this
+   * installation server-side and takes the token over from any other user on a shared
+   * device. Legacy PushToken rows for this device are then retired so the old table winds
+   * down. If the bundled amplify_outputs.json predates registerDevice, falls back to the
+   * legacy PushToken upsert so push keeps working until the config is refreshed.
    */
   private static async saveDeviceToken(userId: string, token: string): Promise<void> {
+    const installationId = await getInstallationId();
+
+    if (typeof client.mutations.registerDevice !== 'function') {
+      console.warn('[Push] registerDevice is missing from the Amplify config; using legacy PushToken registration');
+      await this.upsertLegacyToken(userId, token, installationId);
+      return;
+    }
+
+    const { errors } = await client.mutations.registerDevice({
+      installationId,
+      token,
+      platform: Platform.OS.toUpperCase() as 'IOS' | 'ANDROID' | 'WEB',
+      deviceName: describeThisDevice(),
+      timezone: currentTimezone(),
+    });
+    if (errors?.length) {
+      throw new Error(`registerDevice failed: ${errors.map((e) => e.message).join('; ')}`);
+    }
+
+    await this.retireLegacyRows(userId, { token, installationId });
+  }
+
+  /** Phase 0 registration into PushToken: one row per token, duplicates deactivated. */
+  private static async upsertLegacyToken(userId: string, token: string, installationId: string): Promise<void> {
     const rows = await this.listUserTokenRows(userId);
     const plan = planTokenUpsert(rows, token, new Date());
     const now = new Date().toISOString();
-    const installationId = await getInstallationId();
 
     if (plan.create) {
       await client.models.PushToken.create({
@@ -160,20 +212,36 @@ export class NotificationService {
     }
   }
 
+  /** Deactivate this device's rows in the legacy PushToken table. */
+  private static async retireLegacyRows(
+    userId: string,
+    device: { token?: string | null; installationId: string }
+  ): Promise<void> {
+    const rows = await this.listUserTokenRows(userId);
+    const ids = rowsForDeviceSignOut(rows, device);
+    await Promise.all(ids.map((id) => client.models.PushToken.update({ id, isActive: false })));
+    if (ids.length > 0) {
+      console.log(`[Push] Retired ${ids.length} legacy token rows for this device`);
+    }
+  }
+
   /**
-   * Deactivate this device's push registration for the user. Called before sign-out so a
-   * shared device stops receiving the previous user's pushes. The user's other devices are
-   * left alone.
+   * Stop pushing to this device for the user. Called before sign-out so a shared device
+   * stops receiving the previous user's pushes. The user's other devices are left alone,
+   * and so is this device's on/off switch, which is restored on the next sign-in.
    */
   static async unregisterThisDevice(userId: string): Promise<void> {
     try {
-      const token = sessionRegistration?.token ?? (await this.getDevicePushToken(false).catch(() => null));
       const installationId = await getInstallationId();
-      const rows = await this.listUserTokenRows(userId);
-      const ids = rowsForDeviceSignOut(rows, { token, installationId });
+      if (typeof client.mutations.unregisterDevice === 'function') {
+        const { errors } = await client.mutations.unregisterDevice({ installationId });
+        if (errors?.length) {
+          console.error('[Push] unregisterDevice failed:', errors);
+        }
+      }
 
-      await Promise.all(ids.map((id) => client.models.PushToken.update({ id, isActive: false })));
-      console.log(`[Push] Deactivated ${ids.length} token rows for this device`);
+      const token = sessionRegistration?.token ?? (await this.getDevicePushToken(false).catch(() => null));
+      await this.retireLegacyRows(userId, { token, installationId });
     } catch (error) {
       console.error('[Push] Error unregistering this device:', error);
     } finally {
@@ -282,6 +350,7 @@ export class NotificationService {
       const result = await client.models.Notification.create({
         userId,
         type,
+        ...notificationMeta(type),
         title,
         message,
         isRead: false,

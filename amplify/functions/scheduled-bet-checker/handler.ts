@@ -6,6 +6,7 @@ import { Amplify } from 'aws-amplify';
 import { getAmplifyDataClientConfig } from '@aws-amplify/backend/function/runtime';
 // @ts-ignore - Generated at build time by Amplify
 import { env } from '$amplify/env/scheduled-bet-checker';
+import { notificationMeta } from '../../shared/notificationCatalog';
 
 const { resourceConfig, libraryOptions } = await getAmplifyDataClientConfig(env);
 Amplify.configure(resourceConfig, libraryOptions);
@@ -136,6 +137,7 @@ async function updateExpiredBets(): Promise<{ updated: number; cancelled: number
             await client.models.Notification.create({
               userId: bet.creatorId!,
               type: 'BET_CANCELLED',
+              ...notificationMeta('BET_CANCELLED'),
               title: 'Bet Cancelled',
               message: `"${bet.title}" was cancelled because no one took the other side. Your stake has been refunded.`,
               isRead: false,

@@ -6,6 +6,7 @@ import { getAmplifyDataClientConfig } from '@aws-amplify/backend/function/runtim
 // @ts-ignore - Generated at build time by Amplify
 import { env } from '$amplify/env/stripe-webhook';
 import Stripe from 'stripe';
+import { notificationMeta } from '../../shared/notificationCatalog';
 
 const { resourceConfig, libraryOptions } = await getAmplifyDataClientConfig(env);
 Amplify.configure(resourceConfig, libraryOptions);
@@ -205,6 +206,7 @@ async function notifyDepositCompleted(userId: string, amountDollars: number) {
     await client.models.Notification.create({
       userId,
       type: 'DEPOSIT_COMPLETED',
+      ...notificationMeta('DEPOSIT_COMPLETED'),
       title,
       message,
       isRead: false,

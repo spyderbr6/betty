@@ -316,6 +316,7 @@ class ToastNotificationService {
       'SQUARES_PERIOD_WINNER': 'period wins',
       'SQUARES_GAME_LIVE': 'live games',
       'SQUARES_GAME_CANCELLED': 'game cancellations',
+      'SQUARES_PURCHASE_CONFIRMED': 'square purchases',
       'SQUARES_INVITATION_RECEIVED': 'squares invitations',
       'SQUARES_INVITATION_ACCEPTED': 'squares invitation acceptances',
       'SQUARES_INVITATION_DECLINED': 'squares invitation declines',

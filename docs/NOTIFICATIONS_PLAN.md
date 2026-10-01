@@ -1,6 +1,6 @@
 # Notifications Overhaul Plan
 
-**Status:** approved 2026-09-30. Phase 0 is done; Phase 1 is next.
+**Status:** approved 2026-09-30. Phases 0 and 1 are done; Phase 2 is next.
 This is the working plan for rebuilding notification delivery and preferences
 across web, Android and (later) iOS. It replaces the "Push notifications are
 half-wired" analysis in `todo.md`. Tick items off here as they land.
@@ -15,7 +15,7 @@ half-wired" analysis in `todo.md`. Tick items off here as they land.
 | Can anything be un-mutable? | **No.** The user can mute alerts (push and in-app banner) for every category. |
 | Notification feed | **Always written; shown or hidden per category.** Key categories (money, results and payouts, refunds, disputes) **always appear in the feed**. Feed visibility for every other category is a user preference. |
 | Where notifications are created | **Stays where it is for now** (client and Lambdas). Push moves to a single server-side dispatcher. Moving *creation* to the server is a later follow-up. |
-| Data retention | **Automatic expiry** of notifications, device registrations and old sports events. Financial and audit records are never wiped. |
+| Data retention | **Automatic expiry** of notifications (the event log behind the feed) and device registrations. Financial and audit records are never wiped. Old sports events (`LiveEvent`) are out of scope here and tracked in `todo.md`. |
 | Android FCM | **Configured.** `google-services.json` is committed and the FCM V1 service-account key is uploaded to EAS. The docs that said otherwise have been corrected. What's left for Android is device verification, the icon and the channels (Phase 7). |
 
 ---
@@ -47,7 +47,7 @@ All of these were found in the 2026-09-30 audit. Items marked **(P0)** are fixed
 - **Android:** the notification icon is a colour PNG (Android renders it as a white square), there are only two channels, both at MAX importance, and the fix has not been re-verified on a device since FCM was set up.
 
 **Data growth**
-- Nothing expires. `Notification`, `PushToken`, `LiveEvent` (ESPN events) and `EventCheckIn` grow forever.
+- **(P1)** Nothing expired. `Notification` and device registrations now carry `expiresAt` and are deleted by DynamoDB TTL. (`LiveEvent` / `EventCheckIn` growth is tracked separately in `todo.md`.)
 
 ---
 
@@ -122,9 +122,7 @@ Notification INSERT ──DynamoDB stream (INSERT only)──► notification-di
     ├─ preferences: alert mute, quiet hours in the user's timezone
     ├─ PushDevice rows for the user: active, device switch on
     ├─ Expo (IOS/ANDROID): Authorization header, 100-per-request chunks, category channelId, receipts
-    ├─ web-push (WEB): TTL, urgency, tag, deep-link URL
-    └─ stamps expiresAt (TTL) on the row with a direct DynamoDB UpdateItem
-       (not AppSync, so no onUpdate subscription fires on clients)
+    └─ web-push (WEB): TTL, urgency, tag, deep-link URL
 ```
 
 The client's `createNotification` becomes "write the row". It no longer reads preferences, checks DND, pushes or toasts. The public `sendPushNotification` mutation is removed. A `sendTestPush` mutation replaces it and can only target the caller's own devices.
@@ -145,31 +143,27 @@ lastSeenAt, lastSuccessAt, failureCount, isActive
 expiresAt        // TTL: lastSeenAt + 120 days
 ```
 
-Registration goes through a `registerDevice` mutation backed by a Lambda. It upserts, and if another user's row holds the same token (a shared device), it takes the token over. The mutation is called:
+Registration goes through a `registerDevice` mutation backed by the `device-registry` Lambda. It upserts, and if another user's row holds the same token (a shared device), it takes the token over. The mutation is called:
 - on sign-in;
 - when the token changes (`addPushTokenListener` on native, `pushsubscriptionchange` on web);
 - at most once a day otherwise.
 
-Sign-out deactivates this device's row.
+Sign-out calls `unregisterDevice`, which deactivates this device's row but keeps it, so the device switch survives signing back in.
+
+Users can read and delete their own `PushDevice` rows but never update them directly. With update, an owner could rewrite `userId` to someone else's id and receive their pushes; the CDK synth flags exactly this ("owners may reassign ownership"). Every write therefore goes through `device-registry`, including the Phase 2 device switch.
 
 ### 3.7 Retention
 
 | Data | Mechanism | Keep for |
 |---|---|---|
-| `Notification` | DynamoDB TTL on `expiresAt`, stamped by the dispatcher | 90 days; `MONEY` / `RESULTS` / `REFUNDS` 180 days (per-category `retentionDays` in the catalog) |
-| `PushDevice` | DynamoDB TTL, refreshed on every registration | 120 days after last seen |
-| `LiveEvent` | Daily `data-retention` Lambda (a Query on `activeEventsByTime` with `isActive = 0`, never a Scan) | 30 days after the event, unless a non-terminal Bet or SquaresGame references it |
-| `EventCheckIn` | Deleted with its event by the same Lambda | Same as the event |
+| `Notification` | DynamoDB TTL on `expiresAt`, set at write time by `notificationMeta()` from the catalog, by every producer (app and Lambdas) | 90 days; `MONEY` / `RESULTS` / `REFUNDS` 180 days (per-category `retentionDays` in the catalog) |
+| `PushDevice` | DynamoDB TTL, pushed forward on every registration | 120 days after last seen |
 | Old `PushToken` table | Dropped after the `PushDevice` cut-over | — |
-| Rows written before TTL existed | One-off paginated backfill in `data-retention` (scans are acceptable for a one-off) | — |
+| Notifications written before TTL existed | One-off backfill: set `expiresAt` from `createdAt` + retention, so TTL removes the old ones | — |
 
-DynamoDB TTL deletes are free and happen within about 48 hours of expiry. The dispatcher's stream source filters to `INSERT`, so TTL `REMOVE` events never invoke it.
+DynamoDB TTL deletes are free and happen within about 48 hours of expiry. TTL is enabled on both tables in `backend.ts`. The dispatcher's stream source will filter to `INSERT`, so TTL `REMOVE` events never invoke it.
 
 **Never wiped:** Bet, Participant, Transaction, Dispute, Evidence, SquaresGame / Purchase / Payout, TrustScoreHistory. These are financial and audit records.
-
-**Needs checking before events are deleted:**
-- `Bet.eventId` has no index; either add `betsByEvent` or rely on `LiveEvent.betCount`.
-- Bet and squares history screens must render when their event is gone.
 
 ### 3.8 Security
 
@@ -200,14 +194,22 @@ Each phase ships on its own and leaves the app working.
 - **Web users:** web users who never granted permission are no longer prompted at sign-in. They enable push from Settings → This Device. The Phase 6 soft ask brings back a proactive prompt, tied to a tap.
 - **Duplicate rows:** duplicate `PushToken` rows clean up by themselves. Each device collapses its own duplicates the next time it signs in or launches.
 
-### Phase 1: foundations
-- [ ] `amplify/shared/notificationCatalog.ts` plus a completeness test against the schema enum.
-- [ ] Add `category` to `Notification`, written by every producer (client and Lambdas) through one `buildNotification` helper.
-- [ ] `PushDevice` model plus the `registerDevice` mutation and Lambda; point client registration at it; the sender reads `PushDevice` first and falls back to `PushToken`.
-- [ ] Timezone reported by the client at registration.
+### Phase 1: foundations ✅
+- [x] `amplify/shared/notificationCatalog.ts`. The schema's `Notification.type` enum and the app's `NotificationType` are both built from it, so they can't drift. Completeness tests are in `amplify/shared/__tests__`.
+- [x] `category` and `expiresAt` on `Notification`, written by every producer (the app's `createNotification`, two direct app call sites, and the payout, bet-checker, squares-checker and Stripe Lambdas) through `notificationMeta()`.
+- [x] DynamoDB TTL enabled on `Notification` and `PushDevice` (moved up from Phase 4).
+- [x] `PushDevice` model plus `registerDevice` / `unregisterDevice` mutations on the `device-registry` Lambda. The app registers through it and retires its legacy `PushToken` rows. The sender reads `PushDevice` and falls back to `PushToken`, sending each token once (`resolvePushTargets`).
+- [x] Device name and timezone reported at registration.
+- [x] Playwright: web registration through `registerDevice`, and sign-out through `unregisterDevice`. Vitest: catalog, `deviceLogic`, `resolvePushTargets`, user-agent naming.
+
+**Rollout notes for Phase 1**
+- **Config on mobile builds:** `amplify_outputs.json` must be regenerated before the next EAS build so the app knows `registerDevice`. A build with a stale config falls back to the Phase 0 `PushToken` path, and still gets push.
+- **Old app versions:** installs that predate this keep writing `PushToken`. The sender still reads it, so they keep getting push.
+- **Timezone storage:** the timezone is on `PushDevice` for now. Phase 2 copies the most recent one onto preferences for quiet hours.
 
 ### Phase 2: preferences model and Settings UI
-- [ ] New preference fields (3.3), with a read-time fallback from the old booleans.
+- [ ] New preference fields (3.3), with a read-time fallback from the old booleans. `device-registry` writes the reporting device's timezone onto preferences.
+- [ ] `setDevicePush` on `device-registry` for the device switch (users cannot update `PushDevice` directly — see 3.6).
 - [ ] Rebuild the Settings notifications screen:
   - "This device" card: permission state, enable or unblock steps, device switch, send test.
   - Per-category rows: **Alerts** switch, plus a **Show in feed** switch (shown as always-on, with an explanation, for locked categories).
@@ -221,18 +223,15 @@ Each phase ships on its own and leaves the app working.
 - [ ] `notification-dispatcher` Lambda on the Notification table stream (INSERT filter). Decision logic lives in a pure module with Vitest coverage: mutes, quiet hours across timezones and DST, per-transport payloads.
 - [ ] Expo: chunking, receipts (in the next dispatcher run or a small scheduled check), deactivation on `DeviceNotRegistered`.
 - [ ] Web-push: TTL, urgency, deep-link URL in the payload.
-- [ ] Stamp `expiresAt` on each notification.
 - [ ] Remove push from `createNotification`, remove `sendPushNotification`, add `sendTestPush` (own devices only), and remove stripe-webhook's duplicate preference check.
 
-### Phase 4: retention
-- [ ] Enable TTL on `Notification` (`expiresAt`) and `PushDevice` in `backend.ts`.
-- [ ] `data-retention` scheduled Lambda (daily): old LiveEvents and their check-ins, subject to the reference check in 3.7.
-- [ ] One-off backfill of notifications that predate TTL.
-- [ ] Confirm the history screens tolerate a deleted event.
+### Phase 4: retention backfill
+- [x] ~~Enable TTL~~ (done in Phase 1).
+- [ ] One-off backfill: give notifications that predate TTL an `expiresAt` from `createdAt` + retention.
 
 ### Phase 5: authorization lockdown
 - [ ] Owner-only rules from 3.8. Verify the owner-scoped `onCreate` subscription still delivers, in the real sandbox and not just the mocks.
-- [ ] Drop the `PushToken` model once no client writes it.
+- [ ] Drop the `PushToken` model once no client writes it. Old app versions write it until they update, so check its newest `lastUsed` before dropping.
 
 ### Phase 6: web
 - [ ] Service-worker icons served from `public/`.

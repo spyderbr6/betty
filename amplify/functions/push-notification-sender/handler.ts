@@ -9,8 +9,10 @@ import webpush from 'web-push';
 import {
   buildExpoMessages,
   countSuccesses,
+  resolvePushTargets,
   succeededTokenIds,
   tokensToDeactivate,
+  type PushTarget,
 } from './pushLogic';
 
 // CRITICAL: Top-level await configuration - this is required for proper client initialization
@@ -42,26 +44,29 @@ export const handler: AppSyncResolverHandler<PushNotificationArgs, boolean> = as
   try {
     const { userId, title, message, data, priority = 'MEDIUM' } = event.arguments;
 
-    // Get the user's push tokens through the userId index, then drop inactive ones in
-    // memory (a user has a handful of devices, so there is nothing to gain from filtering
-    // server-side). This was a filtered list, which is a paged DynamoDB Scan rather than a
-    // lookup: once the table outgrew a scan page the user's own tokens stopped coming back
-    // and every push for them silently no-opped as "no active push tokens".
-    const { data: allTokens } = await client.models.PushToken.pushTokensByUser({ userId });
-    const tokens = (allTokens ?? []).filter((t: any) => t.isActive);
+    // Devices come from PushDevice, with legacy PushToken rows as a fallback for app builds
+    // that predate it; resolvePushTargets decides which rows win and sends each token once.
+    // Both are read through their userId index — a filtered list is a paged Scan, and once
+    // PushToken outgrew a scan page a user's own tokens stopped coming back and every push
+    // for them silently no-opped as "no active push tokens".
+    const [{ data: devices }, { data: legacyTokens }] = await Promise.all([
+      client.models.PushDevice.pushDevicesByUser({ userId }, { limit: 1000 }),
+      // Large limit: before registration was an upsert, one device could hold dozens of
+      // duplicate PushToken rows, and a distinct token past the first page would be missed.
+      client.models.PushToken.pushTokensByUser({ userId }, { limit: 1000 }),
+    ]);
+    const targets = resolvePushTargets(devices, legacyTokens);
 
-    if (!tokens || tokens.length === 0) {
-      console.log(`No active push tokens found for user ${userId}`);
+    if (targets.length === 0) {
+      console.log(`No active push targets found for user ${userId}`);
       return false;
     }
 
-    console.log(`Found ${tokens.length} active push tokens for user ${userId}`);
+    // Separate targets by transport
+    const mobileTokens = targets.filter((t) => t.platform === 'IOS' || t.platform === 'ANDROID');
+    const webTokens = targets.filter((t) => t.platform === 'WEB');
 
-    // Separate tokens by platform
-    const mobileTokens = tokens.filter((t: any) => t.platform === 'IOS' || t.platform === 'ANDROID');
-    const webTokens = tokens.filter((t: any) => t.platform === 'WEB');
-
-    console.log(`Mobile tokens: ${mobileTokens.length}, Web tokens: ${webTokens.length}`);
+    console.log(`Push targets for ${userId}: ${mobileTokens.length} mobile, ${webTokens.length} web`);
 
     let successCount = 0;
 
@@ -92,7 +97,7 @@ export const handler: AppSyncResolverHandler<PushNotificationArgs, boolean> = as
  * Send push notifications via Expo Push Service (iOS/Android)
  */
 async function sendViaExpoPush(
-  tokens: any[],
+  tokens: PushTarget[],
   title: string,
   message: string,
   data: any,
@@ -132,20 +137,14 @@ async function sendViaExpoPush(
     // to tokens[i]. Both branches below used to filter the tickets first and then
     // index the unfiltered token array with the filtered position, which stamped
     // and deactivated the wrong registrations. See pushLogic for the detail.
-    const succeededIds = succeededTokenIds(tokens, result.data);
-    if (succeededIds.length > 0) {
-      const now = new Date().toISOString();
-      await Promise.all(
-        succeededIds.map((id) => client.models.PushToken.update({ id, lastUsed: now }))
-      );
-    }
+    const byId = new Map(tokens.map((t) => [t.id, t]));
+    const succeeded = succeededTokenIds(tokens, result.data).map((id) => byId.get(id)!);
+    await Promise.all(succeeded.map(markDelivered));
 
-    const deadIds = tokensToDeactivate(tokens, result.data);
-    if (deadIds.length > 0) {
-      console.log(`[Expo Push] Marking ${deadIds.length} tokens as inactive`);
-      await Promise.all(
-        deadIds.map((id) => client.models.PushToken.update({ id, isActive: false }))
-      );
+    const dead = tokensToDeactivate(tokens, result.data).map((id) => byId.get(id)!);
+    if (dead.length > 0) {
+      console.log(`[Expo Push] Marking ${dead.length} tokens as inactive`);
+      await Promise.all(dead.map(markDead));
     }
 
     return countSuccesses(result.data);
@@ -160,7 +159,7 @@ async function sendViaExpoPush(
  * Send push notifications via Web Push API (browsers)
  */
 async function sendViaWebPush(
-  tokens: any[],
+  tokens: PushTarget[],
   title: string,
   message: string,
   data: any,
@@ -179,21 +178,15 @@ async function sendViaWebPush(
     });
 
     let successCount = 0;
-    const now = new Date().toISOString();
 
     // Send to each web subscription
     await Promise.all(
-      tokens.map(async (tokenRecord: any) => {
+      tokens.map(async (tokenRecord) => {
         try {
-          const subscription = JSON.parse(tokenRecord.token!);
+          const subscription = JSON.parse(tokenRecord.token);
 
           await webpush.sendNotification(subscription, payload);
-
-          // Update lastUsed timestamp
-          await client.models.PushToken.update({
-            id: tokenRecord.id!,
-            lastUsed: now,
-          });
+          await markDelivered(tokenRecord);
 
           successCount++;
           console.log(`[Web Push] Sent to token ${tokenRecord.id}`);
@@ -204,10 +197,7 @@ async function sendViaWebPush(
           // If subscription is invalid or expired, mark token as inactive
           if (error.statusCode === 404 || error.statusCode === 410) {
             console.log(`[Web Push] Marking token ${tokenRecord.id} as inactive`);
-            await client.models.PushToken.update({
-              id: tokenRecord.id!,
-              isActive: false,
-            });
+            await markDead(tokenRecord);
           }
         }
       })
@@ -219,5 +209,24 @@ async function sendViaWebPush(
   } catch (error) {
     console.error('[Web Push] Error:', error);
     return 0;
+  }
+}
+
+/** Record a successful delivery on whichever table the target came from. */
+async function markDelivered(target: PushTarget): Promise<void> {
+  const now = new Date().toISOString();
+  if (target.source === 'device') {
+    await client.models.PushDevice.update({ id: target.id, lastSuccessAt: now, failureCount: 0 });
+  } else {
+    await client.models.PushToken.update({ id: target.id, lastUsed: now });
+  }
+}
+
+/** Stop sending to a token the push service says is gone. */
+async function markDead(target: PushTarget): Promise<void> {
+  if (target.source === 'device') {
+    await client.models.PushDevice.update({ id: target.id, isActive: false });
+  } else {
+    await client.models.PushToken.update({ id: target.id, isActive: false });
   }
 }
