@@ -105,17 +105,13 @@ describe('decidePush', () => {
     // 15:30 UTC is 11:30 in New York: inside an 11:00–12:00 quiet window there.
     const quiet = {
       alertMutedCategories: [],
-      dndEnabled: true,
+      quietHoursEnabled: true,
       quietStartMinute: 11 * 60,
       quietEndMinute: 12 * 60,
       timezone: 'America/New_York',
     };
     expect(decidePush(note(), quiet, NOW)).toMatchObject({ push: false, reason: 'preferences' });
     expect(decidePush(note(), { ...quiet, timezone: 'UTC' }, NOW)).toEqual({ push: true });
-  });
-
-  it('respects choices made with the legacy per-type switches', () => {
-    expect(decidePush(note(), { betJoinedEnabled: false }, NOW)).toMatchObject({ push: false });
   });
 
   it('does not push a notification that has waited too long, e.g. after an outage', () => {

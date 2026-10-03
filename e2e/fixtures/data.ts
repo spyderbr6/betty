@@ -47,7 +47,7 @@ export const notificationPreferences = (over: Record<string, unknown> = {}) => (
   inAppEnabled: true,
   alertMutedCategories: [],
   feedMutedCategories: [],
-  dndEnabled: false,
+  quietHoursEnabled: false,
   quietStartMinute: null,
   quietEndMinute: null,
   timezone: 'America/New_York',

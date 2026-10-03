@@ -129,32 +129,29 @@ export const AdminTestingScreen: React.FC<{ onClose: () => void }> = ({ onClose 
   const pushNotificationTestModules: TestModule[] = [
     {
       id: 'check-push-token',
-      title: 'Check Push Token Status',
-      description: 'Verifies your push token is registered and active',
+      title: 'Check Push Devices',
+      description: 'Lists your devices registered for push and whether push is on',
       action: async () => {
         if (!user) {
           addLog('❌ No user logged in');
           return;
         }
 
-        addLog('Checking push token status...');
-        const { data: tokens } = await client.models.PushToken.list({
-          filter: {
-            userId: { eq: user.userId },
-            isActive: { eq: true }
-          }
-        });
+        addLog('Checking registered push devices...');
+        // Through the userId index; cast as elsewhere, the index query trips TS2590.
+        const { data: devices } = await (client.models.PushDevice as any).pushDevicesByUser({ userId: user.userId });
+        const active = (devices ?? []).filter((d: any) => d.isActive);
 
-        if (!tokens || tokens.length === 0) {
-          addLog('❌ No active push tokens found');
-          addLog('💡 Try logging out and back in to register a token');
+        if (active.length === 0) {
+          addLog('❌ No active push devices found');
+          addLog('💡 Allow notifications in Settings → This Device, or sign out and back in');
         } else {
-          addLog(`✅ Found ${tokens.length} active push token(s)`);
-          tokens.forEach((token, idx) => {
-            addLog(`Token ${idx + 1}:`);
-            addLog(`  Platform: ${token.platform}`);
-            addLog(`  Token: ${token.token?.substring(0, 30)}...`);
-            addLog(`  Last used: ${token.lastUsed || 'Never'}`);
+          addLog(`✅ Found ${active.length} active push device(s)`);
+          active.forEach((device: any, idx: number) => {
+            addLog(`Device ${idx + 1}: ${device.deviceName || device.platform}`);
+            addLog(`  Push: ${device.pushEnabled === false ? 'off' : 'on'}`);
+            addLog(`  Last seen: ${device.lastSeenAt || 'Never'}`);
+            addLog(`  Last delivered: ${device.lastSuccessAt || 'Never'}`);
           });
         }
       }

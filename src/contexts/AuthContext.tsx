@@ -259,9 +259,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // device stops receiving the previous user's pushes. Capped so a slow or failed
       // network call never blocks signing out.
       try {
-        const { userId } = await getCurrentUser();
         await Promise.race([
-          NotificationService.unregisterThisDevice(userId),
+          NotificationService.unregisterThisDevice(),
           new Promise((resolve) => setTimeout(resolve, 4000)),
         ]);
       } catch (pushError) {

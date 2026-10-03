@@ -15,7 +15,7 @@ import { Platform } from 'react-native';
 import { NotificationPreferencesService } from './notificationPreferencesService';
 import { subscribeToWebPush, isWebPushSupported } from '../utils/webPushUtils';
 import { getInstallationId } from './installationId';
-import { describeUserAgent, planTokenUpsert, rowsForDeviceSignOut, PushTokenRow } from './pushRegistrationLogic';
+import { describeUserAgent } from './deviceDescription';
 import { notificationMeta } from '../../amplify/shared/notificationCatalog';
 import { isFeedVisible } from '../../amplify/shared/notificationPreferencesLogic';
 
@@ -52,9 +52,9 @@ export class NotificationService {
   /**
    * Register this device's push token for the user (Expo on mobile, Web Push on web).
    *
-   * Upserts by token value, so calling this on every launch, resume and auth refresh
-   * no longer adds a row each time (see pushRegistrationLogic). Runs at most once per
-   * session per user unless `force` is set.
+   * Registration is an upsert keyed on this installation (see saveDeviceToken), so it is
+   * safe to call on every launch and auth refresh. Runs at most once per session per user
+   * unless `force` is set.
    *
    * `prompt` controls whether the OS/browser permission dialog may be shown. It defaults
    * to false on web: browsers only honour the prompt from a user gesture (Safari rejects
@@ -74,7 +74,7 @@ export class NotificationService {
       const token = await this.getDevicePushToken(prompt);
       if (!token) return null;
 
-      await this.saveDeviceToken(userId, token);
+      await this.saveDeviceToken(token);
       sessionRegistration = { userId, token };
       console.log('[Push] Device token registered for user', userId);
       return token;
@@ -149,25 +149,13 @@ export class NotificationService {
   }
 
   /**
-   * Record this device's token for the user.
-   *
-   * Goes through the registerDevice mutation, which upserts the PushDevice row for this
-   * installation server-side and takes the token over from any other user on a shared
-   * device. Legacy PushToken rows for this device are then retired so the old table winds
-   * down. If the bundled amplify_outputs.json predates registerDevice, falls back to the
-   * legacy PushToken upsert so push keeps working until the config is refreshed.
+   * Record this device's token for the user, through the registerDevice mutation. The
+   * device-registry Lambda upserts the PushDevice row for this installation and takes the
+   * token over from any other user on a shared device.
    */
-  private static async saveDeviceToken(userId: string, token: string): Promise<void> {
-    const installationId = await getInstallationId();
-
-    if (typeof client.mutations.registerDevice !== 'function') {
-      console.warn('[Push] registerDevice is missing from the Amplify config; using legacy PushToken registration');
-      await this.upsertLegacyToken(userId, token, installationId);
-      return;
-    }
-
+  private static async saveDeviceToken(token: string): Promise<void> {
     const { errors } = await client.mutations.registerDevice({
-      installationId,
+      installationId: await getInstallationId(),
       token,
       platform: Platform.OS.toUpperCase() as 'IOS' | 'ANDROID' | 'WEB',
       deviceName: describeThisDevice(),
@@ -176,95 +164,24 @@ export class NotificationService {
     if (errors?.length) {
       throw new Error(`registerDevice failed: ${errors.map((e) => e.message).join('; ')}`);
     }
-
-    await this.retireLegacyRows(userId, { token, installationId });
-  }
-
-  /** Phase 0 registration into PushToken: one row per token, duplicates deactivated. */
-  private static async upsertLegacyToken(userId: string, token: string, installationId: string): Promise<void> {
-    const rows = await this.listUserTokenRows(userId);
-    const plan = planTokenUpsert(rows, token, new Date());
-    const now = new Date().toISOString();
-
-    if (plan.create) {
-      await client.models.PushToken.create({
-        userId,
-        token,
-        platform: Platform.OS.toUpperCase() as 'IOS' | 'ANDROID' | 'WEB',
-        deviceId: installationId,
-        appVersion: '1.0.0',
-        isActive: true,
-        lastUsed: now,
-      });
-    } else if (plan.keepId && plan.touchKept) {
-      await client.models.PushToken.update({
-        id: plan.keepId,
-        isActive: true,
-        lastUsed: now,
-        deviceId: installationId,
-      });
-    }
-
-    if (plan.deactivateIds.length > 0) {
-      console.log(`[Push] Deactivating ${plan.deactivateIds.length} duplicate token rows`);
-      await Promise.all(
-        plan.deactivateIds.map((id) => client.models.PushToken.update({ id, isActive: false }))
-      );
-    }
-  }
-
-  /** Deactivate this device's rows in the legacy PushToken table. */
-  private static async retireLegacyRows(
-    userId: string,
-    device: { token?: string | null; installationId: string }
-  ): Promise<void> {
-    const rows = await this.listUserTokenRows(userId);
-    const ids = rowsForDeviceSignOut(rows, device);
-    await Promise.all(ids.map((id) => client.models.PushToken.update({ id, isActive: false })));
-    if (ids.length > 0) {
-      console.log(`[Push] Retired ${ids.length} legacy token rows for this device`);
-    }
   }
 
   /**
-   * Stop pushing to this device for the user. Called before sign-out so a shared device
-   * stops receiving the previous user's pushes. The user's other devices are left alone,
-   * and so is this device's on/off switch, which is restored on the next sign-in.
+   * Stop pushing to this device. Called before sign-out so a shared device stops receiving
+   * the previous user's pushes. The user's other devices are left alone, and so is this
+   * device's on/off switch, which is restored on the next sign-in.
    */
-  static async unregisterThisDevice(userId: string): Promise<void> {
+  static async unregisterThisDevice(): Promise<void> {
     try {
-      const installationId = await getInstallationId();
-      if (typeof client.mutations.unregisterDevice === 'function') {
-        const { errors } = await client.mutations.unregisterDevice({ installationId });
-        if (errors?.length) {
-          console.error('[Push] unregisterDevice failed:', errors);
-        }
+      const { errors } = await client.mutations.unregisterDevice({ installationId: await getInstallationId() });
+      if (errors?.length) {
+        console.error('[Push] unregisterDevice failed:', errors);
       }
-
-      const token = sessionRegistration?.token ?? (await this.getDevicePushToken(false).catch(() => null));
-      await this.retireLegacyRows(userId, { token, installationId });
     } catch (error) {
       console.error('[Push] Error unregistering this device:', error);
     } finally {
       sessionRegistration = null;
     }
-  }
-
-  /**
-   * All of the user's token rows, through the userId index. Pages through results: before
-   * registration was an upsert, one device could hold dozens of duplicate rows.
-   */
-  private static async listUserTokenRows(userId: string): Promise<PushTokenRow[]> {
-    const rows: PushTokenRow[] = [];
-    let nextToken: string | null | undefined;
-    do {
-      // Cast as elsewhere in this layer: the index query trips TS2590 on the generated types.
-      const response: { data?: PushTokenRow[] | null; nextToken?: string | null } =
-        await (client.models.PushToken as any).pushTokensByUser({ userId }, { limit: 200, nextToken });
-      rows.push(...(response.data ?? []));
-      nextToken = response.nextToken;
-    } while (nextToken);
-    return rows;
   }
 
   /**

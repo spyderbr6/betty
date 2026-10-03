@@ -3,51 +3,16 @@ import {
   buildExpoMessages,
   countSuccesses,
   succeededTokenIds,
-  partitionTokens,
   resolvePushTargets,
   tokensToDeactivate,
-  type PushTokenRecord,
+  type TokenRecord,
 } from '../pushLogic';
 
-const token = (over: Partial<PushTokenRecord> = {}): PushTokenRecord => ({
+const token = (over: Partial<TokenRecord> = {}): TokenRecord => ({
   id: 'tok-1',
   token: 'ExponentPushToken[aaaaaaaaaaaaaaaaaaaaaa]',
   platform: 'ANDROID',
-  isActive: true,
   ...over,
-});
-
-describe('partitionTokens', () => {
-  it('drops inactive tokens before doing anything else', () => {
-    const { active, mobile, web } = partitionTokens([
-      token({ id: 'a' }),
-      token({ id: 'b', isActive: false }),
-      token({ id: 'c', platform: 'WEB', isActive: false }),
-    ]);
-    expect(active.map((t) => t.id)).toEqual(['a']);
-    expect(mobile.map((t) => t.id)).toEqual(['a']);
-    expect(web).toEqual([]);
-  });
-
-  it('splits mobile from web', () => {
-    const { mobile, web } = partitionTokens([
-      token({ id: 'ios', platform: 'IOS' }),
-      token({ id: 'android', platform: 'ANDROID' }),
-      token({ id: 'web', platform: 'WEB' }),
-    ]);
-    expect(mobile.map((t) => t.id)).toEqual(['ios', 'android']);
-    expect(web.map((t) => t.id)).toEqual(['web']);
-  });
-
-  it('ignores an unknown platform rather than treating it as mobile', () => {
-    const { mobile, web } = partitionTokens([token({ id: 'x', platform: 'DESKTOP' })]);
-    expect(mobile).toEqual([]);
-    expect(web).toEqual([]);
-  });
-
-  it('survives null, which is what the data layer returns when there are no rows', () => {
-    expect(partitionTokens(null).active).toEqual([]);
-  });
 });
 
 describe('buildExpoMessages', () => {
@@ -163,41 +128,20 @@ describe('resolvePushTargets', () => {
   const device = (over: Record<string, unknown> = {}) => ({
     id: 'dev-1', token: 'tok-1', platform: 'ANDROID', isActive: true, pushEnabled: true, ...over,
   });
-  const legacy = (over: Record<string, unknown> = {}) => ({
-    id: 'leg-1', token: 'tok-legacy', platform: 'IOS', isActive: true, ...over,
-  });
 
   it('sends to active, switched-on devices', () => {
-    expect(resolvePushTargets([device()], [])).toEqual([
-      { id: 'dev-1', token: 'tok-1', platform: 'ANDROID', source: 'device' },
-    ]);
+    expect(resolvePushTargets([device()])).toEqual([{ id: 'dev-1', token: 'tok-1', platform: 'ANDROID' }]);
   });
 
   it('skips devices that are inactive or switched off', () => {
-    expect(resolvePushTargets([device({ isActive: false }), device({ id: 'dev-2', token: 'tok-2', pushEnabled: false })], [])).toEqual([]);
+    expect(resolvePushTargets([device({ isActive: false }), device({ id: 'dev-2', token: 'tok-2', pushEnabled: false })])).toEqual([]);
   });
 
-  it('falls back to legacy rows for tokens no device row knows about', () => {
-    expect(resolvePushTargets([device()], [legacy()]).map((t) => t.id)).toEqual(['dev-1', 'leg-1']);
+  it('sends each token once, even if two rows hold it', () => {
+    expect(resolvePushTargets([device(), device({ id: 'dev-dup' })]).map((t) => t.id)).toEqual(['dev-1']);
   });
 
-  it('never sends through a legacy row for a token a device row owns, even a switched-off one', () => {
-    const targets = resolvePushTargets(
-      [device({ pushEnabled: false })],
-      [legacy({ token: 'tok-1' })]
-    );
-    expect(targets).toEqual([]);
-  });
-
-  it('sends each token once, however many rows hold it', () => {
-    const targets = resolvePushTargets(
-      [device(), device({ id: 'dev-dup' })],
-      [legacy(), legacy({ id: 'leg-dup' }), legacy({ id: 'leg-same-as-device', token: 'tok-1' })]
-    );
-    expect(targets.map((t) => t.id)).toEqual(['dev-1', 'leg-1']);
-  });
-
-  it('ignores inactive legacy rows', () => {
-    expect(resolvePushTargets([], [legacy({ isActive: false })])).toEqual([]);
+  it('handles no devices', () => {
+    expect(resolvePushTargets(null)).toEqual([]);
   });
 });

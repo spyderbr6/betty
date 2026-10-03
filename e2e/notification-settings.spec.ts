@@ -56,22 +56,6 @@ const fakePushSubscription = (page: Page) =>
     PushManager.prototype.subscribe = async () => subscription as unknown as PushSubscription;
   });
 
-const preferences = {
-  id: 'prefs-1',
-  userId: TEST_USER.userId,
-  pushEnabled: true,
-  inAppEnabled: true,
-  emailEnabled: false,
-  friendRequestsEnabled: true,
-  betInvitationsEnabled: true,
-  betJoinedEnabled: true,
-  betResolvedEnabled: true,
-  betCancelledEnabled: true,
-  betDeadlineEnabled: true,
-  paymentNotificationsEnabled: true,
-  systemAnnouncementsEnabled: true,
-  dndEnabled: false,
-};
 
 const openAccount = async (page: Page) => {
   await page.goto('/');
@@ -94,7 +78,8 @@ test('signing in on the web never shows the permission prompt on its own', async
 
   // Browsers ignore or penalise prompts without a user gesture.
   expect(await promptCount(page)).toBe(0);
-  expect(calls).not.toContain('createPushToken');
+  // No permission, so no subscription and nothing to register.
+  expect(calls).not.toContain('registerDevice');
 });
 
 test('a browser that already allows notifications registers itself as a device', async ({ page }) => {
@@ -104,14 +89,13 @@ test('a browser that already allows notifications registers itself as a device',
   await signInAs(page);
 
   const registrations: Record<string, unknown>[] = [];
-  const { calls } = await mockAppSync(
+  await mockAppSync(
     page,
     baseHandlers({
       registerDevice: (variables) => {
         registrations.push(variables);
         return `${TEST_USER.userId}#${INSTALLATION_ID}`;
       },
-      pushTokensByUser: list([]),
     })
   );
 
@@ -128,15 +112,14 @@ test('a browser that already allows notifications registers itself as a device',
   expect(registration.deviceName).toMatch(/^Chrome on /);
   expect(JSON.parse(registration.token as string).endpoint).toBe('https://push.example.test/sub-e2e');
   expect(typeof registration.timezone).toBe('string');
-  // Permission was already granted, so no prompt; and nothing goes to the legacy table.
+  // Permission was already granted, so no prompt.
   expect(await promptCount(page)).toBe(0);
-  expect(calls).not.toContain('createPushToken');
 });
 
 test('Settings offers to enable this device, and prompts only when tapped', async ({ page }) => {
   await fakeNotificationPermission(page);
   await signInAs(page);
-  await mockAppSync(page, baseHandlers({ notificationPreferencesByUser: list([preferences]) }));
+  await mockAppSync(page, baseHandlers());
   await openAccount(page);
 
   await page.getByTestId('account-settings').dispatchEvent('click');
@@ -160,7 +143,6 @@ test('signing out deactivates this device only, not the user’s other devices',
   await page.addInitScript((id) => window.localStorage.setItem('sidebet.installationId', id), INSTALLATION_ID);
   await signInAs(page);
 
-  const deactivated: unknown[] = [];
   const unregistered: unknown[] = [];
   await mockAppSync(
     page,
@@ -169,15 +151,6 @@ test('signing out deactivates this device only, not the user’s other devices',
         unregistered.push(variables);
         return true;
       },
-      pushTokensByUser: list([
-        { id: 'this-device', userId: TEST_USER.userId, token: 'sub-this', deviceId: INSTALLATION_ID, isActive: true },
-        { id: 'other-device', userId: TEST_USER.userId, token: 'sub-other', deviceId: 'inst-phone', isActive: true },
-      ]),
-      updatePushToken: (variables) => {
-        const input = (variables as { input: { id: string } }).input;
-        deactivated.push(input);
-        return input;
-      },
     })
   );
   await openAccount(page);
@@ -185,13 +158,10 @@ test('signing out deactivates this device only, not the user’s other devices',
   await page.getByTestId('account-sign-out').dispatchEvent('click');
   await page.getByTestId('account-sign-out-confirm').dispatchEvent('click');
 
-  // The server deactivates this installation's PushDevice row (identity comes from the
-  // caller's token, so only the installation id is sent)...
+  // The server deactivates this installation's PushDevice row. Identity comes from the
+  // caller's token, so only the installation id is sent and no other device can be named.
   await expect.poll(() => unregistered.length).toBe(1);
   expect(unregistered).toEqual([{ installationId: INSTALLATION_ID }]);
-  // ...and this device's legacy PushToken row is retired, but not the phone's.
-  await expect.poll(() => deactivated.length).toBe(1);
-  expect(deactivated).toEqual([{ id: 'this-device', isActive: false }]);
 });
 
 test.describe('Send test notification', () => {
@@ -204,7 +174,6 @@ test.describe('Send test notification', () => {
       page,
       baseHandlers({
         registerDevice: () => `${TEST_USER.userId}#${INSTALLATION_ID}`,
-        pushTokensByUser: list([]),
         pushDevicesByUser: list([]),
         sendTestPush: (variables) => {
           tests.push(variables);

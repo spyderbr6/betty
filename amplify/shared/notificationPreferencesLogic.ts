@@ -15,30 +15,16 @@ import {
   type NotificationType,
 } from './notificationCatalog';
 
-/** A NotificationPreferences row as stored. Everything may be missing on older rows. */
+/** A NotificationPreferences row as stored. Any field may be missing; missing never mutes. */
 export interface StoredPreferences {
   pushEnabled?: boolean | null;
   inAppEnabled?: boolean | null;
-  // Category mutes (Phase 2). null/undefined means the row predates them: see resolvePreferences.
   alertMutedCategories?: (string | null)[] | null;
   feedMutedCategories?: (string | null)[] | null;
-  // Quiet hours. dndEnabled is reused as the on/off switch.
-  dndEnabled?: boolean | null;
+  quietHoursEnabled?: boolean | null;
   quietStartMinute?: number | null;
   quietEndMinute?: number | null;
   timezone?: string | null;
-  // Legacy hour-granularity quiet hours, read only as a fallback.
-  dndStartHour?: number | null;
-  dndEndHour?: number | null;
-  // Legacy per-type switches, read only as a fallback.
-  friendRequestsEnabled?: boolean | null;
-  betInvitationsEnabled?: boolean | null;
-  betJoinedEnabled?: boolean | null;
-  betResolvedEnabled?: boolean | null;
-  betCancelledEnabled?: boolean | null;
-  betDeadlineEnabled?: boolean | null;
-  paymentNotificationsEnabled?: boolean | null;
-  systemAnnouncementsEnabled?: boolean | null;
 }
 
 /** Preferences in the shape every decision below works with. */
@@ -53,22 +39,6 @@ export interface ResolvedPreferences {
   timezone: string | null;
 }
 
-/**
- * Which categories each pre-Phase-2 switch covered. A switched-off legacy switch meant
- * "don't create the notification at all", so it maps to both an alert mute and a feed
- * mute (the feed mute is ignored for feed-locked categories).
- */
-const LEGACY_SWITCHES: Record<string, NotificationCategory[]> = {
-  friendRequestsEnabled: ['FRIENDS'],
-  betInvitationsEnabled: ['INVITATIONS'],
-  betJoinedEnabled: ['MY_BET_ACTIVITY', 'SQUARES_UPDATES'],
-  betResolvedEnabled: ['RESULTS', 'ACTION_NEEDED'],
-  betCancelledEnabled: ['REFUNDS'],
-  betDeadlineEnabled: ['REMINDERS'],
-  paymentNotificationsEnabled: ['MONEY'],
-  systemAnnouncementsEnabled: ['ANNOUNCEMENTS'],
-};
-
 const isCategory = (value: unknown): value is NotificationCategory =>
   (NOTIFICATION_CATEGORIES as readonly unknown[]).includes(value);
 
@@ -80,56 +50,29 @@ function cleanCategories(values: readonly unknown[]): NotificationCategory[] {
 const validMinute = (m: unknown): m is number =>
   typeof m === 'number' && Number.isInteger(m) && m >= 0 && m < 24 * 60;
 
-/**
- * Normalise a stored row (or no row) into ResolvedPreferences.
- *
- * A row is in the new format once `alertMutedCategories` has been written (even as an
- * empty list). Before that, mutes are derived from the eight legacy switches, so nobody's
- * existing choices are lost by the migration. Nothing is ever muted by a missing value.
- */
+/** Normalise a stored row (or no row) into ResolvedPreferences. Nothing is ever muted by a missing value. */
 export function resolvePreferences(stored: StoredPreferences | null | undefined): ResolvedPreferences {
   const s = stored ?? {};
-
-  let alertMuted: NotificationCategory[];
-  let feedMuted: NotificationCategory[];
-  if (Array.isArray(s.alertMutedCategories)) {
-    alertMuted = cleanCategories(s.alertMutedCategories);
-    feedMuted = cleanCategories(s.feedMutedCategories ?? []);
-  } else {
-    const muted = Object.entries(LEGACY_SWITCHES)
-      .filter(([key]) => (s as Record<string, unknown>)[key] === false)
-      .flatMap(([, categories]) => categories);
-    alertMuted = cleanCategories(muted);
-    feedMuted = cleanCategories(muted);
-  }
-
-  const start = validMinute(s.quietStartMinute)
-    ? s.quietStartMinute
-    : s.dndStartHour != null && s.dndStartHour >= 0 && s.dndStartHour < 24 ? s.dndStartHour * 60 : null;
-  const end = validMinute(s.quietEndMinute)
-    ? s.quietEndMinute
-    : s.dndEndHour != null && s.dndEndHour >= 0 && s.dndEndHour < 24 ? s.dndEndHour * 60 : null;
-
   return {
     pushEnabled: s.pushEnabled !== false,
     inAppEnabled: s.inAppEnabled !== false,
-    alertMuted,
-    feedMuted,
-    quietHoursEnabled: s.dndEnabled === true,
-    quietStartMinute: start,
-    quietEndMinute: end,
+    alertMuted: cleanCategories(s.alertMutedCategories ?? []),
+    feedMuted: cleanCategories(s.feedMutedCategories ?? []),
+    quietHoursEnabled: s.quietHoursEnabled === true,
+    quietStartMinute: validMinute(s.quietStartMinute) ? s.quietStartMinute : null,
+    quietEndMinute: validMinute(s.quietEndMinute) ? s.quietEndMinute : null,
     timezone: s.timezone || null,
   };
 }
 
-/** The fields to write back for `prefs`. Always writes both lists, which moves a legacy row to the new format. */
+/** The fields to write back for `prefs`. */
 export function toStoredPreferences(prefs: ResolvedPreferences) {
   return {
     pushEnabled: prefs.pushEnabled,
     inAppEnabled: prefs.inAppEnabled,
     alertMutedCategories: cleanCategories(prefs.alertMuted),
     feedMutedCategories: cleanCategories(prefs.feedMuted),
-    dndEnabled: prefs.quietHoursEnabled,
+    quietHoursEnabled: prefs.quietHoursEnabled,
     quietStartMinute: prefs.quietStartMinute,
     quietEndMinute: prefs.quietEndMinute,
   };

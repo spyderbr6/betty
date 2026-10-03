@@ -32,29 +32,18 @@ describe('resolvePreferences', () => {
     });
   });
 
-  it('carries legacy switches over as alert and feed mutes', () => {
-    const resolved = resolvePreferences({
-      friendRequestsEnabled: false,
-      betJoinedEnabled: false,
-      paymentNotificationsEnabled: false,
-      betResolvedEnabled: true,
-    });
-    expect(resolved.alertMuted).toEqual(['FRIENDS', 'MY_BET_ACTIVITY', 'SQUARES_UPDATES', 'MONEY']);
-    expect(resolved.feedMuted).toEqual(resolved.alertMuted);
-  });
-
-  it('never treats a missing legacy switch as off', () => {
-    expect(resolvePreferences({ friendRequestsEnabled: null }).alertMuted).toEqual([]);
-  });
-
-  it('uses the new lists once written, even when empty, and ignores the legacy switches', () => {
-    const resolved = resolvePreferences({
-      friendRequestsEnabled: false,
-      alertMutedCategories: [],
-      feedMutedCategories: ['REMINDERS'],
-    });
-    expect(resolved.alertMuted).toEqual([]);
+  it('reads the stored lists', () => {
+    const resolved = resolvePreferences({ alertMutedCategories: ['FRIENDS'], feedMutedCategories: ['REMINDERS'] });
+    expect(resolved.alertMuted).toEqual(['FRIENDS']);
     expect(resolved.feedMuted).toEqual(['REMINDERS']);
+  });
+
+  it('never mutes because of a missing value', () => {
+    expect(resolvePreferences({ alertMutedCategories: null, pushEnabled: null, inAppEnabled: null })).toMatchObject({
+      alertMuted: [],
+      pushEnabled: true,
+      inAppEnabled: true,
+    });
   });
 
   it('drops unknown and duplicate categories', () => {
@@ -63,22 +52,21 @@ describe('resolvePreferences', () => {
     ).toEqual(['FRIENDS', 'MONEY']);
   });
 
-  it('prefers minute quiet hours, falling back to the legacy hours', () => {
-    expect(resolvePreferences({ dndStartHour: 22, dndEndHour: 7 })).toMatchObject({
-      quietStartMinute: 1320,
-      quietEndMinute: 420,
+  it('ignores quiet-hour minutes outside the day', () => {
+    expect(resolvePreferences({ quietStartMinute: 1440, quietEndMinute: -1 })).toMatchObject({
+      quietStartMinute: null,
+      quietEndMinute: null,
     });
-    expect(
-      resolvePreferences({ dndStartHour: 22, dndEndHour: 7, quietStartMinute: 1350, quietEndMinute: 390 })
-    ).toMatchObject({ quietStartMinute: 1350, quietEndMinute: 390 });
   });
 
-  it('round-trips through toStoredPreferences, which always writes both lists', () => {
-    const legacy = resolvePreferences({ friendRequestsEnabled: false, dndEnabled: true, dndStartHour: 0, dndEndHour: 6 });
-    const stored = toStoredPreferences(legacy);
-    expect(stored.alertMutedCategories).toEqual(['FRIENDS']);
-    expect(stored.feedMutedCategories).toEqual(['FRIENDS']);
-    expect(resolvePreferences({ ...stored, timezone: null })).toEqual(legacy);
+  it('round-trips through toStoredPreferences', () => {
+    const prefs = resolvePreferences({
+      alertMutedCategories: ['FRIENDS'],
+      quietHoursEnabled: true,
+      quietStartMinute: 0,
+      quietEndMinute: 360,
+    });
+    expect(resolvePreferences({ ...toStoredPreferences(prefs), timezone: null })).toEqual(prefs);
   });
 });
 

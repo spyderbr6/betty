@@ -67,7 +67,6 @@ const schema = a.schema({
       sentBetInvitations: a.hasMany('BetInvitation', 'fromUserId'),
       receivedBetInvitations: a.hasMany('BetInvitation', 'toUserId'),
       notifications: a.hasMany('Notification', 'userId'),
-      pushTokens: a.hasMany('PushToken', 'userId'),
       pushDevices: a.hasMany('PushDevice', 'userId'),
       notificationPreferences: a.hasOne('NotificationPreferences', 'userId'),
       paymentMethods: a.hasMany('PaymentMethod', 'userId'),
@@ -130,41 +129,24 @@ const schema = a.schema({
         .queryField('notificationsByUser')
     ])
     .authorization((allow) => [
-      allow.authenticated().to(['read', 'create', 'update']) // Any authenticated user can create/read/update notifications
+      // userId is the recipient's Cognito sub: only they can see their notifications,
+      // mark them read or delete them.
+      allow.ownerDefinedIn('userId').identityClaim('sub').to(['read', 'update', 'delete']),
+      // Anyone signed in can notify someone else (friend requests, invitations, joins are
+      // raised by the acting user's app). The implicit `owner` field records who created
+      // each row — auto-set and enforced on create, so it can't be spoofed — and lets the
+      // creator read back only what they wrote, so the create mutation's response resolves.
+      // Lambdas write through IAM and bypass these rules.
+      //
+      // Synth warns that the recipient could reassign userId/owner with an update. Accepted:
+      // it grants nothing new, since anyone may already create a notification for anyone.
+      // Closing it needs field-level rules, and fields with stricter rules can resolve to
+      // null on subscriptions, which the app's live onCreate listener depends on.
+      allow.owner().to(['create', 'read']),
     ]),
 
-  // Push notification tokens for mobile devices
-  PushToken: a
-    .model({
-      id: a.id(),
-      userId: a.id().required(),
-      token: a.string().required(), // Expo push token or FCM token
-      platform: a.enum(['IOS', 'ANDROID', 'WEB']),
-      deviceId: a.string(), // Unique device identifier
-      appVersion: a.string(), // App version when token was registered
-      isActive: a.boolean().default(true), // Whether token is still valid
-      lastUsed: a.datetime(), // When this token was last used successfully
-      createdAt: a.datetime(),
-      // Relations
-      user: a.belongsTo('User', 'userId'),
-    })
-    .secondaryIndexes((index) => [
-      // push-notification-sender resolves a user's device tokens on every push. A filtered
-      // list is a paged Scan, so once this table outgrew a scan page — one row per user per
-      // device — a user's own tokens stopped being returned. The sender reads that as
-      // "no active push tokens", logs it, and returns false, so push silently stops working
-      // for that user with nothing that looks like an error anywhere.
-      index('userId')
-        .queryField('pushTokensByUser')
-    ])
-    .authorization((allow) => [
-      allow.owner().to(['create', 'read', 'update', 'delete']),
-      allow.authenticated().to(['create']) // Allow users to register tokens for others (admin use)
-    ]),
-
-  // One row per app installation (or browser profile) that can receive push. Replaces
-  // PushToken, which had no stable device identity and collected a duplicate row on every
-  // app launch. The id is `${userId}#${installationId}`, so registering is idempotent.
+  // One row per app installation (or browser profile) that can receive push. The id is
+  // `${userId}#${installationId}`, so registering the same installation twice updates one row.
   // Rows are written only by the device-registry Lambda, which upserts and takes a token
   // over from another user when a device changes hands. See docs/NOTIFICATIONS_PLAN.md §3.6.
   PushDevice: a
@@ -203,44 +185,24 @@ const schema = a.schema({
   NotificationPreferences: a
     .model({
       id: a.id(),
-      userId: a.id().required(),
+      // Readable and settable on create, never updated: otherwise a user could move their
+      // own row onto someone else's account, and lookups by userId would find it.
+      userId: a
+        .id()
+        .required()
+        .authorization((allow) => [allow.ownerDefinedIn('userId').identityClaim('sub').to(['create', 'read'])]),
 
-      // Global notification controls
-      pushEnabled: a.boolean().default(true),        // Master switch for push notifications
-      inAppEnabled: a.boolean().default(true),       // Master switch for in-app toast notifications
-      emailEnabled: a.boolean().default(false),      // Email notifications (future feature)
-
-      // Notification type preferences - grouped by category
-      // Friend notifications
-      friendRequestsEnabled: a.boolean().default(true),      // Friend requests received/accepted/declined
-
-      // Bet notifications
-      betInvitationsEnabled: a.boolean().default(true),      // Bet invitations received/accepted/declined
-      betJoinedEnabled: a.boolean().default(true),           // Someone joined your bet
-      betResolvedEnabled: a.boolean().default(true),         // Bet resolved (won/lost)
-      betCancelledEnabled: a.boolean().default(true),        // Bet cancelled
-      betDeadlineEnabled: a.boolean().default(true),         // Bet deadline approaching
-
-      // Payment notifications
-      paymentNotificationsEnabled: a.boolean().default(true), // Deposits/withdrawals completed/failed & payment method verified
-
-      // System notifications
-      systemAnnouncementsEnabled: a.boolean().default(true), // System announcements and updates
-
-      // Do Not Disturb schedule
-      dndEnabled: a.boolean().default(false),        // Enable quiet hours (still the on/off switch)
-      dndStartHour: a.integer(),                     // Legacy: start hour (0-23). Read only as a fallback.
-      dndEndHour: a.integer(),                       // Legacy: end hour (0-23). Read only as a fallback.
-
-      // Category preferences (Phase 2 of docs/NOTIFICATIONS_PLAN.md). Lists of what is
-      // *muted*, so a new category starts switched on with no migration. Until
-      // alertMutedCategories is first written, mutes are derived from the legacy
-      // *Enabled switches above (see amplify/shared/notificationPreferencesLogic.ts).
+      // Preferences apply per account; see amplify/shared/notificationPreferencesLogic.ts
+      // for what they mean and docs/NOTIFICATIONS_PLAN.md for why they're shaped this way.
+      pushEnabled: a.boolean().default(true),        // Account-wide push switch
+      inAppEnabled: a.boolean().default(true),       // In-app banners while the app is open
+      // Lists of what is *muted*, so a new category starts switched on with no migration.
       alertMutedCategories: a.string().array(),      // No push or in-app banner. Any category can be muted.
       feedMutedCategories: a.string().array(),       // Hidden from the feed; ignored for feed-locked categories
+      quietHoursEnabled: a.boolean().default(false), // Hold push during quiet hours
       quietStartMinute: a.integer(),                 // Quiet hours start, minutes after local midnight (0-1439)
       quietEndMinute: a.integer(),                   // Quiet hours end
-      timezone: a.string(),                          // IANA zone the quiet hours are read in; set by device-registry
+      timezone: a.string(),                          // IANA zone quiet hours are read in; set by device-registry
 
       createdAt: a.datetime(),
       updatedAt: a.datetime(),
@@ -249,17 +211,15 @@ const schema = a.schema({
       user: a.belongsTo('User', 'userId'),
     })
     .secondaryIndexes((index) => [
-      // Preferences are looked up by userId on every notification. A filtered list would be
-      // a paged Scan, which silently stops finding a given user's row once the table grows
-      // past one scan page — and missing preferences read as "notification disabled".
+      // Looked up by userId for every dispatched notification. A filtered list would be a
+      // paged Scan, which silently stops finding a given user's row once the table grows.
       index('userId')
         .queryField('notificationPreferencesByUser')
     ])
     .authorization((allow) => [
-      allow.owner().to(['create', 'read', 'update', 'delete']),
-      // The stripe-webhook Lambda settles card deposits and needs to read preferences to
-      // decide whether to notify. Read-only: it never edits a user's preferences.
-      allow.authenticated().to(['read']),
+      // Owner only. userId is the user's Cognito sub and must match the caller on create.
+      // The dispatcher and device-registry Lambdas read and write through IAM.
+      allow.ownerDefinedIn('userId').identityClaim('sub').to(['create', 'read', 'update', 'delete']),
     ]),
 
   Bet: a

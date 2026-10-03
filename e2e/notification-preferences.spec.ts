@@ -96,21 +96,6 @@ test.describe('categories', () => {
     await expect.poll(() => saves.length).toBe(1);
     expect(saves[0]).toMatchObject({ alertMutedCategories: [], feedMutedCategories: ['REMINDERS'] });
   });
-
-  test('choices made with the old per-type switches carry over', async ({ page }) => {
-    await signInAs(page);
-    await mockData(page, {
-      // A pre-Phase-2 row: no category lists, friend requests switched off.
-      notificationPreferencesByUser: list([
-        prefsRow({ alertMutedCategories: null, feedMutedCategories: null, friendRequestsEnabled: false }),
-      ]),
-    });
-    await openSettings(page);
-
-    await expect(switchState(page, 'settings-category-FRIENDS-alerts')).not.toBeChecked();
-    await expect(switchState(page, 'settings-category-FRIENDS-feed')).not.toBeChecked();
-    await expect(switchState(page, 'settings-category-INVITATIONS-alerts')).toBeChecked();
-  });
 });
 
 test('quiet hours default to 10 PM–7 AM, step by 30 minutes, and show the timezone', async ({ page }) => {
@@ -131,7 +116,7 @@ test('quiet hours default to 10 PM–7 AM, step by 30 minutes, and show the time
   await expect(page.getByTestId('settings-quiet-end-value')).toHaveText('6:30 AM');
 
   await expect.poll(() => saves.length).toBe(3);
-  expect(saves[2]).toMatchObject({ dndEnabled: true, quietStartMinute: 22 * 60 + 30, quietEndMinute: 6 * 60 + 30 });
+  expect(saves[2]).toMatchObject({ quietHoursEnabled: true, quietStartMinute: 22 * 60 + 30, quietEndMinute: 6 * 60 + 30 });
 });
 
 test('the device list switches push per device and removes devices', async ({ page }) => {

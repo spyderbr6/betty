@@ -10,11 +10,11 @@
 
 export type Platform = 'IOS' | 'ANDROID' | 'WEB' | string;
 
-export interface PushTokenRecord {
+/** Anything carrying a push token: a PushDevice row, or a resolved PushTarget. */
+export interface TokenRecord {
   id?: string | null;
   token?: string | null;
   platform?: Platform | null;
-  isActive?: boolean | null;
 }
 
 export type Priority = 'HIGH' | 'MEDIUM' | 'LOW' | string;
@@ -36,19 +36,9 @@ export interface ExpoTicket {
   details?: { error?: string } | null;
 }
 
-/** Active tokens only, split by transport. Anything not IOS/ANDROID/WEB is dropped. */
-export function partitionTokens(tokens: PushTokenRecord[] | null | undefined) {
-  const active = (tokens ?? []).filter((t) => t.isActive);
-  return {
-    active,
-    mobile: active.filter((t) => t.platform === 'IOS' || t.platform === 'ANDROID'),
-    web: active.filter((t) => t.platform === 'WEB'),
-  };
-}
-
 /** Build the Expo push payloads. HIGH maps to the urgent channel, everything else to default. */
 export function buildExpoMessages(
-  tokens: PushTokenRecord[],
+  tokens: TokenRecord[],
   title: string,
   message: string,
   data: unknown,
@@ -77,7 +67,7 @@ export function buildExpoMessages(
  * with tokens [A,B,C] and tickets [ok, error, ok] it disabled A instead of B.
  */
 export function tokensToDeactivate(
-  tokens: PushTokenRecord[],
+  tokens: TokenRecord[],
   tickets: ExpoTicket[] | null | undefined
 ): string[] {
   return (tickets ?? []).reduce<string[]>((ids, ticket, i) => {
@@ -98,7 +88,7 @@ export function tokensToDeactivate(
  * sit at those offsets.
  */
 export function succeededTokenIds(
-  tokens: PushTokenRecord[],
+  tokens: TokenRecord[],
   tickets: ExpoTicket[] | null | undefined
 ): string[] {
   return (tickets ?? []).reduce<string[]>((ids, ticket, i) => {
@@ -122,43 +112,25 @@ export interface PushDeviceRecord {
   pushEnabled?: boolean | null;
 }
 
-/** One place to send a push, and which table its row lives in (for lastUsed / deactivation). */
+/** One device to send a push to. */
 export interface PushTarget {
   id: string;
   token: string;
   platform: Platform;
-  source: 'device' | 'legacy';
 }
 
 /**
- * Where to send a user's pushes, during the move from PushToken to PushDevice.
- *
- * PushDevice is authoritative for any token it knows about, whatever that row's state:
- * a device the user switched off, or one deactivated at sign-out, must not keep receiving
- * pushes through an old PushToken row for the same token. Legacy rows still cover devices
- * running an app build from before PushDevice existed. Each token is sent to once.
+ * Where to send a user's pushes: their active devices with push switched on, each token
+ * once (a token can briefly sit on two rows while a device changes hands).
  */
-export function resolvePushTargets(
-  devices: PushDeviceRecord[] | null | undefined,
-  legacyTokens: PushTokenRecord[] | null | undefined
-): PushTarget[] {
+export function resolvePushTargets(devices: PushDeviceRecord[] | null | undefined): PushTarget[] {
   const targets: PushTarget[] = [];
   const seen = new Set<string>();
-  const known = new Set((devices ?? []).map((d) => d.token).filter((t): t is string => !!t));
-
   for (const d of devices ?? []) {
     if (!d.id || !d.token || !d.platform || !d.isActive || d.pushEnabled === false) continue;
     if (seen.has(d.token)) continue;
     seen.add(d.token);
-    targets.push({ id: d.id, token: d.token, platform: d.platform, source: 'device' });
+    targets.push({ id: d.id, token: d.token, platform: d.platform });
   }
-
-  for (const t of legacyTokens ?? []) {
-    if (!t.id || !t.token || !t.platform || !t.isActive) continue;
-    if (known.has(t.token) || seen.has(t.token)) continue;
-    seen.add(t.token);
-    targets.push({ id: t.id, token: t.token, platform: t.platform, source: 'legacy' });
-  }
-
   return targets;
 }

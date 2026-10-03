@@ -144,18 +144,10 @@ async function deliver(
   data: Record<string, unknown>,
   priority: 'HIGH' | 'MEDIUM'
 ): Promise<number> {
-  // Devices come from PushDevice, with legacy PushToken rows as a fallback for app builds
-  // that predate it; resolvePushTargets decides which rows win and sends each token once.
-  // Both are read through their userId index — a filtered list is a paged Scan, and once
-  // PushToken outgrew a scan page a user's own tokens stopped coming back and every push
-  // for them silently no-opped as "no active push tokens".
-  const [{ data: devices }, { data: legacyTokens }] = await Promise.all([
-    client.models.PushDevice.pushDevicesByUser({ userId }, { limit: 1000 }),
-    // Large limit: before registration was an upsert, one device could hold dozens of
-    // duplicate PushToken rows, and a distinct token past the first page would be missed.
-    client.models.PushToken.pushTokensByUser({ userId }, { limit: 1000 }),
-  ]);
-  const targets = resolvePushTargets(devices, legacyTokens);
+  // Through the userId index: a filtered list is a paged Scan, which silently stops
+  // finding a user's rows once the table outgrows a scan page.
+  const { data: devices } = await client.models.PushDevice.pushDevicesByUser({ userId }, { limit: 1000 });
+  const targets = resolvePushTargets(devices);
 
   if (targets.length === 0) {
     console.log(`No active push targets for user ${userId}`);
@@ -306,21 +298,12 @@ async function sendViaWebPush(
   }
 }
 
-/** Record a successful delivery on whichever table the target came from. */
+/** Record a successful delivery on the device. */
 async function markDelivered(target: PushTarget): Promise<void> {
-  const now = new Date().toISOString();
-  if (target.source === 'device') {
-    await client.models.PushDevice.update({ id: target.id, lastSuccessAt: now, failureCount: 0 });
-  } else {
-    await client.models.PushToken.update({ id: target.id, lastUsed: now });
-  }
+  await client.models.PushDevice.update({ id: target.id, lastSuccessAt: new Date().toISOString(), failureCount: 0 });
 }
 
 /** Stop sending to a token the push service says is gone. */
 async function markDead(target: PushTarget): Promise<void> {
-  if (target.source === 'device') {
-    await client.models.PushDevice.update({ id: target.id, isActive: false });
-  } else {
-    await client.models.PushToken.update({ id: target.id, isActive: false });
-  }
+  await client.models.PushDevice.update({ id: target.id, isActive: false });
 }
