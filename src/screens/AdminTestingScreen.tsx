@@ -129,32 +129,29 @@ export const AdminTestingScreen: React.FC<{ onClose: () => void }> = ({ onClose 
   const pushNotificationTestModules: TestModule[] = [
     {
       id: 'check-push-token',
-      title: 'Check Push Token Status',
-      description: 'Verifies your push token is registered and active',
+      title: 'Check Push Devices',
+      description: 'Lists your devices registered for push and whether push is on',
       action: async () => {
         if (!user) {
           addLog('❌ No user logged in');
           return;
         }
 
-        addLog('Checking push token status...');
-        const { data: tokens } = await client.models.PushToken.list({
-          filter: {
-            userId: { eq: user.userId },
-            isActive: { eq: true }
-          }
-        });
+        addLog('Checking registered push devices...');
+        // Through the userId index; cast as elsewhere, the index query trips TS2590.
+        const { data: devices } = await (client.models.PushDevice as any).pushDevicesByUser({ userId: user.userId });
+        const active = (devices ?? []).filter((d: any) => d.isActive);
 
-        if (!tokens || tokens.length === 0) {
-          addLog('❌ No active push tokens found');
-          addLog('💡 Try logging out and back in to register a token');
+        if (active.length === 0) {
+          addLog('❌ No active push devices found');
+          addLog('💡 Allow notifications in Settings → This Device, or sign out and back in');
         } else {
-          addLog(`✅ Found ${tokens.length} active push token(s)`);
-          tokens.forEach((token, idx) => {
-            addLog(`Token ${idx + 1}:`);
-            addLog(`  Platform: ${token.platform}`);
-            addLog(`  Token: ${token.token?.substring(0, 30)}...`);
-            addLog(`  Last used: ${token.lastUsed || 'Never'}`);
+          addLog(`✅ Found ${active.length} active push device(s)`);
+          active.forEach((device: any, idx: number) => {
+            addLog(`Device ${idx + 1}: ${device.deviceName || device.platform}`);
+            addLog(`  Push: ${device.pushEnabled === false ? 'off' : 'on'}`);
+            addLog(`  Last seen: ${device.lastSeenAt || 'Never'}`);
+            addLog(`  Last delivered: ${device.lastSuccessAt || 'Never'}`);
           });
         }
       }
@@ -176,7 +173,6 @@ export const AdminTestingScreen: React.FC<{ onClose: () => void }> = ({ onClose 
           title: '🔔 Test Push Notification',
           message: 'This is a HIGH priority test notification. If you see this, push notifications are working!',
           priority: 'HIGH',
-          sendPush: true,
           actionType: 'view_notifications',
         });
 
@@ -207,7 +203,6 @@ export const AdminTestingScreen: React.FC<{ onClose: () => void }> = ({ onClose 
           title: '🎉 You Won!',
           message: 'Test bet resolved - You won $100! (This is just a test)',
           priority: 'URGENT',
-          sendPush: true,
           actionType: 'view_bet',
           actionData: { betId: 'test-bet-123' },
         });
@@ -239,7 +234,6 @@ export const AdminTestingScreen: React.FC<{ onClose: () => void }> = ({ onClose 
           title: '🎲 Bet Invitation',
           message: 'Test User invited you to bet on "Lakers vs Celtics"',
           priority: 'HIGH',
-          sendPush: true,
           actionType: 'view_bet_invitation',
           actionData: { betId: 'test-bet-456', invitationId: 'test-inv-789' },
           relatedBetId: 'test-bet-456',
@@ -270,7 +264,6 @@ export const AdminTestingScreen: React.FC<{ onClose: () => void }> = ({ onClose 
           title: '👋 New Friend Request',
           message: 'Test User sent you a friend request',
           priority: 'MEDIUM',
-          sendPush: true,
           actionType: 'view_friend_requests',
           relatedUserId: 'test-user-123',
         });
@@ -363,7 +356,6 @@ export const AdminTestingScreen: React.FC<{ onClose: () => void }> = ({ onClose 
             title: notif.title,
             message: notif.message,
             priority: notif.priority,
-            sendPush: true,
           });
           addLog(`✅ Sent: ${notif.title}`);
           // Small delay between notifications

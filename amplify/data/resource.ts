@@ -7,6 +7,8 @@ import { payoutProcessor } from "../functions/payout-processor/resource";
 import { stripePaymentIntent } from "../functions/stripe-payment-intent/resource";
 import { stripeWebhook } from "../functions/stripe-webhook/resource";
 import { stripeManage } from "../functions/stripe-manage/resource";
+import { deviceRegistry } from "../functions/device-registry/resource";
+import { NOTIFICATION_TYPES, NOTIFICATION_CATEGORIES } from "../shared/notificationCatalog";
 
 /*== SIDEBET BETTING PLATFORM SCHEMA =======================================
 This schema defines the core data models for the SideBet peer-to-peer betting
@@ -65,7 +67,7 @@ const schema = a.schema({
       sentBetInvitations: a.hasMany('BetInvitation', 'fromUserId'),
       receivedBetInvitations: a.hasMany('BetInvitation', 'toUserId'),
       notifications: a.hasMany('Notification', 'userId'),
-      pushTokens: a.hasMany('PushToken', 'userId'),
+      pushDevices: a.hasMany('PushDevice', 'userId'),
       notificationPreferences: a.hasOne('NotificationPreferences', 'userId'),
       paymentMethods: a.hasMany('PaymentMethod', 'userId'),
       transactions: a.hasMany('Transaction', 'userId'),
@@ -94,33 +96,15 @@ const schema = a.schema({
     .model({
       id: a.id(),
       userId: a.id().required(), // Who receives this notification
-      type: a.enum([
-        'FRIEND_REQUEST_RECEIVED',
-        'FRIEND_REQUEST_ACCEPTED',
-        'FRIEND_REQUEST_DECLINED',
-        'BET_INVITATION_RECEIVED',
-        'BET_INVITATION_ACCEPTED',
-        'BET_INVITATION_DECLINED',
-        'BET_JOINED',
-        'BET_RESOLVED',
-        'BET_CANCELLED',
-        'BET_DISPUTED',
-        'BET_DEADLINE_APPROACHING',
-        'DEPOSIT_COMPLETED',
-        'DEPOSIT_FAILED',
-        'WITHDRAWAL_COMPLETED',
-        'WITHDRAWAL_FAILED',
-        'PAYMENT_METHOD_VERIFIED',
-        'SYSTEM_ANNOUNCEMENT',
-        'SQUARES_GRID_LOCKED',        // Grid filled, numbers assigned
-        'SQUARES_PERIOD_WINNER',      // You won a period!
-        'SQUARES_GAME_LIVE',          // Game starting soon
-        'SQUARES_GAME_CANCELLED',     // Game cancelled
-        'SQUARES_PURCHASE_CONFIRMED', // Purchase confirmed
-        'SQUARES_INVITATION_RECEIVED', // Friend invited you to squares game
-        'SQUARES_INVITATION_ACCEPTED', // Friend accepted your squares invite
-        'SQUARES_INVITATION_DECLINED'  // Friend declined your squares invite
-      ]),
+      // Built from the notification catalog so the enum, the app and the Lambdas can never
+      // disagree about which types exist (see amplify/shared/notificationCatalog.ts).
+      type: a.enum(NOTIFICATION_TYPES),
+      // Derived from `type` via the catalog and written with every notification, so the
+      // feed can filter by category without the client re-deriving it.
+      category: a.enum(NOTIFICATION_CATEGORIES),
+      // Epoch seconds. DynamoDB TTL deletes the row after this (enabled in backend.ts).
+      // Set by notificationMeta() at write time from the category's retention period.
+      expiresAt: a.integer(),
       title: a.string().required(), // Short notification title
       message: a.string().required(), // Notification content
       isRead: a.boolean().default(false),
@@ -145,70 +129,80 @@ const schema = a.schema({
         .queryField('notificationsByUser')
     ])
     .authorization((allow) => [
-      allow.authenticated().to(['read', 'create', 'update']) // Any authenticated user can create/read/update notifications
+      // userId is the recipient's Cognito sub: only they can see their notifications,
+      // mark them read or delete them.
+      allow.ownerDefinedIn('userId').identityClaim('sub').to(['read', 'update', 'delete']),
+      // Anyone signed in can notify someone else (friend requests, invitations, joins are
+      // raised by the acting user's app). The implicit `owner` field records who created
+      // each row — auto-set and enforced on create, so it can't be spoofed — and lets the
+      // creator read back only what they wrote, so the create mutation's response resolves.
+      // Lambdas write through IAM and bypass these rules.
+      //
+      // Synth warns that the recipient could reassign userId/owner with an update. Accepted:
+      // it grants nothing new, since anyone may already create a notification for anyone.
+      // Closing it needs field-level rules, and fields with stricter rules can resolve to
+      // null on subscriptions, which the app's live onCreate listener depends on.
+      allow.owner().to(['create', 'read']),
     ]),
 
-  // Push notification tokens for mobile devices
-  PushToken: a
+  // One row per app installation (or browser profile) that can receive push. The id is
+  // `${userId}#${installationId}`, so registering the same installation twice updates one row.
+  // Rows are written only by the device-registry Lambda, which upserts and takes a token
+  // over from another user when a device changes hands. See PUSH_NOTIFICATION_GUIDE.md §4.
+  PushDevice: a
     .model({
-      id: a.id(),
+      id: a.id().required(),
       userId: a.id().required(),
-      token: a.string().required(), // Expo push token or FCM token
+      installationId: a.string().required(),
       platform: a.enum(['IOS', 'ANDROID', 'WEB']),
-      deviceId: a.string(), // Unique device identifier
-      appVersion: a.string(), // App version when token was registered
-      isActive: a.boolean().default(true), // Whether token is still valid
-      lastUsed: a.datetime(), // When this token was last used successfully
-      createdAt: a.datetime(),
-      // Relations
+      transport: a.enum(['EXPO', 'WEBPUSH']),
+      token: a.string().required(), // Expo push token, or a Web Push subscription as JSON
+      deviceName: a.string(), // e.g. "Chrome on Windows", "Google Pixel 8"
+      appVersion: a.string(),
+      timezone: a.string(), // IANA zone reported by the device, e.g. "America/New_York"
+      pushEnabled: a.boolean().default(true), // The per-device switch in Settings
+      mutedCategories: a.string().array(), // Reserved for per-device category mutes; not built
+      isActive: a.boolean().default(true), // False after sign-out, takeover, or a dead token
+      lastSeenAt: a.datetime(),
+      lastSuccessAt: a.datetime(),
+      failureCount: a.integer().default(0),
+      expiresAt: a.integer(), // Epoch seconds; DynamoDB TTL removes devices unseen for 120 days
       user: a.belongsTo('User', 'userId'),
     })
     .secondaryIndexes((index) => [
-      // push-notification-sender resolves a user's device tokens on every push. A filtered
-      // list is a paged Scan, so once this table outgrew a scan page — one row per user per
-      // device — a user's own tokens stopped being returned. The sender reads that as
-      // "no active push tokens", logs it, and returns false, so push silently stops working
-      // for that user with nothing that looks like an error anywhere.
-      index('userId')
-        .queryField('pushTokensByUser')
+      index('userId').queryField('pushDevicesByUser'),
+      // Lets device-registry find another user's row for the same token (a shared device).
+      index('token').queryField('pushDevicesByToken'),
     ])
     .authorization((allow) => [
-      allow.owner().to(['create', 'read', 'update', 'delete']),
-      allow.authenticated().to(['create']) // Allow users to register tokens for others (admin use)
+      // userId is the Cognito sub. Users may read and remove their own devices, but never
+      // update them directly: with update, an owner can rewrite userId to someone else's
+      // sub and receive their pushes. Every write goes through device-registry instead.
+      allow.ownerDefinedIn('userId').identityClaim('sub').to(['read', 'delete']),
     ]),
 
   // User notification preferences for controlling which notifications to receive
   NotificationPreferences: a
     .model({
       id: a.id(),
-      userId: a.id().required(),
+      // Readable and settable on create, never updated: otherwise a user could move their
+      // own row onto someone else's account, and lookups by userId would find it.
+      userId: a
+        .id()
+        .required()
+        .authorization((allow) => [allow.ownerDefinedIn('userId').identityClaim('sub').to(['create', 'read'])]),
 
-      // Global notification controls
-      pushEnabled: a.boolean().default(true),        // Master switch for push notifications
-      inAppEnabled: a.boolean().default(true),       // Master switch for in-app toast notifications
-      emailEnabled: a.boolean().default(false),      // Email notifications (future feature)
-
-      // Notification type preferences - grouped by category
-      // Friend notifications
-      friendRequestsEnabled: a.boolean().default(true),      // Friend requests received/accepted/declined
-
-      // Bet notifications
-      betInvitationsEnabled: a.boolean().default(true),      // Bet invitations received/accepted/declined
-      betJoinedEnabled: a.boolean().default(true),           // Someone joined your bet
-      betResolvedEnabled: a.boolean().default(true),         // Bet resolved (won/lost)
-      betCancelledEnabled: a.boolean().default(true),        // Bet cancelled
-      betDeadlineEnabled: a.boolean().default(true),         // Bet deadline approaching
-
-      // Payment notifications
-      paymentNotificationsEnabled: a.boolean().default(true), // Deposits/withdrawals completed/failed & payment method verified
-
-      // System notifications
-      systemAnnouncementsEnabled: a.boolean().default(true), // System announcements and updates
-
-      // Do Not Disturb schedule
-      dndEnabled: a.boolean().default(false),        // Enable quiet hours
-      dndStartHour: a.integer(),                     // Start hour (0-23, e.g., 22 = 10 PM)
-      dndEndHour: a.integer(),                       // End hour (0-23, e.g., 7 = 7 AM)
+      // Preferences apply per account; see amplify/shared/notificationPreferencesLogic.ts
+      // for what they mean and docs/NOTIFICATIONS_PLAN.md for why they're shaped this way.
+      pushEnabled: a.boolean().default(true),        // Account-wide push switch
+      inAppEnabled: a.boolean().default(true),       // In-app banners while the app is open
+      // Lists of what is *muted*, so a new category starts switched on with no migration.
+      alertMutedCategories: a.string().array(),      // No push or in-app banner. Any category can be muted.
+      feedMutedCategories: a.string().array(),       // Hidden from the feed; ignored for feed-locked categories
+      quietHoursEnabled: a.boolean().default(false), // Hold push during quiet hours
+      quietStartMinute: a.integer(),                 // Quiet hours start, minutes after local midnight (0-1439)
+      quietEndMinute: a.integer(),                   // Quiet hours end
+      timezone: a.string(),                          // IANA zone quiet hours are read in; set by device-registry
 
       createdAt: a.datetime(),
       updatedAt: a.datetime(),
@@ -217,17 +211,15 @@ const schema = a.schema({
       user: a.belongsTo('User', 'userId'),
     })
     .secondaryIndexes((index) => [
-      // Preferences are looked up by userId on every notification. A filtered list would be
-      // a paged Scan, which silently stops finding a given user's row once the table grows
-      // past one scan page — and missing preferences read as "notification disabled".
+      // Looked up by userId for every dispatched notification. A filtered list would be a
+      // paged Scan, which silently stops finding a given user's row once the table grows.
       index('userId')
         .queryField('notificationPreferencesByUser')
     ])
     .authorization((allow) => [
-      allow.owner().to(['create', 'read', 'update', 'delete']),
-      // The stripe-webhook Lambda settles card deposits and needs to read preferences to
-      // decide whether to notify. Read-only: it never edits a user's preferences.
-      allow.authenticated().to(['read']),
+      // Owner only. userId is the user's Cognito sub and must match the caller on create.
+      // The dispatcher and device-registry Lambdas read and write through IAM.
+      allow.ownerDefinedIn('userId').identityClaim('sub').to(['create', 'read', 'update', 'delete']),
     ]),
 
   Bet: a
@@ -810,18 +802,53 @@ const schema = a.schema({
     .handler(a.handler.function(scheduledSquaresChecker))
     .authorization((allow) => [allow.authenticated()]),
 
-  // Push Notification Function
-  sendPushNotification: a
+  // Push a test message to the caller's own devices (Settings → Send test notification).
+  // Returns how many devices accepted it. Replaces sendPushNotification, which let any
+  // signed-in user push arbitrary text to any user; real notifications now push from the
+  // dispatcher on the Notification table's stream instead (see backend.ts).
+  sendTestPush: a
+    .mutation()
+    .returns(a.integer())
+    .handler(a.handler.function(pushNotificationSender))
+    .authorization((allow) => [allow.authenticated()]),
+
+  // Register this device for push. Upserts the caller's PushDevice row and deactivates
+  // any other user's row holding the same token. Returns the device id.
+  registerDevice: a
     .mutation()
     .arguments({
-      userId: a.string().required(),
-      title: a.string().required(),
-      message: a.string().required(),
-      data: a.json(),
-      priority: a.enum(['HIGH', 'MEDIUM', 'LOW'])
+      installationId: a.string().required(),
+      token: a.string().required(),
+      platform: a.enum(['IOS', 'ANDROID', 'WEB']),
+      deviceName: a.string(),
+      appVersion: a.string(),
+      timezone: a.string(),
+    })
+    .returns(a.string())
+    .handler(a.handler.function(deviceRegistry))
+    .authorization((allow) => [allow.authenticated()]),
+
+  // The per-device push switch in Settings. Users can't update PushDevice directly (see
+  // the model), so this checks the caller owns the device and flips it.
+  setDevicePush: a
+    .mutation()
+    .arguments({
+      deviceId: a.string().required(),
+      pushEnabled: a.boolean().required(),
     })
     .returns(a.boolean())
-    .handler(a.handler.function(pushNotificationSender))
+    .handler(a.handler.function(deviceRegistry))
+    .authorization((allow) => [allow.authenticated()]),
+
+  // Stop pushing to this device for the caller (sign-out). Keeps the row, and the user's
+  // per-device switch with it, so signing back in restores the device as it was.
+  unregisterDevice: a
+    .mutation()
+    .arguments({
+      installationId: a.string().required(),
+    })
+    .returns(a.boolean())
+    .handler(a.handler.function(deviceRegistry))
     .authorization((allow) => [allow.authenticated()]),
 
   // Manual Event Fetch Function (for testing)
@@ -880,6 +907,7 @@ const schema = a.schema({
   allow.resource(stripePaymentIntent).to(["query", "listen", "mutate"]),
   allow.resource(stripeWebhook).to(["query", "listen", "mutate"]),
   allow.resource(stripeManage).to(["query", "listen", "mutate"]),
+  allow.resource(deviceRegistry).to(["query", "mutate"]),
 ]);
 
 export type Schema = ClientSchema<typeof schema>;

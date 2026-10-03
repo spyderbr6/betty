@@ -233,6 +233,7 @@ export function getNotificationActionDescription(type: NotificationType): string
     'SQUARES_PERIOD_WINNER': 'Tap to view game',
     'SQUARES_GAME_LIVE': 'Tap to view game',
     'SQUARES_GAME_CANCELLED': 'Tap to view your games',
+    'SQUARES_PURCHASE_CONFIRMED': 'Tap to view game',
   };
 
   return descriptions[type] || 'Tap to view notification';

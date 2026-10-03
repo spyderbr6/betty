@@ -6,6 +6,7 @@ import { getAmplifyDataClientConfig } from '@aws-amplify/backend/function/runtim
 // @ts-ignore - Generated at build time by Amplify
 import { env } from '$amplify/env/stripe-webhook';
 import Stripe from 'stripe';
+import { notificationMeta } from '../../shared/notificationCatalog';
 
 const { resourceConfig, libraryOptions } = await getAmplifyDataClientConfig(env);
 Amplify.configure(resourceConfig, libraryOptions);
@@ -187,39 +188,23 @@ async function handlePaymentIntentSucceeded(paymentIntent: Stripe.PaymentIntent)
  */
 async function notifyDepositCompleted(userId: string, amountDollars: number) {
   try {
-    // Read preferences through the userId index; absent preferences mean the user has never
-    // opened notification settings, so fall back to the schema defaults (enabled).
-    const { data: prefsList } = await client.models.NotificationPreferences.notificationPreferencesByUser({
-      userId,
-    });
-    const prefs = prefsList?.[0];
-
-    if (prefs?.paymentNotificationsEnabled === false) {
-      console.log('[StripeWebhook] Payment notifications disabled for user, skipping:', userId);
-      return;
-    }
-
+    // Always written, whatever the user's preferences: MONEY is a feed-locked category, so a
+    // deposit always appears in the feed. Preferences only decide whether it may alert.
     const title = 'Deposit Successful';
     const message = `Your deposit of $${amountDollars.toFixed(2)} has been completed`;
 
     await client.models.Notification.create({
       userId,
       type: 'DEPOSIT_COMPLETED',
+      ...notificationMeta('DEPOSIT_COMPLETED'),
       title,
       message,
       isRead: false,
       priority: 'HIGH',
     });
 
-    // Record only, no push — matching every other notification raised from a Lambda here
-    // (payout-processor, scheduled-bet-checker, scheduled-squares-checker). Push is
-    // dispatched from the client path, and the sendPushNotification mutation is scoped to
-    // allow.authenticated() anyway, which this IAM-authenticated function is not. Pushing
-    // from Lambdas is a coherent change to make across all of those call sites at once,
-    // not something to bolt onto deposits alone.
-    //
-    // It is also the notification least in need of a push: it lands seconds after the user
-    // tapped Pay, on a screen already showing them the confirmation.
+    // No push call here: the dispatcher on the Notification table's stream pushes every new
+    // notification, Lambda-raised ones included, according to the user's preferences.
   } catch (error) {
     console.error('[StripeWebhook] Failed to notify deposit completion:', userId, error);
   }

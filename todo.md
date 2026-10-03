@@ -23,14 +23,14 @@
 - **Friend Discovery**: Search by username, email, display name
 - **Bet Invitations**: Invite friends to existing bets with one tap
 - **Profile System**: Editable display names and profile pictures with S3 storage
-- **Notification System**: Complete preference system with in-app toasts, database records, and push notification infrastructure (needs Firebase setup)
+- **Notification System**: Feed, in-app banners and push (Expo + Web Push) from one server-side dispatcher; per-category preferences, quiet hours, per-device switch, automatic expiry. See PUSH_NOTIFICATION_GUIDE.md
 
 #### **Complete Account Menu System**
 - **Detailed Stats Screen**: Comprehensive analytics with win/loss streaks, financial tracking, performance metrics
 - **Betting History Screen**: Full transaction history with filtering (all, won, lost, cancelled)
 - **Payment Methods Screen**: Balance management interface (ready for payment integration)
 - **Trust & Safety Screen**: Security settings with password change and 2FA (TOTP)
-- **Settings Screen**: Full notification preference system with database persistence (8 notification types, master controls, DND scheduling)
+- **Settings Screen**: Notification settings (this device, alerts, per-category alerts/feed, quiet hours, device list, send test), privacy, app preferences
 - **Support Screen**: FAQ, GitHub issue reporting, help resources
 - **About Screen**: App version, legal links, tech stack credits
 
@@ -88,78 +88,49 @@ Remaining Stripe work is Phase 2 below.
 
 ---
 
-## 🔔 KNOWN ISSUE: PUSH NOTIFICATIONS ARE HALF-WIRED
+## 🔔 NOTIFICATIONS
 
-**Status: investigated, not fixed. Picked apart 2026-08-03 — resume here.**
+Overhaul Phases 0–5 are done.
+- **How it works now:** [PUSH_NOTIFICATION_GUIDE.md](./PUSH_NOTIFICATION_GUIDE.md).
+- **Decisions, what's deliberately left alone, the before-launch checklist, and the on-device checks still to do:** [docs/NOTIFICATIONS_PLAN.md](./docs/NOTIFICATIONS_PLAN.md).
 
-Push works for notifications raised by the app and does nothing for notifications raised by
-the backend. The backend ones are the ones that matter: they fire while the user is *away*.
+### Notification types that are defined but never raised
 
-### What is broken
+Checked 2026-10-04. Every other type in `amplify/shared/notificationCatalog.ts` has a producer.
+- [ ] `BET_DEADLINE_APPROACHING`: `NotificationService.notifyBetDeadlineApproaching` exists but
+      nothing calls it. The natural home is `scheduled-bet-checker`.
+- [ ] `SQUARES_INVITATION_ACCEPTED`: accepting a squares invitation doesn't notify the inviter
+      (declining does).
+- [ ] `SYSTEM_ANNOUNCEMENT`: there's no way to send an announcement (an admin tool would write the rows).
 
-**1. Lambda-raised notifications never push at all.** `sendPushNotification` is called from
-exactly one place in the codebase — `notificationService.ts:323`, inside `createNotification`,
-which is client-side only. The four backend Lambdas (`payout-processor`,
-`scheduled-bet-checker`, `scheduled-squares-checker`, `stripe-webhook`) call
-`client.models.Notification.create(...)` directly across 11 call sites and never touch the
-push mutation. So these types create a record and never push:
+### Not covered by the notifications work: old sports events are never cleaned up
 
-`BET_RESOLVED` · `BET_CANCELLED` · `SQUARES_PERIOD_WINNER` · `SQUARES_GAME_LIVE` ·
-`SQUARES_GRID_LOCKED` · `SQUARES_GAME_CANCELLED` · `DEPOSIT_COMPLETED`
+`LiveEvent` (ESPN games from `event-fetcher`) and `EventCheckIn` grow forever. The
+fetcher only marks finished games `isActive = 0` and deletes duplicates; nothing removes
+old games. Not part of notification retention (that covers the `Notification` log and
+device registrations only).
 
-Meanwhile what *does* push — friend requests, bet invitations — is raised while the user is
-already looking at the app. Push is working in exactly the cases that need it least.
+- [ ] Daily cleanup of games finished more than ~30 days ago, found by Query on
+      `activeEventsByTime` with `isActive = 0` (never a Scan), deleting their check-ins too.
+- [ ] Keep any game still referenced by an unsettled Bet or SquaresGame. `Bet.eventId`
+      has no index — add `betsByEvent`, or rely on `LiveEvent.betCount` — and
+      `squaresGamesByEvent` already exists.
+- [ ] Confirm bet and squares history screens render when their event is gone.
 
-**2. The mutation's authorization blocks the fix.** `sendPushNotification` is scoped
-`allow.authenticated()` (Cognito user pools). Lambdas authenticate with IAM, so a Lambda
-calling it today would be denied. Any fix has to add `allow.resource(...)` for each function.
+### Security issue found during the notifications work (outside its scope)
 
-**3. Only HIGH/URGENT priority ever pushes** (`notificationService.ts:320`). Deliberate, but
-worth revisiting alongside the above — plenty of MEDIUM notifications are push-worthy.
-
-**4. Do Not Disturb cannot be evaluated server-side.** `dndStartHour`/`dndEndHour` are stored
-as the user's *local* hours and no timezone is recorded anywhere on `User`. A Lambda can only
-compare against UTC, which would suppress notifications at the wrong hours rather than the
-right ones. Pushing from the backend needs a `timezone` field on User first, or DND has to be
-explicitly out of scope for backend-raised push.
-
-**5. `NOTIFICATION_TYPE_TO_PREFERENCE` is missing all 8 squares types**
-(`notificationPreferencesService.ts:16` — it is the one remaining type error in that file).
-`isNotificationEnabled` looks up an unmapped key, gets `undefined`, and squares notifications
-are likely suppressed as a result. Independent of push, worth fixing on its own.
+- [ ] **Any signed-in user can update any `User` record, including `balance`.** The rule is
+      `allow.authenticated().to(['read', 'create', 'update'])`, commented "for balance
+      changes, stats, etc." in `amplify/data/resource.ts`. Balance and stats changes should
+      move to Lambdas (IAM) and the client rule narrowed to owner-only profile fields.
 
 ### Already fixed (do not re-investigate)
 
-- **PushToken lookup was an unindexed Scan.** `push-notification-sender` resolved device
-  tokens with `PushToken.list({ filter })`, which reads one arbitrary page of the table. One
-  row per user per device, so past a page a user's tokens stopped being returned; the sender
-  logged "No active push tokens", returned false, and push silently died for that user. Now
-  indexed on `userId` via `pushTokensByUser`. This broke *all* push, including paths that
-  looked healthy — so treat pre-fix "push doesn't work" reports as explained by this.
-- Same Scan bug fixed on `Transaction.stripePaymentIntentId`, `User.stripeCustomerId` and
-  `NotificationPreferences.userId`. **If a lookup by a non-key field misbehaves anywhere else,
-  suspect this pattern first** — `.list({ filter })` is a paged Scan, never a lookup.
-- `isInDndWindow` had its two branches inverted (a 9-to-17 window returned true for every hour
-  of the day; a 22-to-7 window returned false always), and treated hour 0 as unset.
-
-### Options considered for fixing #1
-
-- **DynamoDB stream on the Notification table → one fan-out Lambda that sends the push.**
-  Every notification pushes regardless of origin, because there is one choke point that a
-  future call site cannot forget. Preference and priority logic lives in one place instead of
-  being duplicated into 4 Lambdas. Client-side push gets removed so nothing double-sends.
-  More work, and the version that stays correct. *Recommended.*
-- **Each Lambda calls the mutation after `Notification.create`.** Incremental and easy to
-  review, but duplicates the preference/priority checks across 11 call sites, and the next
-  Lambda to raise a notification will silently forget to push — which is precisely how this
-  gap appeared in the first place.
-
-### Also worth confirming before building either
-
-Whether push reaches devices *at all* today: that tokens register, that the Expo and web-push
-send paths succeed, and that VAPID/Expo credentials are configured. The older blockers listed
-under Priority 2 below (Firebase config, `EXPO_ACCESS_TOKEN`) were never confirmed resolved.
-No point building a fan-out on top of a send path that may itself be broken.
+- **`.list({ filter })` is a paged Scan, never a lookup.** It reads one arbitrary page of the
+  table and silently misses matching rows once the table outgrows a page. It broke push token
+  lookup (that model has since been replaced by `PushDevice`), `Transaction.stripePaymentIntentId`,
+  `User.stripeCustomerId` and `NotificationPreferences.userId`; all are now GSI queries.
+  **If a lookup by a non-key field misbehaves anywhere else, suspect this pattern first.**
 
 ---
 
@@ -180,30 +151,7 @@ No point building a fan-out on top of a send path that may itself be broken.
   - [x] Change password functionality (AWS Cognito updatePassword)
   - [x] Two-factor authentication setup (AWS Cognito TOTP)
   - [ ] Two-factor SMS
-- [x] **Notification System Implementation** **✅ COMPLETED (2025-10-26)**
-  - [x] Database schema for user notification preferences
-  - [x] Notification preferences service with CRUD operations
-  - [x] Settings screen with real-time preference persistence
-  - [x] Master controls (push, in-app, email)
-  - [x] Granular notification type filters (8 categories)
-  - [x] Do Not Disturb scheduling
-  - [x] Toast notification system with smart batching and rate limiting
-  - [x] Snackbar-style UI with priority-based display
-  - [x] Type-specific navigation handlers
-  - [x] Integration with notification creation flow
-  - [ ] **BLOCKERS for Push Notifications:** — see [Known Issue: Push Notifications](#-known-issue-push-notifications-are-half-wired) above for the full picture
-    - [ ] Firebase configuration for Android (E_REGISTRATION_FAILED)
-    - [ ] EXPO_ACCESS_TOKEN environment variable in Lambda
-    - [ ] Backend-raised notifications never push (the big one — see section above)
-  - [ ] **Notification Triggers:**
-    - [ ] BET_JOINED (add to BetsScreen.tsx when user joins)
-    - [x] BET_RESOLVED — raised by `payout-processor` (record only, no push)
-    - [x] BET_CANCELLED — raised by `scheduled-bet-checker` (record only, no push)
-    - [x] DEPOSIT_COMPLETED — raised by `stripe-webhook` and `transactionService` (record only, no push)
-    - [ ] DEPOSIT_FAILED (raised by transactionService on admin rejection only)
-    - [ ] WITHDRAWAL_COMPLETED/FAILED (add to transactionService.ts)
-    - [ ] PAYMENT_METHOD_VERIFIED (add to paymentMethodService.ts)
-  - [x] **Currently Working:** FRIEND_REQUEST_RECEIVED, FRIEND_REQUEST_ACCEPTED, FRIEND_REQUEST_DECLINED
+- [x] **Notification system** — rebuilt in the 2026-10 overhaul; see the 🔔 NOTIFICATIONS section above.
 
 - [x] Settings screen functionality **✅ COMPLETED**
   - [x] Connect notification toggles to database with real-time persistence
@@ -224,10 +172,11 @@ No point building a fan-out on top of a send path that may itself be broken.
   - [x] Priority-based display (URGENT > HIGH > MEDIUM)
   - [x] Queue overflow protection (5+ → batch message)
   - [x] Auto-dismiss based on priority (5s/4s/3s)
-- [ ] Push notifications configuration
-  - Infrastructure complete, needs Firebase setup + EXPO_ACCESS_TOKEN
+- [x] Push notification polish (web deep links, Android channels/icon, iOS badge) — Phases 6–8, done in code
+- [ ] Verify push on a real Android device, and on iOS once the Apple account exists — §5 of docs/NOTIFICATIONS_PLAN.md
+- [ ] Run `npx expo prebuild --platform android` before the next Android build (new notification icon)
 - [ ] Instant balance updates after payouts and joins
-- [ ] Add missing notification event triggers (bet events, payment events)
+- [ ] Raise the three never-raised notification types (see 🔔 NOTIFICATIONS above)
 
 ---
 
@@ -501,11 +450,13 @@ src/
 ├── contexts/               # AuthContext for user state, BetDataContext for bet/squares data
 ├── services/
 │   ├── bulkLoadingService.ts             # Legacy (dead code) - replaced by BetDataContext
-│   ├── notificationService.ts            # Push & in-app notifications with preference checking
-│   ├── notificationPreferencesService.ts # User notification preference management
+│   ├── notificationService.ts            # Write notifications, register this device, read the feed
+│   ├── notificationPreferencesService.ts # Load/save notification preferences
 │   ├── toastNotificationService.ts       # In-app toast with batching & rate limiting
 │   ├── imageUploadService.ts             # S3 profile pictures
-│   └── pushNotificationConfig.ts         # Expo notifications setup
+│   ├── pushNotificationConfig.ts         # Expo foreground behaviour, Android channels, native taps, iOS badge
+│   ├── notificationTap.ts                # Routes a tapped push to its screen; holds taps until the navigator is ready
+│   └── webPushBridge.ts                  # Web: service-worker clicks and renewed subscriptions
 ├── styles/                 # Design system tokens
 └── types/                  # TypeScript definitions
 ```
@@ -517,10 +468,10 @@ src/
 - **Friend Models**: Bilateral friendships and friend requests
 - **BetInvitation Model**: Friend invite system
 - **Notification Model**: Real-time activity updates
-- **NotificationPreferences Model**: User notification settings (master controls, type filters, DND)
-- **PushToken Model**: Device push notification tokens
+- **NotificationPreferences Model**: Per-category alert/feed mutes, quiet hours, timezone
+- **PushDevice Model**: One row per installation that can receive push
 - **S3 Storage**: Profile picture uploads with on-demand signed URLs
-- **Lambda Functions**: Scheduled bet checker, push notification sender
+- **Lambda Functions**: Scheduled bet/squares checkers, payout processor, event fetcher, Stripe, `push-notification-sender` (notification dispatcher on the Notification stream), `device-registry`
 
 ---
 
@@ -538,7 +489,14 @@ src/
 
 ## 📈 RECENT MILESTONES
 
-- ✅ **Comprehensive Notification System** (Latest - 2025-10-26)
+- ✅ **Notifications overhaul** (2026-10)
+  - One server-side dispatcher pushes every notification (including backend-raised ones) according to the recipient's preferences.
+  - Per-category alerts and feed visibility, with money, results, refunds and disputes always in the feed.
+  - Quiet hours in the user's timezone; per-device push switch and device list.
+  - Automatic expiry via DynamoDB TTL.
+  - Owner-only access to notifications, preferences and devices.
+  - Details: docs/NOTIFICATIONS_PLAN.md.
+- ✅ **Comprehensive Notification System** (2025-10-26) — *superseded by the 2026-10 overhaul above; kept as history*
   - **Notification Preferences System:**
     - Database schema for user preferences (NotificationPreferences model)
     - Complete preference service with CRUD operations
@@ -563,8 +521,8 @@ src/
     - Optimistic UI updates with error rollback
     - Comprehensive logging for debugging
   - **Known Blockers:**
-    - Push notifications need Firebase configuration for Android
-    - EXPO_ACCESS_TOKEN needed in Lambda function
+    - ~~Push notifications need Firebase configuration for Android~~ (configured)
+    - ~~EXPO_ACCESS_TOKEN needed in Lambda function~~ (sent since Phase 0)
     - Missing notification triggers for bet events and payment events
 - ✅ **P1 Bug Fixes & UX Improvements** (2025-10-25)
   - Event check-in integration with bet creation (auto-fills team names)
@@ -584,4 +542,4 @@ src/
 
 ---
 
-*Last Updated: Comprehensive notification system completed - User preferences, intelligent toast notifications with batching/rate limiting, navigation handlers (2025-10-26)*
+*Last Updated: notifications overhaul Phases 0–5 (2026-10-04)*

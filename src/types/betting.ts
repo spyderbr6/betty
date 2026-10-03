@@ -266,32 +266,9 @@ export interface FriendFilters {
 }
 
 // Notification system types
-export type NotificationType =
-  | 'FRIEND_REQUEST_RECEIVED'
-  | 'FRIEND_REQUEST_ACCEPTED'
-  | 'FRIEND_REQUEST_DECLINED'
-  | 'BET_INVITATION_RECEIVED'
-  | 'BET_INVITATION_ACCEPTED'
-  | 'BET_INVITATION_DECLINED'
-  | 'BET_JOINED'
-  | 'BET_RESOLVED'
-  | 'BET_CANCELLED'
-  | 'BET_DISPUTED'
-  | 'BET_DEADLINE_APPROACHING'
-  | 'DEPOSIT_COMPLETED'
-  | 'DEPOSIT_FAILED'
-  | 'WITHDRAWAL_COMPLETED'
-  | 'WITHDRAWAL_FAILED'
-  | 'PAYMENT_METHOD_VERIFIED'
-  | 'SYSTEM_ANNOUNCEMENT'
-  | 'SQUARES_GRID_LOCKED'
-  | 'SQUARES_PERIOD_WINNER'
-  | 'SQUARES_GAME_LIVE'
-  | 'SQUARES_GAME_CANCELLED'
-  | 'SQUARES_PURCHASE_CONFIRMED'
-  | 'SQUARES_INVITATION_RECEIVED'
-  | 'SQUARES_INVITATION_ACCEPTED'
-  | 'SQUARES_INVITATION_DECLINED';
+// Defined once, in the notification catalog shared with the schema and the Lambdas.
+import type { NotificationType, NotificationCategory } from '../../amplify/shared/notificationCatalog';
+export type { NotificationType, NotificationCategory };
 
 export type NotificationPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
 
@@ -311,33 +288,6 @@ export interface Notification {
   createdAt: string;
 }
 
-export interface NotificationPreferences {
-  id: string;
-  userId: string;
-
-  // Global notification controls
-  pushEnabled: boolean;
-  inAppEnabled: boolean;
-  emailEnabled: boolean;
-
-  // Notification type preferences - grouped by category
-  friendRequestsEnabled: boolean;
-  betInvitationsEnabled: boolean;
-  betJoinedEnabled: boolean;
-  betResolvedEnabled: boolean;
-  betCancelledEnabled: boolean;
-  betDeadlineEnabled: boolean;
-  paymentNotificationsEnabled: boolean;
-  systemAnnouncementsEnabled: boolean;
-
-  // Do Not Disturb schedule
-  dndEnabled: boolean;
-  dndStartHour?: number;
-  dndEndHour?: number;
-
-  createdAt: string;
-  updatedAt: string;
-}
 // Squares Game Types
 export interface SquaresInvitation {
   id: string;

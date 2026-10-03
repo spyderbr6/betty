@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with th
 - **TypeScript**: `npm run typecheck` - Check types (**src/ and App.tsx only**)
 - **Backend types**: `npm run typecheck:backend` - Type-check `amplify/`. Amplify runs this on every deploy and **fails the build** on any error, so run it before pushing anything under `amplify/`.
 - **Linting**: `npm run lint` - Run ESLint
-- **Unit tests**: `npm run test:unit` - Vitest over the Lambda handlers (`amplify/**/__tests__`). `test:unit:watch` for iterating.
+- **Unit tests**: `npm run test:unit` - Vitest over Lambda logic (`amplify/**/__tests__`) and pure app helpers (`src/config`, `src/services` `__tests__`). `test:unit:watch` for iterating.
 - **E2E tests**: `npm run test:e2e` - Build the web bundle and run the Playwright suite
 - **E2E (no rebuild)**: `npm run test:e2e:fast` - Re-run against the existing `dist/`. **Only valid if no source changed since the last build** - it will silently test stale code otherwise.
 - **EAS BUILD**: 'eas build -p android --profile production' - ASK FIRST DO NOT RUN YOURSELF
@@ -51,8 +51,9 @@ src/
 ### Key Documentation Files
 - **CLAUDE.md** (this file): Main development guide and architecture overview
 - **[MODAL_STANDARDS.md](./MODAL_STANDARDS.md)**: **REQUIRED** reading before creating/modifying modals
-- **[PUSH_NOTIFICATION_GUIDE.md](./PUSH_NOTIFICATION_GUIDE.md)**: Complete guide to push notification setup, testing, and troubleshooting
+- **[PUSH_NOTIFICATION_GUIDE.md](./PUSH_NOTIFICATION_GUIDE.md)**: How notifications and push work now: flow, key files, devices, preferences, permissions, platform setup, testing, troubleshooting
 - **[STRIPE_GUIDE.md](./STRIPE_GUIDE.md)**: Card deposits and Pro subscriptions — setup, test → production switchover, and payment troubleshooting
+- **[docs/NOTIFICATIONS_PLAN.md](./docs/NOTIFICATIONS_PLAN.md)**: Notifications decisions, what's deliberately *not* done (read before "fixing" anything there), pre-launch checklist, on-device checks still to do
 - **[SQUARES_GUIDE.md](./SQUARES_GUIDE.md)**: Betting squares — how a game runs, how winners are decided, and what automates it
 - **docs/archive/**: Finished implementation plans and audits, kept for reasoning only. Assume they are out of date.
 - **todo.md**: Current tasks and project roadmap
@@ -268,14 +269,16 @@ async function yourMainFunction() {
 - **Profile Pictures**: S3 upload with automatic cleanup
 
 ### Push Notification System
-- **Provider**: Expo Push Notification Service. **Android push is currently non-functional** — verified on an emulator against the SDK 57 build, the app logs "Firebase not configured. Push notifications require Firebase setup for Android." and no token registers. Expo's service still needs FCM credentials uploaded to EAS for Android; only iOS works without extra setup. In-app notifications are unaffected.
-- **Backend**: AWS Lambda function sends via Expo Push API
-- **Platforms**: iOS (APNS) and Android (FCM) - fully managed by Expo
-- **Token Management**: Automatic registration on login, stored in DynamoDB
-- **Deep Linking**: Push notification taps navigate to relevant screens (bets, friend requests, transactions)
-- **User Preferences**: Configurable notification types, Do Not Disturb mode
+- **Provider**: Expo Push Notification Service. **Android FCM is configured**: `google-services.json` is committed and the FCM V1 service-account key is uploaded to EAS. Registration needs a device or emulator with Google Play services (a plain AOSP image fails with `E_REGISTRATION_FAILED`). iOS needs an APNs key once the Apple developer account exists. Web uses Web Push with VAPID keys.
+- **Before changing anything notification-related**, read [PUSH_NOTIFICATION_GUIDE.md](./PUSH_NOTIFICATION_GUIDE.md) (how it works) and §3 of [docs/NOTIFICATIONS_PLAN.md](./docs/NOTIFICATIONS_PLAN.md) (what's deliberately left as is).
+- **Backend**: `push-notification-sender` is the dispatcher: the Notification table's DynamoDB stream invokes it for every new row (from the app or any Lambda), it applies the recipient's preferences, and sends via Expo and Web Push. Raise a notification by writing the row with `notificationMeta(type)`; never call push directly
+- **Platforms**: iOS (APNS) and Android (FCM) via Expo; web via Web Push. Android: one notification channel per category, monochrome icon `assets/notification-icon.png` (run `npx expo prebuild --platform android` after changing it; the generated drawables are gitignored). iOS: badge = unread count, time-sensitive reminders. Web: `public/` holds the service worker, icons, manifest and page template
+- **Devices**: one `PushDevice` row per installation, written only by the `device-registry` Lambda (`registerDevice` at sign-in, `unregisterDevice` at sign-out, `setDevicePush` for the per-device switch). Web never prompts for permission without a tap (the feed's soft-ask card, or Settings)
+- **Deep Linking**: Taps on every platform go through `src/services/notificationTap.ts`, which holds a tap until the navigator is ready (cold start, or a web tab still signing in). On web the service worker messages an open tab or opens one with `?notification=` (`webPushBridge.ts`)
+- **Retention**: DynamoDB TTL on `expiresAt` — notifications 90 days (180 for money/results/refunds), devices 120 days after last seen
+- **Authorization**: recipients alone read/update their notifications; preferences and devices are owner-only
+- **User Preferences**: Per-category alerts and feed visibility (money, results, refunds and disputes always stay in the feed), quiet hours in the user's timezone, per-device push switch. Logic in `amplify/shared/notificationPreferencesLogic.ts`
 - **Testing**: Requires EAS development build on physical device
-- **Documentation**: See [PUSH_NOTIFICATION_GUIDE.md](./PUSH_NOTIFICATION_GUIDE.md) for complete setup and testing guide
 
 ### Technical Integrations
 - **GitHub Feedback**: Automatic issue creation from in-app feedback
@@ -356,16 +359,40 @@ BetInvitation {
   expiresAt: datetime
 }
 
-// Notifications
+// Notifications (types and categories: amplify/shared/notificationCatalog.ts)
 Notification {
-  userId: string
+  userId: string            // recipient (Cognito sub); only they can read it
   type: NotificationType
+  category: NotificationCategory  // from notificationMeta(type)
+  expiresAt: number         // epoch seconds; DynamoDB TTL deletes the row after this
   title: string
   message: string
   isRead: boolean
-  priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT'
+  priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT'  // delivery urgency only; does not decide push
   relatedBetId?: string
   relatedUserId?: string
+}
+
+PushDevice {               // one per installation; id = `${userId}#${installationId}`
+  userId: string
+  installationId: string
+  platform: 'IOS' | 'ANDROID' | 'WEB'
+  token: string            // Expo token, or Web Push subscription JSON
+  pushEnabled: boolean     // per-device switch
+  isActive: boolean
+  expiresAt: number        // TTL, pushed forward on every registration
+}
+
+NotificationPreferences {
+  userId: string
+  pushEnabled: boolean
+  inAppEnabled: boolean
+  alertMutedCategories: string[]
+  feedMutedCategories: string[]   // ignored for money/results/refunds/disputes
+  quietHoursEnabled: boolean
+  quietStartMinute?: number       // minutes after local midnight
+  quietEndMinute?: number
+  timezone?: string               // IANA; copied from the device at registration
 }
 
 // Payment Management
@@ -969,9 +996,10 @@ npm run test:unit         # Lambda handler logic
 npm run test:unit:watch
 ```
 
-Scoped to `amplify/**/__tests__/**/*.test.ts` deliberately. Vitest and Playwright
-both define `test` and `expect`; if the globs overlap, one runner collects the
-other's specs and fails confusingly.
+Scoped deliberately (see `vitest.config.ts`): `amplify/**/__tests__`, plus
+`src/config/__tests__` and `src/services/__tests__` for pure app-side helpers. Vitest
+and Playwright both define `test` and `expect`; if the globs overlap, one runner
+collects the other's specs and fails confusingly.
 
 ### Handlers are not directly importable
 
@@ -1045,10 +1073,14 @@ e2e/
 ├── create-bet.spec.ts    # Create-bet form validation
 ├── join-bet.spec.ts      # Joining: guards, success, compensating delete
 ├── invitations.spec.ts   # Bet invitations listed and declined
+├── notification-settings.spec.ts # Push prompt timing, device registration, sign-out scope
+├── notification-preferences.spec.ts # Category alerts/feed, quiet hours, device list, feed filtering
+├── web-push.spec.ts      # Feed soft ask, service-worker click routing, renewed subscriptions
 ├── fixtures/cognito.ts   # HTTP-level Cognito mocks (unauthenticated flows)
 ├── fixtures/session.ts   # Seeds a signed-in session (see below)
 ├── fixtures/appsync.ts   # HTTP-level GraphQL mocks
 ├── fixtures/data.ts      # Record shapes + the default handler set
+├── fixtures/push.ts      # Fake browser notification permission and push subscription
 ├── ensure-config.mjs     # Writes placeholder amplify_outputs.json if absent
 └── serve.mjs             # Dependency-free static server for dist/
 playwright.config.ts

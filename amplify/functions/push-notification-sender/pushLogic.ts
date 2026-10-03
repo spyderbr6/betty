@@ -10,11 +10,11 @@
 
 export type Platform = 'IOS' | 'ANDROID' | 'WEB' | string;
 
-export interface PushTokenRecord {
+/** Anything carrying a push token: a PushDevice row, or a resolved PushTarget. */
+export interface TokenRecord {
   id?: string | null;
   token?: string | null;
   platform?: Platform | null;
-  isActive?: boolean | null;
 }
 
 export type Priority = 'HIGH' | 'MEDIUM' | 'LOW' | string;
@@ -25,9 +25,20 @@ export interface ExpoMessage {
   title: string;
   body: string;
   data: Record<string, unknown>;
-  badge: number;
   priority: 'high' | 'normal';
-  channelId: 'urgent' | 'default';
+  /** Android: the notification channel, which decides how it is presented. */
+  channelId: string;
+  /** iOS: the app icon badge. Absent leaves the badge as it is. */
+  badge?: number;
+  /** iOS: 'time-sensitive' breaks through Focus modes. Absent means the default, 'active'. */
+  interruptionLevel?: 'time-sensitive';
+}
+
+/** How a message is presented, beyond its text. See dispatchLogic.pushPresentation. */
+export interface ExpoPresentation {
+  channelId?: string;
+  badge?: number;
+  timeSensitive?: boolean;
 }
 
 /** Expo's per-message result. `data` is positionally aligned with the request. */
@@ -36,35 +47,32 @@ export interface ExpoTicket {
   details?: { error?: string } | null;
 }
 
-/** Active tokens only, split by transport. Anything not IOS/ANDROID/WEB is dropped. */
-export function partitionTokens(tokens: PushTokenRecord[] | null | undefined) {
-  const active = (tokens ?? []).filter((t) => t.isActive);
-  return {
-    active,
-    mobile: active.filter((t) => t.platform === 'IOS' || t.platform === 'ANDROID'),
-    web: active.filter((t) => t.platform === 'WEB'),
-  };
-}
-
-/** Build the Expo push payloads. HIGH maps to the urgent channel, everything else to default. */
+/**
+ * Build the Expo push payloads. HIGH priority is delivered as high priority (it may wake
+ * a dozing Android device); how it looks is the channel's business, not the priority's.
+ */
 export function buildExpoMessages(
-  tokens: PushTokenRecord[],
+  tokens: TokenRecord[],
   title: string,
   message: string,
   data: unknown,
-  priority: Priority
+  priority: Priority,
+  presentation: ExpoPresentation = {}
 ): ExpoMessage[] {
-  const high = priority === 'HIGH';
-  return tokens.map((t) => ({
-    to: t.token!,
-    sound: 'default',
-    title,
-    body: message,
-    data: (data as Record<string, unknown>) || {},
-    badge: 1,
-    priority: high ? 'high' : 'normal',
-    channelId: high ? 'urgent' : 'default',
-  }));
+  return tokens.map((t) => {
+    const msg: ExpoMessage = {
+      to: t.token!,
+      sound: 'default',
+      title,
+      body: message,
+      data: (data as Record<string, unknown>) || {},
+      priority: priority === 'HIGH' ? 'high' : 'normal',
+      channelId: presentation.channelId ?? 'default',
+    };
+    if (presentation.badge !== undefined) msg.badge = presentation.badge;
+    if (presentation.timeSensitive) msg.interruptionLevel = 'time-sensitive';
+    return msg;
+  });
 }
 
 /**
@@ -77,7 +85,7 @@ export function buildExpoMessages(
  * with tokens [A,B,C] and tickets [ok, error, ok] it disabled A instead of B.
  */
 export function tokensToDeactivate(
-  tokens: PushTokenRecord[],
+  tokens: TokenRecord[],
   tickets: ExpoTicket[] | null | undefined
 ): string[] {
   return (tickets ?? []).reduce<string[]>((ids, ticket, i) => {
@@ -98,7 +106,7 @@ export function tokensToDeactivate(
  * sit at those offsets.
  */
 export function succeededTokenIds(
-  tokens: PushTokenRecord[],
+  tokens: TokenRecord[],
   tickets: ExpoTicket[] | null | undefined
 ): string[] {
   return (tickets ?? []).reduce<string[]>((ids, ticket, i) => {
@@ -111,4 +119,36 @@ export function succeededTokenIds(
 /** Count of tickets Expo accepted. */
 export function countSuccesses(tickets: ExpoTicket[] | null | undefined): number {
   return (tickets ?? []).filter((t) => t?.status === 'ok').length;
+}
+
+/** A PushDevice row, as the sender reads it. */
+export interface PushDeviceRecord {
+  id?: string | null;
+  token?: string | null;
+  platform?: Platform | null;
+  isActive?: boolean | null;
+  pushEnabled?: boolean | null;
+}
+
+/** One device to send a push to. */
+export interface PushTarget {
+  id: string;
+  token: string;
+  platform: Platform;
+}
+
+/**
+ * Where to send a user's pushes: their active devices with push switched on, each token
+ * once (a token can briefly sit on two rows while a device changes hands).
+ */
+export function resolvePushTargets(devices: PushDeviceRecord[] | null | undefined): PushTarget[] {
+  const targets: PushTarget[] = [];
+  const seen = new Set<string>();
+  for (const d of devices ?? []) {
+    if (!d.id || !d.token || !d.platform || !d.isActive || d.pushEnabled === false) continue;
+    if (seen.has(d.token)) continue;
+    seen.add(d.token);
+    targets.push({ id: d.id, token: d.token, platform: d.platform });
+  }
+  return targets;
 }

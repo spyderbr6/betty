@@ -1,190 +1,122 @@
 /**
- * Service Worker for SideBet Web Push Notifications
+ * SideBet service worker: shows web push notifications and routes clicks into the app.
  *
- * Handles push notification events and displays them to users
- * when they're not actively using the app.
+ * Payloads come from the dispatcher (amplify/functions/push-notification-sender,
+ * dispatchLogic.webPushPayload). Clicks are handed to the app, which routes them like a
+ * native push tap (src/services/webPushBridge.ts). See PUSH_NOTIFICATION_GUIDE.md §1.
+ *
+ * Plain JS, copied to the site root by `expo export` and not bundled: keep it
+ * dependency-free.
  */
 
-// Version for cache busting
-const CACHE_VERSION = 'v1';
-const CACHE_NAME = `sidebet-${CACHE_VERSION}`;
+// Keep in step with src/services/webPushBridge.ts.
+const NOTIFICATION_CLICK = 'sidebet:notification-click';
+const SUBSCRIPTION_CHANGED = 'sidebet:subscription-changed';
+const NOTIFICATION_PARAM = 'notification';
 
-// Install event - called when service worker is first installed
-self.addEventListener('install', (event) => {
-  console.log('[Service Worker] Installing service worker...');
-  // Skip waiting to activate immediately
+// Kept in step with the VAPID public key in src/utils/webPushUtils.ts, for renewing a
+// subscription when the browser does not hand over the old one's options.
+const VAPID_PUBLIC_KEY = 'BHREIE9gIc8ok6jMDRv0eGw_SUmAN77dav_Z5AJ1H8dM2oPBpk4YEvnIVP76-z2gqvZvkBsO9bxx_5Sk1BYlK9I';
+
+const DEFAULT_ICON = '/icons/icon-192.png';
+const DEFAULT_BADGE = '/icons/badge-96.png';
+
+self.addEventListener('install', () => {
   self.skipWaiting();
 });
 
-// Activate event - called when service worker is activated
 self.addEventListener('activate', (event) => {
-  console.log('[Service Worker] Activating service worker...');
-  // Claim all clients immediately
   event.waitUntil(self.clients.claim());
 });
 
-// Push event - called when a push notification is received
-self.addEventListener('push', (event) => {
-  console.log('[Service Worker] Push notification received');
-
-  let notificationData = {
-    title: 'SideBet Notification',
-    body: 'You have a new notification',
-    icon: '/assets/icon-192.png',
-    badge: '/assets/icon-192.png',
-    tag: 'default',
-    data: {}
-  };
-
-  // Parse the push notification data
-  if (event.data) {
-    try {
-      const payload = event.data.json();
-      console.log('[Service Worker] Push payload:', payload);
-
-      notificationData = {
-        title: payload.title || notificationData.title,
-        body: payload.message || payload.body || notificationData.body,
-        icon: payload.icon || notificationData.icon,
-        badge: payload.badge || notificationData.badge,
-        tag: payload.tag || payload.type || notificationData.tag,
-        data: payload.data || payload,
-        // Additional options
-        requireInteraction: payload.priority === 'URGENT',
-        vibrate: [200, 100, 200],
-      };
-    } catch (error) {
-      console.error('[Service Worker] Error parsing push data:', error);
-    }
-  }
-
-  // Show the notification
-  event.waitUntil(
-    self.registration.showNotification(notificationData.title, {
-      body: notificationData.body,
-      icon: notificationData.icon,
-      badge: notificationData.badge,
-      tag: notificationData.tag,
-      data: notificationData.data,
-      requireInteraction: notificationData.requireInteraction,
-      vibrate: notificationData.vibrate,
-    })
-  );
-});
-
-// Notification click event - called when user clicks on a notification
-self.addEventListener('notificationclick', (event) => {
-  console.log('[Service Worker] Notification clicked:', event.notification);
-  event.notification.close();
-
-  const notificationData = event.notification.data || {};
-  const urlToOpen = getUrlFromNotificationData(notificationData);
-
-  console.log('[Service Worker] Opening URL:', urlToOpen);
-
-  // Open the app or focus existing window
-  event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-      // Check if there's already a window open
-      for (const client of clientList) {
-        if (client.url.includes(self.location.origin) && 'focus' in client) {
-          // Navigate to the URL and focus the window
-          return client.focus().then(() => {
-            if ('navigate' in client) {
-              return client.navigate(urlToOpen);
-            }
-          });
-        }
-      }
-
-      // If no window is open, open a new one
-      if (clients.openWindow) {
-        return clients.openWindow(urlToOpen);
-      }
-    })
-  );
-});
-
 /**
- * Generate URL to navigate to based on notification data
- * Implements deep linking logic for different notification types
+ * Safari ends a site's push subscription if a push arrives and no notification is shown,
+ * so on Safari every push is shown even while the app is open and focused.
  */
-function getUrlFromNotificationData(data) {
-  const baseUrl = self.location.origin;
-
-  // Handle different notification types
-  if (data.actionType) {
-    switch (data.actionType) {
-      case 'view_bet':
-      case 'view_bet_invitation':
-        if (data.betId || data.actionData?.betId) {
-          const betId = data.betId || data.actionData?.betId;
-          return `${baseUrl}/?bet=${betId}`;
-        }
-        break;
-
-      case 'view_friend_requests':
-        return `${baseUrl}/?screen=account&tab=friends`;
-
-      case 'view_friends':
-        return `${baseUrl}/?screen=account&tab=friends`;
-
-      case 'view_notifications':
-        return `${baseUrl}/?screen=account&tab=notifications`;
-
-      case 'view_transaction':
-        return `${baseUrl}/?screen=account&tab=transactions`;
-
-      default:
-        break;
-    }
-  }
-
-  // Handle notification types
-  if (data.type) {
-    switch (data.type) {
-      case 'BET_RESOLVED':
-      case 'BET_DEADLINE_APPROACHING':
-      case 'BET_CANCELLED':
-        if (data.relatedBetId) {
-          return `${baseUrl}/?bet=${data.relatedBetId}`;
-        }
-        break;
-
-      case 'BET_INVITATION_RECEIVED':
-        return `${baseUrl}/?screen=account`;
-
-      case 'FRIEND_REQUEST_RECEIVED':
-      case 'FRIEND_REQUEST_ACCEPTED':
-        return `${baseUrl}/?screen=account&tab=friends`;
-
-      case 'DEPOSIT_COMPLETED':
-      case 'DEPOSIT_FAILED':
-      case 'WITHDRAWAL_COMPLETED':
-      case 'WITHDRAWAL_FAILED':
-        return `${baseUrl}/?screen=account&tab=transactions`;
-
-      case 'SYSTEM_ANNOUNCEMENT':
-        return `${baseUrl}/?screen=account&tab=notifications`;
-
-      default:
-        break;
-    }
-  }
-
-  // Default: open to home screen
-  return baseUrl;
+function isSafari() {
+  const ua = self.navigator.userAgent;
+  return /Safari\//.test(ua) && !/(Chrome|Chromium|CriOS|Edg|OPR|Android)\//.test(ua);
 }
 
-// Background sync event (for future use)
-self.addEventListener('sync', (event) => {
-  console.log('[Service Worker] Background sync:', event.tag);
+self.addEventListener('push', (event) => {
+  let payload = {};
+  try {
+    payload = event.data ? event.data.json() : {};
+  } catch (error) {
+    console.error('[Service Worker] Unreadable push payload:', error);
+  }
+  const data = payload.data || {};
+
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((tabs) => {
+      // Someone looking at the app already gets the in-app banner for this notification
+      // (NotificationContext), so a system notification on top would show it twice. The
+      // test push from Settings is always shown: that is the point of it.
+      const focused = tabs.some((tab) => tab.focused);
+      if (focused && !data.test && !isSafari()) return undefined;
+
+      return self.registration.showNotification(payload.title || 'SideBet', {
+        body: payload.body || payload.message || '',
+        icon: payload.icon || DEFAULT_ICON,
+        badge: payload.badge || DEFAULT_BADGE,
+        tag: payload.tag || 'sidebet',
+        data,
+        requireInteraction: payload.priority === 'URGENT',
+      });
+    })
+  );
 });
 
-// Message event - for communication with the main app
-self.addEventListener('message', (event) => {
-  console.log('[Service Worker] Message received:', event.data);
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const data = event.notification.data || {};
 
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((tabs) => {
+      const tab = tabs.find((t) => new URL(t.url).origin === self.location.origin);
+      if (tab) {
+        // An open tab routes the click itself, keeping whatever state it has.
+        tab.postMessage({ type: NOTIFICATION_CLICK, data });
+        return 'focus' in tab ? tab.focus() : undefined;
+      }
+      // No tab: open one, carrying the click. The app reads the parameter on load and
+      // routes it once the user is signed in.
+      const url = new URL('/', self.location.origin);
+      url.searchParams.set(NOTIFICATION_PARAM, JSON.stringify(data));
+      return self.clients.openWindow ? self.clients.openWindow(url.href) : undefined;
+    })
+  );
+});
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = self.atob(base64);
+  const out = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; ++i) out[i] = raw.charCodeAt(i);
+  return out;
+}
+
+/**
+ * The browser replaced or expired the push subscription. Subscribe again and tell any
+ * open tab, which registers the new one for this device. With no tab open, the next
+ * launch registers it: the app registers the current subscription on every sign-in.
+ */
+self.addEventListener('pushsubscriptionchange', (event) => {
+  const options = (event.oldSubscription && event.oldSubscription.options) || {
+    userVisibleOnly: true,
+    applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+  };
+  event.waitUntil(
+    self.registration.pushManager
+      .subscribe(options)
+      .then(() => self.clients.matchAll({ type: 'window', includeUncontrolled: true }))
+      .then((tabs) => tabs.forEach((tab) => tab.postMessage({ type: SUBSCRIPTION_CHANGED })))
+      .catch((error) => console.error('[Service Worker] Could not renew the push subscription:', error))
+  );
+});
+
+self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SKIP_WAITING') {
     self.skipWaiting();
   }

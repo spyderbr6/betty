@@ -1019,7 +1019,6 @@ export const BetDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
               actionData: { betId: bet.id },
               relatedBetId: bet.id,
               relatedUserId: user.userId,
-              sendPush: true,
             });
           }
         } catch (notificationError) {
@@ -1097,7 +1096,6 @@ export const BetDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
             relatedBetId: invitation.betId,
             relatedUserId: user.userId,
             relatedRequestId: invitation.id,
-            sendPush: true,
           });
         }
       } catch (notificationError) {
@@ -1184,7 +1182,6 @@ export const BetDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
             relatedBetId: invitation.betId,
             relatedUserId: user.userId,
             relatedRequestId: invitation.id,
-            sendPush: false,
           });
         }
       } catch (notificationError) {
@@ -1227,7 +1224,6 @@ export const BetDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
             priority: 'LOW',
             actionData: { squaresGameId: invitation.squaresGameId },
             relatedUserId: user.userId,
-            sendPush: false,
           });
         }
       } catch (notificationError) {

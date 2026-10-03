@@ -24,6 +24,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { NotificationService } from '../services/notificationService';
 import { Notification, NotificationType } from '../types/betting';
 import { getNotificationNavigationAction } from '../utils/notificationNavigationHandler';
+import { PushSoftAsk } from '../components/settings/PushSoftAsk';
 
 // Client not needed - using NotificationService instead
 
@@ -111,6 +112,7 @@ const NotificationItem: React.FC<NotificationItemProps> = ({
       ]}
       onPress={() => onPress(notification)}
       activeOpacity={0.7}
+      testID={`notification-item-${notification.id}`}
     >
       <View style={styles.notificationContent}>
         <View style={styles.notificationHeader}>
@@ -372,6 +374,7 @@ export const NotificationScreen: React.FC<NotificationScreenProps> = ({ onClose,
       <FlatList
         data={notifications}
         keyExtractor={(item) => item.id}
+        ListHeaderComponent={user ? <PushSoftAsk userId={user.userId} /> : null}
         renderItem={({ item }) => (
           <NotificationItem
             notification={item}
@@ -380,7 +383,7 @@ export const NotificationScreen: React.FC<NotificationScreenProps> = ({ onClose,
           />
         )}
         ListEmptyComponent={
-          <View style={styles.emptyContainer}>
+          <View style={styles.emptyContainer} testID="notification-screen-empty">
             <Ionicons
               name="notifications-outline"
               size={64}

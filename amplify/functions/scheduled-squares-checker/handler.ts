@@ -9,6 +9,7 @@ import { Amplify } from 'aws-amplify';
 import { getAmplifyDataClientConfig } from '@aws-amplify/backend/function/runtime';
 // @ts-ignore - Generated at build time by Amplify
 import { env } from '$amplify/env/scheduled-squares-checker';
+import { notificationMeta } from '../../shared/notificationCatalog';
 
 // CRITICAL: Top-level await configuration - required for proper client initialization
 const { resourceConfig, libraryOptions } = await getAmplifyDataClientConfig(env);
@@ -109,6 +110,7 @@ async function lockGridsReadyForLocking(): Promise<number> {
         await client.models.Notification.create({
           userId: game.creatorId,
           type: 'SQUARES_GAME_CANCELLED',
+          ...notificationMeta('SQUARES_GAME_CANCELLED'),
           title: 'Game Cancelled',
           message: `"${game.title}" was cancelled because no squares were purchased.`,
           priority: 'MEDIUM',
@@ -150,6 +152,7 @@ async function lockGridsReadyForLocking(): Promise<number> {
         await client.models.Notification.create({
           userId: buyerId,
           type: 'SQUARES_GRID_LOCKED',
+          ...notificationMeta('SQUARES_GRID_LOCKED'),
           title: 'Numbers Assigned!',
           message: `Grid is locked for "${game.title}". Numbers have been assigned. Good luck!`,
           priority: 'HIGH',
@@ -236,6 +239,7 @@ async function startGamesWhenEventLive(): Promise<number> {
           await client.models.Notification.create({
             userId: buyerId,
             type: 'SQUARES_GAME_LIVE',
+            ...notificationMeta('SQUARES_GAME_LIVE'),
             title: 'Game is LIVE!',
             message: `"${game.title}" has started. Watch the scores!`,
             priority: 'HIGH',
@@ -431,6 +435,7 @@ async function processPeriodScoresForLiveGames(): Promise<number> {
             await client.models.Notification.create({
               userId: fullGame.creatorId,
               type: 'SQUARES_PERIOD_WINNER',
+              ...notificationMeta('SQUARES_PERIOD_WINNER'),
               title: 'Unsold Square Won',
               message: `Period ${period} in "${fullGame.title}" won by unsold square (${awayScore % 10}-${homeScore % 10}). No payout issued.`,
               priority: 'MEDIUM',
@@ -557,6 +562,7 @@ async function processPeriodScoresForLiveGames(): Promise<number> {
         await client.models.Notification.create({
           userId: winningPurchase.userId,
           type: 'SQUARES_PERIOD_WINNER',
+          ...notificationMeta('SQUARES_PERIOD_WINNER'),
           title: '🎉 Winner!',
           message: notificationMessage,
           priority: 'HIGH',
@@ -774,6 +780,7 @@ async function cancelGamesForCancelledEvents(): Promise<number> {
           await client.models.Notification.create({
             userId,
             type: 'SQUARES_GAME_CANCELLED',
+            ...notificationMeta('SQUARES_GAME_CANCELLED'),
             title: 'Game Cancelled',
             message: `"${game.title}" was cancelled. You received a $${amount.toFixed(2)} refund.`,
             priority: 'MEDIUM',

@@ -23,6 +23,7 @@ import { FriendSelector } from '../ui/FriendSelector';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../../amplify/data/resource';
 import { User } from '../../types/betting';
+import { notificationMeta } from '../../../amplify/shared/notificationCatalog';
 
 const client = generateClient<Schema>();
 
@@ -261,6 +262,7 @@ export const CreateSquaresForm: React.FC<CreateSquaresFormProps> = ({
                 await client.models.Notification.create({
                   userId: friendId,
                   type: 'SQUARES_INVITATION_RECEIVED',
+                  ...notificationMeta('SQUARES_INVITATION_RECEIVED'),
                   title: 'Squares Game Invitation',
                   message: `${currentUserDisplayName} invited you to join their squares game!`,
                   priority: 'HIGH',

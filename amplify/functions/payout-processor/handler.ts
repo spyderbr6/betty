@@ -6,6 +6,7 @@ import { Amplify } from 'aws-amplify';
 import { getAmplifyDataClientConfig } from '@aws-amplify/backend/function/runtime';
 // @ts-ignore - Generated at build time by Amplify
 import { env } from '$amplify/env/payout-processor';
+import { notificationMeta } from '../../shared/notificationCatalog';
 
 const { resourceConfig, libraryOptions } = await getAmplifyDataClientConfig(env);
 Amplify.configure(resourceConfig, libraryOptions);
@@ -208,6 +209,7 @@ async function processCompletedDisputeWindows(): Promise<{
               await client.models.Notification.create({
                 userId: transaction.userId,
                 type: 'BET_RESOLVED',
+                ...notificationMeta('BET_RESOLVED'),
                 title: 'Bet Won!',
                 message: message,
                 isRead: false,

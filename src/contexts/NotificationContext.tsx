@@ -10,7 +10,11 @@ import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
 import { NotificationService } from '../services/notificationService';
 import ToastNotificationService from '../services/toastNotificationService';
+import { NotificationPreferencesService } from '../services/notificationPreferencesService';
+import type { NotificationPriority, NotificationType } from '../types/betting';
+import { isFeedVisible, shouldAlert } from '../../amplify/shared/notificationPreferencesLogic';
 import { useAuth } from './AuthContext';
+import { setAppBadgeCount } from '../services/pushNotificationConfig';
 
 const client = generateClient<Schema>();
 
@@ -111,6 +115,51 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     // Initial count fetch
     refreshUnreadCount();
 
+    const userId = user.userId;
+
+    // Count and banner for a newly arrived notification, according to the recipient's own
+    // preferences: it counts toward unread only if it shows in their feed, and it shows a
+    // banner only if its category may alert. This is the only place in-app banners come from.
+    const handleNewNotification = async (notification: Schema['Notification']['type']) => {
+      let prefs;
+      try {
+        prefs = await NotificationPreferencesService.getUserPreferences(userId);
+      } catch (error) {
+        console.warn('[NotificationContext] Could not load preferences:', error);
+        return;
+      }
+
+      if (!notification.isRead && isFeedVisible(notification, prefs)) {
+        setUnreadCount(prev => prev + 1);
+      }
+
+      if (!shouldAlert(notification.type as NotificationType, prefs, 'banner')) {
+        return;
+      }
+
+      try {
+        // Parse actionData if it's a JSON string
+        let parsedActionData = notification.actionData;
+        if (typeof notification.actionData === 'string') {
+          try {
+            parsedActionData = JSON.parse(notification.actionData);
+          } catch {
+            // If parsing fails, use as-is
+          }
+        }
+
+        ToastNotificationService.showToast(
+          notification.type as NotificationType,
+          notification.title,
+          notification.message,
+          notification.priority as NotificationPriority,
+          parsedActionData
+        );
+      } catch (toastError) {
+        console.warn('[NotificationContext] Failed to show toast for new notification:', toastError);
+      }
+    };
+
     // Subscribe to new notifications (onCreate)
     const createSubscription = client.models.Notification.onCreate({
       filter: {
@@ -119,36 +168,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     }).subscribe({
       next: (notification) => {
         console.log('[NotificationContext] New notification received:', notification);
-        // Only increment if notification is unread
-        if (!notification.isRead) {
-          setUnreadCount(prev => prev + 1);
-        }
-
-        // Show in-app toast for new notifications (from Lambda or other sources)
-        if (notification.priority !== 'LOW') {
-          try {
-            // Parse actionData if it's a JSON string
-            let parsedActionData = notification.actionData;
-            if (typeof notification.actionData === 'string') {
-              try {
-                parsedActionData = JSON.parse(notification.actionData);
-              } catch {
-                // If parsing fails, use as-is
-              }
-            }
-
-            // Show toast
-            ToastNotificationService.showToast(
-              notification.type,
-              notification.title,
-              notification.message,
-              notification.priority,
-              parsedActionData
-            );
-          } catch (toastError) {
-            console.warn('[NotificationContext] Failed to show toast for new notification:', toastError);
-          }
-        }
+        handleNewNotification(notification);
       },
       error: (error) => {
         console.error('[NotificationContext] onCreate subscription error:', error);
@@ -192,6 +212,15 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       subscriptionsRef.current.onUpdate = undefined;
     };
   }, [user?.userId, refreshUnreadCount]);
+
+  /**
+   * Keep the iOS app badge equal to the unread count. A push sets it when it arrives
+   * (the dispatcher counts the same way); this corrects it as notifications are read,
+   * and clears it on sign-out, when the count drops to 0.
+   */
+  useEffect(() => {
+    setAppBadgeCount(unreadCount);
+  }, [unreadCount]);
 
   /**
    * Handle app state changes (foreground/background)

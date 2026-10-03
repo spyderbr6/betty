@@ -318,7 +318,6 @@ export const BetCard: React.FC<BetCardProps> = ({
                 actionData: { betId: bet.id },
                 relatedBetId: bet.id,
                 relatedUserId: user.userId,
-                sendPush: true,
               });
             }
           } catch (notificationError) {
