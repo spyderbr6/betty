@@ -292,6 +292,7 @@ notification, either `pushed to N device(s)` or `not pushed: <reason>`:
 | Web: clicks open the app but not the right screen | An old service worker may still be active: close every SideBet tab, or DevTools → Application → Service Workers → Update. |
 | Android: the status-bar icon is a white square | The build predates the monochrome icon. Run `npx expo prebuild --platform android` and rebuild (§7). |
 | Android: a category doesn't pop up after changing its importance | Channel importance is fixed once created. Give the channel a new id (§5, "How a push looks"). |
+| Deploy stuck in `UPDATE_ROLLBACK_FAILED` with "Time to live has been modified multiple times within a fixed interval" | DynamoDB allows one TTL change per table per hour. A deploy that turned TTL on and then failed can't turn it back off. In CloudFormation, open the root `amplify-…-main-branch-…` stack → Stack actions → **Continue update rollback**, and tick the table that failed (e.g. `NotificationTable`) under *Resources to skip*. TTL stays on, which is what the next deploy wants; Amplify's table handler checks the live TTL and won't change it again. Then redeploy. |
 | Unread badge doesn't match the feed | Both count only feed-visible categories. A category hidden from the feed doesn't count. |
 
 ## 10. Not built yet
