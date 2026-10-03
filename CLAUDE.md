@@ -9,6 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with th
 - **iOS**: `npm run ios` - Run on iOS device/simulator
 - **TypeScript**: `npm run typecheck` - Check types (**src/ and App.tsx only**)
 - **Backend types**: `npm run typecheck:backend` - Type-check `amplify/`. Amplify runs this on every deploy and **fails the build** on any error, so run it before pushing anything under `amplify/`.
+- **Backend check**: `npm run check:backend` - Backend typecheck, then a local CDK synth checked for deploy-time traps (see "Backend deploys" below). Run before merging anything under `amplify/`.
 - **Linting**: `npm run lint` - Run ESLint
 - **Unit tests**: `npm run test:unit` - Vitest over Lambda logic (`amplify/**/__tests__`) and pure app helpers (`src/config`, `src/services` `__tests__`). `test:unit:watch` for iterating.
 - **E2E tests**: `npm run test:e2e` - Build the web bundle and run the Playwright suite
@@ -229,6 +230,33 @@ async function yourMainFunction() {
 
 #### Current Scheduled Functions:
 - **scheduledBetChecker**: Runs every 5 minutes - Checks for expired ACTIVE bets, moves them to PENDING_RESOLUTION (if participants) or CANCELLED (if no participants)
+
+## Backend deploys
+
+Merging to `main` deploys the backend to production. There is no staging environment,
+so a backend change is first tried for real by the production deploy. The notifications
+overhaul broke production this way (deployment 300, 2026-10-03): the deploy failed, its
+rollback failed too, and the stack sat in `UPDATE_ROLLBACK_FAILED` until it was rolled
+back by hand. Recovery steps are in PUSH_NOTIFICATION_GUIDE.md §9.
+
+**Rules for any change to infrastructure** (CDK overrides in `amplify/backend.ts`, new
+or changed tables, indexes, streams, TTL, IAM, event sources, new functions):
+
+1. **`npm run check:backend` must pass.** It catches known traps, such as an event
+   source mapping not waiting for its IAM policy (the cause of deployment 300). When a
+   new deploy-time failure is found, add a check for it to `scripts/check-backend.mjs`.
+2. **Deploy it to a sandbox before merging.** Run `npx ampx sandbox` from the branch
+   (your own AWS profile; it creates a separate, disposable stack), wait for it to
+   finish, then `npx ampx sandbox delete`. A successful synth proves the template is
+   well-formed, not that AWS will accept it. Say in the PR whether this was done.
+3. **Ship rate-limited or one-way table changes on their own.** DynamoDB allows one TTL
+   change per table per hour, and some table changes can't be reversed in place. If one
+   of those lands in a deploy that then fails for an unrelated reason, the rollback can't
+   undo it and gets stuck. Put such a change in a deploy with nothing else in it, or
+   after the rest has deployed cleanly.
+4. **Claude cannot do step 2** (no AWS credentials in its environment). When Claude
+   changes infrastructure, it must say so in the PR and ask for a sandbox deploy before
+   merge, not report the change as verified.
 
 ## Current App Features
 

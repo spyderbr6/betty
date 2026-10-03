@@ -15,7 +15,8 @@
     "test:e2e": "node e2e/ensure-config.mjs && npm run build && playwright test",
     "test:e2e:fast": "playwright test",
     "test:e2e:ui": "playwright test --ui",
-    "typecheck:backend": "tsc --noEmit -p amplify/tsconfig.json"
+    "typecheck:backend": "tsc --noEmit -p amplify/tsconfig.json",
+    "check:backend": "npm run typecheck:backend && node scripts/check-backend.mjs"
   },
   "dependencies": {
     "@aws-amplify/react-native": "^1.1.10",
