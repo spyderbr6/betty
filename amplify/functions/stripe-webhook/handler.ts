@@ -203,15 +203,8 @@ async function notifyDepositCompleted(userId: string, amountDollars: number) {
       priority: 'HIGH',
     });
 
-    // Record only, no push — matching every other notification raised from a Lambda here
-    // (payout-processor, scheduled-bet-checker, scheduled-squares-checker). Push is
-    // dispatched from the client path, and the sendPushNotification mutation is scoped to
-    // allow.authenticated() anyway, which this IAM-authenticated function is not. Pushing
-    // from Lambdas is a coherent change to make across all of those call sites at once,
-    // not something to bolt onto deposits alone.
-    //
-    // It is also the notification least in need of a push: it lands seconds after the user
-    // tapped Pay, on a screen already showing them the confirmation.
+    // No push call here: the dispatcher on the Notification table's stream pushes every new
+    // notification, Lambda-raised ones included, according to the user's preferences.
   } catch (error) {
     console.error('[StripeWebhook] Failed to notify deposit completion:', userId, error);
   }

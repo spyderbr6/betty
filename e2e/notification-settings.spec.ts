@@ -193,3 +193,58 @@ test('signing out deactivates this device only, not the user’s other devices',
   await expect.poll(() => deactivated.length).toBe(1);
   expect(deactivated).toEqual([{ id: 'this-device', isActive: false }]);
 });
+
+test.describe('Send test notification', () => {
+  const openSettingsWithPushAllowed = async (page: Page, delivered: number) => {
+    await fakeNotificationPermission(page, 'granted');
+    await fakePushSubscription(page);
+    await signInAs(page);
+    const tests: unknown[] = [];
+    await mockAppSync(
+      page,
+      baseHandlers({
+        registerDevice: () => `${TEST_USER.userId}#${INSTALLATION_ID}`,
+        pushTokensByUser: list([]),
+        pushDevicesByUser: list([]),
+        sendTestPush: (variables) => {
+          tests.push(variables);
+          return delivered;
+        },
+      })
+    );
+    await openAccount(page);
+    await page.getByTestId('account-settings').dispatchEvent('click');
+    return tests;
+  };
+
+  test('sends a test to the caller’s own devices and says how many accepted it', async ({ page }) => {
+    const tests = await openSettingsWithPushAllowed(page, 2);
+
+    await page.getByTestId('settings-send-test-push').dispatchEvent('click');
+
+    await expect.poll(() => tests.length).toBe(1);
+    // No arguments: the server targets the caller's own devices from their identity.
+    expect(tests[0]).toEqual({});
+    await expect(page.getByTestId('alert-title')).toHaveText('Test Sent');
+    await expect(page.getByTestId('alert-message')).toContainText('Sent to 2 devices');
+  });
+
+  test('says so when no device accepted the test', async ({ page }) => {
+    await openSettingsWithPushAllowed(page, 0);
+
+    await page.getByTestId('settings-send-test-push').dispatchEvent('click');
+
+    await expect(page.getByTestId('alert-title')).toHaveText('Nothing Delivered');
+  });
+
+  test('is not offered until this device allows notifications', async ({ page }) => {
+    await fakeNotificationPermission(page, 'default');
+    await signInAs(page);
+    await mockAppSync(page, baseHandlers());
+    await openAccount(page);
+    await page.getByTestId('account-settings').dispatchEvent('click');
+
+    await expect(page.getByTestId('settings-enable-device-push')).toBeVisible();
+    await expect(page.getByTestId('settings-send-test-push')).toHaveCount(0);
+  });
+});

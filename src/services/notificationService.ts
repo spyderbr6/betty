@@ -17,7 +17,7 @@ import { subscribeToWebPush, isWebPushSupported } from '../utils/webPushUtils';
 import { getInstallationId } from './installationId';
 import { describeUserAgent, planTokenUpsert, rowsForDeviceSignOut, PushTokenRow } from './pushRegistrationLogic';
 import { notificationMeta } from '../../amplify/shared/notificationCatalog';
-import { isFeedVisible, shouldAlert } from '../../amplify/shared/notificationPreferencesLogic';
+import { isFeedVisible } from '../../amplify/shared/notificationPreferencesLogic';
 
 const client = generateClient<Schema>();
 
@@ -268,33 +268,6 @@ export class NotificationService {
   }
 
   /**
-   * Send push notification to user via Lambda function
-   */
-  static async sendPushNotification(
-    userId: string,
-    title: string,
-    message: string,
-    data?: any,
-    priority: 'HIGH' | 'MEDIUM' | 'LOW' = 'MEDIUM'
-  ): Promise<boolean> {
-    try {
-      const { data: result } = await client.mutations.sendPushNotification({
-        userId,
-        title,
-        message,
-        data,
-        priority,
-      });
-
-      console.log(`Push notification sent to ${userId}:`, result);
-      return result || false;
-    } catch (error) {
-      console.error('Error sending push notification:', error);
-      return false;
-    }
-  }
-
-  /**
    * Create a new notification for a user
    */
   static async createNotification({
@@ -308,7 +281,6 @@ export class NotificationService {
     relatedBetId,
     relatedUserId,
     relatedRequestId,
-    sendPush = true,
   }: {
     userId: string;
     type: NotificationType;
@@ -320,16 +292,14 @@ export class NotificationService {
     relatedBetId?: string;
     relatedUserId?: string;
     relatedRequestId?: string;
-    sendPush?: boolean;
   }): Promise<Notification | null> {
     try {
       console.log('[Notification] Creating notification:', { userId, type, title, message, priority });
 
       // Every notification is written: the feed is the record, and whether it *shows* there
-      // is decided when the feed is read (isFeedVisible). Preferences only decide whether it
-      // may interrupt — see the push decision below.
-      const preferences = await NotificationPreferencesService.getUserPreferences(userId);
-
+      // is decided when the feed is read (isFeedVisible). Whether it pushes is decided by the
+      // dispatcher on the Notification table's stream, for app- and Lambda-raised
+      // notifications alike — nothing here needs the recipient's preferences.
       console.log('[Notification] Full params:', {
         userId, type, title, message, priority, actionType, actionData,
         relatedBetId, relatedUserId, relatedRequestId
@@ -374,36 +344,6 @@ export class NotificationService {
           relatedRequestId: data.relatedRequestId || undefined,
           createdAt: data.createdAt || new Date().toISOString(),
         };
-
-        // Push when the recipient's preferences allow this type to alert on push: the type
-        // alerts at all, push is on, its category isn't muted, and it isn't quiet hours in
-        // the recipient's timezone. This replaces the old HIGH/URGENT-only rule, which
-        // depended on a priority each call site picked by hand. Moves server-side in Phase 3.
-        const pushAllowed = shouldAlert(type, preferences, 'push');
-        if (sendPush && pushAllowed) {
-          console.log('[Notification] Sending push notification...');
-          try {
-            await this.sendPushNotification(
-              userId,
-              title,
-              message,
-              {
-                notificationId: notification.id,
-                type,
-                actionType,
-                actionData,
-                relatedBetId,
-                relatedUserId,
-              },
-              priority === 'URGENT' || priority === 'HIGH' ? 'HIGH' : 'MEDIUM'
-            );
-          } catch (pushError) {
-            console.warn('[Notification] Push notification failed, but in-app notification was created:', pushError);
-            // Don't fail the whole notification creation if push fails
-          }
-        } else {
-          console.log('[Notification] Skipping push notification:', { sendPush, pushAllowed });
-        }
 
         // No toast here. NotificationContext's onCreate subscription is the single place
         // in-app banners come from; showing one here as well toasted every notification a

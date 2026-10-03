@@ -215,7 +215,6 @@ export const FriendRequestsModal: React.FC<FriendRequestsModalProps> = ({
             actionType: 'view_friends',
             relatedUserId: request.toUserId,
             relatedRequestId: request.id,
-            sendPush: false, // Low priority, no push needed
           });
         }
       } catch (notificationError) {

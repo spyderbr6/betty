@@ -176,7 +176,6 @@ export const AdminTestingScreen: React.FC<{ onClose: () => void }> = ({ onClose 
           title: '🔔 Test Push Notification',
           message: 'This is a HIGH priority test notification. If you see this, push notifications are working!',
           priority: 'HIGH',
-          sendPush: true,
           actionType: 'view_notifications',
         });
 
@@ -207,7 +206,6 @@ export const AdminTestingScreen: React.FC<{ onClose: () => void }> = ({ onClose 
           title: '🎉 You Won!',
           message: 'Test bet resolved - You won $100! (This is just a test)',
           priority: 'URGENT',
-          sendPush: true,
           actionType: 'view_bet',
           actionData: { betId: 'test-bet-123' },
         });
@@ -239,7 +237,6 @@ export const AdminTestingScreen: React.FC<{ onClose: () => void }> = ({ onClose 
           title: '🎲 Bet Invitation',
           message: 'Test User invited you to bet on "Lakers vs Celtics"',
           priority: 'HIGH',
-          sendPush: true,
           actionType: 'view_bet_invitation',
           actionData: { betId: 'test-bet-456', invitationId: 'test-inv-789' },
           relatedBetId: 'test-bet-456',
@@ -270,7 +267,6 @@ export const AdminTestingScreen: React.FC<{ onClose: () => void }> = ({ onClose 
           title: '👋 New Friend Request',
           message: 'Test User sent you a friend request',
           priority: 'MEDIUM',
-          sendPush: true,
           actionType: 'view_friend_requests',
           relatedUserId: 'test-user-123',
         });
@@ -363,7 +359,6 @@ export const AdminTestingScreen: React.FC<{ onClose: () => void }> = ({ onClose 
             title: notif.title,
             message: notif.message,
             priority: notif.priority,
-            sendPush: true,
           });
           addLog(`✅ Sent: ${notif.title}`);
           // Small delay between notifications

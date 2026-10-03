@@ -271,7 +271,7 @@ async function yourMainFunction() {
 ### Push Notification System
 - **Provider**: Expo Push Notification Service. **Android FCM is configured**: `google-services.json` is committed and the FCM V1 service-account key is uploaded to EAS. Registration needs a device or emulator with Google Play services (a plain AOSP image fails with `E_REGISTRATION_FAILED`). iOS needs an APNs key once the Apple developer account exists. Web uses Web Push with VAPID keys.
 - **Overhaul in progress**: [docs/NOTIFICATIONS_PLAN.md](./docs/NOTIFICATIONS_PLAN.md) is the working plan for delivery, preferences, devices and data retention. Read it before changing anything notification-related.
-- **Backend**: AWS Lambda function sends via Expo Push API
+- **Backend**: `push-notification-sender` is the dispatcher: the Notification table's DynamoDB stream invokes it for every new row (from the app or any Lambda), it applies the recipient's preferences, and sends via Expo and Web Push. Raise a notification by writing the row with `notificationMeta(type)`; never call push directly
 - **Platforms**: iOS (APNS) and Android (FCM) via Expo; web via Web Push
 - **Token Management**: Automatic registration on login, stored in DynamoDB
 - **Deep Linking**: Push notification taps navigate to relevant screens (bets, friend requests, transactions)

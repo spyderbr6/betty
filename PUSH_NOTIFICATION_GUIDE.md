@@ -7,9 +7,14 @@ SideBet uses **Expo Push Notifications** for cross-platform push notifications o
 ## Architecture
 
 ```
-User Action → AWS Lambda → Expo Push API → Expo's FCM/APNS → User Device
-              (Backend)    (via HTTPS)      (Managed by Expo)
+Notification row written ──DynamoDB stream (INSERT)──► push-notification-sender ──► Expo (iOS/Android)
+(by the app or any Lambda)                              (the dispatcher)          └► Web Push (browsers)
 ```
+
+Every notification row, wherever it was written, reaches the dispatcher through the
+Notification table's stream. It applies the recipient's preferences (category mutes,
+quiet hours in their timezone, push switches) and sends to their devices. Nothing else
+sends push. See docs/NOTIFICATIONS_PLAN.md §3.5.
 
 ### Key Components
 
@@ -24,8 +29,9 @@ User Action → AWS Lambda → Expo Push API → Expo's FCM/APNS → User Device
    - `notificationNavigationHandler` - Maps notification types to app screens
 
 3. **Backend Lambda**
-   - `push-notification-sender` - Sends push notifications via Expo Push API
-   - Triggered via GraphQL mutation: `sendPushNotification`
+   - `push-notification-sender` - The dispatcher. Triggered by the Notification table's
+     stream (INSERTs), decides with `dispatchLogic.decidePush`, sends via Expo and Web Push
+   - Also serves `sendTestPush`, which pushes a test to the caller's own devices
 
 4. **Navigation Integration**
    - AppNavigator wires push notification taps to screen navigation
@@ -207,20 +213,10 @@ npx eas build --profile development --platform ios
 2. Should receive push notification on device
 3. Tap notification → should navigate to bet invitation
 
-**Option B: Use Lambda Function Directly**
-```typescript
-// Call from your app or AWS Console
-const { data } = await client.mutations.sendPushNotification({
-  userId: 'your-user-id',
-  title: 'Test Notification',
-  message: 'Testing push notifications!',
-  data: {
-    type: 'SYSTEM_ANNOUNCEMENT',
-    actionType: 'view_notifications'
-  },
-  priority: 'HIGH'
-});
-```
+**Option B: Settings → This Device → Send Test Notification**
+
+Calls `sendTestPush`, which pushes through the same delivery path as real
+notifications to every device of yours with push on, and reports how many accepted it.
 
 **Option C: Create Test Notification via NotificationService**
 ```typescript
@@ -404,13 +400,18 @@ console.log(`Push notifications sent: ${sent?.length}`);
 6. Notifications enabled in device settings
 
 ### Q: How do I send a notification from Lambda?
-**A:** Use the GraphQL mutation:
+**A:** Write the Notification row, with `notificationMeta(type)` from
+`amplify/shared/notificationCatalog.ts`. The dispatcher pushes it if the user's
+preferences allow — there is no separate push call to make:
 ```typescript
-const { data } = await client.mutations.sendPushNotification({
+await client.models.Notification.create({
   userId: 'user-123',
+  type: 'BET_RESOLVED',
+  ...notificationMeta('BET_RESOLVED'),
   title: 'Bet Resolved',
   message: 'You won $50!',
-  priority: 'HIGH'
+  isRead: false,
+  priority: 'HIGH',
 });
 ```
 
@@ -687,16 +688,7 @@ Check DynamoDB `PushToken` table for entry with:
 1. Have friend send you a bet invitation or friend request
 2. You should receive a browser notification
 
-**Option B: Manual Lambda Invocation**
-```typescript
-// Call from AWS Console or your app
-await client.mutations.sendPushNotification({
-  userId: 'your-user-id',
-  title: 'Test Web Push',
-  message: 'This is a test notification!',
-  priority: 'HIGH'
-});
-```
+**Option B: Settings → This Device → Send Test Notification** (calls `sendTestPush`)
 
 ### Step 5: Test Notification Click
 
@@ -841,9 +833,9 @@ Web push subscriptions can expire. The Lambda function handles this by:
 ### Notification Sent
 
 1. **Event occurs** (bet resolved, friend request, etc.)
-2. **NotificationService.createNotification()** → Creates DB record
-3. **Lambda triggered** → `sendPushNotification` mutation called
-4. **Token retrieval** → Gets all active tokens for user
+2. **A Notification row is written** → by `NotificationService.createNotification()` or a Lambda
+3. **Dispatcher triggered** → the table's stream invokes `push-notification-sender`, which checks the recipient's preferences
+4. **Device lookup** → the user's active `PushDevice` rows, plus legacy `PushToken` rows, one send per token
 5. **Platform separation** → Splits tokens: mobile vs web
 6. **Expo Push** → Sends to mobile tokens via Expo API
 7. **Web Push** → Sends to web tokens via Web Push API

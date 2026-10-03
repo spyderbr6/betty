@@ -1,4 +1,9 @@
-import { AppSyncResolverHandler } from 'aws-lambda';
+import type {
+  AppSyncIdentityCognito,
+  AppSyncResolverEvent,
+  DynamoDBBatchResponse,
+  DynamoDBStreamEvent,
+} from 'aws-lambda';
 import { generateClient } from 'aws-amplify/api';
 import type { Schema } from '../../data/resource';
 import { Amplify } from 'aws-amplify';
@@ -14,6 +19,15 @@ import {
   tokensToDeactivate,
   type PushTarget,
 } from './pushLogic';
+import {
+  type AttributeValue,
+  chunk,
+  decidePush,
+  notificationFromImage,
+  pushData,
+  pushPriority,
+  webPushOptions,
+} from './dispatchLogic';
 
 // CRITICAL: Top-level await configuration - this is required for proper client initialization
 const { resourceConfig, libraryOptions } = await getAmplifyDataClientConfig(env);
@@ -29,69 +43,134 @@ webpush.setVapidDetails(
   env.VAPID_PRIVATE_KEY
 );
 
-interface PushNotificationArgs {
-  userId: string;
-  title: string;
-  message: string;
-  data?: any;
-  priority?: 'HIGH' | 'MEDIUM' | 'LOW';
+/**
+ * The notification dispatcher. Two entry points:
+ *
+ * - A DynamoDB stream on the Notification table (INSERTs only; wired in backend.ts).
+ *   Every notification row, written by the app or by any Lambda, comes through here, and
+ *   this is the one place that decides whether it pushes. Before this, only notifications
+ *   raised by the app could push, so payouts, cancellations, squares and deposits never did.
+ * - The sendTestPush mutation, which pushes a test message to the caller's own devices.
+ *
+ * See docs/NOTIFICATIONS_PLAN.md §3.5.
+ */
+export const handler = async (
+  event: DynamoDBStreamEvent | AppSyncResolverEvent<Record<string, never>>
+): Promise<DynamoDBBatchResponse | number> => {
+  if ('Records' in event && Array.isArray(event.Records)) {
+    return handleStream(event as DynamoDBStreamEvent);
+  }
+  return handleAppSync(event as AppSyncResolverEvent<Record<string, never>>);
+};
+
+async function handleAppSync(event: AppSyncResolverEvent<Record<string, never>>): Promise<number> {
+  if (event.info?.fieldName !== 'sendTestPush') {
+    throw new Error(`Unexpected field: ${event.info?.fieldName}`);
+  }
+  // The caller's identity comes from Cognito: a test can only reach the caller's own devices.
+  const userId = (event.identity as AppSyncIdentityCognito | null)?.sub;
+  if (!userId) {
+    throw new Error('Unauthorized');
+  }
+  return deliver(
+    userId,
+    'Test notification',
+    'Push notifications are working on this device.',
+    { type: 'SYSTEM_ANNOUNCEMENT', test: true },
+    'HIGH'
+  );
 }
 
-// Handler for sending push notifications via AppSync (supports both Expo and Web Push)
-export const handler: AppSyncResolverHandler<PushNotificationArgs, boolean> = async (event) => {
-  console.log('Push notification request:', JSON.stringify(event, null, 2));
+/**
+ * Dispatch each newly inserted notification. A record that fails for an infrastructure
+ * reason (a data-layer error) is reported back so Lambda retries just that record; a
+ * push the provider rejects is not a failure here — it is logged and the device handled.
+ */
+async function handleStream(event: DynamoDBStreamEvent): Promise<DynamoDBBatchResponse> {
+  const batchItemFailures: DynamoDBBatchResponse['batchItemFailures'] = [];
 
-  try {
-    const { userId, title, message, data, priority = 'MEDIUM' } = event.arguments;
-
-    // Devices come from PushDevice, with legacy PushToken rows as a fallback for app builds
-    // that predate it; resolvePushTargets decides which rows win and sends each token once.
-    // Both are read through their userId index — a filtered list is a paged Scan, and once
-    // PushToken outgrew a scan page a user's own tokens stopped coming back and every push
-    // for them silently no-opped as "no active push tokens".
-    const [{ data: devices }, { data: legacyTokens }] = await Promise.all([
-      client.models.PushDevice.pushDevicesByUser({ userId }, { limit: 1000 }),
-      // Large limit: before registration was an upsert, one device could hold dozens of
-      // duplicate PushToken rows, and a distinct token past the first page would be missed.
-      client.models.PushToken.pushTokensByUser({ userId }, { limit: 1000 }),
-    ]);
-    const targets = resolvePushTargets(devices, legacyTokens);
-
-    if (targets.length === 0) {
-      console.log(`No active push targets found for user ${userId}`);
-      return false;
+  for (const record of event.Records) {
+    if (record.eventName !== 'INSERT') continue;
+    try {
+      await dispatch(record.dynamodb?.NewImage as Record<string, AttributeValue> | undefined);
+    } catch (error) {
+      console.error('[Dispatch] Failed to dispatch record:', record.dynamodb?.SequenceNumber, error);
+      if (record.dynamodb?.SequenceNumber) {
+        batchItemFailures.push({ itemIdentifier: record.dynamodb.SequenceNumber });
+      }
     }
-
-    // Separate targets by transport
-    const mobileTokens = targets.filter((t) => t.platform === 'IOS' || t.platform === 'ANDROID');
-    const webTokens = targets.filter((t) => t.platform === 'WEB');
-
-    console.log(`Push targets for ${userId}: ${mobileTokens.length} mobile, ${webTokens.length} web`);
-
-    let successCount = 0;
-
-    // Send to mobile devices via Expo Push Service
-    if (mobileTokens.length > 0) {
-      console.log('[Expo Push] Sending to mobile devices...');
-      const mobileSuccess = await sendViaExpoPush(mobileTokens, title, message, data, priority);
-      successCount += mobileSuccess;
-    }
-
-    // Send to web browsers via Web Push API
-    if (webTokens.length > 0) {
-      console.log('[Web Push] Sending to web browsers...');
-      const webSuccess = await sendViaWebPush(webTokens, title, message, data, priority);
-      successCount += webSuccess;
-    }
-
-    console.log(`Successfully sent ${successCount} push notifications`);
-    return successCount > 0;
-
-  } catch (error) {
-    console.error('Error sending push notification:', error);
-    return false;
   }
-};
+
+  return { batchItemFailures };
+}
+
+async function dispatch(image: Record<string, AttributeValue> | undefined): Promise<void> {
+  const notification = notificationFromImage(image);
+  if (!notification) {
+    console.warn('[Dispatch] Skipping a row that is not a pushable notification');
+    return;
+  }
+
+  const { data: prefsRows, errors } = await client.models.NotificationPreferences.notificationPreferencesByUser({
+    userId: notification.userId,
+  });
+  if (errors?.length) {
+    throw new Error(`Preferences lookup failed: ${JSON.stringify(errors)}`);
+  }
+
+  const decision = decidePush(notification, prefsRows?.[0] ?? null, new Date());
+  if (!decision.push) {
+    console.log(`[Dispatch] ${notification.id} (${notification.type}) not pushed: ${decision.reason}`);
+    return;
+  }
+
+  const sent = await deliver(
+    notification.userId,
+    notification.title,
+    notification.message,
+    pushData(notification),
+    pushPriority(notification.priority)
+  );
+  console.log(`[Dispatch] ${notification.id} (${notification.type}) pushed to ${sent} device(s)`);
+}
+
+/**
+ * Send one message to every device the user can be pushed on. Returns how many accepted it.
+ */
+async function deliver(
+  userId: string,
+  title: string,
+  message: string,
+  data: Record<string, unknown>,
+  priority: 'HIGH' | 'MEDIUM'
+): Promise<number> {
+  // Devices come from PushDevice, with legacy PushToken rows as a fallback for app builds
+  // that predate it; resolvePushTargets decides which rows win and sends each token once.
+  // Both are read through their userId index — a filtered list is a paged Scan, and once
+  // PushToken outgrew a scan page a user's own tokens stopped coming back and every push
+  // for them silently no-opped as "no active push tokens".
+  const [{ data: devices }, { data: legacyTokens }] = await Promise.all([
+    client.models.PushDevice.pushDevicesByUser({ userId }, { limit: 1000 }),
+    // Large limit: before registration was an upsert, one device could hold dozens of
+    // duplicate PushToken rows, and a distinct token past the first page would be missed.
+    client.models.PushToken.pushTokensByUser({ userId }, { limit: 1000 }),
+  ]);
+  const targets = resolvePushTargets(devices, legacyTokens);
+
+  if (targets.length === 0) {
+    console.log(`No active push targets for user ${userId}`);
+    return 0;
+  }
+
+  const mobile = targets.filter((t) => t.platform === 'IOS' || t.platform === 'ANDROID');
+  const web = targets.filter((t) => t.platform === 'WEB');
+
+  const [mobileSent, webSent] = await Promise.all([
+    mobile.length > 0 ? sendViaExpoPush(mobile, title, message, data, priority) : 0,
+    web.length > 0 ? sendViaWebPush(web, title, message, data, priority) : 0,
+  ]);
+  return mobileSent + webSent;
+}
 
 /**
  * Send push notifications via Expo Push Service (iOS/Android)
@@ -100,7 +179,22 @@ async function sendViaExpoPush(
   tokens: PushTarget[],
   title: string,
   message: string,
-  data: any,
+  data: Record<string, unknown>,
+  priority: string
+): Promise<number> {
+  let accepted = 0;
+  // Expo takes at most 100 messages per request.
+  for (const batch of chunk(tokens)) {
+    accepted += await sendExpoBatch(batch, title, message, data, priority);
+  }
+  return accepted;
+}
+
+async function sendExpoBatch(
+  tokens: PushTarget[],
+  title: string,
+  message: string,
+  data: Record<string, unknown>,
   priority: string
 ): Promise<number> {
   try {
@@ -162,8 +256,8 @@ async function sendViaWebPush(
   tokens: PushTarget[],
   title: string,
   message: string,
-  data: any,
-  priority: string
+  data: Record<string, unknown>,
+  priority: 'HIGH' | 'MEDIUM'
 ): Promise<number> {
   try {
     const payload = JSON.stringify({
@@ -185,7 +279,7 @@ async function sendViaWebPush(
         try {
           const subscription = JSON.parse(tokenRecord.token);
 
-          await webpush.sendNotification(subscription, payload);
+          await webpush.sendNotification(subscription, payload, webPushOptions(priority));
           await markDelivered(tokenRecord);
 
           successCount++;

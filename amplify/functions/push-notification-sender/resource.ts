@@ -18,6 +18,8 @@ export const pushNotificationSender = defineFunction({
     WEB_PUSH_EMAIL: process.env.WEB_PUSH_EMAIL ?? 'mailto:admin@sidebet.app',
     WEB_PUSH_PUBLIC_KEY: process.env.WEB_PUSH_PUBLIC_KEY ?? 'BHREIE9gIc8ok6jMDRv0eGw_SUmAN77dav_Z5AJ1H8dM2oPBpk4YEvnIVP76-z2gqvZvkBsO9bxx_5Sk1BYlK9I',
   },
-  timeoutSeconds: 30,
+  // Up to 25 stream records per invocation, each a preferences read plus Expo and
+  // web-push requests.
+  timeoutSeconds: 60,
   memoryMB: 256,
 });

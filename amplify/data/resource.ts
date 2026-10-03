@@ -842,17 +842,13 @@ const schema = a.schema({
     .handler(a.handler.function(scheduledSquaresChecker))
     .authorization((allow) => [allow.authenticated()]),
 
-  // Push Notification Function
-  sendPushNotification: a
+  // Push a test message to the caller's own devices (Settings → Send test notification).
+  // Returns how many devices accepted it. Replaces sendPushNotification, which let any
+  // signed-in user push arbitrary text to any user; real notifications now push from the
+  // dispatcher on the Notification table's stream instead (see backend.ts).
+  sendTestPush: a
     .mutation()
-    .arguments({
-      userId: a.string().required(),
-      title: a.string().required(),
-      message: a.string().required(),
-      data: a.json(),
-      priority: a.enum(['HIGH', 'MEDIUM', 'LOW'])
-    })
-    .returns(a.boolean())
+    .returns(a.integer())
     .handler(a.handler.function(pushNotificationSender))
     .authorization((allow) => [allow.authenticated()]),
 

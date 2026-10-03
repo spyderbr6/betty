@@ -97,7 +97,7 @@ squares mappings) plus the 2026-09-30 audit, and records the decisions: per-acco
 categories + per-device switch, nothing un-mutable, key categories always in the feed,
 one server-side dispatcher, automatic data retention.
 
-Phases 0 (stop the bleeding) and 1 (catalog, `PushDevice`, `device-registry`, TTL on notifications) are done. Phase 2 (preferences model + Settings rebuild) is next.
+Phases 0–3 are done: duplicate registrations fixed, category catalog, `PushDevice` + `device-registry`, TTL on notifications, per-category preferences + rebuilt Settings, and the server-side dispatcher (backend-raised notifications now push; `sendPushNotification` removed). Phase 4 (retention backfill) is next.
 
 ### Not covered by the overhaul: old sports events are never cleaned up
 
@@ -160,7 +160,7 @@ device registrations only).
   - [ ] **BLOCKERS for Push Notifications:** — see [docs/NOTIFICATIONS_PLAN.md](./docs/NOTIFICATIONS_PLAN.md)
     - [x] Firebase configuration for Android — FCM V1 configured (google-services.json + key on EAS)
     - [x] EXPO_ACCESS_TOKEN sent by the Lambda (Phase 0)
-    - [ ] Backend-raised notifications never push — Phase 3 (dispatcher)
+    - [x] Backend-raised notifications never pushed — fixed by the Phase 3 dispatcher
   - [ ] **Notification Triggers:**
     - [ ] BET_JOINED (add to BetsScreen.tsx when user joins)
     - [x] BET_RESOLVED — raised by `payout-processor` (record only, no push)

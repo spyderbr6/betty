@@ -1,6 +1,6 @@
 # Notifications Overhaul Plan
 
-**Status:** approved 2026-09-30. Phases 0–2 are done; Phase 3 (server-side dispatcher) is next.
+**Status:** approved 2026-09-30. Phases 0–3 are done; Phase 4 (retention backfill) is next.
 This is the working plan for rebuilding notification delivery and preferences
 across web, Android and (later) iOS. It replaces the "Push notifications are
 half-wired" analysis in `todo.md`. Tick items off here as they land.
@@ -32,13 +32,13 @@ All of these were found in the 2026-09-30 audit. Items marked **(P0)** are fixed
 - **(P0)** Foreground notifications on native showed twice (system banner plus toast). Notifications to yourself toasted twice. Toasts also ignored the in-app switch and quiet hours. (Web foreground de-duplication is Phase 6.)
 - **(P0)** The web permission prompt fired at sign-in with no user gesture. Safari rejects that and Chrome penalises it.
 - **(P0)** The Email toggle did nothing.
-- Lambda-created notifications never push: payouts, cancellations, squares, Stripe deposits.
+- **(P3)** Lambda-created notifications never pushed: payouts, cancellations, squares, Stripe deposits. They now push through the dispatcher.
 - Whether a push is sent depends on a `priority` hand-picked at each call site, and it's inconsistent (`BET_RESOLVED` is sent as LOW, MEDIUM, HIGH or URGENT depending on where it comes from).
 - Do Not Disturb has no way to set hours, and it's evaluated on the *sender's* clock.
 - Expo receipts are never checked, and the badge is always 1.
 
 **Security**
-- Any signed-in user can push arbitrary text to any user through `sendPushNotification`.
+- **(P3)** Any signed-in user could push arbitrary text to any user through `sendPushNotification`. Removed; push now comes only from the dispatcher.
 - Any signed-in user can read and update every user's `Notification` rows.
 - Any signed-in user can create `PushToken` rows for other users.
 
@@ -120,7 +120,7 @@ Every notification row is written, and the row carries its `category`. The feed 
 ### 3.5 Delivery: one server-side dispatcher
 
 ```
-Notification INSERT ──DynamoDB stream (INSERT only)──► notification-dispatcher
+Notification INSERT ──DynamoDB stream (INSERT only)──► push-notification-sender (the dispatcher)
     ├─ catalog: category, alert?
     ├─ preferences: alert mute, quiet hours in the user's timezone
     ├─ PushDevice rows for the user: active, device switch on
@@ -172,7 +172,7 @@ DynamoDB TTL deletes are free and happen within about 48 hours of expiry. TTL is
 
 - `Notification`: read, update and delete by the owner only (`ownerDefinedIn('userId')`, identity claim `sub`). Any signed-in user may create, until creation moves to the server.
 - `PushDevice` and `NotificationPreferences`: owner, plus Lambda resource access. Authenticated read on preferences is removed once the dispatcher reads them server-side.
-- `sendPushNotification` is removed (Phase 3).
+- `sendPushNotification` is removed (done in Phase 3).
 
 ---
 
@@ -214,7 +214,7 @@ Each phase ships on its own and leaves the app working.
 - [x] New preference fields (3.3), with a read-time fallback from the old booleans (`resolvePreferences`). `device-registry` copies the reporting device's timezone onto preferences.
 - [x] `setDevicePush` on `device-registry` for the device switch, with an ownership check.
 - [x] Settings rebuilt around `src/components/settings/NotificationPreferencesPanel.tsx`:
-  - **This device:** permission state, enable or unblock steps, and the device's own push switch. "Send test" waits for `sendTestPush` in Phase 3.
+  - **This device:** permission state, enable or unblock steps, and the device's own push switch. "Send test" was added in Phase 3.
   - **Alerts:** account-wide push, and in-app banners.
   - **Categories:** per-category **Alerts** and **Feed** switches. Locked categories show "Always" instead of a feed switch.
   - **Quiet hours:** 30-minute steppers (no native time picker dependency), shown with the timezone they're read in.
@@ -228,11 +228,21 @@ Each phase ships on its own and leaves the app working.
 - **Legacy switches:** someone who had turned off a legacy switch now has that category muted for alerts and hidden from the feed. Money, results, refunds and disputes are the exception: they now show in the feed regardless, which is intended.
 - **Banners and quiet hours:** in-app banners now ignore quiet hours. They only appear while the user has the app open.
 
-### Phase 3: server-side dispatcher
-- [ ] `notification-dispatcher` Lambda on the Notification table stream (INSERT filter). Decision logic lives in a pure module with Vitest coverage: mutes, quiet hours across timezones and DST, per-transport payloads.
-- [ ] Expo: chunking, receipts (in the next dispatcher run or a small scheduled check), deactivation on `DeviceNotRegistered`.
-- [ ] Web-push: TTL, urgency, deep-link URL in the payload.
-- [ ] Remove push from `createNotification` (the dispatcher applies the same `shouldAlert`), remove `sendPushNotification`, and add `sendTestPush` (own devices only) plus the "Send test" button in Settings.
+### Phase 3: server-side dispatcher ✅
+- [x] `push-notification-sender` became the dispatcher, rather than a new Lambda, so it keeps its VAPID and Expo secrets and its tested send code.
+  - **Stream wiring:** an event source mapping on the Notification table's stream (`backend.ts`), filtered to INSERT, batches of 25, per-record failure reporting, 3 retries, and records older than an hour dropped. The mapping and its read policy live in the table's stack to avoid a circular dependency with the resolver.
+  - **Decisions:** in `dispatchLogic.ts`. `decidePush` uses the same `shouldAlert` as the app's banners, plus a one-hour staleness guard so a backlog after an outage doesn't push stale alerts. Stream images are read with a small built-in `unmarshall`.
+- [x] Expo: sends batched at 100 per request; `DeviceNotRegistered` tickets deactivate the device.
+- [x] Web-push: TTL (24h) and urgency (high for HIGH/URGENT). The deep-link URL is Phase 6, with the service-worker work.
+- [x] `createNotification` only writes the row now, and the `sendPush` flag is gone. Its three `false` callers were all feed-only types, which the catalog never pushes anyway.
+- [x] `sendPushNotification` removed. `sendTestPush` (no arguments; caller's own devices) replaces it, with a "Send Test Notification" row in Settings.
+- [x] Playwright: the Send-test button (sent, nothing delivered, hidden until permission is granted). Vitest: `dispatchLogic`.
+- [ ] **Deferred: Expo receipts.** Receipts become available about 15 minutes after a send, so checking them needs the ticket ids stored and a scheduled check; that's a separate small job. Until then, a device that only reports itself dead via a receipt (typically an uninstalled Android app) keeps being sent to until its 120-day TTL removes it. Wasted sends, nothing user-visible.
+
+**Rollout notes for Phase 3**
+- **Backend pushes start working on deploy:** payout, cancellation, squares and deposit notifications will begin pushing for the first time.
+- **Old app builds:** mobile builds made before this still call `sendPushNotification` after creating a notification, and that call now fails. The failure is caught and the notification is still written, so it still pushes, once, through the dispatcher. No double sends.
+- **Checking it works:** the dispatcher logs one line per notification: `pushed to N device(s)`, or `not pushed: <reason>`.
 
 ### Phase 4: retention backfill
 - [x] ~~Enable TTL~~ (done in Phase 1).

@@ -91,6 +91,7 @@ export const NotificationPreferencesPanel: React.FC<{ userId: string }> = ({ use
   const [installationId, setInstallationId] = useState<string | null>(null);
   const [devicePermission, setDevicePermission] = useState<DevicePushPermission>('undetermined');
   const [isEnablingDevice, setIsEnablingDevice] = useState(false);
+  const [isSendingTest, setIsSendingTest] = useState(false);
 
   // Saves are chained so quick successive toggles land in order, each writing the latest state.
   const saveChain = useRef<Promise<unknown>>(Promise.resolve());
@@ -170,6 +171,33 @@ export const NotificationPreferencesPanel: React.FC<{ userId: string }> = ({ use
       }
     } finally {
       setIsEnablingDevice(false);
+    }
+  };
+
+  // Push a test message to all of this user's devices that can receive one. Goes through
+  // the same delivery path as real notifications, so it proves the whole chain works.
+  const handleSendTest = async () => {
+    if (isSendingTest) return;
+    setIsSendingTest(true);
+    try {
+      const { data: delivered, errors } = await client.mutations.sendTestPush();
+      if (errors?.length) throw new Error(errors[0].message);
+      if (delivered && delivered > 0) {
+        showAlert(
+          'Test Sent',
+          `Sent to ${delivered} ${delivered === 1 ? 'device' : 'devices'}. It can take a few seconds to arrive.`
+        );
+      } else {
+        showAlert(
+          'Nothing Delivered',
+          'None of your devices accepted the test. Check that notifications are allowed and push is on for this device.'
+        );
+      }
+    } catch (error) {
+      console.error('[NotificationSettings] sendTestPush failed:', error);
+      showAlert('Error', 'Could not send a test notification. Please try again.');
+    } finally {
+      setIsSendingTest(false);
     }
   };
 
@@ -290,6 +318,30 @@ export const NotificationPreferencesPanel: React.FC<{ userId: string }> = ({ use
             onValueChange={(v) => setDevicePush(thisDevice, v)}
             testID="settings-this-device-push"
           />
+        )}
+
+        {devicePermission === 'granted' && (
+          <View style={styles.row}>
+            <View style={styles.rowLeft}>
+              <Ionicons name="paper-plane-outline" size={22} color={colors.textSecondary} />
+              <View style={styles.rowText}>
+                <Text style={styles.rowTitle}>Send Test Notification</Text>
+                <Text style={styles.rowSubtitle}>Check that push reaches your devices</Text>
+              </View>
+            </View>
+            <TouchableOpacity
+              style={styles.primaryButton}
+              onPress={handleSendTest}
+              disabled={isSendingTest}
+              testID="settings-send-test-push"
+            >
+              {isSendingTest ? (
+                <ActivityIndicator size="small" color={colors.textInverse} />
+              ) : (
+                <Text style={styles.primaryButtonText}>Send</Text>
+              )}
+            </TouchableOpacity>
+          </View>
         )}
       </View>
 

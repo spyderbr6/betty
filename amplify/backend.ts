@@ -11,10 +11,18 @@ import { stripePaymentIntent } from './functions/stripe-payment-intent/resource'
 import { stripeWebhook } from './functions/stripe-webhook/resource';
 import { stripeManage } from './functions/stripe-manage/resource';
 import { deviceRegistry } from './functions/device-registry/resource';
-import { FunctionUrlAuthType, CfnPermission } from 'aws-cdk-lib/aws-lambda';
+import {
+  FunctionUrlAuthType,
+  CfnPermission,
+  EventSourceMapping,
+  FilterCriteria,
+  FilterRule,
+  StartingPosition,
+} from 'aws-cdk-lib/aws-lambda';
+import { Policy, PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { HttpApi, HttpMethod } from 'aws-cdk-lib/aws-apigatewayv2';
 import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
-import { CfnOutput } from 'aws-cdk-lib';
+import { CfnOutput, Duration, Stack } from 'aws-cdk-lib';
 
 const backend = defineBackend({
   auth,
@@ -40,6 +48,43 @@ const backend = defineBackend({
 const tables = backend.data.resources.cfnResources.amplifyDynamoDbTables;
 tables['Notification'].timeToLiveAttribute = { attributeName: 'expiresAt', enabled: true };
 tables['PushDevice'].timeToLiveAttribute = { attributeName: 'expiresAt', enabled: true };
+
+// Notification dispatch: every row inserted into Notification — by the app or any Lambda —
+// reaches push-notification-sender through the table's stream, and that one function
+// decides whether it pushes. This is why backend-raised notifications (payouts,
+// cancellations, squares, deposits) now push. See docs/NOTIFICATIONS_PLAN.md §3.5.
+//
+// Both the mapping and the stream-read policy live in the data stack. The function is
+// also a resolver (sendTestPush), so the data stack already depends on the function's
+// stack; referencing the table's stream from the function's stack would close a cycle.
+const notificationTable = backend.data.resources.tables['Notification'];
+const dispatcher = backend.pushNotificationSender.resources.lambda;
+const dataStack = Stack.of(notificationTable);
+
+new Policy(dataStack, 'NotificationDispatcherStreamRead', {
+  roles: dispatcher.role ? [dispatcher.role] : [],
+  statements: [
+    new PolicyStatement({
+      actions: ['dynamodb:DescribeStream', 'dynamodb:GetRecords', 'dynamodb:GetShardIterator', 'dynamodb:ListStreams'],
+      resources: [notificationTable.tableStreamArn!],
+    }),
+  ],
+});
+
+new EventSourceMapping(dataStack, 'NotificationDispatcherMapping', {
+  target: dispatcher,
+  eventSourceArn: notificationTable.tableStreamArn,
+  startingPosition: StartingPosition.LATEST,
+  // Only new notifications. Reads (isRead updates) and TTL deletions never invoke it.
+  filters: [FilterCriteria.filter({ eventName: FilterRule.isEqual('INSERT') })],
+  batchSize: 25,
+  // Retry a failed record a few times, then drop it: a push more than an hour late is
+  // worse than none, and the notification is still in the feed regardless.
+  retryAttempts: 3,
+  maxRecordAge: Duration.hours(1),
+  bisectBatchOnError: true,
+  reportBatchItemFailures: true,
+});
 
 // Force CloudFormation to generate a new AppSync API Key (fixes expired/missing key on production stack)
 backend.data.resources.cfnResources.cfnApiKey?.overrideLogicalId('recoverApiKey20260726');
