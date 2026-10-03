@@ -1238,6 +1238,14 @@ is usually pre-saved). The range may span more than one day:
 }
 ```
 
+## One-off: notification expiry backfill
+
+Notifications written before DynamoDB TTL was enabled have no `expiresAt` and are never
+cleaned up. The `notification-expiry-backfill` Lambda (no schedule) fixes that. Run it
+from the Lambda console's Test tab with `{"dryRun": true}` first, then `{}`, repeating
+until the result says `"done": true`. It is idempotent. Details are in
+[docs/NOTIFICATIONS_PLAN.md](./docs/NOTIFICATIONS_PLAN.md), Phase 4.
+
 ## Comprehensive Error Detection Process
 
 When encountering ANY errors, compilation failures, or build issues, **ALWAYS** follow this systematic debugging process:

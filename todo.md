@@ -97,7 +97,7 @@ squares mappings) plus the 2026-09-30 audit, and records the decisions: per-acco
 categories + per-device switch, nothing un-mutable, key categories always in the feed,
 one server-side dispatcher, automatic data retention.
 
-Phases 0–3 are done: duplicate registrations fixed, category catalog, `PushDevice` + `device-registry`, TTL on notifications, per-category preferences + rebuilt Settings, and the server-side dispatcher (backend-raised notifications now push; `sendPushNotification` removed). Phase 4 (retention backfill) is next.
+Phases 0–3 are done: duplicate registrations fixed, category catalog, `PushDevice` + `device-registry`, TTL on notifications, per-category preferences + rebuilt Settings, and the server-side dispatcher (backend-raised notifications now push; `sendPushNotification` removed). Phase 4's backfill Lambda is built: **run it once after deploy** (see docs/NOTIFICATIONS_PLAN.md, Phase 4). Phase 5 (authorization lockdown) is next.
 
 ### Not covered by the overhaul: old sports events are never cleaned up
 

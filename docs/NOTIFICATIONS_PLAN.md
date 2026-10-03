@@ -1,6 +1,6 @@
 # Notifications Overhaul Plan
 
-**Status:** approved 2026-09-30. Phases 0–3 are done; Phase 4 (retention backfill) is next.
+**Status:** approved 2026-09-30. Phases 0–4 are done (Phase 4's backfill still needs one run after deploy); Phase 5 (authorization lockdown) is next.
 This is the working plan for rebuilding notification delivery and preferences
 across web, Android and (later) iOS. It replaces the "Push notifications are
 half-wired" analysis in `todo.md`. Tick items off here as they land.
@@ -162,7 +162,7 @@ Users can read and delete their own `PushDevice` rows but never update them dire
 | `Notification` | DynamoDB TTL on `expiresAt`, set at write time by `notificationMeta()` from the catalog, by every producer (app and Lambdas) | 90 days; `MONEY` / `RESULTS` / `REFUNDS` 180 days (per-category `retentionDays` in the catalog) |
 | `PushDevice` | DynamoDB TTL, pushed forward on every registration | 120 days after last seen |
 | Old `PushToken` table | Dropped after the `PushDevice` cut-over | — |
-| Notifications written before TTL existed | One-off backfill: set `expiresAt` from `createdAt` + retention, so TTL removes the old ones | — |
+| Notifications written before TTL existed | One-off `notification-expiry-backfill` Lambda: sets `expiresAt` from `createdAt` + the category's retention, so TTL removes the old ones | — |
 
 DynamoDB TTL deletes are free and happen within about 48 hours of expiry. TTL is enabled on both tables in `backend.ts`. The dispatcher's stream source will filter to `INSERT`, so TTL `REMOVE` events never invoke it.
 
@@ -244,9 +244,18 @@ Each phase ships on its own and leaves the app working.
 - **Old app builds:** mobile builds made before this still call `sendPushNotification` after creating a notification, and that call now fails. The failure is caught and the notification is still written, so it still pushes, once, through the dispatcher. No double sends.
 - **Checking it works:** the dispatcher logs one line per notification: `pushed to N device(s)`, or `not pushed: <reason>`.
 
-### Phase 4: retention backfill
+### Phase 4: retention backfill ✅ (run once after deploy)
 - [x] ~~Enable TTL~~ (done in Phase 1).
-- [ ] One-off backfill: give notifications that predate TTL an `expiresAt` from `createdAt` + retention.
+- [x] `notification-expiry-backfill` Lambda: gives every Notification row without `expiresAt` the expiry it would have had (creation time + its category's retention; 90 days for types the catalog doesn't know), and fills in a missing `category`. Rows already past retention get an expiry in the past, and TTL deletes them within about 48 hours.
+  - **Writes directly to DynamoDB, not through AppSync:** an AppSync update would fire the app's `onUpdate` subscription, which counts any update to an unread notification as a new unread one. The stream mapping only acts on INSERTs, so the dispatcher ignores these writes too.
+  - **Safe to repeat:** each write is conditional on the row still existing and still having no expiry, so re-running is harmless and a row written by a newer client is never overwritten. It stops a minute before its 15-minute timeout and reports `done: false`; run it again to continue.
+  - **Placement:** it lives in the data stack (`resourceGroupName: 'data'`) because it is granted the table directly.
+- [x] Vitest: the decision logic, plus the handler itself against an in-memory table (pagination, dry run, the race condition, stopping early, error surfacing). Each case was checked to fail when its behaviour is broken.
+- [ ] **Run it once after this deploys:**
+  1. AWS console → Lambda → the function whose name contains `notification-expiry-backfill` → Test.
+  2. Event `{"dryRun": true}` first. It reports `scanned`, `updated` (what it would change) and `alreadyExpired` (what TTL will remove).
+  3. Then event `{}`. Repeat until the result says `"done": true`.
+  4. Afterwards the function can stay (no schedule, costs nothing idle) or be removed.
 
 ### Phase 5: authorization lockdown
 - [ ] Owner-only rules from 3.8. Verify the owner-scoped `onCreate` subscription still delivers, in the real sandbox and not just the mocks.
