@@ -69,6 +69,14 @@ export interface CategoryInfo {
   feedLocked: boolean;
   /** How long a notification in this category is kept before DynamoDB TTL deletes it. */
   retentionDays: number;
+  /**
+   * Importance of this category's Android notification channel. 'high' pops up over
+   * whatever is on screen; 'default' makes a sound but only appears in the shade.
+   * Android fixes a channel's importance when it is first created, after which only the
+   * user can change it, so changing this does nothing on devices that already have the
+   * channel. Give the channel a new id instead (see androidChannelId).
+   */
+  androidImportance: 'high' | 'default';
 }
 
 export const CATEGORY_INFO = {
@@ -77,60 +85,70 @@ export const CATEGORY_INFO = {
     description: 'Friend requests and acceptances',
     feedLocked: false,
     retentionDays: 90,
+    androidImportance: 'default',
   },
   INVITATIONS: {
     label: 'Invitations',
     description: 'Invitations to bets and squares games',
     feedLocked: false,
     retentionDays: 90,
+    androidImportance: 'high',
   },
   MY_BET_ACTIVITY: {
     label: 'Activity on my bets',
     description: 'Someone joined your bet or answered your invitation',
     feedLocked: false,
     retentionDays: 90,
+    androidImportance: 'default',
   },
   RESULTS: {
     label: 'Results & payouts',
     description: 'Bets resolved and squares periods won',
     feedLocked: true,
     retentionDays: 180,
+    androidImportance: 'high',
   },
   ACTION_NEEDED: {
     label: 'Disputes & action needed',
     description: 'Disputes and anything waiting on you',
     feedLocked: true,
     retentionDays: 90,
+    androidImportance: 'high',
   },
   REFUNDS: {
     label: 'Cancellations & refunds',
     description: 'Bets and games cancelled, and the money returned',
     feedLocked: true,
     retentionDays: 180,
+    androidImportance: 'high',
   },
   REMINDERS: {
     label: 'Reminders',
     description: 'Deadlines approaching and games about to start',
     feedLocked: false,
     retentionDays: 90,
+    androidImportance: 'high',
   },
   SQUARES_UPDATES: {
     label: 'Squares updates',
     description: 'Grids locked and purchases confirmed',
     feedLocked: false,
     retentionDays: 90,
+    androidImportance: 'default',
   },
   MONEY: {
     label: 'Money',
     description: 'Deposits, withdrawals and payment methods',
     feedLocked: true,
     retentionDays: 180,
+    androidImportance: 'high',
   },
   ANNOUNCEMENTS: {
     label: 'Announcements',
     description: 'App updates and important announcements',
     feedLocked: false,
     retentionDays: 90,
+    androidImportance: 'default',
   },
 } as const satisfies Record<NotificationCategory, CategoryInfo>;
 
@@ -141,6 +159,12 @@ export interface TypeInfo {
    * outcomes like "declined", which only land in the feed.
    */
   alert: boolean;
+  /**
+   * iOS: deliver as Time Sensitive, which breaks through Focus modes and notification
+   * summaries. Only for alerts that are worthless if seen late. Needs the
+   * time-sensitive entitlement (app.json ios.entitlements).
+   */
+  timeSensitive?: boolean;
 }
 
 export const NOTIFICATION_CATALOG = {
@@ -165,8 +189,8 @@ export const NOTIFICATION_CATALOG = {
   BET_CANCELLED: { category: 'REFUNDS', alert: true },
   SQUARES_GAME_CANCELLED: { category: 'REFUNDS', alert: true },
 
-  BET_DEADLINE_APPROACHING: { category: 'REMINDERS', alert: true },
-  SQUARES_GAME_LIVE: { category: 'REMINDERS', alert: true },
+  BET_DEADLINE_APPROACHING: { category: 'REMINDERS', alert: true, timeSensitive: true },
+  SQUARES_GAME_LIVE: { category: 'REMINDERS', alert: true, timeSensitive: true },
 
   SQUARES_GRID_LOCKED: { category: 'SQUARES_UPDATES', alert: true },
   SQUARES_PURCHASE_CONFIRMED: { category: 'SQUARES_UPDATES', alert: true },
@@ -181,6 +205,21 @@ export const NOTIFICATION_CATALOG = {
 } as const satisfies Record<NotificationType, TypeInfo>;
 
 const DAY_SECONDS = 24 * 60 * 60;
+
+/**
+ * Android channel for pushes that have no category (the Settings test push). It is also
+ * the channel FCM falls back to (AndroidManifest default_notification_channel_id).
+ */
+export const ANDROID_DEFAULT_CHANNEL = 'default';
+
+/**
+ * The Android notification channel a category's pushes go to: one channel per category,
+ * so Android's own per-channel settings line up with the app's categories. The app
+ * creates them (pushNotificationConfig) and the dispatcher addresses them, so both use this.
+ */
+export function androidChannelId(category: NotificationCategory): string {
+  return `category-${category.toLowerCase()}`;
+}
 
 export function categoryOf(type: NotificationType): NotificationCategory {
   return NOTIFICATION_CATALOG[type].category;

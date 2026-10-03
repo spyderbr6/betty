@@ -3,7 +3,7 @@
  * Main navigation structure for the SideBet app
  */
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { NavigationContainer, NavigationContainerRef } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
@@ -162,70 +162,70 @@ export const AppNavigator: React.FC = () => {
     setShowOnboarding(false);
   };
 
+  // Unified navigation handler for both toast and push notifications
+  const handleNotificationNavigation = useCallback((type: NotificationType, data?: any) => {
+    console.log('[Navigation] Handling notification tap:', type, data);
+
+    const navigationAction = getNotificationNavigationAction(type, data);
+
+    if (!navigationRef.current) {
+      console.warn('[Navigation] Navigation ref not ready');
+      return;
+    }
+
+    switch (navigationAction.action) {
+      case 'navigate':
+        if (navigationAction.screen) {
+          navigationRef.current.navigate(navigationAction.screen as never, navigationAction.params as never);
+          console.log(`[Navigation] Navigated to ${navigationAction.screen}`);
+        }
+        break;
+
+      case 'open_modal':
+        // For modals, we navigate to the appropriate screen that manages the modal
+        // The modal logic is handled by the screens themselves (e.g., AccountScreen opens modals)
+        console.log(`[Navigation] Modal navigation: ${navigationAction.modal}`);
+        // TODO: Implement modal navigation based on your app's modal architecture
+        // For now, navigate to the parent screen
+        if (navigationAction.modal === 'notifications') {
+          navigationRef.current.navigate('Account' as never);
+        } else if (navigationAction.modal === 'friend_requests') {
+          navigationRef.current.navigate('Account' as never, { openFriendRequests: true } as never);
+        } else if (navigationAction.modal === 'bet_details') {
+          navigationRef.current.navigate('Resolve' as never);
+        }
+        break;
+
+      case 'refresh':
+        console.log('[Navigation] Refresh action triggered');
+        // The current screen will handle the refresh
+        break;
+
+      case 'none':
+      default:
+        console.log('[Navigation] No navigation action defined');
+        break;
+    }
+  }, []);
+
   useEffect(() => {
-    // Unified navigation handler for both toast and push notifications
-    const handleNotificationNavigation = (type: NotificationType, data?: any) => {
-      console.log('[Navigation] Handling notification tap:', type, data);
-
-      const navigationAction = getNotificationNavigationAction(type, data);
-
-      if (!navigationRef.current) {
-        console.warn('[Navigation] Navigation ref not ready');
-        return;
-      }
-
-      switch (navigationAction.action) {
-        case 'navigate':
-          if (navigationAction.screen) {
-            navigationRef.current.navigate(navigationAction.screen as never, navigationAction.params as never);
-            console.log(`[Navigation] Navigated to ${navigationAction.screen}`);
-          }
-          break;
-
-        case 'open_modal':
-          // For modals, we navigate to the appropriate screen that manages the modal
-          // The modal logic is handled by the screens themselves (e.g., AccountScreen opens modals)
-          console.log(`[Navigation] Modal navigation: ${navigationAction.modal}`);
-          // TODO: Implement modal navigation based on your app's modal architecture
-          // For now, navigate to the parent screen
-          if (navigationAction.modal === 'notifications') {
-            navigationRef.current.navigate('Account' as never);
-          } else if (navigationAction.modal === 'friend_requests') {
-            navigationRef.current.navigate('Account' as never, { openFriendRequests: true } as never);
-          } else if (navigationAction.modal === 'bet_details') {
-            navigationRef.current.navigate('Resolve' as never);
-          }
-          break;
-
-        case 'refresh':
-          console.log('[Navigation] Refresh action triggered');
-          // The current screen will handle the refresh
-          break;
-
-        case 'none':
-        default:
-          console.log('[Navigation] No navigation action defined');
-          break;
-      }
-    };
-
     // Register navigation callback for toast notifications
     ToastNotificationService.setNavigationCallback(handleNotificationNavigation);
 
-    // Register navigation callback for push notifications
-    setPushNavigationCallback(handleNotificationNavigation);
-
     return () => {
-      // Cleanup on unmount
+      // Cleanup on unmount. Push taps are held until a navigator registers again.
       ToastNotificationService.setNavigationCallback(() => {});
-      setPushNavigationCallback(() => {});
+      setPushNavigationCallback(null);
     };
-  }, []);
+  }, [handleNotificationNavigation]);
 
   return (
     <>
       <NavigationContainer
         ref={navigationRef}
+        // Push taps are routed only once the navigator can navigate; a tap that launched
+        // the app has been held until now (notificationTap.ts).
+        onReady={() => setPushNavigationCallback(handleNotificationNavigation)}
         theme={{
           dark: true,
           colors: {

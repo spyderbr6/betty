@@ -7,12 +7,18 @@
  * from every Lambda alike. See PUSH_NOTIFICATION_GUIDE.md §1.
  */
 
-import { NOTIFICATION_CATALOG, type NotificationType } from '../../shared/notificationCatalog';
 import {
+  NOTIFICATION_CATALOG,
+  androidChannelId,
+  type NotificationType,
+} from '../../shared/notificationCatalog';
+import {
+  isFeedVisible,
   resolvePreferences,
   shouldAlert,
   type StoredPreferences,
 } from '../../shared/notificationPreferencesLogic';
+import type { ExpoPresentation } from './pushLogic';
 
 /** A DynamoDB attribute value as it appears in a stream record's NewImage. */
 export interface AttributeValue {
@@ -171,5 +177,66 @@ export function webPushOptions(priority: 'HIGH' | 'MEDIUM'): { TTL: number; urge
   return {
     TTL: 24 * 60 * 60,
     urgency: priority === 'HIGH' ? 'high' : 'normal',
+  };
+}
+
+/**
+ * How a notification is presented on a phone: the Android channel for its category, and
+ * on iOS whether it breaks through Focus. The badge is added separately (unreadBadgeCount)
+ * because it needs a query.
+ */
+export function pushPresentation(notification: Pick<StreamNotification, 'type'>): ExpoPresentation {
+  const info = NOTIFICATION_CATALOG[notification.type];
+  return {
+    channelId: androidChannelId(info.category),
+    timeSensitive: 'timeSensitive' in info && info.timeSensitive === true,
+  };
+}
+
+/**
+ * How many of the user's newest notifications the badge count looks at. The badge is a
+ * nudge, not a ledger: past this many, the exact number stops mattering and the query
+ * would only get more expensive.
+ */
+export const BADGE_WINDOW = 100;
+
+/**
+ * The iOS app badge: unread notifications the user would actually see in their feed.
+ * Counting rows hidden from the feed would leave a badge the user can never clear.
+ * The app keeps it current as notifications are read (NotificationContext).
+ */
+export function unreadBadgeCount(
+  rows: ReadonlyArray<{ isRead?: boolean | null; type?: string | null; category?: string | null }> | null | undefined,
+  storedPrefs: StoredPreferences | null | undefined
+): number {
+  const prefs = resolvePreferences(storedPrefs);
+  return (rows ?? []).filter((row) => row.isRead !== true && isFeedVisible(row, prefs)).length;
+}
+
+/** Icons the browser shows a web push with. Served from public/ (see public/icons). */
+export const WEB_PUSH_ICON = '/icons/icon-192.png';
+/** Android Chrome's status-bar icon: must be white on transparent, or it shows as a blob. */
+export const WEB_PUSH_BADGE = '/icons/badge-96.png';
+
+/**
+ * The payload the service worker (public/service-worker.js) turns into a notification.
+ * The tag is the notification's id, so a redelivered push replaces itself rather than
+ * stacking a duplicate, while two different notifications of the same type both show.
+ */
+export function webPushPayload(
+  title: string,
+  message: string,
+  data: Record<string, unknown>,
+  priority: 'HIGH' | 'MEDIUM'
+): Record<string, unknown> {
+  const id = typeof data.notificationId === 'string' ? data.notificationId : null;
+  return {
+    title,
+    body: message,
+    icon: WEB_PUSH_ICON,
+    badge: WEB_PUSH_BADGE,
+    tag: id ? `sidebet-${id}` : 'sidebet-test',
+    data,
+    priority,
   };
 }

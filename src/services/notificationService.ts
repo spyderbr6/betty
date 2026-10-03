@@ -92,6 +92,16 @@ export class NotificationService {
   }
 
   /**
+   * Register this device again for whoever it is registered for this session, after its
+   * token changed underneath us (the browser renewed the web push subscription). Does
+   * nothing when nobody is signed in: the next sign-in registers the current token anyway.
+   */
+  static async refreshDeviceRegistration(): Promise<void> {
+    if (!sessionRegistration) return;
+    await this.registerPushToken(sessionRegistration.userId, { force: true });
+  }
+
+  /**
    * This device's push token, or null when push is unsupported or permission is not granted.
    * Only shows a permission dialog when `prompt` is true.
    */

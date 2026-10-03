@@ -5,7 +5,13 @@
 
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
-import { NotificationType } from '../types/betting';
+import {
+  ANDROID_DEFAULT_CHANNEL,
+  CATEGORY_INFO,
+  NOTIFICATION_CATEGORIES,
+  androidChannelId,
+} from '../../amplify/shared/notificationCatalog';
+import { notificationTapRouter, tapFromPushData, type TapHandler } from './notificationTap';
 
 // How a push is presented while the app is in the foreground. No system banner or sound:
 // the same notification also arrives through NotificationContext's subscription, which
@@ -20,81 +26,84 @@ Notifications.setNotificationHandler({
   }),
 });
 
-// Navigation callback type
-type NavigationCallback = (type: NotificationType, data?: any) => void;
-
-// Global navigation callback
-let navigationCallback: NavigationCallback | null = null;
+/**
+ * Set the handler that navigates when a push is tapped (AppNavigator, once its navigator
+ * is ready). Taps that arrive before it is set are held and delivered when it is.
+ * Pass null when the navigator goes away.
+ */
+export const setPushNavigationCallback = (callback: TapHandler | null) => {
+  notificationTapRouter.setHandler(callback);
+};
 
 /**
- * Set navigation callback for handling push notification taps
- * This should be called from AppNavigator when navigation is ready
+ * Create the Android notification channels: one per category, so Android's own
+ * notification settings for the app list the same categories as ours, plus the
+ * fallback channel. Must run before the permission request: Android 13+ only offers
+ * the permission dialog once the app has a channel.
  */
-export const setPushNavigationCallback = (callback: NavigationCallback) => {
-  navigationCallback = callback;
-  console.log('[Push] Navigation callback registered');
-};
+async function createAndroidChannels() {
+  await Notifications.setNotificationChannelAsync(ANDROID_DEFAULT_CHANNEL, {
+    name: 'General',
+    description: 'Notifications without a category, such as test notifications',
+    importance: Notifications.AndroidImportance.HIGH,
+    vibrationPattern: [0, 250, 250, 250],
+    sound: 'default',
+  });
+
+  for (const category of NOTIFICATION_CATEGORIES) {
+    const info = CATEGORY_INFO[category];
+    await Notifications.setNotificationChannelAsync(androidChannelId(category), {
+      name: info.label,
+      description: info.description,
+      importance:
+        info.androidImportance === 'high'
+          ? Notifications.AndroidImportance.HIGH
+          : Notifications.AndroidImportance.DEFAULT,
+      vibrationPattern: [0, 250, 250, 250],
+      sound: 'default',
+    });
+  }
+
+  // Replaced by the category channels. Deleting it removes it from the app's system
+  // settings; anything already shown in it stays.
+  await Notifications.deleteNotificationChannelAsync('urgent');
+}
 
 /**
  * Initialize push notification configuration
  */
 export const initializePushNotifications = async () => {
-  // Configure notification channel for Android
   if (Platform.OS === 'android') {
-    await Notifications.setNotificationChannelAsync('default', {
-      name: 'SideBet Notifications',
-      description: 'Notifications for betting activities and social interactions',
-      importance: Notifications.AndroidImportance.MAX,
-      vibrationPattern: [0, 250, 250, 250],
-      lightColor: '#FF231F7C',
-      sound: 'default',
-      enableVibrate: true,
-      enableLights: true,
-    });
+    await createAndroidChannels();
+  }
 
-    // High priority channel for urgent notifications
-    await Notifications.setNotificationChannelAsync('urgent', {
-      name: 'Urgent SideBet Notifications',
-      description: 'High priority notifications for time-sensitive betting events',
-      importance: Notifications.AndroidImportance.MAX,
-      vibrationPattern: [0, 250, 250, 250],
-      lightColor: '#FF0000',
-      sound: 'default',
-      enableVibrate: true,
-      enableLights: true,
-    });
+  if (Platform.OS !== 'web') {
+    // A tap that launched the app from scratch. The response listener may also report
+    // it; handleNotificationResponse ignores the repeat. Cleared once handled so a JS
+    // reload does not route it again.
+    const launchResponse = Notifications.getLastNotificationResponse();
+    if (launchResponse) {
+      handleNotificationResponse(launchResponse);
+      Notifications.clearLastNotificationResponse();
+    }
   }
 };
 
+// The last response handled, so the launch tap is not routed twice.
+let lastHandledResponseId: string | null = null;
+
 /**
- * Handle notification taps and deep linking
- * Uses the navigation callback to actually navigate to the appropriate screen
+ * Handle a tapped native push: route it to the screen it is about, through the tap
+ * router so a tap that launched the app waits for sign-in to finish.
  */
 export const handleNotificationResponse = (response: Notifications.NotificationResponse) => {
-  const data = response.notification.request.content.data;
+  const id = response.notification.request.identifier;
+  if (id && id === lastHandledResponseId) return;
+  lastHandledResponseId = id;
 
-  console.log('[Push] Notification tapped:', data);
-
-  if (!navigationCallback) {
-    console.warn('[Push] Navigation callback not set - cannot navigate');
-    return;
-  }
-
-  // Extract notification type and data from the push notification payload
-  const notificationType = data?.type as NotificationType;
-  const navigationData = {
-    notificationId: data?.notificationId,
-    actionType: data?.actionType,
-    actionData: data?.actionData,
-    relatedBetId: data?.relatedBetId,
-    relatedUserId: data?.relatedUserId,
-  };
-
-  if (notificationType) {
-    console.log('[Push] Triggering navigation for type:', notificationType);
-    navigationCallback(notificationType, navigationData);
-  } else {
-    console.warn('[Push] No notification type in push data - cannot determine navigation');
+  const tap = tapFromPushData(response.notification.request.content.data);
+  if (tap) {
+    notificationTapRouter.open(tap);
   }
 };
 
@@ -110,4 +119,17 @@ export const addNotificationResponseListener = () => {
  */
 export const removeNotificationResponseListener = (subscription: Notifications.Subscription) => {
   subscription.remove();
+};
+
+/**
+ * Show `count` on the app icon (iOS; Android launchers count notifications themselves).
+ * The dispatcher sets it when a push arrives; the app corrects it as notifications are read.
+ */
+export const setAppBadgeCount = async (count: number) => {
+  if (Platform.OS !== 'ios') return;
+  try {
+    await Notifications.setBadgeCountAsync(Math.max(0, count));
+  } catch (error) {
+    console.warn('[Push] Could not set the app badge:', error);
+  }
 };

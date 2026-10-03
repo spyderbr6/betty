@@ -16,10 +16,12 @@ const token = (over: Partial<TokenRecord> = {}): TokenRecord => ({
 });
 
 describe('buildExpoMessages', () => {
-  it('routes HIGH priority to the urgent channel', () => {
-    const [msg] = buildExpoMessages([token()], 'Title', 'Body', { betId: 'b1' }, 'HIGH');
+  it('delivers HIGH priority as high, on the channel it is given', () => {
+    const [msg] = buildExpoMessages([token()], 'Title', 'Body', { betId: 'b1' }, 'HIGH', {
+      channelId: 'category-money',
+    });
     expect(msg.priority).toBe('high');
-    expect(msg.channelId).toBe('urgent');
+    expect(msg.channelId).toBe('category-money');
     expect(msg.data).toEqual({ betId: 'b1' });
   });
 
@@ -27,8 +29,24 @@ describe('buildExpoMessages', () => {
     for (const p of ['MEDIUM', 'LOW', 'anything-else']) {
       const [msg] = buildExpoMessages([token()], 'T', 'B', undefined, p);
       expect(msg.priority, `priority ${p}`).toBe('normal');
-      expect(msg.channelId, `channel ${p}`).toBe('default');
     }
+  });
+
+  it('falls back to the default channel, and leaves the badge and interruption level unset', () => {
+    const [msg] = buildExpoMessages([token()], 'T', 'B', {}, 'HIGH');
+    expect(msg.channelId).toBe('default');
+    // Absent, not 0: a badge of 0 would clear the user's badge on every test push.
+    expect('badge' in msg).toBe(false);
+    expect('interruptionLevel' in msg).toBe(false);
+  });
+
+  it('carries the badge, including zero, and time-sensitive delivery', () => {
+    const [msg] = buildExpoMessages([token()], 'T', 'B', {}, 'MEDIUM', { badge: 0, timeSensitive: true });
+    expect(msg.badge).toBe(0);
+    expect(msg.interruptionLevel).toBe('time-sensitive');
+    const [counted] = buildExpoMessages([token()], 'T', 'B', {}, 'MEDIUM', { badge: 7, timeSensitive: false });
+    expect(counted.badge).toBe(7);
+    expect('interruptionLevel' in counted).toBe(false);
   });
 
   it('defaults missing data to an empty object, never undefined', () => {

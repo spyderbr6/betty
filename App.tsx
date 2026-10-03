@@ -37,6 +37,7 @@ import Toast from 'react-native-toast-message';
 import { toastConfig } from './src/components/ui/ToastConfig';
 import { CustomAlertController } from './src/components/ui/CustomAlert';
 import { registerServiceWorker } from './src/utils/webPushUtils';
+import { startWebPushBridge } from './src/services/webPushBridge';
 
 type AuthScreen = 'login' | 'signup' | 'forgotPassword';
 
@@ -92,6 +93,9 @@ export default function App() {
   // Register service worker on app startup (web only)
   useEffect(() => {
     if (Platform.OS === 'web') {
+      // Before anything else reads the URL: a tab opened by a notification click carries
+      // the tap in it.
+      startWebPushBridge();
       console.log('[App] Registering service worker on startup...');
       registerServiceWorker()
         .then(() => {

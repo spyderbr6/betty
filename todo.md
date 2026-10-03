@@ -92,7 +92,7 @@ Remaining Stripe work is Phase 2 below.
 
 Overhaul Phases 0–5 are done.
 - **How it works now:** [PUSH_NOTIFICATION_GUIDE.md](./PUSH_NOTIFICATION_GUIDE.md).
-- **Decisions, what's deliberately left alone, the before-launch checklist, and Phases 6–8 (web / Android / iOS polish):** [docs/NOTIFICATIONS_PLAN.md](./docs/NOTIFICATIONS_PLAN.md).
+- **Decisions, what's deliberately left alone, the before-launch checklist, and the on-device checks still to do:** [docs/NOTIFICATIONS_PLAN.md](./docs/NOTIFICATIONS_PLAN.md).
 
 ### Notification types that are defined but never raised
 
@@ -172,7 +172,9 @@ device registrations only).
   - [x] Priority-based display (URGENT > HIGH > MEDIUM)
   - [x] Queue overflow protection (5+ → batch message)
   - [x] Auto-dismiss based on priority (5s/4s/3s)
-- [ ] Push notification polish (web deep links, Android channels/icon, iOS) — Phases 6–8 in docs/NOTIFICATIONS_PLAN.md
+- [x] Push notification polish (web deep links, Android channels/icon, iOS badge) — Phases 6–8, done in code
+- [ ] Verify push on a real Android device, and on iOS once the Apple account exists — §5 of docs/NOTIFICATIONS_PLAN.md
+- [ ] Run `npx expo prebuild --platform android` before the next Android build (new notification icon)
 - [ ] Instant balance updates after payouts and joins
 - [ ] Raise the three never-raised notification types (see 🔔 NOTIFICATIONS above)
 
@@ -452,7 +454,9 @@ src/
 │   ├── notificationPreferencesService.ts # Load/save notification preferences
 │   ├── toastNotificationService.ts       # In-app toast with batching & rate limiting
 │   ├── imageUploadService.ts             # S3 profile pictures
-│   └── pushNotificationConfig.ts         # Expo foreground behaviour, Android channels, push tap handling
+│   ├── pushNotificationConfig.ts         # Expo foreground behaviour, Android channels, native taps, iOS badge
+│   ├── notificationTap.ts                # Routes a tapped push to its screen; holds taps until the navigator is ready
+│   └── webPushBridge.ts                  # Web: service-worker clicks and renewed subscriptions
 ├── styles/                 # Design system tokens
 └── types/                  # TypeScript definitions
 ```

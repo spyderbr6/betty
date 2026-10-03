@@ -4,6 +4,8 @@ import {
   NOTIFICATION_CATALOG,
   NOTIFICATION_CATEGORIES,
   NOTIFICATION_TYPES,
+  ANDROID_DEFAULT_CHANNEL,
+  androidChannelId,
   notificationMeta,
 } from '../notificationCatalog';
 
@@ -55,5 +57,18 @@ describe('notificationMeta', () => {
     const { expiresAt } = notificationMeta('BET_JOINED', new Date('2026-10-01T00:00:00.999Z'));
     expect(Number.isInteger(expiresAt)).toBe(true);
     expect(expiresAt).toBe(nowSeconds + days(90));
+  });
+});
+
+describe('Android channels', () => {
+  it('gives every category its own channel, none of them the fallback channel', () => {
+    const ids = NOTIFICATION_CATEGORIES.map(androidChannelId);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids).not.toContain(ANDROID_DEFAULT_CHANNEL);
+  });
+
+  it('pops up money, results, refunds, disputes, invitations and reminders', () => {
+    const high = NOTIFICATION_CATEGORIES.filter((c) => CATEGORY_INFO[c].androidImportance === 'high');
+    expect(high.sort()).toEqual(['ACTION_NEEDED', 'INVITATIONS', 'MONEY', 'REFUNDS', 'REMINDERS', 'RESULTS']);
   });
 });

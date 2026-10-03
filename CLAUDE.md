@@ -53,7 +53,7 @@ src/
 - **[MODAL_STANDARDS.md](./MODAL_STANDARDS.md)**: **REQUIRED** reading before creating/modifying modals
 - **[PUSH_NOTIFICATION_GUIDE.md](./PUSH_NOTIFICATION_GUIDE.md)**: How notifications and push work now: flow, key files, devices, preferences, permissions, platform setup, testing, troubleshooting
 - **[STRIPE_GUIDE.md](./STRIPE_GUIDE.md)**: Card deposits and Pro subscriptions — setup, test → production switchover, and payment troubleshooting
-- **[docs/NOTIFICATIONS_PLAN.md](./docs/NOTIFICATIONS_PLAN.md)**: Notifications decisions, what's deliberately *not* done (read before "fixing" anything there), pre-launch checklist, remaining phases
+- **[docs/NOTIFICATIONS_PLAN.md](./docs/NOTIFICATIONS_PLAN.md)**: Notifications decisions, what's deliberately *not* done (read before "fixing" anything there), pre-launch checklist, on-device checks still to do
 - **[SQUARES_GUIDE.md](./SQUARES_GUIDE.md)**: Betting squares — how a game runs, how winners are decided, and what automates it
 - **docs/archive/**: Finished implementation plans and audits, kept for reasoning only. Assume they are out of date.
 - **todo.md**: Current tasks and project roadmap
@@ -272,9 +272,9 @@ async function yourMainFunction() {
 - **Provider**: Expo Push Notification Service. **Android FCM is configured**: `google-services.json` is committed and the FCM V1 service-account key is uploaded to EAS. Registration needs a device or emulator with Google Play services (a plain AOSP image fails with `E_REGISTRATION_FAILED`). iOS needs an APNs key once the Apple developer account exists. Web uses Web Push with VAPID keys.
 - **Before changing anything notification-related**, read [PUSH_NOTIFICATION_GUIDE.md](./PUSH_NOTIFICATION_GUIDE.md) (how it works) and §3 of [docs/NOTIFICATIONS_PLAN.md](./docs/NOTIFICATIONS_PLAN.md) (what's deliberately left as is).
 - **Backend**: `push-notification-sender` is the dispatcher: the Notification table's DynamoDB stream invokes it for every new row (from the app or any Lambda), it applies the recipient's preferences, and sends via Expo and Web Push. Raise a notification by writing the row with `notificationMeta(type)`; never call push directly
-- **Platforms**: iOS (APNS) and Android (FCM) via Expo; web via Web Push
-- **Devices**: one `PushDevice` row per installation, written only by the `device-registry` Lambda (`registerDevice` at sign-in, `unregisterDevice` at sign-out, `setDevicePush` for the per-device switch). Web never prompts for permission without a tap
-- **Deep Linking**: Push taps navigate to the relevant screen on native. On web the service worker opens a URL the app doesn't read yet (plan Phase 6)
+- **Platforms**: iOS (APNS) and Android (FCM) via Expo; web via Web Push. Android: one notification channel per category, monochrome icon `assets/notification-icon.png` (run `npx expo prebuild --platform android` after changing it; the generated drawables are gitignored). iOS: badge = unread count, time-sensitive reminders. Web: `public/` holds the service worker, icons, manifest and page template
+- **Devices**: one `PushDevice` row per installation, written only by the `device-registry` Lambda (`registerDevice` at sign-in, `unregisterDevice` at sign-out, `setDevicePush` for the per-device switch). Web never prompts for permission without a tap (the feed's soft-ask card, or Settings)
+- **Deep Linking**: Taps on every platform go through `src/services/notificationTap.ts`, which holds a tap until the navigator is ready (cold start, or a web tab still signing in). On web the service worker messages an open tab or opens one with `?notification=` (`webPushBridge.ts`)
 - **Retention**: DynamoDB TTL on `expiresAt` — notifications 90 days (180 for money/results/refunds), devices 120 days after last seen
 - **Authorization**: recipients alone read/update their notifications; preferences and devices are owner-only
 - **User Preferences**: Per-category alerts and feed visibility (money, results, refunds and disputes always stay in the feed), quiet hours in the user's timezone, per-device push switch. Logic in `amplify/shared/notificationPreferencesLogic.ts`
@@ -1075,10 +1075,12 @@ e2e/
 ├── invitations.spec.ts   # Bet invitations listed and declined
 ├── notification-settings.spec.ts # Push prompt timing, device registration, sign-out scope
 ├── notification-preferences.spec.ts # Category alerts/feed, quiet hours, device list, feed filtering
+├── web-push.spec.ts      # Feed soft ask, service-worker click routing, renewed subscriptions
 ├── fixtures/cognito.ts   # HTTP-level Cognito mocks (unauthenticated flows)
 ├── fixtures/session.ts   # Seeds a signed-in session (see below)
 ├── fixtures/appsync.ts   # HTTP-level GraphQL mocks
 ├── fixtures/data.ts      # Record shapes + the default handler set
+├── fixtures/push.ts      # Fake browser notification permission and push subscription
 ├── ensure-config.mjs     # Writes placeholder amplify_outputs.json if absent
 └── serve.mjs             # Dependency-free static server for dist/
 playwright.config.ts

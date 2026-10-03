@@ -14,6 +14,7 @@ import { NotificationPreferencesService } from '../services/notificationPreferen
 import type { NotificationPriority, NotificationType } from '../types/betting';
 import { isFeedVisible, shouldAlert } from '../../amplify/shared/notificationPreferencesLogic';
 import { useAuth } from './AuthContext';
+import { setAppBadgeCount } from '../services/pushNotificationConfig';
 
 const client = generateClient<Schema>();
 
@@ -211,6 +212,15 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       subscriptionsRef.current.onUpdate = undefined;
     };
   }, [user?.userId, refreshUnreadCount]);
+
+  /**
+   * Keep the iOS app badge equal to the unread count. A push sets it when it arrives
+   * (the dispatcher counts the same way); this corrects it as notifications are read,
+   * and clears it on sign-out, when the count drops to 0.
+   */
+  useEffect(() => {
+    setAppBadgeCount(unreadCount);
+  }, [unreadCount]);
 
   /**
    * Handle app state changes (foreground/background)

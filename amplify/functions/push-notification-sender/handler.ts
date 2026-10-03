@@ -17,17 +17,23 @@ import {
   resolvePushTargets,
   succeededTokenIds,
   tokensToDeactivate,
+  type ExpoPresentation,
   type PushTarget,
 } from './pushLogic';
 import {
   type AttributeValue,
+  BADGE_WINDOW,
   chunk,
   decidePush,
   notificationFromImage,
   pushData,
+  pushPresentation,
   pushPriority,
+  unreadBadgeCount,
   webPushOptions,
+  webPushPayload,
 } from './dispatchLogic';
+import type { StoredPreferences } from '../../shared/notificationPreferencesLogic';
 
 // CRITICAL: Top-level await configuration - this is required for proper client initialization
 const { resourceConfig, libraryOptions } = await getAmplifyDataClientConfig(env);
@@ -118,7 +124,8 @@ async function dispatch(image: Record<string, AttributeValue> | undefined): Prom
     throw new Error(`Preferences lookup failed: ${JSON.stringify(errors)}`);
   }
 
-  const decision = decidePush(notification, prefsRows?.[0] ?? null, new Date());
+  const prefs: StoredPreferences | null = prefsRows?.[0] ?? null;
+  const decision = decidePush(notification, prefs, new Date());
   if (!decision.push) {
     console.log(`[Dispatch] ${notification.id} (${notification.type}) not pushed: ${decision.reason}`);
     return;
@@ -129,9 +136,20 @@ async function dispatch(image: Record<string, AttributeValue> | undefined): Prom
     notification.title,
     notification.message,
     pushData(notification),
-    pushPriority(notification.priority)
+    pushPriority(notification.priority),
+    { presentation: pushPresentation(notification), badgePrefs: prefs }
   );
   console.log(`[Dispatch] ${notification.id} (${notification.type}) pushed to ${sent} device(s)`);
+}
+
+interface DeliverOptions {
+  /** Channel and interruption level for phones. Absent: the default channel. */
+  presentation?: ExpoPresentation;
+  /**
+   * Set the iOS badge to the user's unread count, filtered by these preferences.
+   * Absent (the test push): leave the badge alone.
+   */
+  badgePrefs?: StoredPreferences | null;
 }
 
 /**
@@ -142,7 +160,8 @@ async function deliver(
   title: string,
   message: string,
   data: Record<string, unknown>,
-  priority: 'HIGH' | 'MEDIUM'
+  priority: 'HIGH' | 'MEDIUM',
+  options: DeliverOptions = {}
 ): Promise<number> {
   // Through the userId index: a filtered list is a paged Scan, which silently stops
   // finding a user's rows once the table outgrows a scan page.
@@ -157,11 +176,37 @@ async function deliver(
   const mobile = targets.filter((t) => t.platform === 'IOS' || t.platform === 'ANDROID');
   const web = targets.filter((t) => t.platform === 'WEB');
 
+  const presentation: ExpoPresentation = { ...options.presentation };
+  // Only iOS shows the badge Expo sends (Android launchers count notifications themselves),
+  // so the query is skipped unless an iOS device is about to receive this.
+  if ('badgePrefs' in options && mobile.some((t) => t.platform === 'IOS')) {
+    presentation.badge = await badgeCount(userId, options.badgePrefs ?? null);
+  }
+
   const [mobileSent, webSent] = await Promise.all([
-    mobile.length > 0 ? sendViaExpoPush(mobile, title, message, data, priority) : 0,
+    mobile.length > 0 ? sendViaExpoPush(mobile, title, message, data, priority, presentation) : 0,
     web.length > 0 ? sendViaWebPush(web, title, message, data, priority) : 0,
   ]);
   return mobileSent + webSent;
+}
+
+/**
+ * The iOS badge: the user's unread, feed-visible notifications among their newest few.
+ * Undefined if the lookup fails, which leaves the badge as it was; a badge is never worth
+ * failing a push over.
+ */
+async function badgeCount(userId: string, prefs: StoredPreferences | null): Promise<number | undefined> {
+  try {
+    const { data: rows, errors } = await client.models.Notification.notificationsByUser(
+      { userId },
+      { sortDirection: 'DESC', limit: BADGE_WINDOW, selectionSet: ['isRead', 'type', 'category'] }
+    );
+    if (errors?.length) throw new Error(JSON.stringify(errors));
+    return unreadBadgeCount(rows, prefs);
+  } catch (error) {
+    console.warn('[Dispatch] Badge count failed; leaving the badge unchanged:', error);
+    return undefined;
+  }
 }
 
 /**
@@ -172,12 +217,13 @@ async function sendViaExpoPush(
   title: string,
   message: string,
   data: Record<string, unknown>,
-  priority: string
+  priority: string,
+  presentation: ExpoPresentation
 ): Promise<number> {
   let accepted = 0;
   // Expo takes at most 100 messages per request.
   for (const batch of chunk(tokens)) {
-    accepted += await sendExpoBatch(batch, title, message, data, priority);
+    accepted += await sendExpoBatch(batch, title, message, data, priority, presentation);
   }
   return accepted;
 }
@@ -187,10 +233,11 @@ async function sendExpoBatch(
   title: string,
   message: string,
   data: Record<string, unknown>,
-  priority: string
+  priority: string,
+  presentation: ExpoPresentation
 ): Promise<number> {
   try {
-    const notifications = buildExpoMessages(tokens, title, message, data, priority);
+    const notifications = buildExpoMessages(tokens, title, message, data, priority, presentation);
 
     const headers: Record<string, string> = {
       Accept: 'application/json',
@@ -252,16 +299,7 @@ async function sendViaWebPush(
   priority: 'HIGH' | 'MEDIUM'
 ): Promise<number> {
   try {
-    const payload = JSON.stringify({
-      title,
-      message,
-      body: message, // Some systems use 'body' instead of 'message'
-      icon: '/assets/icon.png',
-      badge: '/assets/icon.png',
-      tag: data?.type || 'default',
-      data: data || {},
-      priority,
-    });
+    const payload = JSON.stringify(webPushPayload(title, message, data, priority));
 
     let successCount = 0;
 

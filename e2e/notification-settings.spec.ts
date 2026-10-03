@@ -2,60 +2,18 @@ import { expect, test, type Page } from '@playwright/test';
 import { list, mockAppSync } from './fixtures/appsync';
 import { TEST_USER, signInAs } from './fixtures/session';
 import { baseHandlers } from './fixtures/data';
+import { fakeNotificationPermission, fakePushSubscription, promptCount } from './fixtures/push';
 
 /**
  * Push registration, sign-out, and the Settings "This Device" section
  * (see PUSH_NOTIFICATION_GUIDE.md §4).
  *
- * Headless Chromium has no push service, so a real web-push subscription can never
- * be created here. These tests cover the decisions around it instead: when the
- * browser permission prompt may be shown, what Settings offers, and which rows
- * sign-out touches.
+ * Headless Chromium has no push service (see fixtures/push.ts). These tests cover the
+ * decisions around it instead: when the browser permission prompt may be shown, what
+ * Settings offers, and which rows sign-out touches.
  */
 
 const INSTALLATION_ID = 'inst-e2e-this-device';
-
-type PromptCountingWindow = Window & { __permissionPrompts: number };
-
-/**
- * Replace the browser's Notification permission with a controllable fake that
- * counts permission dialogs. A dialog answers "denied", so no subscription is attempted.
- */
-const fakeNotificationPermission = (page: Page, initial: NotificationPermission = 'default') =>
-  page.addInitScript((start) => {
-    let permission: NotificationPermission = start;
-    const w = window as unknown as PromptCountingWindow;
-    w.__permissionPrompts = 0;
-    Object.defineProperty(window.Notification, 'permission', {
-      configurable: true,
-      get: () => permission,
-    });
-    // Browsers only show a dialog when permission is still 'default'; once decided,
-    // requestPermission resolves immediately. Count dialogs, not calls.
-    window.Notification.requestPermission = async () => {
-      if (permission === 'default') {
-        w.__permissionPrompts += 1;
-        permission = 'denied';
-      }
-      return permission;
-    };
-  }, initial);
-
-/**
- * Stand in for the browser's push service, which headless Chromium does not have: every
- * subscribe/getSubscription returns the same fake subscription.
- */
-const fakePushSubscription = (page: Page) =>
-  page.addInitScript(() => {
-    const subscription = {
-      endpoint: 'https://push.example.test/sub-e2e',
-      toJSON: () => ({ endpoint: 'https://push.example.test/sub-e2e', keys: { p256dh: 'p', auth: 'a' } }),
-      unsubscribe: async () => true,
-    };
-    PushManager.prototype.getSubscription = async () => subscription as unknown as PushSubscription;
-    PushManager.prototype.subscribe = async () => subscription as unknown as PushSubscription;
-  });
-
 
 const openAccount = async (page: Page) => {
   await page.goto('/');
@@ -63,9 +21,6 @@ const openAccount = async (page: Page) => {
   await page.getByTestId('tab-account').dispatchEvent('click');
   await expect(page.getByTestId('screen-account')).toBeVisible({ timeout: 15_000 });
 };
-
-const promptCount = (page: Page) =>
-  page.evaluate(() => (window as unknown as PromptCountingWindow).__permissionPrompts);
 
 test('signing in on the web never shows the permission prompt on its own', async ({ page }) => {
   await fakeNotificationPermission(page);

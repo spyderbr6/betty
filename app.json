@@ -12,7 +12,10 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.sidebet.app",
-      "buildNumber": "1"
+      "buildNumber": "1",
+      "entitlements": {
+        "com.apple.developer.usernotifications.time-sensitive": true
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -53,8 +56,8 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/icon-192.png",
-          "color": "#111827",
+          "icon": "./assets/notification-icon.png",
+          "color": "#EAB308",
           "defaultChannel": "default"
         }
       ],

@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   MAX_PUSH_AGE_MS,
@@ -5,9 +7,12 @@ import {
   decidePush,
   notificationFromImage,
   pushData,
+  pushPresentation,
   pushPriority,
   unmarshall,
+  unreadBadgeCount,
   webPushOptions,
+  webPushPayload,
   type StreamNotification,
 } from '../dispatchLogic';
 
@@ -149,5 +154,71 @@ describe('payload helpers', () => {
     const items = Array.from({ length: 250 }, (_, i) => i);
     expect(chunk(items).map((c) => c.length)).toEqual([100, 100, 50]);
     expect(chunk([])).toEqual([]);
+  });
+});
+
+describe('pushPresentation', () => {
+  it('sends each category to its own Android channel', () => {
+    expect(pushPresentation({ type: 'DEPOSIT_COMPLETED' }).channelId).toBe('category-money');
+    expect(pushPresentation({ type: 'FRIEND_REQUEST_RECEIVED' }).channelId).toBe('category-friends');
+    expect(pushPresentation({ type: 'SQUARES_PERIOD_WINNER' }).channelId).toBe('category-results');
+  });
+
+  it('makes only the alerts that are useless late time-sensitive', () => {
+    expect(pushPresentation({ type: 'SQUARES_GAME_LIVE' }).timeSensitive).toBe(true);
+    expect(pushPresentation({ type: 'BET_DEADLINE_APPROACHING' }).timeSensitive).toBe(true);
+    expect(pushPresentation({ type: 'BET_RESOLVED' }).timeSensitive).toBe(false);
+    expect(pushPresentation({ type: 'DEPOSIT_COMPLETED' }).timeSensitive).toBe(false);
+  });
+});
+
+describe('unreadBadgeCount', () => {
+  const row = (type: string, isRead: boolean, category: string | null = null) => ({ type, isRead, category });
+
+  it('counts unread notifications only', () => {
+    expect(
+      unreadBadgeCount([row('BET_JOINED', false), row('BET_JOINED', true), row('BET_RESOLVED', false)], null)
+    ).toBe(2);
+  });
+
+  it('leaves out what the feed hides, so the badge can always be cleared', () => {
+    const prefs = { feedMutedCategories: ['FRIENDS', 'MONEY'] };
+    expect(
+      unreadBadgeCount(
+        [
+          row('FRIEND_REQUEST_RECEIVED', false, 'FRIENDS'),
+          // No stored category: taken from the type.
+          row('FRIEND_REQUEST_ACCEPTED', false),
+          // Locked in the feed, so counted even though it is "muted".
+          row('DEPOSIT_COMPLETED', false, 'MONEY'),
+          row('BET_JOINED', false, 'MY_BET_ACTIVITY'),
+        ],
+        prefs
+      )
+    ).toBe(2);
+  });
+
+  it('is zero with nothing to count', () => {
+    expect(unreadBadgeCount([], null)).toBe(0);
+    expect(unreadBadgeCount(null, null)).toBe(0);
+  });
+});
+
+describe('webPushPayload', () => {
+  it('tags by notification, so a redelivery replaces itself but two notifications both show', () => {
+    const a = webPushPayload('T', 'B', { notificationId: 'n-1', type: 'BET_JOINED' }, 'MEDIUM');
+    const b = webPushPayload('T', 'B', { notificationId: 'n-2', type: 'BET_JOINED' }, 'MEDIUM');
+    expect(a.tag).toBe('sidebet-n-1');
+    expect(b.tag).not.toBe(a.tag);
+    expect(webPushPayload('T', 'B', { test: true }, 'HIGH').tag).toBe('sidebet-test');
+  });
+
+  it('points at icons the site actually serves', () => {
+    const payload = webPushPayload('Title', 'Body', {}, 'HIGH');
+    expect(payload).toMatchObject({ title: 'Title', body: 'Body', priority: 'HIGH' });
+    for (const path of [payload.icon, payload.badge] as string[]) {
+      // Served from public/, which expo export copies to the site root.
+      expect(existsSync(resolve(__dirname, '../../../../public', path.slice(1))), path).toBe(true);
+    }
   });
 });
