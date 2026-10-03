@@ -60,7 +60,7 @@ const notificationTable = backend.data.resources.tables['Notification'];
 const dispatcher = backend.pushNotificationSender.resources.lambda;
 const dataStack = Stack.of(notificationTable);
 
-new Policy(dataStack, 'NotificationDispatcherStreamRead', {
+const dispatcherStreamRead = new Policy(dataStack, 'NotificationDispatcherStreamRead', {
   roles: dispatcher.role ? [dispatcher.role] : [],
   statements: [
     new PolicyStatement({
@@ -70,7 +70,7 @@ new Policy(dataStack, 'NotificationDispatcherStreamRead', {
   ],
 });
 
-new EventSourceMapping(dataStack, 'NotificationDispatcherMapping', {
+const dispatcherMapping = new EventSourceMapping(dataStack, 'NotificationDispatcherMapping', {
   target: dispatcher,
   eventSourceArn: notificationTable.tableStreamArn,
   startingPosition: StartingPosition.LATEST,
@@ -84,6 +84,10 @@ new EventSourceMapping(dataStack, 'NotificationDispatcherMapping', {
   bisectBatchOnError: true,
   reportBatchItemFailures: true,
 });
+// Lambda checks, when the mapping is created, that the function's role can already read
+// the stream. Without this, CloudFormation creates the policy and the mapping in
+// parallel and the mapping can be refused. The first deploy failed creating both.
+dispatcherMapping.node.addDependency(dispatcherStreamRead);
 
 // Force CloudFormation to generate a new AppSync API Key (fixes expired/missing key on production stack)
 backend.data.resources.cfnResources.cfnApiKey?.overrideLogicalId('recoverApiKey20260726');
