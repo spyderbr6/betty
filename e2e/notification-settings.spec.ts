@@ -4,8 +4,8 @@ import { TEST_USER, signInAs } from './fixtures/session';
 import { baseHandlers } from './fixtures/data';
 
 /**
- * Push registration and the Settings "This Device" row (Phase 0 of
- * docs/NOTIFICATIONS_PLAN.md).
+ * Push registration, sign-out, and the Settings "This Device" section
+ * (see PUSH_NOTIFICATION_GUIDE.md §4).
  *
  * Headless Chromium has no push service, so a real web-push subscription can never
  * be created here. These tests cover the decisions around it instead: when the

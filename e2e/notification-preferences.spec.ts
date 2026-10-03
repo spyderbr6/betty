@@ -4,7 +4,7 @@ import { TEST_USER, signInAs } from './fixtures/session';
 import { baseHandlers, notificationPreferences } from './fixtures/data';
 
 /**
- * Notification preferences (Phase 2 of docs/NOTIFICATIONS_PLAN.md): per-category alerts
+ * Notification preferences (PUSH_NOTIFICATION_GUIDE.md §5): per-category alerts
  * and feed visibility, quiet hours, the device list, and the feed honouring all of it.
  */
 

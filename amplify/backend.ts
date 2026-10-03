@@ -43,7 +43,7 @@ const backend = defineBackend({
 // Data retention: DynamoDB deletes rows once their `expiresAt` (epoch seconds) has passed,
 // at no cost and with no scheduled job. Notifications get expiresAt from notificationMeta()
 // at write time (per-category retention); devices from device-registry on every
-// registration. See docs/NOTIFICATIONS_PLAN.md §3.7.
+// registration. See PUSH_NOTIFICATION_GUIDE.md §1.
 const tables = backend.data.resources.cfnResources.amplifyDynamoDbTables;
 tables['Notification'].timeToLiveAttribute = { attributeName: 'expiresAt', enabled: true };
 tables['PushDevice'].timeToLiveAttribute = { attributeName: 'expiresAt', enabled: true };
@@ -51,7 +51,7 @@ tables['PushDevice'].timeToLiveAttribute = { attributeName: 'expiresAt', enabled
 // Notification dispatch: every row inserted into Notification — by the app or any Lambda —
 // reaches push-notification-sender through the table's stream, and that one function
 // decides whether it pushes. This is why backend-raised notifications (payouts,
-// cancellations, squares, deposits) now push. See docs/NOTIFICATIONS_PLAN.md §3.5.
+// cancellations, squares, deposits) now push. See PUSH_NOTIFICATION_GUIDE.md §1.
 //
 // Both the mapping and the stream-read policy live in the data stack. The function is
 // also a resolver (sendTestPush), so the data stack already depends on the function's

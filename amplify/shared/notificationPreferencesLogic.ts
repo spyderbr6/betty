@@ -2,9 +2,9 @@
  * How a user's notification preferences apply to a notification: whether it may alert
  * (push or in-app banner) and whether it shows in the feed.
  *
- * Shared by the app now and by the server-side dispatcher later (Phase 3), so both make
+ * Shared by the app (banners, feed) and the server-side dispatcher (push), so both make
  * the same decision. Pure and dependency-free like the catalog. See
- * docs/NOTIFICATIONS_PLAN.md §3.3–3.5.
+ * PUSH_NOTIFICATION_GUIDE.md §5.
  */
 
 import {

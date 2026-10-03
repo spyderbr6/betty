@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with th
 - **TypeScript**: `npm run typecheck` - Check types (**src/ and App.tsx only**)
 - **Backend types**: `npm run typecheck:backend` - Type-check `amplify/`. Amplify runs this on every deploy and **fails the build** on any error, so run it before pushing anything under `amplify/`.
 - **Linting**: `npm run lint` - Run ESLint
-- **Unit tests**: `npm run test:unit` - Vitest over the Lambda handlers (`amplify/**/__tests__`). `test:unit:watch` for iterating.
+- **Unit tests**: `npm run test:unit` - Vitest over Lambda logic (`amplify/**/__tests__`) and pure app helpers (`src/config`, `src/services` `__tests__`). `test:unit:watch` for iterating.
 - **E2E tests**: `npm run test:e2e` - Build the web bundle and run the Playwright suite
 - **E2E (no rebuild)**: `npm run test:e2e:fast` - Re-run against the existing `dist/`. **Only valid if no source changed since the last build** - it will silently test stale code otherwise.
 - **EAS BUILD**: 'eas build -p android --profile production' - ASK FIRST DO NOT RUN YOURSELF
@@ -51,9 +51,9 @@ src/
 ### Key Documentation Files
 - **CLAUDE.md** (this file): Main development guide and architecture overview
 - **[MODAL_STANDARDS.md](./MODAL_STANDARDS.md)**: **REQUIRED** reading before creating/modifying modals
-- **[PUSH_NOTIFICATION_GUIDE.md](./PUSH_NOTIFICATION_GUIDE.md)**: Complete guide to push notification setup, testing, and troubleshooting
+- **[PUSH_NOTIFICATION_GUIDE.md](./PUSH_NOTIFICATION_GUIDE.md)**: How notifications and push work now: flow, key files, devices, preferences, permissions, platform setup, testing, troubleshooting
 - **[STRIPE_GUIDE.md](./STRIPE_GUIDE.md)**: Card deposits and Pro subscriptions — setup, test → production switchover, and payment troubleshooting
-- **[docs/NOTIFICATIONS_PLAN.md](./docs/NOTIFICATIONS_PLAN.md)**: Notifications overhaul — decisions, target design, phased checklist
+- **[docs/NOTIFICATIONS_PLAN.md](./docs/NOTIFICATIONS_PLAN.md)**: Notifications decisions, what's deliberately *not* done (read before "fixing" anything there), pre-launch checklist, remaining phases
 - **[SQUARES_GUIDE.md](./SQUARES_GUIDE.md)**: Betting squares — how a game runs, how winners are decided, and what automates it
 - **docs/archive/**: Finished implementation plans and audits, kept for reasoning only. Assume they are out of date.
 - **todo.md**: Current tasks and project roadmap
@@ -270,14 +270,15 @@ async function yourMainFunction() {
 
 ### Push Notification System
 - **Provider**: Expo Push Notification Service. **Android FCM is configured**: `google-services.json` is committed and the FCM V1 service-account key is uploaded to EAS. Registration needs a device or emulator with Google Play services (a plain AOSP image fails with `E_REGISTRATION_FAILED`). iOS needs an APNs key once the Apple developer account exists. Web uses Web Push with VAPID keys.
-- **Overhaul in progress**: [docs/NOTIFICATIONS_PLAN.md](./docs/NOTIFICATIONS_PLAN.md) is the working plan for delivery, preferences, devices and data retention. Read it before changing anything notification-related.
+- **Before changing anything notification-related**, read [PUSH_NOTIFICATION_GUIDE.md](./PUSH_NOTIFICATION_GUIDE.md) (how it works) and §3 of [docs/NOTIFICATIONS_PLAN.md](./docs/NOTIFICATIONS_PLAN.md) (what's deliberately left as is).
 - **Backend**: `push-notification-sender` is the dispatcher: the Notification table's DynamoDB stream invokes it for every new row (from the app or any Lambda), it applies the recipient's preferences, and sends via Expo and Web Push. Raise a notification by writing the row with `notificationMeta(type)`; never call push directly
 - **Platforms**: iOS (APNS) and Android (FCM) via Expo; web via Web Push
-- **Token Management**: Automatic registration on login, stored in DynamoDB
-- **Deep Linking**: Push notification taps navigate to relevant screens (bets, friend requests, transactions)
+- **Devices**: one `PushDevice` row per installation, written only by the `device-registry` Lambda (`registerDevice` at sign-in, `unregisterDevice` at sign-out, `setDevicePush` for the per-device switch). Web never prompts for permission without a tap
+- **Deep Linking**: Push taps navigate to the relevant screen on native. On web the service worker opens a URL the app doesn't read yet (plan Phase 6)
+- **Retention**: DynamoDB TTL on `expiresAt` — notifications 90 days (180 for money/results/refunds), devices 120 days after last seen
+- **Authorization**: recipients alone read/update their notifications; preferences and devices are owner-only
 - **User Preferences**: Per-category alerts and feed visibility (money, results, refunds and disputes always stay in the feed), quiet hours in the user's timezone, per-device push switch. Logic in `amplify/shared/notificationPreferencesLogic.ts`
 - **Testing**: Requires EAS development build on physical device
-- **Documentation**: See [PUSH_NOTIFICATION_GUIDE.md](./PUSH_NOTIFICATION_GUIDE.md) for complete setup and testing guide
 
 ### Technical Integrations
 - **GitHub Feedback**: Automatic issue creation from in-app feedback
@@ -358,16 +359,40 @@ BetInvitation {
   expiresAt: datetime
 }
 
-// Notifications
+// Notifications (types and categories: amplify/shared/notificationCatalog.ts)
 Notification {
-  userId: string
+  userId: string            // recipient (Cognito sub); only they can read it
   type: NotificationType
+  category: NotificationCategory  // from notificationMeta(type)
+  expiresAt: number         // epoch seconds; DynamoDB TTL deletes the row after this
   title: string
   message: string
   isRead: boolean
-  priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT'
+  priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT'  // delivery urgency only; does not decide push
   relatedBetId?: string
   relatedUserId?: string
+}
+
+PushDevice {               // one per installation; id = `${userId}#${installationId}`
+  userId: string
+  installationId: string
+  platform: 'IOS' | 'ANDROID' | 'WEB'
+  token: string            // Expo token, or Web Push subscription JSON
+  pushEnabled: boolean     // per-device switch
+  isActive: boolean
+  expiresAt: number        // TTL, pushed forward on every registration
+}
+
+NotificationPreferences {
+  userId: string
+  pushEnabled: boolean
+  inAppEnabled: boolean
+  alertMutedCategories: string[]
+  feedMutedCategories: string[]   // ignored for money/results/refunds/disputes
+  quietHoursEnabled: boolean
+  quietStartMinute?: number       // minutes after local midnight
+  quietEndMinute?: number
+  timezone?: string               // IANA; copied from the device at registration
 }
 
 // Payment Management
@@ -971,9 +996,10 @@ npm run test:unit         # Lambda handler logic
 npm run test:unit:watch
 ```
 
-Scoped to `amplify/**/__tests__/**/*.test.ts` deliberately. Vitest and Playwright
-both define `test` and `expect`; if the globs overlap, one runner collects the
-other's specs and fails confusingly.
+Scoped deliberately (see `vitest.config.ts`): `amplify/**/__tests__`, plus
+`src/config/__tests__` and `src/services/__tests__` for pure app-side helpers. Vitest
+and Playwright both define `test` and `expect`; if the globs overlap, one runner
+collects the other's specs and fails confusingly.
 
 ### Handlers are not directly importable
 
@@ -1237,14 +1263,6 @@ is usually pre-saved). The range may span more than one day:
   "endDate": "2026-01-12"
 }
 ```
-
-## One-off: notification expiry backfill
-
-Notifications written before DynamoDB TTL was enabled have no `expiresAt` and are never
-cleaned up. The `notification-expiry-backfill` Lambda (no schedule) fixes that. Run it
-from the Lambda console's Test tab with `{"dryRun": true}` first, then `{}`, repeating
-until the result says `"done": true`. It is idempotent. Details are in
-[docs/NOTIFICATIONS_PLAN.md](./docs/NOTIFICATIONS_PLAN.md), Phase 4.
 
 ## Comprehensive Error Detection Process
 

@@ -4,7 +4,7 @@
  *
  * Preferences are per account; push is also switchable per device. Every category's
  * alerts can be muted; feed-locked categories (money, results, refunds, disputes) always
- * show in the feed. See docs/NOTIFICATIONS_PLAN.md §3.
+ * show in the feed. See PUSH_NOTIFICATION_GUIDE.md §5.
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';

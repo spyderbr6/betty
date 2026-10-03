@@ -10,7 +10,7 @@
  * Keep this module free of runtime dependencies: it is bundled into the app, into every
  * Lambda that raises notifications, and evaluated during schema synthesis.
  *
- * See docs/NOTIFICATIONS_PLAN.md §3.2.
+ * See PUSH_NOTIFICATION_GUIDE.md §3.
  */
 
 export const NOTIFICATION_TYPES = [

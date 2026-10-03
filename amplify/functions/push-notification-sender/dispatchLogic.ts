@@ -4,7 +4,7 @@
  * be tested (see pushLogic.ts for why handlers cannot be imported by tests).
  *
  * The dispatcher is the single place push is decided, for notifications from the app and
- * from every Lambda alike. See docs/NOTIFICATIONS_PLAN.md §3.5.
+ * from every Lambda alike. See PUSH_NOTIFICATION_GUIDE.md §1.
  */
 
 import { NOTIFICATION_CATALOG, type NotificationType } from '../../shared/notificationCatalog';

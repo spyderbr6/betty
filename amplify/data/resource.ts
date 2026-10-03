@@ -148,7 +148,7 @@ const schema = a.schema({
   // One row per app installation (or browser profile) that can receive push. The id is
   // `${userId}#${installationId}`, so registering the same installation twice updates one row.
   // Rows are written only by the device-registry Lambda, which upserts and takes a token
-  // over from another user when a device changes hands. See docs/NOTIFICATIONS_PLAN.md §3.6.
+  // over from another user when a device changes hands. See PUSH_NOTIFICATION_GUIDE.md §4.
   PushDevice: a
     .model({
       id: a.id().required(),

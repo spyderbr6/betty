@@ -482,7 +482,7 @@ the `queryField` rather than `.list({filter})`.
 | 10 | TrustScoreHistory by userId | P3 | ❌ | — | **Not done** |
 | 11 | LiveEvent by status + time | P3 | ✅ | ✅ | **Done** (3 indexes) |
 | 12 | NotificationPreferences | P3 | ✅ | ✅ | **Addressed** via GSI, not the PK restructure the audit suggested |
-| 13 | Notification cleanup | Low | n/a | n/a | Correctly left alone |
+| 13 | Notification cleanup | Low | n/a | n/a | Correctly left alone at the time; since 2026-10 notifications expire via DynamoDB TTL (see docs/NOTIFICATIONS_PLAN.md) |
 | 14 | **Friendship** | Low | ❌ | — | **Verdict is wrong** — see below |
 
 **Read: Phase 1 = 5/5 shipped. Phase 2 = 0/3. Phase 3 = 2/4.**
@@ -490,7 +490,7 @@ the `queryField` rather than `.list({filter})`.
 ### Indexes added *since* the audit, which it does not cover
 
 `usersByStripeCustomerId`, `transactionsByStripePaymentIntentId`,
-`pushTokensByUser`, and the entire Squares family (`squaresGamesByStatus`,
+`pushTokensByUser` (PushToken has since been replaced by PushDevice, with `pushDevicesByUser`/`pushDevicesByToken`), and the entire Squares family (`squaresGamesByStatus`,
 `squaresGamesByEvent`, `squaresGamesByCreator`, `purchasesBySquaresGame`,
 `purchasesByBuyer`, `payoutsBySquaresGame`, `payoutsByUser`,
 `squaresInvitationsByToUser`, `squaresInvitationsByGame`,

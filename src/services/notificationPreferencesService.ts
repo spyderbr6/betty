@@ -4,7 +4,7 @@
  * Loads and saves a user's notification preferences. What they *mean* — whether a
  * notification may alert, whether it shows in the feed, quiet hours — lives in
  * amplify/shared/notificationPreferencesLogic.ts, shared with the server, so the app and
- * the dispatcher decide the same way. See docs/NOTIFICATIONS_PLAN.md §3.3.
+ * the dispatcher decide the same way. See PUSH_NOTIFICATION_GUIDE.md §5.
  */
 
 import { generateClient } from 'aws-amplify/data';
@@ -51,8 +51,7 @@ export class NotificationPreferencesService {
   }
 
   /**
-   * Create the preferences row with defaults. New rows start in the category format
-   * (empty mute lists), so the legacy switches are never consulted for them.
+   * Create the preferences row with defaults: nothing muted, push and banners on.
    */
   static async createDefaultPreferences(userId: string): Promise<UserNotificationPreferences> {
     const defaults = resolvePreferences(null);
@@ -72,8 +71,7 @@ export class NotificationPreferencesService {
   }
 
   /**
-   * Save `prefs` in full. Writing both mute lists moves a legacy row to the new format,
-   * so the old per-type switches stop being consulted from here on.
+   * Save `prefs` in full.
    */
   static async savePreferences(userId: string, prefs: ResolvedPreferences): Promise<boolean> {
     try {

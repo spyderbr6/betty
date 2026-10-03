@@ -52,7 +52,7 @@ webpush.setVapidDetails(
  *   raised by the app could push, so payouts, cancellations, squares and deposits never did.
  * - The sendTestPush mutation, which pushes a test message to the caller's own devices.
  *
- * See docs/NOTIFICATIONS_PLAN.md §3.5.
+ * See PUSH_NOTIFICATION_GUIDE.md §1.
  */
 export const handler = async (
   event: DynamoDBStreamEvent | AppSyncResolverEvent<Record<string, never>>
