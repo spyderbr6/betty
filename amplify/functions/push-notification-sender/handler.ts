@@ -1,9 +1,4 @@
-import type {
-  AppSyncIdentityCognito,
-  AppSyncResolverEvent,
-  DynamoDBBatchResponse,
-  DynamoDBStreamEvent,
-} from 'aws-lambda';
+import type { AppSyncIdentityCognito, DynamoDBBatchResponse, DynamoDBStreamEvent } from 'aws-lambda';
 import { generateClient } from 'aws-amplify/api';
 import type { Schema } from '../../data/resource';
 import { Amplify } from 'aws-amplify';
@@ -34,6 +29,7 @@ import {
   webPushPayload,
 } from './dispatchLogic';
 import type { StoredPreferences } from '../../shared/notificationPreferencesLogic';
+import { type AmplifyResolverEvent, resolverFieldName } from '../../shared/amplifyResolverEvent';
 
 // CRITICAL: Top-level await configuration - this is required for proper client initialization
 const { resourceConfig, libraryOptions } = await getAmplifyDataClientConfig(env);
@@ -61,17 +57,18 @@ webpush.setVapidDetails(
  * See PUSH_NOTIFICATION_GUIDE.md §1.
  */
 export const handler = async (
-  event: DynamoDBStreamEvent | AppSyncResolverEvent<Record<string, never>>
+  event: DynamoDBStreamEvent | AmplifyResolverEvent<Record<string, never>>
 ): Promise<DynamoDBBatchResponse | number> => {
   if ('Records' in event && Array.isArray(event.Records)) {
     return handleStream(event as DynamoDBStreamEvent);
   }
-  return handleAppSync(event as AppSyncResolverEvent<Record<string, never>>);
+  return handleAppSync(event as AmplifyResolverEvent<Record<string, never>>);
 };
 
-async function handleAppSync(event: AppSyncResolverEvent<Record<string, never>>): Promise<number> {
-  if (event.info?.fieldName !== 'sendTestPush') {
-    throw new Error(`Unexpected field: ${event.info?.fieldName}`);
+async function handleAppSync(event: AmplifyResolverEvent<Record<string, never>>): Promise<number> {
+  const fieldName = resolverFieldName(event);
+  if (fieldName !== 'sendTestPush') {
+    throw new Error(`Unexpected field: ${fieldName}`);
   }
   // The caller's identity comes from Cognito: a test can only reach the caller's own devices.
   const userId = (event.identity as AppSyncIdentityCognito | null)?.sub;

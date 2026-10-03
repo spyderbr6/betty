@@ -1,4 +1,4 @@
-import type { AppSyncIdentityCognito, AppSyncResolverHandler } from 'aws-lambda';
+import type { AppSyncIdentityCognito } from 'aws-lambda';
 import { generateClient } from 'aws-amplify/api';
 import type { Schema } from '../../data/resource';
 import { Amplify } from 'aws-amplify';
@@ -15,6 +15,7 @@ import {
   transportFor,
   validateRegistration,
 } from './deviceLogic';
+import { type AmplifyResolverEvent, resolverFieldName } from '../../shared/amplifyResolverEvent';
 
 // CRITICAL: Top-level await configuration - this is required for proper client initialization
 const { resourceConfig, libraryOptions } = await getAmplifyDataClientConfig(env);
@@ -47,13 +48,14 @@ type DeviceRegistryArgs = RegisterDeviceArgs | UnregisterDeviceArgs | SetDeviceP
  * Resolver for registerDevice, unregisterDevice and setDevicePush. The caller's identity comes from
  * Cognito, never from the arguments, so a user can only touch their own devices.
  */
-export const handler: AppSyncResolverHandler<DeviceRegistryArgs, string | boolean> = async (event) => {
+export const handler = async (event: AmplifyResolverEvent<DeviceRegistryArgs>): Promise<string | boolean> => {
   const userId = (event.identity as AppSyncIdentityCognito | null)?.sub;
   if (!userId) {
     throw new Error('Unauthorized');
   }
 
-  switch (event.info.fieldName) {
+  const fieldName = resolverFieldName(event);
+  switch (fieldName) {
     case 'registerDevice':
       return registerDevice(userId, event.arguments as RegisterDeviceArgs);
     case 'unregisterDevice':
@@ -61,7 +63,7 @@ export const handler: AppSyncResolverHandler<DeviceRegistryArgs, string | boolea
     case 'setDevicePush':
       return setDevicePush(userId, event.arguments as SetDevicePushArgs);
     default:
-      throw new Error(`Unexpected field: ${event.info.fieldName}`);
+      throw new Error(`Unexpected field: ${fieldName}`);
   }
 };
 
