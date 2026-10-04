@@ -8,6 +8,7 @@ import { stripePaymentIntent } from "../functions/stripe-payment-intent/resource
 import { stripeWebhook } from "../functions/stripe-webhook/resource";
 import { stripeManage } from "../functions/stripe-manage/resource";
 import { deviceRegistry } from "../functions/device-registry/resource";
+import { money } from "../functions/money/resource";
 import { NOTIFICATION_TYPES, NOTIFICATION_CATEGORIES } from "../shared/notificationCatalog";
 
 /*== SIDEBET BETTING PLATFORM SCHEMA =======================================
@@ -351,6 +352,13 @@ const schema = a.schema({
       // Relations
       bet: a.belongsTo('Bet', 'betId'),
     })
+    .secondaryIndexes((index) => [
+      // Disputes on a bet. Settlement must see every open dispute; a filtered Scan reads
+      // one page of the table and could miss one.
+      index('betId')
+        .sortKeys(['createdAt'])
+        .queryField('disputesByBet'),
+    ])
     .authorization((allow) => [
       allow.owner().to(['create', 'read']),
       allow.authenticated().to(['read', 'create', 'update']) // Admins can update to resolve
@@ -559,7 +567,13 @@ const schema = a.schema({
       // and the webhook returns 200 without ever crediting the balance. Only card
       // deposits carry a stripePaymentIntentId, so only they land in this index.
       index('stripePaymentIntentId')
-        .queryField('transactionsByStripePaymentIntentId')
+        .queryField('transactionsByStripePaymentIntentId'),
+      // Every ledger row for a bet: settlement and dispute handling find payouts this way.
+      // The payout processor used a filtered Scan, which reads one page of the table, then
+      // marked the bet resolved: payouts past that page were never made.
+      index('relatedBetId')
+        .sortKeys(['createdAt'])
+        .queryField('transactionsByBet')
     ])
     .authorization((allow) => [
       allow.owner().to(['create', 'read']), // Users can create their own transactions and read them
@@ -897,6 +911,27 @@ const schema = a.schema({
     .handler(a.handler.function(stripeManage))
     .authorization((allow) => [allow.authenticated()]),
 
+  // --- Money (docs/SECURITY_PLAN.md) ---------------------------------------------
+  // Internal: for our own Lambdas only. The authorization rule is required to declare the
+  // operation; the money handler refuses every caller that is not an IAM role in this
+  // account (shared/callerAuth.ts), so app users cannot use these.
+  ledgerApply: a
+    .mutation()
+    .arguments({
+      entries: a.json().required(),
+      stateUpdates: a.json(),
+    })
+    .returns(a.json())
+    .handler(a.handler.function(money))
+    .authorization((allow) => [allow.authenticated()]),
+
+  settleBet: a
+    .mutation()
+    .arguments({ betId: a.id().required() })
+    .returns(a.json())
+    .handler(a.handler.function(money))
+    .authorization((allow) => [allow.authenticated()]),
+
 }).authorization((allow) => [
   // Allow the Lambda functions to be invoked and access data
   allow.resource(scheduledBetChecker).to(["query", "listen", "mutate"]),
@@ -908,6 +943,7 @@ const schema = a.schema({
   allow.resource(stripeWebhook).to(["query", "listen", "mutate"]),
   allow.resource(stripeManage).to(["query", "listen", "mutate"]),
   allow.resource(deviceRegistry).to(["query", "mutate"]),
+  allow.resource(money).to(["query", "listen", "mutate"]),
 ]);
 
 export type Schema = ClientSchema<typeof schema>;

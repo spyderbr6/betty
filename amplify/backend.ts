@@ -11,6 +11,7 @@ import { stripePaymentIntent } from './functions/stripe-payment-intent/resource'
 import { stripeWebhook } from './functions/stripe-webhook/resource';
 import { stripeManage } from './functions/stripe-manage/resource';
 import { deviceRegistry } from './functions/device-registry/resource';
+import { money } from './functions/money/resource';
 import {
   FunctionUrlAuthType,
   CfnPermission,
@@ -37,6 +38,7 @@ const backend = defineBackend({
   stripeWebhook,
   stripeManage,
   deviceRegistry,
+  money,
   // Note: liveScoreUpdater removed - TheSportsDB score updates are too unreliable
 });
 
@@ -47,6 +49,27 @@ const backend = defineBackend({
 const tables = backend.data.resources.cfnResources.amplifyDynamoDbTables;
 tables['Notification'].timeToLiveAttribute = { attributeName: 'expiresAt', enabled: true };
 tables['PushDevice'].timeToLiveAttribute = { attributeName: 'expiresAt', enabled: true };
+
+// Money: the money function writes balances and ledger rows directly, in one DynamoDB
+// transaction per movement (docs/SECURITY_PLAN.md, amplify/shared/ledgerLogic.ts). It is in
+// the data stack (resourceGroupName: 'data'), so naming and granting the tables here stays
+// inside that stack and closes no dependency cycle.
+const moneyTables = {
+  USER_TABLE: 'User',
+  TRANSACTION_TABLE: 'Transaction',
+  BET_TABLE: 'Bet',
+  PARTICIPANT_TABLE: 'Participant',
+  SQUARES_GAME_TABLE: 'SquaresGame',
+  SQUARES_PURCHASE_TABLE: 'SquaresPurchase',
+} as const;
+for (const [envName, model] of Object.entries(moneyTables)) {
+  const table = backend.data.resources.tables[model];
+  table.grantReadWriteData(backend.money.resources.lambda);
+  backend.money.resources.cfnResources.cfnFunction.addPropertyOverride(
+    `Environment.Variables.${envName}`,
+    table.tableName
+  );
+}
 
 // Notification dispatch: every row inserted into Notification — by the app or any Lambda —
 // reaches push-notification-sender through the table's stream, and that one function
