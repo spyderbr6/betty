@@ -213,10 +213,11 @@ export const BetDetailsScreen: React.FC<Props> = ({ navigation, route }) => {
         style={styles.backButton}
         onPress={handleBack}
         activeOpacity={0.7}
+        testID="bet-details-back"
       >
         <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
       </TouchableOpacity>
-      <Text style={styles.headerTitle}>Bet Details</Text>
+      <Text style={styles.headerTitle} testID="bet-details-title">Bet Details</Text>
       <View style={styles.headerRight} />
     </View>
   );

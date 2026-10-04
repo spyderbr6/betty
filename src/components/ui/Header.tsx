@@ -9,7 +9,8 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
-  StatusBar
+  StatusBar,
+  Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -22,6 +23,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useNotifications } from '../../contexts/NotificationContext';
 import { useEventCheckIn } from '../../hooks/useEventCheckIn';
 import { NotificationModal } from './NotificationModal';
+import { WalletScreen } from '../../screens/WalletScreen';
 
 interface HeaderProps {
   title?: string;
@@ -47,6 +49,7 @@ export const Header: React.FC<HeaderProps> = ({
   const { user } = useAuth();
   const { unreadCount, refreshUnreadCount } = useNotifications();
   const [showNotificationModal, setShowNotificationModal] = useState(false);
+  const [showWallet, setShowWallet] = useState(false);
 
   // Event check-in state (managed globally by hook)
   const {
@@ -58,6 +61,21 @@ export const Header: React.FC<HeaderProps> = ({
     handleCheckOut,
     handleCheckInSuccess,
   } = useEventCheckIn();
+
+  // The tab this header sits in, so the Wallet's Activity links come back here rather than
+  // to Account. Walks up from the screen's navigator to the tab navigator.
+  const [walletReturnTab, setWalletReturnTab] = useState<string | undefined>(undefined);
+  const openWallet = () => {
+    let nav: any = navigation; // eslint-disable-line @typescript-eslint/no-explicit-any
+    let tab: string | undefined;
+    while (nav && !tab) {
+      const state = nav.getState?.();
+      if (state?.type === 'tab') tab = state.routes[state.index]?.name;
+      nav = nav.getParent?.();
+    }
+    setWalletReturnTab(tab);
+    setShowWallet(true);
+  };
 
   // Handle notification press
   const handleNotificationPress = () => {
@@ -102,9 +120,11 @@ export const Header: React.FC<HeaderProps> = ({
           <View style={styles.rightSection}>
             {showBalance && (
               <UserBalance
-                onPress={onBalancePress}
+                // Opens the Wallet from any tab unless the screen supplies its own action
+                onPress={onBalancePress ?? openWallet}
                 variant="header"
                 showLabel={true}
+                testID="header-balance"
               />
             )}
 
@@ -151,6 +171,22 @@ export const Header: React.FC<HeaderProps> = ({
         }}
         navigation={navigation}
       />
+
+      {/* Wallet, from the balance */}
+      <Modal
+        visible={showWallet}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setShowWallet(false)}
+      >
+        {showWallet && (
+          <WalletScreen
+            onClose={() => setShowWallet(false)}
+            navigation={navigation}
+            returnToTab={walletReturnTab}
+          />
+        )}
+      </Modal>
 
       {/* Event Discovery Modal */}
       <EventDiscoveryModal

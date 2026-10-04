@@ -458,7 +458,7 @@ export const WithdrawFundsModal: React.FC<WithdrawFundsModalProps> = ({
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
-      <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+      <SafeAreaView style={styles.container} edges={['top', 'left', 'right']} testID="withdraw-modal">
         <KeyboardAvoidingView
           style={styles.content}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}

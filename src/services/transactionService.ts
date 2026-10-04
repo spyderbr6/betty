@@ -8,7 +8,7 @@ import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
 import { NotificationService } from './notificationService';
 import { TrustScoreService } from './trustScoreService';
-import { WITHDRAWAL_FEE_RATE, WINNINGS_FEE_RATE } from '../config/subscriptionConfig';
+import { WITHDRAWAL_FEE_RATE, WINNINGS_FEE_RATE, isProActive } from '../config/subscriptionConfig';
 
 // Cast to any: the Transaction model has enough fields that Amplify's generated
 // types exceed TypeScript's union-complexity limit (TS2590) at each call site.
@@ -79,7 +79,7 @@ export class TransactionService {
   static async isProSubscriber(userId: string): Promise<boolean> {
     try {
       const { data: user } = await client.models.User.get({ id: userId });
-      return user?.subscriptionTier === 'PRO' && user?.subscriptionStatus === 'ACTIVE';
+      return isProActive(user);
     } catch {
       return false;
     }
@@ -706,6 +706,75 @@ export class TransactionService {
     } catch (error) {
       console.error('[Transaction] Error updating transaction status:', error);
       return false;
+    }
+  }
+
+  /**
+   * Total of a user's winnings that are awarded but not yet paid out (PENDING BET_WON),
+   * net of fees. Used by the Account screen and the Wallet.
+   *
+   * Goes through the userId index rather than a filtered Scan of the whole table. A filter
+   * applies to the rows read, not the rows returned, so a page can come back short or
+   * empty while more matches remain: follows nextToken until it runs out.
+   */
+  static async getPendingPayoutTotal(userId: string): Promise<number> {
+    try {
+      let total = 0;
+      let nextToken: string | null | undefined;
+      do {
+        const page = await client.models.Transaction.transactionsByUser(
+          { userId },
+          {
+            filter: {
+              and: [
+                { type: { eq: 'BET_WON' } },
+                { status: { eq: 'PENDING' } },
+              ],
+            },
+            nextToken,
+          }
+        );
+        for (const transaction of page.data || []) {
+          // actualAmount is the net after fees; fall back to amount when it is absent
+          total += transaction.actualAmount ?? transaction.amount ?? 0;
+        }
+        nextToken = page.nextToken;
+      } while (nextToken);
+      return total;
+    } catch (error) {
+      console.error('[Transaction] Error fetching pending payouts:', error);
+      return 0;
+    }
+  }
+
+  /**
+   * Platform fees a user has paid since a point in time, for showing free members what
+   * Pro would have saved.
+   *
+   * Counts the platformFee recorded on bet winnings and withdrawals. Squares payouts are
+   * recorded already net of their fee (platformFee 0), so they are not included and the
+   * total is a floor; callers should say "on bets and withdrawals".
+   */
+  static async getFeesPaidSince(userId: string, sinceIso: string): Promise<number> {
+    try {
+      let total = 0;
+      let nextToken: string | null | undefined;
+      do {
+        const page = await client.models.Transaction.transactionsByUser(
+          // createdAt is the index's sort key, so this is a key condition, not a filter
+          { userId, createdAt: { ge: sinceIso } },
+          { nextToken }
+        );
+        for (const transaction of page.data || []) {
+          if (transaction.status === 'FAILED' || transaction.status === 'CANCELLED') continue;
+          total += transaction.platformFee ?? 0;
+        }
+        nextToken = page.nextToken;
+      } while (nextToken);
+      return Math.round(total * 100) / 100;
+    } catch (error) {
+      console.error('[Transaction] Error totalling fees paid:', error);
+      return 0;
     }
   }
 

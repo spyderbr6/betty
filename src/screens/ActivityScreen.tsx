@@ -1,5 +1,5 @@
 /**
- * Balance Audit Trail Screen
+ * Activity Screen
  * Complete transaction history showing all balance changes (payments + bets)
  */
 
@@ -22,14 +22,18 @@ import { formatCurrency } from '../utils/formatting';
 import { TransactionService } from '../services/transactionService';
 import type { Transaction, TransactionType } from '../services/transactionService';
 
-interface BettingHistoryScreenProps {
+interface ActivityScreenProps {
   onClose: () => void;
   navigation?: any; // Navigation prop for deep linking to bet/squares details
+  /** Called after a transaction navigates to its bet, so whatever opened Activity can close too. */
+  onNavigateAway?: () => void;
+  /** Tab to return to when backing out of a linked bet. Defaults to Account. */
+  returnToTab?: string;
 }
 
 type FilterType = 'ALL' | 'DEPOSITS' | 'WITHDRAWALS' | 'BETS' | 'WINNINGS' | 'LOSSES' | 'REFUNDS';
 
-export const BettingHistoryScreen: React.FC<BettingHistoryScreenProps> = ({ onClose, navigation }) => {
+export const ActivityScreen: React.FC<ActivityScreenProps> = ({ onClose, navigation, onNavigateAway, returnToTab = 'Account' }) => {
   const { user } = useAuth();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [filteredTransactions, setFilteredTransactions] = useState<Transaction[]>([]);
@@ -48,7 +52,7 @@ export const BettingHistoryScreen: React.FC<BettingHistoryScreenProps> = ({ onCl
         screen: 'SquaresGameDetail',
         params: { gameId: transaction.relatedSquaresGameId }
       });
-      setTimeout(() => onClose(), 100);
+      setTimeout(() => (onNavigateAway ?? onClose)(), 100);
       return;
     }
 
@@ -56,9 +60,9 @@ export const BettingHistoryScreen: React.FC<BettingHistoryScreenProps> = ({ onCl
     if (transaction.relatedBetId) {
       navigation.navigate('Bets', {
         screen: 'BetDetails',
-        params: { betId: transaction.relatedBetId, returnToTab: 'Account' }
+        params: { betId: transaction.relatedBetId, returnToTab }
       });
-      setTimeout(() => onClose(), 100);
+      setTimeout(() => (onNavigateAway ?? onClose)(), 100);
       return;
     }
   };
@@ -136,8 +140,8 @@ export const BettingHistoryScreen: React.FC<BettingHistoryScreenProps> = ({ onCl
 
   if (isLoading) {
     return (
-      <SafeAreaView style={styles.container} edges={['top']}>
-        <ModalHeader title="Balance Audit Trail" onClose={onClose} />
+      <SafeAreaView style={styles.container} edges={['top']} testID="screen-activity">
+        <ModalHeader title="Activity" onClose={onClose} />
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={styles.loadingText}>Loading transactions...</Text>
@@ -147,8 +151,8 @@ export const BettingHistoryScreen: React.FC<BettingHistoryScreenProps> = ({ onCl
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <ModalHeader title="Balance Audit Trail" onClose={onClose} />
+    <SafeAreaView style={styles.container} edges={['top']} testID="screen-activity">
+      <ModalHeader title="Activity" onClose={onClose} />
 
       {/* Current Balance Summary */}
       <View style={styles.balanceSummary}>
@@ -483,6 +487,7 @@ const TransactionCard: React.FC<TransactionCardProps> = ({ transaction, onPress 
         style={[styles.transactionCard, { borderLeftColor: getTransactionColor() }]}
         onPress={() => onPress(transaction)}
         activeOpacity={0.7}
+        testID={`activity-tx-${transaction.id}`}
       >
         {cardContent}
       </TouchableOpacity>

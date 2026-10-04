@@ -28,6 +28,7 @@ import { AuthProvider, useAuth } from './src/contexts/AuthContext';
 import { NotificationProvider } from './src/contexts/NotificationContext';
 import { EventCheckInProvider } from './src/contexts/EventCheckInContext';
 import { BetDataProvider } from './src/contexts/BetDataContext';
+import { ProfileProvider } from './src/contexts/ProfileContext';
 import { Login } from './src/components/Login';
 import { SignUp } from './src/components/SignUp';
 import { ForgotPassword } from './src/components/ForgotPassword';
@@ -114,6 +115,7 @@ export default function App() {
     >
       <SafeAreaProvider>
         <AuthProvider>
+          <ProfileProvider>
           <NotificationProvider>
             <BetDataProvider>
             <EventCheckInProvider>
@@ -126,6 +128,7 @@ export default function App() {
             </EventCheckInProvider>
             </BetDataProvider>
           </NotificationProvider>
+          </ProfileProvider>
         </AuthProvider>
       </SafeAreaProvider>
     </StripeProvider>

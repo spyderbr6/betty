@@ -20,7 +20,7 @@ import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
 import { colors, spacing, textStyles, typography, commonStyles } from '../styles';
 import { Header } from '../components/ui/Header';
-import { ModalHeader } from '../components/ui/ModalHeader';
+import { ModalHeader, type ModalHeaderVariant } from '../components/ui/ModalHeader';
 import { AddFriendModal } from '../components/ui/AddFriendModal';
 import { FriendRequestsModal } from '../components/ui/FriendRequestsModal';
 import { useAuth } from '../contexts/AuthContext';
@@ -33,10 +33,17 @@ const client = generateClient<Schema>();
 
 interface FriendsScreenProps {
   onClose?: () => void;
-  initialShowRequests?: boolean;
+  /**
+   * Opens the friend requests list once the screen has loaded. A notification passes a
+   * timestamp rather than true, so a second tap while Friends is already open (with the
+   * previous value still set) changes the value and opens the list again.
+   */
+  initialShowRequests?: boolean | number;
+  /** 'back' when shown as a page in the Account stack rather than as a modal. */
+  headerVariant?: ModalHeaderVariant;
 }
 
-export const FriendsScreen: React.FC<FriendsScreenProps> = ({ onClose, initialShowRequests }) => {
+export const FriendsScreen: React.FC<FriendsScreenProps> = ({ onClose, initialShowRequests, headerVariant }) => {
   const { user } = useAuth();
   const [friends, setFriends] = useState<FriendListItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -273,12 +280,13 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ onClose, initialSh
 
   if (isLoading) {
     return (
-      <SafeAreaView style={styles.container} edges={['top']}>
+      <SafeAreaView style={styles.container} edges={['top']} testID="screen-friends">
         {onClose ? (
           <ModalHeader
             title="Friends"
             onClose={onClose}
             rightComponent={headerRightComponent}
+            variant={headerVariant}
           />
         ) : (
           <Header title="Friends" />
@@ -292,12 +300,13 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ onClose, initialSh
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.container} edges={['top']} testID="screen-friends">
       {onClose ? (
         <ModalHeader
           title="Friends"
           onClose={onClose}
           rightComponent={headerRightComponent}
+          variant={headerVariant}
         />
       ) : (
         <Header title="Friends" />

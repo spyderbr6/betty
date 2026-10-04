@@ -1,9 +1,11 @@
 /**
  * Account Screen
- * User profile and account management
+ * The Account tab's home page: profile card (picture, name, trust score, Pro membership),
+ * wallet card, and the way into Friends, Wallet, Settings and Help & About, which are
+ * pages in the Account stack (navigation/AccountStack.tsx).
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -17,30 +19,25 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import type { StackNavigationProp } from '@react-navigation/stack';
 import { generateClient } from 'aws-amplify/data';
-import { fetchUserAttributes } from 'aws-amplify/auth';
 import type { Schema } from '../../amplify/data/resource';
-import { colors, spacing, commonStyles, textStyles } from '../styles';
+import { colors, spacing, commonStyles, textStyles, typography } from '../styles';
 import { Header } from '../components/ui/Header';
 import { ProfileEditor } from '../components/ui/ProfileEditor';
-import { FriendsScreen } from './FriendsScreen';
-import { DetailedStatsScreen } from './DetailedStatsScreen';
-import { BettingHistoryScreen } from './BettingHistoryScreen';
-import { PaymentMethodsScreen } from './PaymentMethodsScreen';
-import { TrustSafetyScreen } from './TrustSafetyScreen';
-import { SettingsScreen } from './SettingsScreen';
-import { SupportScreen } from './SupportScreen';
-import { AboutScreen } from './AboutScreen';
+import type { WalletAction } from './WalletScreen';
 import { AdminDashboardScreen } from './AdminDashboardScreen';
 import { AdminDisputeScreen } from './AdminDisputeScreen';
 import { AdminTestingScreen } from './AdminTestingScreen';
-import { SubscriptionScreen } from './SubscriptionScreen';
 import { useAuth } from '../contexts/AuthContext';
+import { useProfile } from '../contexts/ProfileContext';
 import { ProfileEditForm, User } from '../types/betting';
+import type { AccountStackParamList } from '../types/navigation';
 import { getProfilePictureUrl, updateProfilePicture } from '../services/imageUploadService';
 import { showAlert } from '../components/ui/CustomAlert';
-import { ensureUserRecord } from '../services/userRecordService';
+import { TransactionService } from '../services/transactionService';
+import { membershipState } from '../config/subscriptionConfig';
 
 // Initialize GraphQL client
 const client = generateClient<Schema>();
@@ -52,199 +49,61 @@ interface UserProfile extends User {
 
 export const AccountScreen: React.FC = () => {
   const { user, signOut } = useAuth();
+  // The live User record, shared with the header balance and the Wallet (ProfileContext).
+  // It creates the record if it is missing, and runs the one-time record repairs.
+  const { profile, isLoading, refresh, applyUpdate } = useProfile();
+  // The User record's id is the Cognito sub, which AuthContext already has as a string
+  const profileId = user?.userId ?? '';
   const insets = useSafeAreaInsets();
-  const navigation = useNavigation();
-  const route = useRoute();
-  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const navigation = useNavigation<StackNavigationProp<AccountStackParamList>>();
   const [refreshing, setRefreshing] = useState(false);
   const [showProfileEditor, setShowProfileEditor] = useState(false);
-  const [showFriendsScreen, setShowFriendsScreen] = useState(false);
-  const [showDetailedStats, setShowDetailedStats] = useState(false);
-  const [showBettingHistory, setShowBettingHistory] = useState(false);
-  const [showPaymentMethods, setShowPaymentMethods] = useState(false);
-  const [showTrustSafety, setShowTrustSafety] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
-  const [showSupport, setShowSupport] = useState(false);
-  const [showAbout, setShowAbout] = useState(false);
   const [showAdminDashboard, setShowAdminDashboard] = useState(false);
   const [showAdminDispute, setShowAdminDispute] = useState(false);
   const [showAdminTesting, setShowAdminTesting] = useState(false);
-  const [showSubscription, setShowSubscription] = useState(false);
-  const [friendsInitialShowRequests, setFriendsInitialShowRequests] = useState(false);
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
   const [pendingPayouts, setPendingPayouts] = useState(0);
-  // The S3 key behind userProfile.profilePictureUrl (which holds a signed URL for display).
-  // The upload service needs the key to delete the picture being replaced.
-  const [profilePictureKey, setProfilePictureKey] = useState<string | undefined>(undefined);
+  // Signed URL for the picture; the record holds the S3 key
+  const [pictureUrl, setPictureUrl] = useState<string | undefined>(undefined);
   const [isUploadingPicture, setIsUploadingPicture] = useState(false);
-  const hasLoadedRef = useRef(false);
 
-  // Keyed on fields, not the user object, which AuthContext replaces on every silent auth
-  // refresh. The picture key is included so a picture set elsewhere (onboarding refreshes
-  // auth after its upload) still reaches this screen.
+  // The picture follows the record, so a change made anywhere (onboarding, another
+  // device) shows up here
+  const pictureKey = profile?.profilePictureUrl ?? undefined;
   useEffect(() => {
-    if (user) {
-      fetchUserStats();
+    let cancelled = false;
+    if (!pictureKey) {
+      setPictureUrl(undefined);
+      return;
     }
-  }, [user?.userId, user?.profilePictureUrl]);
+    getProfilePictureUrl(pictureKey).then((url) => {
+      if (!cancelled) setPictureUrl(url || undefined);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [pictureKey]);
 
-  // Handle navigation params (e.g., from notification tap)
-  useEffect(() => {
-    const params = route.params as { openFriendRequests?: boolean } | undefined;
-    if (params?.openFriendRequests) {
-      setFriendsInitialShowRequests(true);
-      setShowFriendsScreen(true);
-      // Clear the param so it doesn't re-trigger on re-render
-      navigation.setParams({ openFriendRequests: undefined } as any);
-    }
-  }, [route.params]);
+  const fetchPendingPayouts = useCallback(async () => {
+    if (!user?.userId) return;
+    // Shared with the Wallet; never throws (a failed read counts as nothing pending)
+    setPendingPayouts(await TransactionService.getPendingPayoutTotal(user.userId));
+  }, [user?.userId]);
 
-  const fetchUserStats = async () => {
-    if (!user) return;
-
-    try {
-      // Full-screen spinner on the first load only. Later loads (pull-to-refresh, after a
-      // profile save) update in place rather than blanking the screen.
-      if (!hasLoadedRef.current) setIsLoading(true);
-
-      // Independent reads, so run them together rather than one after another.
-      const [userAttributes, userData] = await Promise.all([
-        fetchUserAttributes().catch((error) => {
-          console.log('Could not fetch Cognito user attributes:', error);
-          return null;
-        }),
-        // Creates the record if it is missing: the retry for a create that failed at
-        // sign-in, without waiting for the next auth check.
-        ensureUserRecord({ userId: user.userId, username: user.username }),
-        fetchPendingPayouts(),
-      ]);
-      const displayNameFromCognito = userAttributes?.name || '';
-      const realEmail = userAttributes?.email || user.username;
-
-      if (userData) {
-        // Update existing user with real email if it's a placeholder
-        let shouldUpdate = false;
-        let updateData: any = {};
-
-        if (userData.email?.includes('@example.com') || !userData.email?.includes('@')) {
-          updateData.email = realEmail;
-          shouldUpdate = true;
-        }
-
-        // Fix displayName if it's missing OR if it looks like a hash (32 char UUID)
-        const isHashLike = userData.displayName &&
-                          userData.displayName.length === 32 &&
-                          /^[a-f0-9]{32}$/.test(userData.displayName.toLowerCase());
-
-        if ((!userData.displayName || isHashLike) && displayNameFromCognito) {
-          updateData.displayName = displayNameFromCognito;
-          updateData.displayNameLower = displayNameFromCognito.toLowerCase();
-          shouldUpdate = true;
-        }
-
-        // Update user record if needed
-        if (shouldUpdate) {
-          try {
-            await client.models.User.update({
-              id: userData.id!,
-              ...updateData
-            });
-          } catch (updateError) {
-            console.log('Could not update user record:', updateError);
-          }
-        }
-
-        // profilePictureUrl on the record is the S3 key; the screen needs a signed URL
-        let profilePictureUrl = undefined;
-        if (userData.profilePictureUrl) {
-          const signedUrl = await getProfilePictureUrl(userData.profilePictureUrl);
-          profilePictureUrl = signedUrl || undefined;
-        }
-
-        setProfilePictureKey(userData.profilePictureUrl || undefined);
-        setUserProfile({
-          id: userData.id!,
-          username: userData.username!,
-          email: updateData.email || userData.email!,
-          displayName: updateData.displayName || userData.displayName || undefined,
-          profilePictureUrl: profilePictureUrl,
-          balance: userData.balance || 0,
-          trustScore: userData.trustScore || 5.0,
-          totalBets: userData.totalBets || 0,
-          totalWinnings: userData.totalWinnings || 0,
-          winRate: userData.winRate || 0,
-          createdAt: userData.createdAt || new Date().toISOString(),
-          updatedAt: userData.updatedAt || new Date().toISOString(),
-        });
-      } else {
-        // ensureUserRecord tried to create it and could not; Try Again tries again
-        console.warn('[AccountScreen] No User record for:', user.userId);
-      }
-
-      hasLoadedRef.current = true;
-    } catch (error) {
-      console.error('Error fetching user stats:', error);
-      showAlert(
-        'Error',
-        'Failed to load user stats. Please try again.',
-        [{ text: 'OK' }]
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const fetchPendingPayouts = async () => {
-    if (!user) return;
-
-    try {
-      // PENDING BET_WON transactions for this user, through the userId index rather than a
-      // filtered Scan of the whole table. A filter applies to the rows read, not the rows
-      // returned, so a page can come back short or empty while more matches remain:
-      // follow nextToken until it runs out.
-      const pendingTransactions: Schema['Transaction']['type'][] = [];
-      let nextToken: string | null | undefined;
-      do {
-        const page = await client.models.Transaction.transactionsByUser(
-          { userId: user.userId },
-          {
-            filter: {
-              and: [
-                { type: { eq: 'BET_WON' } },
-                { status: { eq: 'PENDING' } },
-              ],
-            },
-            nextToken,
-          }
-        );
-        pendingTransactions.push(...(page.data || []));
-        nextToken = page.nextToken;
-      } while (nextToken);
-
-      // Calculate total pending payouts (use actualAmount for net after fees)
-      const total = pendingTransactions.reduce((sum, transaction) => {
-        // Use actualAmount (net after fees) if available, otherwise fall back to amount
-        const netAmount = transaction.actualAmount !== undefined && transaction.actualAmount !== null
-          ? transaction.actualAmount
-          : transaction.amount || 0;
-        return sum + netAmount;
-      }, 0) || 0;
-
-      setPendingPayouts(total);
-
-    } catch (error) {
-      console.error('Error fetching pending payouts:', error);
-      // Don't show alert for this, it's not critical
-      setPendingPayouts(0);
-    }
-  };
+  // Pending payouts are not part of the User record, so re-read them whenever this page
+  // comes back into view (returning from the Wallet, or switching back to the tab). The
+  // balance itself is live through ProfileContext.
+  useFocusEffect(
+    useCallback(() => {
+      fetchPendingPayouts();
+    }, [fetchPendingPayouts])
+  );
 
   const onRefresh = async () => {
     try {
       setRefreshing(true);
-      await fetchUserStats();
+      await Promise.all([refresh(), fetchPendingPayouts()]);
     } finally {
       setRefreshing(false);
     }
@@ -272,32 +131,12 @@ export const AccountScreen: React.FC = () => {
     setShowSignOutConfirm(false);
   };
 
-  const handleSettingsPress = () => {
-    setShowSettings(true);
+  const openWallet = (initialAction?: WalletAction) => {
+    navigation.navigate('Wallet', initialAction ? { initialAction } : undefined);
   };
 
-  const handleStatsPress = () => {
-    setShowDetailedStats(true);
-  };
-
-  const handleHistoryPress = () => {
-    setShowBettingHistory(true);
-  };
-
-  const handleSupportPress = () => {
-    setShowSupport(true);
-  };
-
-  const handlePaymentMethodsPress = () => {
-    setShowPaymentMethods(true);
-  };
-
-  const handleTrustSafetyPress = () => {
-    setShowTrustSafety(true);
-  };
-
-  const handleAboutPress = () => {
-    setShowAbout(true);
+  const openSubscription = () => {
+    navigation.navigate('Subscription');
   };
 
   const handleAdminDashboardPress = () => {
@@ -312,10 +151,6 @@ export const AccountScreen: React.FC = () => {
     setShowAdminTesting(true);
   };
 
-  const handleFriendsPress = () => {
-    setShowFriendsScreen(true);
-  };
-
   const handleEditProfile = () => {
     setShowProfileEditor(true);
   };
@@ -323,12 +158,13 @@ export const AccountScreen: React.FC = () => {
   // Tapping the avatar goes straight to the picker; no editor screen in between.
   // Same sequence as onboarding's picture step: upload, then save the S3 key on the User.
   const handleAvatarPress = async () => {
-    if (!userProfile || isUploadingPicture) return;
+    if (!profile || isUploadingPicture) return;
 
     try {
       setIsUploadingPicture(true);
 
-      const result = await updateProfilePicture(userProfile.id, profilePictureKey);
+      // The upload service needs the S3 key of the picture being replaced to delete it
+      const result = await updateProfilePicture(profileId, pictureKey);
       if (!result.success || !result.url) {
         // Closing the picker without choosing is not an error
         if (result.error && result.error !== 'Image selection cancelled') {
@@ -339,13 +175,9 @@ export const AccountScreen: React.FC = () => {
 
       // result.url is the S3 key, not a displayable URL
       const s3Key = result.url;
-      await client.models.User.update({ id: userProfile.id, profilePictureUrl: s3Key });
-      const signedUrl = await getProfilePictureUrl(s3Key);
-
-      setProfilePictureKey(s3Key);
-      setUserProfile((current) =>
-        current ? { ...current, profilePictureUrl: signedUrl || undefined } : current
-      );
+      await client.models.User.update({ id: profileId, profilePictureUrl: s3Key });
+      // Show it now rather than waiting for the subscription to echo the write
+      applyUpdate({ profilePictureUrl: s3Key });
     } catch (error) {
       console.error('Error updating profile picture:', error);
       showAlert('Error', 'Failed to update profile picture. Please try again.');
@@ -355,23 +187,24 @@ export const AccountScreen: React.FC = () => {
   };
 
   const handleSaveProfile = async (profileData: ProfileEditForm) => {
-    if (!userProfile) return;
+    if (!profile) return;
 
     try {
       setIsUpdatingProfile(true);
 
       // The editor only edits the display name; the picture is changed from the avatar
       const updatedUser = await client.models.User.update({
-        id: userProfile.id,
+        id: profileId,
         displayName: profileData.displayName,
         displayNameLower: profileData.displayName ? profileData.displayName.toLowerCase() : undefined,
       });
 
       if (updatedUser.data) {
-        setUserProfile({
-          ...userProfile,
-          displayName: updatedUser.data.displayName || undefined,
-          updatedAt: updatedUser.data.updatedAt || new Date().toISOString(),
+        // Also updates AuthContext, so the new name is used everywhere (bet creator name,
+        // card billing name) without waiting for the next sign-in
+        applyUpdate({
+          displayName: updatedUser.data.displayName,
+          displayNameLower: updatedUser.data.displayNameLower,
         });
 
         setShowProfileEditor(false);
@@ -401,7 +234,7 @@ export const AccountScreen: React.FC = () => {
     );
   }
 
-  if (!userProfile) {
+  if (!profile) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
         <Header title="Account" />
@@ -409,8 +242,10 @@ export const AccountScreen: React.FC = () => {
           <Text style={styles.errorText}>Failed to load profile</Text>
           <TouchableOpacity
             style={styles.retryButton}
-            onPress={() => fetchUserStats()}
+            // ProfileContext's refresh creates the record if it is still missing
+            onPress={() => refresh()}
             activeOpacity={0.8}
+            testID="account-retry"
           >
             <Text style={styles.retryButtonText}>Try Again</Text>
           </TouchableOpacity>
@@ -418,6 +253,24 @@ export const AccountScreen: React.FC = () => {
       </SafeAreaView>
     );
   }
+
+  // The shape ProfileEditor takes
+  const userProfile: UserProfile = {
+    id: profileId,
+    username: profile.username ?? '',
+    email: profile.email ?? '',
+    displayName: profile.displayName || undefined,
+    profilePictureUrl: pictureUrl,
+    balance: profile.balance ?? 0,
+    trustScore: profile.trustScore ?? 5.0,
+    totalBets: profile.totalBets ?? 0,
+    totalWinnings: profile.totalWinnings ?? 0,
+    winRate: profile.winRate ?? 0,
+    createdAt: profile.createdAt ?? new Date().toISOString(),
+    updatedAt: profile.updatedAt ?? new Date().toISOString(),
+  };
+
+  const membership = membershipState(profile);
 
   // Generate avatar initials from display name, fallback to username, then email
   const nameForAvatar = userProfile.displayName ||
@@ -453,7 +306,8 @@ export const AccountScreen: React.FC = () => {
         <View style={styles.profileSection}>
           <View style={styles.profileHeader}>
             <TouchableOpacity
-              style={styles.avatarContainer}
+              // A gold ring marks Pro members
+              style={[styles.avatarContainer, membership === 'pro' && styles.avatarRingPro]}
               onPress={handleAvatarPress}
               disabled={isUploadingPicture}
               activeOpacity={0.7}
@@ -482,30 +336,115 @@ export const AccountScreen: React.FC = () => {
             </TouchableOpacity>
 
             <View style={styles.profileInfo}>
-              <TouchableOpacity onPress={handleEditProfile} activeOpacity={0.7} testID="account-edit-name">
-                <Text style={styles.displayName}>
+              <TouchableOpacity
+                style={styles.nameRow}
+                onPress={handleEditProfile}
+                activeOpacity={0.7}
+                testID="account-edit-name"
+                accessibilityRole="button"
+                accessibilityLabel="Edit display name"
+              >
+                <Text style={styles.displayName} numberOfLines={1}>
                   {userProfile.displayName || 'Set Display Name'}
                 </Text>
+                <Ionicons name="pencil" size={14} color={colors.textMuted} style={styles.nameEditIcon} />
               </TouchableOpacity>
 
-              {/* Balance Breakdown */}
-              <View style={styles.balanceBreakdown}>
-                <View style={styles.balanceRow}>
-                  <Text style={styles.balanceLabel}>Available:</Text>
-                  <Text style={styles.balanceValue}>${userProfile.balance.toFixed(2)}</Text>
+              <View style={styles.chipRow}>
+                <View style={styles.trustChip}>
+                  <Ionicons name="shield-checkmark" size={12} color={colors.primary} />
+                  <Text style={styles.trustChipText}>Trust {userProfile.trustScore.toFixed(1)}/10</Text>
                 </View>
-                {pendingPayouts > 0 && (
-                  <View style={styles.balanceRow}>
-                    <Text style={styles.balanceLabel}>Pending Payouts:</Text>
-                    <Text style={styles.pendingValue} testID="account-pending-payouts">${pendingPayouts.toFixed(2)}</Text>
-                  </View>
+
+                {/* Membership: the way into the subscription screen (no separate menu row) */}
+                {membership === 'pro' && (
+                  <TouchableOpacity
+                    style={[styles.membershipChip, styles.membershipChipPro]}
+                    onPress={openSubscription}
+                    activeOpacity={0.7}
+                    testID="account-membership-pro"
+                    accessibilityRole="button"
+                    accessibilityLabel="Pro membership, no fees. Manage membership"
+                  >
+                    <Ionicons name="star" size={12} color={colors.background} />
+                    <Text style={styles.membershipChipProText}>PRO · 0% fees</Text>
+                  </TouchableOpacity>
                 )}
-                <View style={styles.balanceRow}>
-                  <Text style={styles.balanceLabel}>Trust Score:</Text>
-                  <Text style={styles.trustScore}>{userProfile.trustScore.toFixed(1)}/10</Text>
-                </View>
+                {membership === 'payment_issue' && (
+                  <TouchableOpacity
+                    style={[styles.membershipChip, styles.membershipChipIssue]}
+                    onPress={openSubscription}
+                    activeOpacity={0.7}
+                    testID="account-membership-issue"
+                    accessibilityRole="button"
+                    accessibilityLabel="Pro payment failed. Update your card"
+                  >
+                    <Ionicons name="alert-circle" size={12} color={colors.warning} />
+                    <Text style={styles.membershipChipIssueText}>Pro payment failed</Text>
+                  </TouchableOpacity>
+                )}
+                {membership === 'free' && (
+                  <TouchableOpacity
+                    style={[styles.membershipChip, styles.membershipChipFree]}
+                    onPress={openSubscription}
+                    activeOpacity={0.7}
+                    testID="account-membership-upgrade"
+                    accessibilityRole="button"
+                    accessibilityLabel="Upgrade to Pro"
+                  >
+                    <Ionicons name="star-outline" size={12} color={colors.primary} />
+                    <Text style={styles.membershipChipFreeText}>Upgrade to Pro</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             </View>
+          </View>
+        </View>
+
+        {/* Wallet card */}
+        <View style={styles.walletCard} testID="account-wallet-card">
+          <TouchableOpacity
+            style={styles.walletSummary}
+            onPress={() => openWallet()}
+            activeOpacity={0.7}
+            testID="account-wallet-open"
+          >
+            <View>
+              <Text style={styles.walletLabel}>Available</Text>
+              <Text style={styles.walletBalance} testID="account-balance">
+                ${userProfile.balance.toFixed(2)}
+              </Text>
+              {pendingPayouts > 0 && (
+                <Text style={styles.walletPending}>
+                  <Text testID="account-pending-payouts">${pendingPayouts.toFixed(2)}</Text> pending payouts
+                </Text>
+              )}
+            </View>
+            <View style={styles.walletLink}>
+              <Text style={styles.walletLinkText}>Activity</Text>
+              <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+            </View>
+          </TouchableOpacity>
+
+          <View style={styles.walletActions}>
+            <TouchableOpacity
+              style={[styles.walletButton, styles.walletButtonPrimary]}
+              onPress={() => openWallet('addFunds')}
+              activeOpacity={0.8}
+              testID="account-add-funds"
+            >
+              <Ionicons name="add" size={18} color={colors.background} />
+              <Text style={styles.walletButtonPrimaryText}>Add funds</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.walletButton, styles.walletButtonSecondary]}
+              onPress={() => openWallet('withdraw')}
+              activeOpacity={0.8}
+              testID="account-withdraw"
+            >
+              <Ionicons name="arrow-up" size={18} color={colors.textPrimary} />
+              <Text style={styles.walletButtonSecondaryText}>Withdraw</Text>
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -589,57 +528,29 @@ export const AccountScreen: React.FC = () => {
             icon="people-outline"
             title="Friends"
             subtitle="Manage your friends and send invites"
-            onPress={handleFriendsPress}
+            onPress={() => navigation.navigate('Friends')}
+            testID="account-friends"
           />
           <MenuOption
-            icon="bar-chart-outline"
-            title="Detailed Stats"
-            subtitle="View comprehensive betting analytics"
-            onPress={handleStatsPress}
-          />
-          <MenuOption
-            icon="time-outline"
-            title="Betting History"
-            subtitle="Review past bets and outcomes"
-            onPress={handleHistoryPress}
-          />
-          <MenuOption
-            icon="card-outline"
-            title="Payment Methods"
-            subtitle="Manage deposits and withdrawals"
-            onPress={handlePaymentMethodsPress}
-          />
-          <MenuOption
-            icon={user?.subscriptionTier === 'PRO' ? 'star' : 'star-outline'}
-            title={user?.subscriptionTier === 'PRO' ? 'Pro Membership' : 'Upgrade to Pro'}
-            subtitle={user?.subscriptionTier === 'PRO' ? '0% fees on everything · $4.99/mo' : 'Remove all fees for $4.99/month'}
-            onPress={() => setShowSubscription(true)}
-          />
-          <MenuOption
-            icon="shield-checkmark-outline"
-            title="Trust & Safety"
-            subtitle="Security settings and verification"
-            onPress={handleTrustSafetyPress}
-            testID="account-trust-safety"
+            icon="wallet-outline"
+            title="Wallet"
+            subtitle="Balance, deposits, withdrawals and activity"
+            onPress={() => openWallet()}
+            testID="account-wallet"
           />
           <MenuOption
             icon="settings-outline"
             title="Settings"
-            subtitle="App preferences and notifications"
-            onPress={handleSettingsPress}
+            subtitle="Notifications, privacy, account and security"
+            onPress={() => navigation.navigate('Settings')}
             testID="account-settings"
           />
           <MenuOption
             icon="help-circle-outline"
-            title="Support"
-            subtitle="Get help and contact support"
-            onPress={handleSupportPress}
-          />
-          <MenuOption
-            icon="information-circle-outline"
-            title="About"
-            subtitle="App version and legal information"
-            onPress={handleAboutPress}
+            title="Help & About"
+            subtitle="Feedback, FAQ, legal and app version"
+            onPress={() => navigation.navigate('Help')}
+            testID="account-help"
           />
         </View>
 
@@ -674,111 +585,6 @@ export const AccountScreen: React.FC = () => {
         )}
       </Modal>
 
-      {/* Friends Screen Modal */}
-      <Modal
-        visible={showFriendsScreen}
-        animationType="slide"
-        presentationStyle="fullScreen"
-        onRequestClose={() => setShowFriendsScreen(false)}
-      >
-        {showFriendsScreen && (
-          <FriendsScreen
-            onClose={() => {
-              setShowFriendsScreen(false);
-              setFriendsInitialShowRequests(false);
-            }}
-            initialShowRequests={friendsInitialShowRequests}
-          />
-        )}
-      </Modal>
-
-      {/* Detailed Stats Modal */}
-      <Modal
-        visible={showDetailedStats}
-        animationType="slide"
-        presentationStyle="fullScreen"
-        onRequestClose={() => setShowDetailedStats(false)}
-      >
-        {showDetailedStats && (
-          <DetailedStatsScreen onClose={() => setShowDetailedStats(false)} />
-        )}
-      </Modal>
-
-      {/* Betting History Modal */}
-      <Modal
-        visible={showBettingHistory}
-        animationType="slide"
-        presentationStyle="fullScreen"
-        onRequestClose={() => setShowBettingHistory(false)}
-      >
-        {showBettingHistory && (
-          <BettingHistoryScreen
-            onClose={() => setShowBettingHistory(false)}
-            navigation={navigation}
-          />
-        )}
-      </Modal>
-
-      {/* Payment Methods Modal */}
-      <Modal
-        visible={showPaymentMethods}
-        animationType="slide"
-        presentationStyle="fullScreen"
-        onRequestClose={() => setShowPaymentMethods(false)}
-      >
-        {showPaymentMethods && (
-          <PaymentMethodsScreen onClose={() => setShowPaymentMethods(false)} />
-        )}
-      </Modal>
-
-      {/* Trust & Safety Modal */}
-      <Modal
-        visible={showTrustSafety}
-        animationType="slide"
-        presentationStyle="fullScreen"
-        onRequestClose={() => setShowTrustSafety(false)}
-      >
-        {showTrustSafety && (
-          <TrustSafetyScreen onClose={() => setShowTrustSafety(false)} />
-        )}
-      </Modal>
-
-      {/* Settings Modal */}
-      <Modal
-        visible={showSettings}
-        animationType="slide"
-        presentationStyle="fullScreen"
-        onRequestClose={() => setShowSettings(false)}
-      >
-        {showSettings && (
-          <SettingsScreen onClose={() => setShowSettings(false)} />
-        )}
-      </Modal>
-
-      {/* Support Modal */}
-      <Modal
-        visible={showSupport}
-        animationType="slide"
-        presentationStyle="fullScreen"
-        onRequestClose={() => setShowSupport(false)}
-      >
-        {showSupport && (
-          <SupportScreen onClose={() => setShowSupport(false)} />
-        )}
-      </Modal>
-
-      {/* About Modal */}
-      <Modal
-        visible={showAbout}
-        animationType="slide"
-        presentationStyle="fullScreen"
-        onRequestClose={() => setShowAbout(false)}
-      >
-        {showAbout && (
-          <AboutScreen onClose={() => setShowAbout(false)} />
-        )}
-      </Modal>
-
       {/* Admin Dashboard Modal */}
       <Modal
         visible={showAdminDashboard}
@@ -809,18 +615,6 @@ export const AccountScreen: React.FC = () => {
           )}
         </Modal>
       )}
-
-      {/* Subscription Modal */}
-      <Modal
-        visible={showSubscription}
-        animationType="slide"
-        presentationStyle="fullScreen"
-        onRequestClose={() => setShowSubscription(false)}
-      >
-        {showSubscription && (
-          <SubscriptionScreen onClose={() => setShowSubscription(false)} />
-        )}
-      </Modal>
 
       {/* Sign Out Confirmation Modal */}
       <Modal
@@ -991,43 +785,158 @@ const styles = StyleSheet.create({
   profileInfo: {
     flex: 1,
   },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.xs,
+  },
   displayName: {
     ...textStyles.h3,
     color: colors.textPrimary,
-    marginBottom: spacing.xs,
-    fontWeight: '700',
+    fontWeight: typography.fontWeight.bold,
+    flexShrink: 1,
   },
-  balanceBreakdown: {
-    marginVertical: spacing.xs,
-    paddingVertical: spacing.xs,
+  nameEditIcon: {
+    marginLeft: spacing.xs,
+  },
+  avatarRingPro: {
+    // The ring sits outside the 60px avatar; the padding is the gap between them
+    borderWidth: 2,
+    borderColor: colors.primary,
+    borderRadius: 34,
+    padding: 2,
+  },
+  chipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+  },
+  membershipChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: spacing.radius.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs / 2,
+    marginLeft: spacing.xs,
+    borderWidth: 1,
+  },
+  membershipChipPro: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  membershipChipProText: {
+    ...textStyles.caption,
+    color: colors.background,
+    fontWeight: typography.fontWeight.bold,
+    marginLeft: spacing.xs,
+    includeFontPadding: false,
+  },
+  membershipChipIssue: {
+    backgroundColor: colors.warning + '20',
+    borderColor: colors.warning,
+  },
+  membershipChipIssueText: {
+    ...textStyles.caption,
+    color: colors.warning,
+    fontWeight: typography.fontWeight.semibold,
+    marginLeft: spacing.xs,
+    includeFontPadding: false,
+  },
+  membershipChipFree: {
+    backgroundColor: 'transparent',
+    borderColor: colors.primary,
+  },
+  membershipChipFreeText: {
+    ...textStyles.caption,
+    color: colors.primary,
+    fontWeight: typography.fontWeight.semibold,
+    marginLeft: spacing.xs,
+    includeFontPadding: false,
+  },
+  trustChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: colors.primary + '20',
+    borderRadius: spacing.radius.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs / 2,
+  },
+  trustChipText: {
+    ...textStyles.caption,
+    color: colors.primary,
+    fontWeight: typography.fontWeight.semibold,
+    marginLeft: spacing.xs,
+    includeFontPadding: false,
+  },
+
+  // Wallet card
+  walletCard: {
+    backgroundColor: colors.surface,
+    marginTop: spacing.md,
+    padding: spacing.lg,
     borderTopWidth: 1,
     borderBottomWidth: 1,
-    borderColor: colors.border + '40',
+    borderColor: colors.border,
   },
-  balanceRow: {
+  walletSummary: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginVertical: spacing.xs / 2,
   },
-  balanceLabel: {
+  walletLabel: {
     ...textStyles.caption,
-    color: colors.textMuted,
+    color: colors.textSecondary,
   },
-  balanceValue: {
+  walletBalance: {
+    ...textStyles.balance,
+    color: colors.textPrimary,
+  },
+  walletPending: {
+    ...textStyles.caption,
+    color: colors.warning,
+    marginTop: spacing.xs / 2,
+  },
+  walletLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  walletLinkText: {
+    ...textStyles.bodySmall,
+    color: colors.textSecondary,
+    marginRight: spacing.xs / 2,
+  },
+  walletActions: {
+    flexDirection: 'row',
+    marginTop: spacing.md,
+  },
+  walletButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.sm,
+    borderRadius: spacing.radius.md,
+  },
+  walletButtonPrimary: {
+    backgroundColor: colors.primary,
+    marginRight: spacing.xs,
+  },
+  walletButtonSecondary: {
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginLeft: spacing.xs,
+  },
+  walletButtonPrimaryText: {
+    ...textStyles.button,
+    color: colors.background,
+    marginLeft: spacing.xs,
+  },
+  walletButtonSecondaryText: {
     ...textStyles.button,
     color: colors.textPrimary,
-    fontWeight: '600',
-  },
-  pendingValue: {
-    ...textStyles.button,
-    color: colors.warning,
-    fontWeight: '600',
-  },
-  trustScore: {
-    ...textStyles.button,
-    color: colors.primary,
-    fontWeight: '600',
+    marginLeft: spacing.xs,
   },
 
   // Menu section

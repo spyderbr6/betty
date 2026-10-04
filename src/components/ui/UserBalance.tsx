@@ -4,7 +4,7 @@
  * Ensures consistent balance display across all screens
  */
 
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import {
   View,
   Text,
@@ -12,20 +12,16 @@ import {
   StyleSheet,
   ActivityIndicator,
 } from 'react-native';
-import { generateClient } from 'aws-amplify/data';
-import type { Schema } from '../../../amplify/data/resource';
 import { colors, typography, spacing, textStyles } from '../../styles';
-import { useAuth } from '../../contexts/AuthContext';
+import { useProfile } from '../../contexts/ProfileContext';
 import { formatCurrency } from '../../utils/formatting';
-
-// Initialize GraphQL client
-const client = generateClient<Schema>();
 
 export interface UserBalanceProps {
   onPress?: () => void;
   showLabel?: boolean;
   size?: 'small' | 'medium' | 'large';
   variant?: 'default' | 'compact' | 'header';
+  testID?: string;
 }
 
 export const UserBalance: React.FC<UserBalanceProps> = ({
@@ -33,64 +29,11 @@ export const UserBalance: React.FC<UserBalanceProps> = ({
   showLabel = true,
   size = 'medium',
   variant = 'default',
+  testID,
 }) => {
-  const { user } = useAuth();
-  const [balance, setBalance] = useState<number>(0);
-  const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    if (!user?.userId) {
-      setBalance(0);
-      setIsLoading(false);
-      return;
-    }
-
-    const fetchBalance = async () => {
-      try {
-        setIsLoading(true);
-        const { data: userData } = await client.models.User.get({ id: user.userId });
-        setBalance(userData?.balance || 0);
-      } catch (error) {
-        console.error('Error fetching user balance:', error);
-        setBalance(0);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchBalance();
-
-    // Targeted subscriptions, not observeQuery. observeQuery issues an initial
-    // list before it streams - listUsers and listParticipants here, both filtered
-    // Scans - and this component sits in the header, so every screen paid for
-    // them on mount. The initial value already comes from fetchBalance above;
-    // these only need to say "something changed, read it again".
-    const onError = (label: string) => (error: unknown) =>
-      console.error(`Balance ${label} subscription error:`, error);
-
-    const subscriptions = [
-      client.models.User.onUpdate({ filter: { id: { eq: user.userId } } }).subscribe({
-        next: (updated: any) => {
-          if (updated?.balance != null) setBalance(updated.balance);
-        },
-        error: onError('user'),
-      }),
-      // A join or a refund changes the balance without touching the User row in
-      // a way this component sees first, so re-read rather than guess.
-      client.models.Participant.onCreate({ filter: { userId: { eq: user.userId } } }).subscribe({
-        next: () => fetchBalance(),
-        error: onError('participant create'),
-      }),
-      client.models.Participant.onUpdate({ filter: { userId: { eq: user.userId } } }).subscribe({
-        next: () => fetchBalance(),
-        error: onError('participant update'),
-      }),
-    ];
-
-    return () => {
-      subscriptions.forEach((subscription) => subscription.unsubscribe());
-    };
-  }, [user]);
+  // One shared, live copy of the balance for every header (ProfileContext). Each header
+  // used to read it and open three subscriptions of its own.
+  const { balance, isLoading } = useProfile();
 
   const getStyles = () => {
     switch (variant) {
@@ -157,7 +100,7 @@ export const UserBalance: React.FC<UserBalanceProps> = ({
 
   if (onPress) {
     return (
-      <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
+      <TouchableOpacity onPress={onPress} activeOpacity={0.7} testID={testID} accessibilityRole="button">
         {content}
       </TouchableOpacity>
     );

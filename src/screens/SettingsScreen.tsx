@@ -1,6 +1,6 @@
 /**
  * Settings Screen
- * Notification settings, privacy and app preferences
+ * Notifications, privacy, account and security
  */
 
 import React, { useState, useEffect } from 'react';
@@ -8,9 +8,10 @@ import { View, Text, ScrollView, StyleSheet, Switch } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, textStyles } from '../styles';
-import { ModalHeader } from '../components/ui/ModalHeader';
+import { ModalHeader, type ModalHeaderVariant } from '../components/ui/ModalHeader';
 import { useAuth } from '../contexts/AuthContext';
 import { NotificationPreferencesPanel } from '../components/settings/NotificationPreferencesPanel';
+import { SecuritySection } from '../components/settings/SecuritySection';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
 import { showAlert } from '../components/ui/CustomAlert';
@@ -19,9 +20,11 @@ const client = generateClient<Schema>();
 
 interface SettingsScreenProps {
   onClose: () => void;
+  /** 'back' when shown as a page in the Account stack rather than as a modal. */
+  headerVariant?: ModalHeaderVariant;
 }
 
-export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
+export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose, headerVariant }) => {
   const { user } = useAuth();
   const [allowPhoneDiscovery, setAllowPhoneDiscovery] = useState(false);
   const [isPublic, setIsPublic] = useState(true);
@@ -99,7 +102,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
   };
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <ModalHeader title="Settings" onClose={onClose} />
+      <ModalHeader title="Settings" onClose={onClose} variant={headerVariant} />
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {user && <NotificationPreferencesPanel userId={user.userId} />}
@@ -138,6 +141,10 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
             </Text>
           </View>
         </View>
+
+        {/* Account and Security (formerly the Trust & Safety screen) */}
+        <SecuritySection />
+        <View style={styles.bottomSpacer} />
       </ScrollView>
     </SafeAreaView>
   );
@@ -230,5 +237,8 @@ const styles = StyleSheet.create({
     marginLeft: spacing.sm,
     flex: 1,
     lineHeight: 18,
+  },
+  bottomSpacer: {
+    height: spacing.xl,
   },
 });

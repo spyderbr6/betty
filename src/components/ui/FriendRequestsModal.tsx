@@ -336,7 +336,7 @@ export const FriendRequestsModal: React.FC<FriendRequestsModalProps> = ({
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
-      <SafeAreaView style={styles.container} edges={['top']}>
+      <SafeAreaView style={styles.container} edges={['top']} testID="friend-requests-modal">
         {/* Standardized Modal Header */}
         <ModalHeader title="Friend Requests" onClose={onClose} />
 

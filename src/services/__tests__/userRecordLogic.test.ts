@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ensureUserRecordWith, type UserRecordDeps } from '../userRecordLogic';
+import { ensureUserRecordWith, profileRepairs, type UserRecordDeps } from '../userRecordLogic';
 
 type Rec = { id: string; tag?: string };
 
@@ -116,5 +116,40 @@ describe('ensureUserRecordWith', () => {
     const { d } = deps({ createDefaultPreferences: vi.fn(async () => { throw new Error('prefs'); }) });
 
     await expect(ensureUserRecordWith(d, USER)).resolves.toEqual({ id: 'u-1' });
+  });
+});
+
+describe('profileRepairs', () => {
+  const attrs = { name: 'Dana Smith', email: 'dana@example.org' };
+
+  it('leaves a healthy record alone', () => {
+    expect(profileRepairs({ email: 'dana@example.org', displayName: 'Dana' }, attrs, 'u')).toBeNull();
+  });
+
+  it('replaces a placeholder email with the Cognito address', () => {
+    expect(profileRepairs({ email: 'x@example.com', displayName: 'Dana' }, attrs, 'u')).toEqual({
+      email: 'dana@example.org',
+    });
+    expect(profileRepairs({ email: 'not-an-address', displayName: 'Dana' }, attrs, 'u')).toEqual({
+      email: 'dana@example.org',
+    });
+  });
+
+  it('does not rewrite a placeholder to itself when Cognito has no better address', () => {
+    expect(profileRepairs({ email: 'u', displayName: 'Dana' }, { name: 'Dana' }, 'u')).toBeNull();
+  });
+
+  it('replaces a missing or hash-like display name, lowercase copy included', () => {
+    const hash = 'a'.repeat(32);
+    for (const displayName of [null, '', hash]) {
+      expect(profileRepairs({ email: 'dana@example.org', displayName }, attrs, 'u')).toEqual({
+        displayName: 'Dana Smith',
+        displayNameLower: 'dana smith',
+      });
+    }
+  });
+
+  it('keeps a real display name even when Cognito has a different one', () => {
+    expect(profileRepairs({ email: 'dana@example.org', displayName: 'D' }, attrs, 'u')).toBeNull();
   });
 });

@@ -15,7 +15,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, textStyles, typography } from '../styles';
-import { ModalHeader } from '../components/ui/ModalHeader';
+import { ModalHeader, type ModalHeaderVariant } from '../components/ui/ModalHeader';
 import { showAlert } from '../components/ui/CustomAlert';
 import { useAuth } from '../contexts/AuthContext';
 import {
@@ -23,13 +23,15 @@ import {
   openCustomerPortal,
   waitForSubscriptionToActivate,
 } from '../services/stripeService';
-import { PRO_MONTHLY_DISPLAY, WITHDRAWAL_FEE_RATE, WINNINGS_FEE_RATE } from '../config/subscriptionConfig';
+import { PRO_MONTHLY_DISPLAY, WITHDRAWAL_FEE_RATE, WINNINGS_FEE_RATE, isProActive } from '../config/subscriptionConfig';
 
 // @ts-ignore — installed via: npx expo install @stripe/stripe-react-native
 import { useStripe } from '@stripe/stripe-react-native';
 
 interface SubscriptionScreenProps {
   onClose: () => void;
+  /** 'back' when shown as a page in the Account stack rather than as a modal. */
+  headerVariant?: ModalHeaderVariant;
 }
 
 const PRO_FEATURES = [
@@ -38,12 +40,12 @@ const PRO_FEATURES = [
   { icon: 'flash-outline', text: 'Priority support' },
 ];
 
-export const SubscriptionScreen: React.FC<SubscriptionScreenProps> = ({ onClose }) => {
+export const SubscriptionScreen: React.FC<SubscriptionScreenProps> = ({ onClose, headerVariant }) => {
   const { user, refreshAuth } = useAuth();
   const { initPaymentSheet, presentPaymentSheet } = useStripe();
   const [isLoading, setIsLoading] = useState(false);
 
-  const isPro = user?.subscriptionTier === 'PRO' && user?.subscriptionStatus === 'ACTIVE';
+  const isPro = isProActive(user);
 
   const handleUpgrade = async () => {
     setIsLoading(true);
@@ -140,8 +142,8 @@ export const SubscriptionScreen: React.FC<SubscriptionScreenProps> = ({ onClose 
   const freeWinningsFee = `${(WINNINGS_FEE_RATE * 100).toFixed(0)}%`;
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <ModalHeader title={isPro ? 'Pro Membership' : 'Upgrade to Pro'} onClose={onClose} />
+    <SafeAreaView style={styles.container} edges={['top']} testID="screen-subscription">
+      <ModalHeader title={isPro ? 'Pro Membership' : 'Upgrade to Pro'} onClose={onClose} variant={headerVariant} />
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {isPro ? (

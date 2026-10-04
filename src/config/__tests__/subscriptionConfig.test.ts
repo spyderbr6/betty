@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { WINNINGS_FEE_RATE, netWinnings, winningsFee } from '../subscriptionConfig';
+import { WINNINGS_FEE_RATE, isProActive, membershipState, netWinnings, winningsFee } from '../subscriptionConfig';
 
 /**
  * The fee on winnings, which Pro waives.
@@ -43,5 +43,37 @@ describe('winningsFee', () => {
         expect(Math.round((net + fee) * 100) / 100).toBe(Math.round(gross * 100) / 100);
       }
     }
+  });
+});
+
+describe('isProActive', () => {
+  it('is true for an active or trialing Pro subscription', () => {
+    expect(isProActive({ subscriptionTier: 'PRO', subscriptionStatus: 'ACTIVE' })).toBe(true);
+    expect(isProActive({ subscriptionTier: 'PRO', subscriptionStatus: 'TRIALING' })).toBe(true);
+  });
+
+  it('is false for the tier alone, which the Account screen used to trust', () => {
+    for (const status of ['CANCELLED', 'PAST_DUE', 'INCOMPLETE', null, undefined]) {
+      expect(isProActive({ subscriptionTier: 'PRO', subscriptionStatus: status })).toBe(false);
+    }
+  });
+
+  it('is false for free members and missing users', () => {
+    expect(isProActive({ subscriptionTier: 'FREE', subscriptionStatus: 'ACTIVE' })).toBe(false);
+    expect(isProActive(null)).toBe(false);
+    expect(isProActive(undefined)).toBe(false);
+  });
+});
+
+describe('membershipState', () => {
+  it('reports a failed payment separately so the member knows why benefits stopped', () => {
+    // The webhook drops the tier to FREE while Stripe retries a PAST_DUE payment
+    expect(membershipState({ subscriptionTier: 'FREE', subscriptionStatus: 'PAST_DUE' })).toBe('payment_issue');
+  });
+
+  it('is pro when benefits apply and free otherwise', () => {
+    expect(membershipState({ subscriptionTier: 'PRO', subscriptionStatus: 'ACTIVE' })).toBe('pro');
+    expect(membershipState({ subscriptionTier: 'FREE', subscriptionStatus: 'CANCELLED' })).toBe('free');
+    expect(membershipState(null)).toBe('free');
   });
 });

@@ -1,32 +1,31 @@
 /**
- * Trust & Safety Screen
- * Security settings and account verification
+ * Security Section
+ * The Account and Security parts of Settings: email verification, password, two-factor
+ * authentication and phone. These were the working parts of the old Trust & Safety
+ * screen; its rows that did nothing and its always-green "Account Secure" card were
+ * dropped, and its safety tips moved to Help & About.
  */
 
 import React, { useState, useEffect } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Modal, TextInput, ActivityIndicator, } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, spacing, textStyles, typography, commonStyles } from '../styles';
-import { ModalHeader } from '../components/ui/ModalHeader';
-import { VerifyPhoneModal } from '../components/ui/VerifyPhoneModal';
-import { PhoneInput } from '../components/ui/PhoneInput';
-import { useAuth } from '../contexts/AuthContext';
+import { colors, spacing, textStyles, typography, commonStyles } from '../../styles';
+import { ModalHeader } from '../ui/ModalHeader';
+import { VerifyPhoneModal } from '../ui/VerifyPhoneModal';
+import { PhoneInput } from '../ui/PhoneInput';
+import { useAuth } from '../../contexts/AuthContext';
 import { updatePassword, setUpTOTP, verifyTOTPSetup, updateMFAPreference, fetchMFAPreference, fetchUserAttributes } from 'aws-amplify/auth';
 import { generateClient } from 'aws-amplify/data';
-import type { Schema } from '../../amplify/data/resource';
-import { sendVerificationCode, completePhoneVerification, changePhoneNumber } from '../services/phoneVerificationService';
-import { formatDisplayPhone, formatPhoneNumber, validatePhoneNumber } from '../utils/phoneValidation';
+import type { Schema } from '../../../amplify/data/resource';
+import { sendVerificationCode, changePhoneNumber } from '../../services/phoneVerificationService';
+import { formatDisplayPhone, formatPhoneNumber, validatePhoneNumber } from '../../utils/phoneValidation';
 import type { CountryCode } from 'libphonenumber-js';
-import { showAlert } from '../components/ui/CustomAlert';
+import { showAlert } from '../ui/CustomAlert';
 
 const client = generateClient<Schema>();
 
-interface TrustSafetyScreenProps {
-  onClose: () => void;
-}
-
-export const TrustSafetyScreen: React.FC<TrustSafetyScreenProps> = ({ onClose }) => {
+export const SecuritySection: React.FC = () => {
   const { user } = useAuth();
 
   // Modal states
@@ -39,7 +38,6 @@ export const TrustSafetyScreen: React.FC<TrustSafetyScreenProps> = ({ onClose })
   // Phone states
   const [phoneNumber, setPhoneNumber] = useState('');
   const [phoneVerified, setPhoneVerified] = useState(false);
-  const [isLoadingPhone, setIsLoadingPhone] = useState(false);
   const [email, setEmail] = useState('');
 
   // Check MFA status on mount
@@ -51,7 +49,7 @@ export const TrustSafetyScreen: React.FC<TrustSafetyScreenProps> = ({ onClose })
   const checkMFAStatus = async () => {
     try {
       const mfaPreference = await fetchMFAPreference();
-      setMfaEnabled(mfaPreference?.preferred === 'TOTP' || mfaPreference?.enabled?.includes('TOTP'));
+      setMfaEnabled(mfaPreference?.preferred === 'TOTP' || Boolean(mfaPreference?.enabled?.includes('TOTP')));
     } catch (error) {
       console.error('Error checking MFA status:', error);
     }
@@ -101,114 +99,96 @@ export const TrustSafetyScreen: React.FC<TrustSafetyScreenProps> = ({ onClose })
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <ModalHeader title="Trust & Safety" onClose={onClose} />
+    <>
+      {/* Account */}
+      <View style={styles.section} testID="settings-account">
+        <Text style={styles.sectionTitle}>ACCOUNT</Text>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Security Status */}
-        <View style={styles.statusSection}>
-          <View style={styles.statusCard}>
-            <Ionicons name="shield-checkmark" size={48} color={colors.success} />
-            <Text style={styles.statusTitle}>Account Secure</Text>
-            <Text style={styles.statusSubtitle}>Your account is protected</Text>
+        <View style={styles.verificationCard}>
+          <View style={styles.verificationHeader}>
+            <Ionicons name="mail" size={24} color={colors.success} />
+            <Text style={styles.verificationTitle}>Email Verified</Text>
           </View>
+          {/* user.username is the Cognito username, not the address */}
+          <Text style={styles.verificationEmail} testID="settings-email">{email}</Text>
         </View>
+      </View>
 
-        {/* Security Settings */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>SECURITY</Text>
+      {/* Security */}
+      <View style={styles.section} testID="settings-security">
+        <Text style={styles.sectionTitle}>SECURITY</Text>
 
-          <TouchableOpacity style={styles.menuItem} activeOpacity={0.7} onPress={() => setShowPasswordModal(true)}>
-            <View style={styles.menuItemLeft}>
-              <View style={[styles.menuIcon, { backgroundColor: colors.info + '20' }]}>
-                <Ionicons name="key-outline" size={22} color={colors.info} />
-              </View>
-              <View style={styles.menuItemText}>
-                <Text style={styles.menuItemTitle}>Change Password</Text>
-                <Text style={styles.menuItemSubtitle}>Update your account password</Text>
-              </View>
+        <TouchableOpacity
+          style={styles.menuItem}
+          activeOpacity={0.7}
+          onPress={() => setShowPasswordModal(true)}
+          testID="settings-change-password"
+        >
+          <View style={styles.menuItemLeft}>
+            <View style={[styles.menuIcon, { backgroundColor: colors.info + '20' }]}>
+              <Ionicons name="key-outline" size={22} color={colors.info} />
             </View>
-            <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.menuItem} activeOpacity={0.7} onPress={() => setShow2FAModal(true)}>
-            <View style={styles.menuItemLeft}>
-              <View style={[styles.menuIcon, { backgroundColor: mfaEnabled ? colors.success + '20' : colors.warning + '20' }]}>
-                <Ionicons name="finger-print-outline" size={22} color={mfaEnabled ? colors.success : colors.warning} />
-              </View>
-              <View style={styles.menuItemText}>
-                <Text style={styles.menuItemTitle}>Two-Factor Authentication</Text>
-                <Text style={styles.menuItemSubtitle}>{mfaEnabled ? 'Enabled' : 'Not enabled'}</Text>
-              </View>
+            <View style={styles.menuItemText}>
+              <Text style={styles.menuItemTitle}>Change Password</Text>
+              <Text style={styles.menuItemSubtitle}>Update your account password</Text>
             </View>
-            <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
-          </TouchableOpacity>
-        </View>
-
-        {/* Verification */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>VERIFICATION</Text>
-
-          <View style={styles.verificationCard}>
-            <View style={styles.verificationHeader}>
-              <Ionicons name="mail" size={24} color={colors.success} />
-              <Text style={styles.verificationTitle}>Email Verified</Text>
-            </View>
-            {/* user.username is the Cognito username, not the address */}
-            <Text style={styles.verificationEmail} testID="trust-email">{email}</Text>
           </View>
+          <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+        </TouchableOpacity>
 
-          {/* Phone Verification Card */}
-          <TouchableOpacity
-            style={[
-              styles.verificationCard,
-              !phoneVerified && { backgroundColor: colors.warning + '10', borderColor: colors.warning + '30' }
-            ]}
-            activeOpacity={0.7}
-            onPress={() => setShowPhoneModal(true)}
-          >
-            <View style={styles.verificationHeader}>
-              <Ionicons
-                name="phone-portrait"
-                size={24}
-                color={phoneVerified ? colors.success : colors.warning}
-              />
-              <Text style={[
-                styles.verificationTitle,
-                { color: phoneVerified ? colors.success : colors.warning }
-              ]}>
-                {phoneVerified ? 'Phone Verified' : 'Phone Not Verified'}
-              </Text>
-              <Ionicons name="chevron-forward" size={20} color={colors.textMuted} style={{ marginLeft: 'auto' }} />
+        <TouchableOpacity
+          style={styles.menuItem}
+          activeOpacity={0.7}
+          onPress={() => setShow2FAModal(true)}
+          testID="settings-two-factor"
+        >
+          <View style={styles.menuItemLeft}>
+            <View style={[styles.menuIcon, { backgroundColor: mfaEnabled ? colors.success + '20' : colors.warning + '20' }]}>
+              <Ionicons name="finger-print-outline" size={22} color={mfaEnabled ? colors.success : colors.warning} />
             </View>
-            {phoneNumber && (
-              <Text style={styles.verificationEmail}>
-                {formatDisplayPhone(phoneNumber, 'national')}
-              </Text>
-            )}
-            {!phoneVerified && (
-              <Text style={styles.verificationSubtext}>Tap to verify your phone number</Text>
-            )}
-          </TouchableOpacity>
-        </View>
+            <View style={styles.menuItemText}>
+              <Text style={styles.menuItemTitle}>Two-Factor Authentication</Text>
+              <Text style={styles.menuItemSubtitle}>{mfaEnabled ? 'Enabled' : 'Not enabled'}</Text>
+            </View>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+        </TouchableOpacity>
 
-        {/* Safety Tips */}
-        <View style={styles.tipsSection}>
-          <Text style={styles.tipsTitle}>Safety Tips</Text>
-          <TipItem
-            icon="warning-outline"
-            text="Never share your account password with anyone"
-          />
-          <TipItem
-            icon="shield-outline"
-            text="Enable two-factor authentication for added security"
-          />
-          <TipItem
-            icon="people-outline"
-            text="Only accept bets from people you trust"
-          />
-        </View>
-      </ScrollView>
+        {/* Phone */}
+        <TouchableOpacity
+          style={[
+            styles.verificationCard,
+            styles.phoneCard,
+            !phoneVerified && { backgroundColor: colors.warning + '10', borderColor: colors.warning + '30' }
+          ]}
+          activeOpacity={0.7}
+          onPress={() => setShowPhoneModal(true)}
+          testID="settings-phone"
+        >
+          <View style={styles.verificationHeader}>
+            <Ionicons
+              name="phone-portrait"
+              size={24}
+              color={phoneVerified ? colors.success : colors.warning}
+            />
+            <Text style={[
+              styles.verificationTitle,
+              { color: phoneVerified ? colors.success : colors.warning }
+            ]}>
+              {phoneVerified ? 'Phone Verified' : 'Phone Not Verified'}
+            </Text>
+            <Ionicons name="chevron-forward" size={20} color={colors.textMuted} style={{ marginLeft: 'auto' }} />
+          </View>
+          {phoneNumber && (
+            <Text style={styles.verificationEmail}>
+              {formatDisplayPhone(phoneNumber, 'national')}
+            </Text>
+          )}
+          {!phoneVerified && (
+            <Text style={styles.verificationSubtext}>Tap to verify your phone number</Text>
+          )}
+        </TouchableOpacity>
+      </View>
 
       {/* Change Password Modal */}
       <ChangePasswordModal
@@ -252,7 +232,7 @@ export const TrustSafetyScreen: React.FC<TrustSafetyScreenProps> = ({ onClose })
         }}
         phoneNumber={phoneNumber}
       />
-    </SafeAreaView>
+    </>
   );
 };
 
@@ -472,18 +452,6 @@ const PhoneManagementModal: React.FC<PhoneManagementModalProps> = ({
     </Modal>
   );
 };
-
-interface TipItemProps {
-  icon: keyof typeof Ionicons.glyphMap;
-  text: string;
-}
-
-const TipItem: React.FC<TipItemProps> = ({ icon, text }) => (
-  <View style={styles.tipItem}>
-    <Ionicons name={icon} size={20} color={colors.warning} />
-    <Text style={styles.tipText}>{text}</Text>
-  </View>
-);
 
 // Change Password Modal Component
 interface ChangePasswordModalProps {
@@ -981,37 +949,10 @@ const BenefitItem: React.FC<BenefitItemProps> = ({ icon, text }) => (
 );
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  content: {
-    flex: 1,
-  },
-  statusSection: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-  },
-  statusCard: {
-    backgroundColor: colors.surface,
-    borderRadius: spacing.radius.lg,
-    padding: spacing.xl,
-    alignItems: 'center',
-  },
-  statusTitle: {
-    ...textStyles.h3,
-    color: colors.textPrimary,
-    fontWeight: typography.fontWeight.bold,
-    marginTop: spacing.sm,
-  },
-  statusSubtitle: {
-    ...textStyles.body,
-    color: colors.textSecondary,
-    marginTop: spacing.xs,
-  },
   section: {
     backgroundColor: colors.surface,
     marginTop: spacing.md,
+    paddingBottom: spacing.sm,
   },
   sectionTitle: {
     ...textStyles.label,
@@ -1059,9 +1000,12 @@ const styles = StyleSheet.create({
     borderRadius: spacing.radius.md,
     padding: spacing.md,
     marginHorizontal: spacing.lg,
-    marginBottom: spacing.md,
+    marginBottom: spacing.sm,
     borderWidth: 1,
     borderColor: colors.success + '30',
+  },
+  phoneCard: {
+    marginTop: spacing.md,
   },
   verificationHeader: {
     flexDirection: 'row',
@@ -1082,27 +1026,6 @@ const styles = StyleSheet.create({
     ...textStyles.caption,
     color: colors.textMuted,
     marginTop: spacing.xs,
-  },
-  tipsSection: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.lg,
-  },
-  tipsTitle: {
-    ...textStyles.h4,
-    color: colors.textPrimary,
-    marginBottom: spacing.md,
-  },
-  tipItem: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: spacing.sm,
-  },
-  tipText: {
-    ...textStyles.body,
-    color: colors.textSecondary,
-    flex: 1,
-    marginLeft: spacing.sm,
-    lineHeight: 20,
   },
 });
 

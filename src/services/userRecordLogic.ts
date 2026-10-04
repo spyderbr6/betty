@@ -17,6 +17,35 @@ export interface UserRecordDeps<R> {
 }
 
 /**
+ * Repairs for records written by early versions of the app: a placeholder email, and a
+ * display name that is missing or is the 32-character Cognito username hash. Returns the
+ * fields to write, or null when the record is fine. Runs once per sign-in (ProfileContext);
+ * it used to run on every visit to the Account screen.
+ */
+export function profileRepairs(
+  record: { email?: string | null; displayName?: string | null },
+  attributes: { name?: string; email?: string },
+  username: string
+): { email?: string; displayName?: string; displayNameLower?: string } | null {
+  const repairs: { email?: string; displayName?: string; displayNameLower?: string } = {};
+
+  const email = record.email ?? '';
+  if (email.includes('@example.com') || !email.includes('@')) {
+    const realEmail = attributes.email || username;
+    if (realEmail !== email) repairs.email = realEmail;
+  }
+
+  const name = record.displayName ?? '';
+  const isHashLike = /^[a-f0-9]{32}$/.test(name.toLowerCase());
+  if ((!name || isHashLike) && attributes.name) {
+    repairs.displayName = attributes.name;
+    repairs.displayNameLower = attributes.name.toLowerCase();
+  }
+
+  return Object.keys(repairs).length > 0 ? repairs : null;
+}
+
+/**
  * Return the user's record, creating it if it does not exist.
  *
  * Returns null when there is still no record after trying (the create was rejected and

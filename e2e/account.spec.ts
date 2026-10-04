@@ -152,11 +152,12 @@ test('tapping the avatar uploads a new picture and deletes the old one', async (
   );
 });
 
-test.describe('trust & safety', () => {
+test.describe('settings: account and security', () => {
+  // Formerly the Trust & Safety screen; its account and security parts now live in Settings
   const openTrustSafety = async (page: Page) => {
     await openAccount(page);
-    await page.getByTestId('account-trust-safety').dispatchEvent('click');
-    await expect(page.getByTestId('trust-email')).toBeVisible({ timeout: 15_000 });
+    await page.getByTestId('account-settings').dispatchEvent('click');
+    await expect(page.getByTestId('settings-email')).toBeVisible({ timeout: 15_000 });
   };
 
   test('shows the email address and writes nothing when the record is current', async ({ page }) => {
@@ -179,7 +180,7 @@ test.describe('trust & safety', () => {
     await openTrustSafety(page);
 
     // The address, not the Cognito username
-    await expect(page.getByTestId('trust-email')).toHaveText(TEST_USER.email);
+    await expect(page.getByTestId('settings-email')).toHaveText(TEST_USER.email);
     // Give a stray write time to land before asserting there was none
     await page.waitForTimeout(1_000);
     expect(updates.filter((u) => 'phoneNumber' in u)).toEqual([]);

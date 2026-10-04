@@ -297,7 +297,7 @@ export const AddFundsModal: React.FC<AddFundsModalProps> = ({
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={handleClose}>
-      <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+      <SafeAreaView style={styles.container} edges={['top', 'left', 'right']} testID="add-funds-modal">
         <KeyboardAvoidingView
           style={styles.content}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}

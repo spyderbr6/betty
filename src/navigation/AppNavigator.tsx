@@ -4,7 +4,7 @@
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { NavigationContainer, NavigationContainerRef } from '@react-navigation/native';
+import { CommonActions, NavigationContainer, NavigationContainerRef } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
 import { colors } from '../styles';
@@ -13,6 +13,7 @@ import { TabBar } from '../components/ui/TabBar';
 import ToastNotificationService from '../services/toastNotificationService';
 import { setPushNavigationCallback } from '../services/pushNotificationConfig';
 import { getNotificationNavigationAction } from '../utils/notificationNavigationHandler';
+import { notificationRoute } from '../services/notificationRoutes';
 import { NotificationType } from '../types/betting';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -21,7 +22,7 @@ import { BetsScreen } from '../screens/BetsScreen';
 import { LiveEventsScreen } from '../screens/LiveEventsScreen';
 import { CreateBetScreen } from '../screens/CreateBetScreen';
 import { ResolveScreen } from '../screens/ResolveScreen';
-import { AccountScreen } from '../screens/AccountScreen';
+import { AccountStackNavigator } from './AccountStack';
 import { OnboardingScreen } from '../screens/OnboardingScreen';
 import { SquaresGameDetailScreen } from '../screens/SquaresGameDetailScreen';
 import { BetDetailsScreen } from '../screens/BetDetailsScreen';
@@ -134,7 +135,7 @@ const TabNavigator = () => {
       />
       <Tab.Screen
         name="Account"
-        component={AccountScreen}
+        component={AccountStackNavigator}
         options={{
           tabBarLabel: 'Account',
         }}
@@ -173,39 +174,16 @@ export const AppNavigator: React.FC = () => {
       return;
     }
 
-    switch (navigationAction.action) {
-      case 'navigate':
-        if (navigationAction.screen) {
-          navigationRef.current.navigate(navigationAction.screen as never, navigationAction.params as never);
-          console.log(`[Navigation] Navigated to ${navigationAction.screen}`);
-        }
-        break;
-
-      case 'open_modal':
-        // For modals, we navigate to the appropriate screen that manages the modal
-        // The modal logic is handled by the screens themselves (e.g., AccountScreen opens modals)
-        console.log(`[Navigation] Modal navigation: ${navigationAction.modal}`);
-        // TODO: Implement modal navigation based on your app's modal architecture
-        // For now, navigate to the parent screen
-        if (navigationAction.modal === 'notifications') {
-          navigationRef.current.navigate('Account' as never);
-        } else if (navigationAction.modal === 'friend_requests') {
-          navigationRef.current.navigate('Account' as never, { openFriendRequests: true } as never);
-        } else if (navigationAction.modal === 'bet_details') {
-          navigationRef.current.navigate('Resolve' as never);
-        }
-        break;
-
-      case 'refresh':
-        console.log('[Navigation] Refresh action triggered');
-        // The current screen will handle the refresh
-        break;
-
-      case 'none':
-      default:
-        console.log('[Navigation] No navigation action defined');
-        break;
+    // Shared with the in-app feed (NotificationScreen), so a tap lands in the same place
+    // wherever it comes from. The root navigator only knows tabs: the route names the tab
+    // and the page inside it.
+    const route = notificationRoute(navigationAction, 'push');
+    if (!route) {
+      console.log('[Navigation] No navigation for this notification');
+      return;
     }
+    navigationRef.current.dispatch(CommonActions.navigate({ name: route.tab, params: route.params }));
+    console.log('[Navigation] Navigated to', route.tab, route.params?.screen ?? '');
   }, []);
 
   useEffect(() => {
