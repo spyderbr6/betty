@@ -47,7 +47,7 @@ describe('cancelExpiredBet', () => {
 
   it('skips a bet that is no longer ACTIVE', async () => {
     const { apply, calls } = fakeLedger([{ status: 'state_changed' }]);
-    expect(await cancelExpiredBet(apply, 'bet-1', refunds(1), 'r')).toEqual({ status: 'skipped', reason: 'bet no longer ACTIVE' });
+    expect(await cancelExpiredBet(apply, 'bet-1', refunds(1), 'r')).toEqual({ status: 'skipped', reason: 'no longer in the expected state' });
     expect(calls).toHaveLength(1);
   });
 

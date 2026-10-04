@@ -1,8 +1,4 @@
 import { EventBridgeHandler } from 'aws-lambda';
-
-/** Mirrors WINNINGS_FEE_RATE in src/config/subscriptionConfig.ts. A Lambda
- *  cannot import from src/, so changing the rate means changing both. */
-const WINNINGS_FEE_RATE = 0.03;
 import { generateClient } from 'aws-amplify/api';
 import type { Schema } from '../../data/resource';
 import { Amplify } from 'aws-amplify';
@@ -10,6 +6,16 @@ import { getAmplifyDataClientConfig } from '@aws-amplify/backend/function/runtim
 // @ts-ignore - Generated at build time by Amplify
 import { env } from '$amplify/env/scheduled-squares-checker';
 import { notificationMeta } from '../../shared/notificationCatalog';
+import { ledgerApply } from '../../shared/moneyClient';
+import { isProActive } from '../../../src/config/subscriptionConfig';
+import {
+  calculatePayout,
+  cancelSquaresGame,
+  periodPayoutEntry,
+  potFromPurchases,
+  squaresPayoutRecordId,
+  type SquaresPeriod,
+} from './squaresMoney';
 
 // CRITICAL: Top-level await configuration - required for proper client initialization
 const { resourceConfig, libraryOptions } = await getAmplifyDataClientConfig(env);
@@ -75,11 +81,9 @@ export const handler: EventBridgeHandler<"Scheduled Event", null, boolean> = asy
 async function lockGridsReadyForLocking(): Promise<number> {
   try {
     // Query ACTIVE games
-    const { data: activeGames } = await client.models.SquaresGame.squaresGamesByStatus({
-      status: 'ACTIVE'
-    });
+    const activeGames = await gamesByStatus('ACTIVE');
 
-    if (!activeGames || activeGames.length === 0) {
+    if (activeGames.length === 0) {
       console.log('No ACTIVE games found');
       return 0;
     }
@@ -95,16 +99,12 @@ async function lockGridsReadyForLocking(): Promise<number> {
 
       if (!shouldLock) continue;
 
-      // If no squares were sold, cancel the game instead of locking
+      // If no squares were sold, cancel the game instead of locking. squaresSold is a
+      // count buyers' phones keep, so any purchases that do exist are refunded.
       if (game.squaresSold === 0) {
         console.log(`❌ Cancelling game ${game.id} - no squares purchased`);
 
-        await client.models.SquaresGame.update({
-          id: game.id,
-          status: 'CANCELLED',
-          resolutionReason: 'No squares purchased',
-          updatedAt: new Date().toISOString(),
-        });
+        if (!(await cancelGame(game, 'No squares purchased'))) continue;
 
         // Notify creator
         await client.models.Notification.create({
@@ -180,11 +180,9 @@ async function lockGridsReadyForLocking(): Promise<number> {
 async function startGamesWhenEventLive(): Promise<number> {
   try {
     // Query LOCKED games
-    const { data: lockedGames } = await client.models.SquaresGame.squaresGamesByStatus({
-      status: 'LOCKED'
-    });
+    const lockedGames = await gamesByStatus('LOCKED');
 
-    if (!lockedGames || lockedGames.length === 0) {
+    if (lockedGames.length === 0) {
       console.log('No LOCKED games found');
       return 0;
     }
@@ -199,13 +197,9 @@ async function startGamesWhenEventLive(): Promise<number> {
       const { data: event } = await client.models.LiveEvent.get({ id: game.eventId });
 
       if (!event) {
+        // A LOCKED game has buyers; this used to cancel it and refund none of them
         console.log(`⚠️  Event ${game.eventId} not found for game ${game.id} - cancelling game`);
-        await client.models.SquaresGame.update({
-          id: game.id,
-          status: 'CANCELLED',
-          resolutionReason: 'Event not found',
-          updatedAt: new Date().toISOString(),
-        });
+        await cancelGame(game, 'Event not found');
         continue;
       }
 
@@ -268,11 +262,9 @@ async function startGamesWhenEventLive(): Promise<number> {
 async function processPeriodScoresForLiveGames(): Promise<number> {
   try {
     // Query LIVE games
-    const { data: liveGames } = await client.models.SquaresGame.squaresGamesByStatus({
-      status: 'LIVE'
-    });
+    const liveGames = await gamesByStatus('LIVE');
 
-    if (!liveGames || liveGames.length === 0) {
+    if (liveGames.length === 0) {
       console.log('No LIVE games found');
       return 0;
     }
@@ -349,12 +341,11 @@ async function processPeriodScoresForLiveGames(): Promise<number> {
         continue;
       }
 
-      // Get existing payouts to avoid duplicates
-      const { data: existingPayouts } = await client.models.SquaresPayout.payoutsBySquaresGame({
-        squaresGameId: fullGame.id
-      });
+      // Periods already recorded. The money itself is also guarded by a fixed ledger id
+      // per period, so a run that overlaps this one cannot pay twice.
+      const existingPayouts = await payoutsOf(fullGame.id);
 
-      const paidPeriods = new Set(existingPayouts?.map((p: any) => p.period) || []);
+      const paidPeriods = new Set(existingPayouts.map((p: any) => p.period));
 
       // Determine max periods to process (up to 6 for double overtime)
       // Standard: 4 periods (Q1, Q2, Q3, Q4)
@@ -387,12 +378,10 @@ async function processPeriodScoresForLiveGames(): Promise<number> {
 
         console.log(`🏆 Processing Period ${period} for game ${fullGame.id}: ${awayScore}-${homeScore} (last digits: ${awayScore % 10}-${homeScore % 10})`);
 
-        // Get all purchases
-        const { data: purchases } = await client.models.SquaresPurchase.purchasesBySquaresGame({
-          squaresGameId: fullGame.id
-        });
+        // Get all purchases (every page)
+        const purchases = await purchasesOf(fullGame.id);
 
-        if (!purchases || purchases.length === 0) {
+        if (purchases.length === 0) {
           console.log(`❌ No purchases found for game ${fullGame.id} - skipping period ${period}`);
           continue;
         }
@@ -406,10 +395,12 @@ async function processPeriodScoresForLiveGames(): Promise<number> {
         if (!winningPurchase) {
           console.log(`No owner for winning square - house wins Period ${period}`);
 
-          // Create house win payout record for tracking
+          // Create house win payout record for tracking, under the period's fixed id so
+          // an overlapping run cannot record (and announce) it twice
           try {
             const now = new Date().toISOString();
-            const { data: housePayout, errors: housePayoutErrors } = await client.models.SquaresPayout.create({
+            const recorded = await recordPayout({
+              id: squaresPayoutRecordId(fullGame.id, periodEnum as SquaresPeriod),
               squaresGameId: fullGame.id,
               squaresPurchaseId: 'HOUSE_WIN', // Sentinel value (cannot use null due to GSI constraint)
               userId: fullGame.creatorId, // Track under creator for notification purposes
@@ -425,9 +416,13 @@ async function processPeriodScoresForLiveGames(): Promise<number> {
               paidAt: now,
             });
 
-            if (housePayoutErrors || !housePayout) {
-              console.error(`❌ Failed to create house win payout for Period ${period}:`, housePayoutErrors);
+            if (recorded === 'failed') {
+              console.error(`❌ Failed to create house win payout for Period ${period}`);
               console.error(`Payout data: gameId=${fullGame.id}, period=${periodEnum}, scores=${awayScore % 10}-${homeScore % 10}`);
+              continue;
+            }
+            if (recorded === 'exists') {
+              console.log(`House win for Period ${period} already recorded by another run`);
               continue;
             }
 
@@ -467,13 +462,15 @@ async function processPeriodScoresForLiveGames(): Promise<number> {
           continue;
         }
 
-        // Calculate payout
-        const payoutAmount = calculatePayout(period, fullGame.totalPot, payoutStructure);
+        // Calculate payout from what the buyers actually paid, not the game's totalPot
+        // field (written by buyers' phones, read-then-write, so it can drift or be set)
+        const pot = potFromPurchases(purchases);
+        const payoutAmount = calculatePayout(period, pot, payoutStructure);
 
         // CRITICAL: Prevent zero or negative payouts
         if (payoutAmount <= 0) {
           console.error(`❌ INVALID PAYOUT AMOUNT: $${payoutAmount} for Period ${period}`);
-          console.error(`   Game: ${fullGame.id}, Total Pot: $${fullGame.totalPot}`);
+          console.error(`   Game: ${fullGame.id}, Pot from purchases: $${pot}, totalPot field: $${fullGame.totalPot}`);
           console.error(`   Payout Structure:`, payoutStructure);
           console.error(`   Winner: ${winningPurchase.ownerName} (${winningPurchase.userId})`);
           console.error(`   SKIPPING PAYOUT CREATION - fix payout structure or total pot`);
@@ -482,96 +479,94 @@ async function processPeriodScoresForLiveGames(): Promise<number> {
 
         console.log(`   💰 Calculated payout: $${payoutAmount}`);
 
-        // Create payout record with proper error handling
         const now = new Date().toISOString();
-        let payout: any;
 
+        // Pro waives the platform fee; the winner is only known here. The old code read
+        // the balance, added and wrote it back, after recording the period as paid: a
+        // failure in between left the period recorded and the winner unpaid, and a
+        // winner with no User row was recorded as paid while nobody was credited.
+        const { data: buyer } = await client.models.User.get({ id: winningPurchase.userId });
+        if (!buyer) {
+          console.error(`❌ Winner ${winningPurchase.userId} has no User row; Period ${period} of game ${fullGame.id} left unpaid for review`);
+          continue;
+        }
+        const entry = periodPayoutEntry({
+          gameId: fullGame.id,
+          period: periodEnum as SquaresPeriod,
+          gross: payoutAmount,
+          userId: winningPurchase.userId,
+          isPro: isProActive(buyer),
+        });
+
+        // The money first, through the ledger (the money function), under a fixed id per
+        // game and period: a repeat of this period is 'already_applied', never a second
+        // credit. Then the record, so a failure between the two is finished next run.
+        let credited;
         try {
-          const { data: payoutData, errors: payoutErrors } = await client.models.SquaresPayout.create({
-            squaresGameId: fullGame.id,
-            squaresPurchaseId: winningPurchase.id,
-            userId: winningPurchase.userId,
-            ownerName: winningPurchase.ownerName,
-            period: periodEnum,
-            amount: payoutAmount,
-            homeScore: homeScore % 10,
-            awayScore: awayScore % 10,
-            homeScoreFull: homeScore,
-            awayScoreFull: awayScore,
-            status: 'COMPLETED',
-            createdAt: now,
-            paidAt: now,
-          });
-
-          if (payoutErrors || !payoutData) {
-            console.error(`❌ Failed to create payout for Period ${period}:`, payoutErrors);
-            console.error(`Payout data: gameId=${fullGame.id}, purchaseId=${winningPurchase.id}, userId=${winningPurchase.userId}, period=${periodEnum}, amount=${payoutAmount}, scores=${awayScore % 10}-${homeScore % 10}`);
-            continue;
-          }
-
-          payout = payoutData;
-        } catch (payoutError) {
-          console.error(`❌ Exception creating payout for Period ${period}:`, payoutError);
-          console.error(`Game: ${fullGame.id}, Winner: ${winningPurchase.ownerName}, Period: ${periodEnum}, Amount: ${payoutAmount}`);
+          credited = await ledgerApply(client, [entry]);
+        } catch (creditError) {
+          console.error(`❌ Exception crediting Period ${period} of game ${fullGame.id}:`, creditError);
+          continue;
+        }
+        if (credited.status !== 'applied' && credited.status !== 'already_applied') {
+          console.error(`❌ Period ${period} of game ${fullGame.id} not credited: ${JSON.stringify(credited)}`);
           continue;
         }
 
-        // Credit buyer's account
-        const { data: user } = await client.models.User.get({ id: winningPurchase.userId });
-        if (user) {
-          // Pro waives the platform fee. This is the only place the winner is
-          // known, which is why the fee is taken here rather than inside
-          // calculatePayout. The fee is also recorded rather than reported as 0:
-          // it used to be deducted silently, so the history screen - which only
-          // shows a fee when platformFee > 0 - never mentioned it.
-          const isPro = user.subscriptionTier === 'PRO' && user.subscriptionStatus === 'ACTIVE';
-          const platformFee = isPro ? 0 : Math.round(payoutAmount * WINNINGS_FEE_RATE * 100) / 100;
-          const netPayout = Math.round((payoutAmount - platformFee) * 100) / 100;
-
-          const newBalance = user.balance + netPayout;
-          await client.models.User.update({
-            id: winningPurchase.userId,
-            balance: newBalance,
-          });
-
-          // Create transaction record
-          await client.models.Transaction.create({
-            userId: winningPurchase.userId,
-            type: 'SQUARES_PAYOUT',
-            status: 'COMPLETED',
-            amount: payoutAmount,
-            actualAmount: netPayout,
-            platformFee,
-            balanceBefore: user.balance,
-            balanceAfter: newBalance,
-            relatedSquaresGameId: fullGame.id,
-            notes: `${periodEnum} winner payout`,
-            createdAt: now,
-            completedAt: now,
-          });
+        const payoutId = squaresPayoutRecordId(fullGame.id, periodEnum as SquaresPeriod);
+        const recorded = await recordPayout({
+          id: payoutId,
+          squaresGameId: fullGame.id,
+          squaresPurchaseId: winningPurchase.id,
+          userId: winningPurchase.userId,
+          ownerName: winningPurchase.ownerName,
+          period: periodEnum,
+          amount: payoutAmount,
+          homeScore: homeScore % 10,
+          awayScore: awayScore % 10,
+          homeScoreFull: homeScore,
+          awayScoreFull: awayScore,
+          status: 'COMPLETED',
+          createdAt: now,
+          paidAt: now,
+        });
+        if (recorded === 'failed') {
+          // Credited but not recorded: the next run sees the period unrecorded, finds the
+          // credit already applied, and writes the record
+          console.error(`❌ Period ${period} of game ${fullGame.id} credited but its record failed; will retry`);
+          continue;
+        }
+        if (credited.status === 'already_applied') {
+          // Paid by an earlier or overlapping run, which also told the winner
+          console.log(`Period ${period} of game ${fullGame.id} was already paid (record ${recorded})`);
+          continue;
         }
 
-        // Send notification to buyer
-        const { data: buyer } = await client.models.User.get({ id: winningPurchase.userId });
-        const isSelfOwned = winningPurchase.ownerName === buyer?.displayName;
+        // Send notification to buyer, with what they actually received
+        const net = entry.delta;
+        const isSelfOwned = winningPurchase.ownerName === buyer.displayName;
 
         const notificationMessage = isSelfOwned
-          ? `You won Period ${period}! $${payoutAmount.toFixed(2)}`
-          : `Square for "${winningPurchase.ownerName}" won Period ${period}! You received $${payoutAmount.toFixed(2)}`;
+          ? `You won Period ${period}! $${net.toFixed(2)}`
+          : `Square for "${winningPurchase.ownerName}" won Period ${period}! You received $${net.toFixed(2)}`;
 
-        await client.models.Notification.create({
-          userId: winningPurchase.userId,
-          type: 'SQUARES_PERIOD_WINNER',
-          ...notificationMeta('SQUARES_PERIOD_WINNER'),
-          title: '🎉 Winner!',
-          message: notificationMessage,
-          priority: 'HIGH',
-          actionData: JSON.stringify({ squaresGameId: fullGame.id, payoutId: payout.id }),
-          isRead: false,
-          createdAt: now,
-        });
+        try {
+          await client.models.Notification.create({
+            userId: winningPurchase.userId,
+            type: 'SQUARES_PERIOD_WINNER',
+            ...notificationMeta('SQUARES_PERIOD_WINNER'),
+            title: '🎉 Winner!',
+            message: notificationMessage,
+            priority: 'HIGH',
+            actionData: JSON.stringify({ squaresGameId: fullGame.id, payoutId }),
+            isRead: false,
+            createdAt: now,
+          });
+        } catch (notificationError) {
+          console.warn(`Failed to notify winner of Period ${period} of game ${fullGame.id}:`, notificationError);
+        }
 
-        console.log(`✅ Paid Period ${period} winner: ${winningPurchase.ownerName} - $${payoutAmount}`);
+        console.log(`✅ Paid Period ${period} winner: ${winningPurchase.ownerName} - $${payoutAmount} gross, $${net} net`);
         payoutsCreated++;
       }
     }
@@ -590,11 +585,9 @@ async function processPeriodScoresForLiveGames(): Promise<number> {
 async function resolveCompletedGames(): Promise<number> {
   try {
     // Query LIVE games
-    const { data: liveGames } = await client.models.SquaresGame.squaresGamesByStatus({
-      status: 'LIVE'
-    });
+    const liveGames = await gamesByStatus('LIVE');
 
-    if (!liveGames || liveGames.length === 0) {
+    if (liveGames.length === 0) {
       console.log('No LIVE games to resolve');
       return 0;
     }
@@ -696,15 +689,8 @@ async function resolveCompletedGames(): Promise<number> {
  */
 async function cancelGamesForCancelledEvents(): Promise<number> {
   try {
-    // Query ACTIVE and LOCKED games
-    const { data: activeGames } = await client.models.SquaresGame.squaresGamesByStatus({
-      status: 'ACTIVE'
-    });
-    const { data: lockedGames } = await client.models.SquaresGame.squaresGamesByStatus({
-      status: 'LOCKED'
-    });
-
-    const gamesToCheck = [...(activeGames || []), ...(lockedGames || [])];
+    // Query ACTIVE and LOCKED games (every page)
+    const gamesToCheck = [...(await gamesByStatus('ACTIVE')), ...(await gamesByStatus('LOCKED'))];
 
     if (gamesToCheck.length === 0) {
       console.log('No games to check for cancellation');
@@ -726,81 +712,10 @@ async function cancelGamesForCancelledEvents(): Promise<number> {
 
       console.log(`❌ Cancelling game ${game.id} (event ${event.status})`);
 
-      // Get all purchases
-      const { data: purchases } = await client.models.SquaresPurchase.purchasesBySquaresGame({
-        squaresGameId: game.id
-      });
-
-      if (!purchases || purchases.length === 0) {
-        // No purchases to refund
-        await client.models.SquaresGame.update({
-          id: game.id,
-          status: 'CANCELLED',
-          resolutionReason: `Event ${event.status}`,
-          updatedAt: new Date().toISOString(),
-        });
-        continue;
-      }
-
-      // Refund each buyer
-      const refundMap = new Map<string, number>();
-
-      for (const purchase of purchases) {
-        const currentRefund = refundMap.get(purchase.userId) || 0;
-        refundMap.set(purchase.userId, currentRefund + purchase.amount);
-      }
-
-      // Process refunds
-      const now = new Date().toISOString();
-      for (const [userId, amount] of refundMap.entries()) {
-        const { data: user } = await client.models.User.get({ id: userId });
-        if (user) {
-          const newBalance = user.balance + amount;
-          await client.models.User.update({
-            id: userId,
-            balance: newBalance,
-          });
-
-          // Create transaction
-          await client.models.Transaction.create({
-            userId,
-            type: 'SQUARES_REFUND',
-            status: 'COMPLETED',
-            amount: amount,
-            platformFee: 0,
-            balanceBefore: user.balance,
-            balanceAfter: newBalance,
-            relatedSquaresGameId: game.id,
-            notes: 'Game cancelled - refund',
-            createdAt: now,
-            completedAt: now,
-          });
-
-          // Send notification
-          await client.models.Notification.create({
-            userId,
-            type: 'SQUARES_GAME_CANCELLED',
-            ...notificationMeta('SQUARES_GAME_CANCELLED'),
-            title: 'Game Cancelled',
-            message: `"${game.title}" was cancelled. You received a $${amount.toFixed(2)} refund.`,
-            priority: 'MEDIUM',
-            actionData: JSON.stringify({ squaresGameId: game.id }),
-            isRead: false,
-            createdAt: now,
-          });
-        }
-      }
-
-      // Update game status
-      await client.models.SquaresGame.update({
-        id: game.id,
-        status: 'CANCELLED',
-        resolutionReason: `Event ${event.status}`,
-        updatedAt: new Date().toISOString(),
-      });
-
-      console.log(`✅ Cancelled game ${game.id}, refunded ${refundMap.size} buyers`);
-      cancelledCount++;
+      // Refunds and the status change are one ledger transaction (see cancelGame). This
+      // used to refund by reading and writing each balance and cancel afterwards, so a
+      // failure part-way left the game open and the next run refunded everyone again.
+      if (await cancelGame(game, `Event ${event.status}`)) cancelledCount++;
     }
 
     return cancelledCount;
@@ -811,6 +726,107 @@ async function cancelGamesForCancelledEvents(): Promise<number> {
 }
 
 // ============ HELPER FUNCTIONS ============
+
+// Rows from the untyped client above (TS2590 on the generated model types)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Row = any;
+
+type Page = { data?: Row[] | null; nextToken?: string | null };
+
+/** Every page of an index query. One page could leave games, and their money, waiting. */
+async function listAll(query: (options: { nextToken?: string | null }) => Promise<Page>): Promise<Row[]> {
+  const rows: Row[] = [];
+  let nextToken: string | null | undefined;
+  do {
+    const page = await query({ nextToken });
+    rows.push(...(page.data ?? []));
+    nextToken = page.nextToken;
+  } while (nextToken);
+  return rows;
+}
+
+const gamesByStatus = (status: string) =>
+  listAll((options) => client.models.SquaresGame.squaresGamesByStatus({ status }, options));
+
+const purchasesOf = (squaresGameId: string) =>
+  listAll((options) => client.models.SquaresPurchase.purchasesBySquaresGame({ squaresGameId }, options));
+
+const payoutsOf = (squaresGameId: string) =>
+  listAll((options) => client.models.SquaresPayout.payoutsBySquaresGame({ squaresGameId }, options));
+
+/**
+ * Cancel a game and refund every buyer: one ledger transaction for the refunds and the
+ * status change, guarded on the status the game was listed with (squaresMoney.ts). True
+ * if this run cancelled it. Never throws, so one game cannot stop the others.
+ */
+async function cancelGame(game: Row, reason: string): Promise<boolean> {
+  try {
+    const purchases = await purchasesOf(game.id);
+    const { outcome, refunds } = await cancelSquaresGame(
+      (entries, stateUpdates) => ledgerApply(client, entries, stateUpdates),
+      game.id,
+      game.status,
+      purchases,
+      reason
+    );
+    if (outcome.status === 'skipped') {
+      console.log(`⏭️  Game ${game.id} not cancelled: ${outcome.reason}`);
+      return false;
+    }
+
+    // The ledger wrote the game directly, which fires no subscription
+    try {
+      await client.models.SquaresGame.update({ id: game.id });
+    } catch (touchError) {
+      console.warn(`Could not notify subscribers for game ${game.id}:`, touchError);
+    }
+
+    const now = new Date().toISOString();
+    for (const { userId, amount } of refunds) {
+      try {
+        await client.models.Notification.create({
+          userId,
+          type: 'SQUARES_GAME_CANCELLED',
+          ...notificationMeta('SQUARES_GAME_CANCELLED'),
+          title: 'Game Cancelled',
+          message: `"${game.title}" was cancelled. You received a $${amount.toFixed(2)} refund.`,
+          priority: 'MEDIUM',
+          actionData: JSON.stringify({ squaresGameId: game.id }),
+          isRead: false,
+          createdAt: now,
+        });
+      } catch (notificationError) {
+        console.warn(`Failed to notify ${userId} of the refund for game ${game.id}:`, notificationError);
+      }
+    }
+
+    console.log(`✅ Cancelled game ${game.id} (${reason}), refunded ${refunds.length} buyers`);
+    return true;
+  } catch (error) {
+    console.error(`❌ Failed to cancel game ${game.id} (${reason}):`, error);
+    return false;
+  }
+}
+
+/**
+ * Write a SquaresPayout record under its fixed id. 'exists' when another run wrote it
+ * first: the create is refused, and the row is there.
+ */
+async function recordPayout(record: Record<string, unknown> & { id: string }): Promise<'created' | 'exists' | 'failed'> {
+  try {
+    const { data, errors } = await client.models.SquaresPayout.create(record);
+    if (data && !errors?.length) return 'created';
+    console.warn(`SquaresPayout ${record.id} create returned errors:`, JSON.stringify(errors));
+  } catch (error) {
+    console.warn(`SquaresPayout ${record.id} create threw:`, error);
+  }
+  try {
+    const { data: existing } = await client.models.SquaresPayout.get({ id: record.id });
+    return existing ? 'exists' : 'failed';
+  } catch {
+    return 'failed';
+  }
+}
 
 /**
  * Find winning square based on period scores
@@ -847,49 +863,6 @@ function findWinningSquare(game: any, purchases: any[], homeScore: number, awayS
   console.log(`     Purchase at (${row}, ${col}):`, winner ? `Found - ${winner.ownerName}` : 'Not found (unsold)');
 
   return winner;
-}
-
-/**
- * Calculate payout for a period
- * Supports up to 6 periods (Q1-Q4 + double OT)
- * Overtime periods (5-6) use period4's percentage as they represent final score
- */
-function calculatePayout(period: number, totalPot: number, payoutStructure: any): number {
-  console.log(`       calculatePayout called: period=${period}, totalPot=${totalPot}, payoutStructure=`, payoutStructure);
-
-  if (!payoutStructure) {
-    console.error(`       ❌ payoutStructure is null/undefined`);
-    return 0;
-  }
-
-  const percentages = [
-    payoutStructure.period1, // Period 1
-    payoutStructure.period2, // Period 2 (halftime)
-    payoutStructure.period3, // Period 3
-    payoutStructure.period4, // Period 4 (final)
-    payoutStructure.period4, // Period 5 (OT - use final period percentage)
-    payoutStructure.period4, // Period 6 (2nd OT - use final period percentage)
-  ];
-
-  console.log(`       Percentages array:`, percentages);
-
-  const percentage = percentages[period - 1];
-
-  if (!percentage || percentage === undefined) {
-    console.error(`       ❌ No payout percentage defined for period ${period}`);
-    console.error(`       payoutStructure keys:`, Object.keys(payoutStructure || {}));
-    console.error(`       payoutStructure.period1:`, payoutStructure?.period1);
-    return 0;
-  }
-
-  const grossPayout = totalPot * percentage;
-
-  // Returns GROSS. The fee is applied at the payout site, where the winner is
-  // known and their subscription can be read - it was taken here, blind, so Pro
-  // members paid it on every square they won.
-  const netPayout = grossPayout;
-
-  return Math.round(netPayout * 100) / 100;
 }
 
 /**
