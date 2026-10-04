@@ -139,11 +139,12 @@ test('the Account menu has one row per destination', async ({ page }) => {
   await mockData(page);
   await openAccount(page);
 
-  for (const row of ['account-friends', 'account-wallet', 'account-stats', 'account-settings', 'account-help']) {
+  for (const row of ['account-friends', 'account-wallet', 'account-settings', 'account-help']) {
     await expect(page.getByTestId(row)).toBeVisible();
   }
   // Merged away: their content lives in Wallet, Settings, and Help & About
-  for (const gone of ['account-trust-safety', 'account-payment-methods', 'account-history', 'account-about', 'account-support']) {
+  // Stats was removed; Pro moved to the membership chip on the profile card
+  for (const gone of ['account-trust-safety', 'account-payment-methods', 'account-history', 'account-about', 'account-support', 'account-stats', 'account-pro']) {
     await expect(page.getByTestId(gone)).toHaveCount(0);
   }
 });

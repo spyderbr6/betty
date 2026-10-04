@@ -3,7 +3,9 @@
  * TypeScript types for React Navigation
  */
 
+import type { NavigatorScreenParams } from '@react-navigation/native';
 import { Bet, User } from './betting';
+import type { WalletAction } from '../screens/WalletScreen';
 
 // Root Stack Navigator (handles auth flow)
 export type RootStackParamList = {
@@ -27,7 +29,19 @@ export type AppTabParamList = {
   Live: undefined;
   Create: undefined;
   Resolve: undefined;
-  Account: undefined;
+  Account: NavigatorScreenParams<AccountStackParamList> | undefined;
+};
+
+// Account tab stack. Each page used to be a full-screen modal opened from the Account
+// screen; as stack pages they get a back gesture and mount only when visited.
+export type AccountStackParamList = {
+  AccountHome: undefined;
+  // showRequests: a timestamp, so each notification tap opens the requests list again
+  Friends: { showRequests?: number } | undefined;
+  Wallet: { initialAction?: WalletAction } | undefined;
+  Settings: undefined;
+  Help: undefined;
+  Subscription: undefined;
 };
 
 // Bets Stack Navigator (main betting screens)
@@ -83,16 +97,6 @@ export type ResolveStackParamList = {
   SquaresGameDetail: {
     gameId: string;
   };
-};
-
-// Account Stack Navigator (user profile and settings)
-export type AccountStackParamList = {
-  Profile: undefined;
-  Settings: undefined;
-  Stats: undefined;
-  History: undefined;
-  Support: undefined;
-  About: undefined;
 };
 
 // Modal Stack Navigator (for modals that overlay main navigation)

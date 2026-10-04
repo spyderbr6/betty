@@ -8,7 +8,7 @@ import { View, Text, ScrollView, StyleSheet, Switch } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, textStyles } from '../styles';
-import { ModalHeader } from '../components/ui/ModalHeader';
+import { ModalHeader, type ModalHeaderVariant } from '../components/ui/ModalHeader';
 import { useAuth } from '../contexts/AuthContext';
 import { NotificationPreferencesPanel } from '../components/settings/NotificationPreferencesPanel';
 import { SecuritySection } from '../components/settings/SecuritySection';
@@ -20,9 +20,11 @@ const client = generateClient<Schema>();
 
 interface SettingsScreenProps {
   onClose: () => void;
+  /** 'back' when shown as a page in the Account stack rather than as a modal. */
+  headerVariant?: ModalHeaderVariant;
 }
 
-export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
+export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose, headerVariant }) => {
   const { user } = useAuth();
   const [allowPhoneDiscovery, setAllowPhoneDiscovery] = useState(false);
   const [isPublic, setIsPublic] = useState(true);
@@ -100,7 +102,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
   };
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <ModalHeader title="Settings" onClose={onClose} />
+      <ModalHeader title="Settings" onClose={onClose} variant={headerVariant} />
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {user && <NotificationPreferencesPanel userId={user.userId} />}

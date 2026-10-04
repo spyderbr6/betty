@@ -24,6 +24,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { NotificationService } from '../services/notificationService';
 import { Notification, NotificationType } from '../types/betting';
 import { getNotificationNavigationAction } from '../utils/notificationNavigationHandler';
+import { notificationRoute } from '../services/notificationRoutes';
 import { PushSoftAsk } from '../components/settings/PushSoftAsk';
 
 // Client not needed - using NotificationService instead
@@ -242,56 +243,13 @@ export const NotificationScreen: React.FC<NotificationScreenProps> = ({ onClose,
       return;
     }
 
-    // Handle navigation based on action type (navigate BEFORE closing modal)
-    if (navigationAction.action === 'navigate') {
-      const { screen, params } = navigationAction;
-
-      // Map screen names to navigation calls
-      switch (screen) {
-        case 'SquaresGameDetail':
-          // Navigate to Bets tab, then to SquaresGameDetail
-          navigation.navigate('Bets', {
-            screen: 'SquaresGameDetail',
-            params: { gameId: params?.gameId }
-          });
-          break;
-
-        case 'MyBets':
-          // Navigate to Bets tab
-          navigation.navigate('Bets');
-          break;
-
-        case 'Friends':
-          // Navigate to Account tab (Friends screen is a modal from Account)
-          navigation.navigate('Account');
-          break;
-
-        case 'Account':
-          // Navigate to Account tab
-          navigation.navigate('Account');
-          break;
-
-        default:
-          console.log('[NotificationScreen] Unknown screen:', screen);
-      }
-    } else if (navigationAction.action === 'open_modal') {
-      // For modal actions like bet_details, navigate to Bets tab with params
-      const { modal, params } = navigationAction;
-
-      if (modal === 'bet_details' && params?.betId) {
-        navigation.navigate('Bets', {
-          screen: 'BetDetails',
-          params: { betId: params.betId }
-        });
-      } else if (modal === 'bet_invitation' && params?.betId) {
-        // Navigate to bet details (user can see invitation there)
-        navigation.navigate('Bets', {
-          screen: 'BetDetails',
-          params: { betId: params.betId }
-        });
-      } else {
-        console.log('[NotificationScreen] Unknown modal:', modal);
-      }
+    // Navigate BEFORE closing the modal. Shared with push and toast taps (AppNavigator), so
+    // a notification lands in the same place wherever it is tapped.
+    const route = notificationRoute(navigationAction, 'feed');
+    if (route) {
+      navigation.navigate(route.tab, route.params);
+    } else {
+      console.log('[NotificationScreen] No navigation for:', notification.type);
     }
 
     // Close modal after navigation starts (with small delay to ensure navigation completes)

@@ -9,7 +9,7 @@ import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Modal } from 'rea
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, textStyles, typography } from '../styles';
-import { ModalHeader } from '../components/ui/ModalHeader';
+import { ModalHeader, type ModalHeaderVariant } from '../components/ui/ModalHeader';
 import { FeedbackModal, FeedbackData } from '../components/ui/FeedbackModal';
 import { submitFeedbackToGitHub } from '../utils/github';
 import { PrivacyPolicyScreen } from './PrivacyPolicyScreen';
@@ -19,11 +19,13 @@ import { OpenSourceLicensesScreen } from './OpenSourceLicensesScreen';
 
 interface HelpScreenProps {
   onClose: () => void;
+  /** 'back' when shown as a page in the Account stack rather than as a modal. */
+  headerVariant?: ModalHeaderVariant;
 }
 
 type LegalPage = 'terms' | 'privacy' | 'guidelines' | 'licenses';
 
-export const HelpScreen: React.FC<HelpScreenProps> = ({ onClose }) => {
+export const HelpScreen: React.FC<HelpScreenProps> = ({ onClose, headerVariant }) => {
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [legalPage, setLegalPage] = useState<LegalPage | null>(null);
 
@@ -35,7 +37,7 @@ export const HelpScreen: React.FC<HelpScreenProps> = ({ onClose }) => {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']} testID="screen-help">
-      <ModalHeader title="Help & About" onClose={onClose} />
+      <ModalHeader title="Help & About" onClose={onClose} variant={headerVariant} />
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.section}>

@@ -65,3 +65,37 @@ export type SubscriptionStatus =
   | 'PAST_DUE'
   | 'TRIALING'
   | 'INCOMPLETE';
+
+interface SubscriptionFields {
+  subscriptionTier?: string | null;
+  subscriptionStatus?: string | null;
+}
+
+/**
+ * Whether a user currently gets Pro benefits. The one place this is decided: fees, the
+ * Account screen and the subscription screen used to each test it their own way, and the
+ * Account screen (tier only) showed "Pro Membership · 0% fees" to cancelled and past-due
+ * members who were being charged.
+ *
+ * TRIALING counts: the Stripe webhook grants the PRO tier for a trial, so a trial member
+ * is entitled to the waiver.
+ */
+export function isProActive(user: SubscriptionFields | null | undefined): boolean {
+  return (
+    user?.subscriptionTier === 'PRO' &&
+    (user.subscriptionStatus === 'ACTIVE' || user.subscriptionStatus === 'TRIALING')
+  );
+}
+
+export type MembershipState = 'pro' | 'payment_issue' | 'free';
+
+/**
+ * What the profile shows about membership. PAST_DUE is called out on its own: the webhook
+ * drops the tier to FREE while Stripe retries, and the member needs to know why their
+ * benefits stopped.
+ */
+export function membershipState(user: SubscriptionFields | null | undefined): MembershipState {
+  if (isProActive(user)) return 'pro';
+  if (user?.subscriptionStatus === 'PAST_DUE') return 'payment_issue';
+  return 'free';
+}

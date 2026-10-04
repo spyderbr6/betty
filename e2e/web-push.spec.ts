@@ -97,7 +97,8 @@ test.describe('notification clicks', () => {
 
     await fromServiceWorker(page, { type: 'sidebet:notification-click', data: deposit });
 
-    await expect(page.getByTestId('screen-account')).toBeVisible({ timeout: 15_000 });
+    // A deposit lands on the Wallet, inside the Account tab
+    await expect(page.getByTestId('screen-wallet')).toBeVisible({ timeout: 15_000 });
   });
 
   test('a click that opened a new tab is routed once signed in, and leaves no trace in the URL', async ({ page }) => {
@@ -106,7 +107,7 @@ test.describe('notification clicks', () => {
 
     await page.goto(`/?notification=${encodeURIComponent(JSON.stringify(deposit))}`);
 
-    await expect(page.getByTestId('screen-account')).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId('screen-wallet')).toBeVisible({ timeout: 30_000 });
     expect(new URL(page.url()).searchParams.has('notification')).toBe(false);
   });
 

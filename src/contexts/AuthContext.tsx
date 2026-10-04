@@ -27,11 +27,19 @@ interface RefreshOptions {
   silent?: boolean;
 }
 
+export type PatchableUserField = 'displayName' | 'profilePictureUrl' | 'subscriptionTier' | 'subscriptionStatus';
+
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
   signOut: () => Promise<void>;
   refreshAuth: (options?: RefreshOptions) => Promise<void>;
+  /**
+   * Merge fields into the signed-in user without a network round trip. ProfileContext calls
+   * this when the live User record changes, so display name, picture and subscription stay
+   * current here. Unlike refreshAuth, it cannot sign the user out on a network error.
+   */
+  patchUser: (fields: Partial<Pick<User, PatchableUserField>>) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -203,6 +211,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [refreshAuth]);
 
+  const patchUser = useCallback((fields: Partial<Pick<User, PatchableUserField>>) => {
+    setUser((current) => {
+      if (!current) return current;
+      // Skip the state change (and every consumer's re-render) when nothing differs
+      const changed = (Object.keys(fields) as PatchableUserField[]).some(
+        (key) => current[key] !== fields[key]
+      );
+      return changed ? { ...current, ...fields } : current;
+    });
+  }, []);
+
   const signOut = useCallback(async () => {
     try {
       // Deactivate this device's push registration while still authenticated, so a shared
@@ -228,7 +247,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, signOut, refreshAuth }}>
+    <AuthContext.Provider value={{ user, isLoading, signOut, refreshAuth, patchUser }}>
       {children}
     </AuthContext.Provider>
   );
