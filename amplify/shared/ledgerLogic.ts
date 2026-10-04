@@ -224,7 +224,10 @@ function transactionItem(
     status: entry.status,
     amount: roundMoney(entry.amount),
     actualAmount: entry.actualAmount === undefined ? undefined : roundMoney(entry.actualAmount),
-    platformFee: roundMoney(entry.platformFee ?? 0),
+    // A new row defaults to no fee. Completing an existing row keeps the fee it recorded
+    // (a card deposit's processing fee) unless the entry states one.
+    platformFee:
+      entry.platformFee !== undefined ? roundMoney(entry.platformFee) : entry.mode === 'create' ? 0 : undefined,
     balanceBefore,
     balanceAfter,
     relatedBetId: entry.relatedBetId,

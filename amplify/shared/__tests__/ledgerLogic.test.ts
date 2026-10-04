@@ -90,6 +90,33 @@ describe('planLedgerWrite', () => {
     expect('Update' in row && row.Update.UpdateExpression).not.toContain('createdAt');
   });
 
+  it('keeps the fee a pending row recorded when the entry states none', () => {
+    // A card deposit's PENDING row holds its processing fee; completing it must not zero it
+    const plan = ok(
+      planLedgerWrite(
+        { entries: [entry({ transactionId: 'tx-dep', type: 'DEPOSIT', delta: 25, amount: 25, mode: 'completePending' })], balances: { 'u-1': 0 }, now: NOW },
+        tables
+      )
+    );
+    const [row] = ledgerRows(plan.items);
+    expect('Update' in row && row.Update.UpdateExpression).not.toContain('#platformFee');
+  });
+
+  it('writes a stated fee when completing, and a zero fee on a new row', () => {
+    const completed = ok(
+      planLedgerWrite(
+        { entries: [entry({ transactionId: 'payout#p-1', type: 'BET_WON', delta: 0, amount: 0, platformFee: 0, mode: 'upsertPending' })], balances: { 'u-1': 0 }, now: NOW },
+        tables
+      )
+    );
+    const [completedRow] = ledgerRows(completed.items);
+    expect('Update' in completedRow && completedRow.Update.ExpressionAttributeValues).toMatchObject({ ':platformFee': 0 });
+
+    const created = ok(planLedgerWrite({ entries: [entry()], balances: { 'u-1': 50 }, now: NOW }, tables));
+    const [createdRow] = ledgerRows(created.items);
+    expect('Put' in createdRow && createdRow.Put.Item.platformFee).toBe(0);
+  });
+
   it('upserts a payout: completes it if pending, creates it if absent', () => {
     const plan = ok(
       planLedgerWrite(

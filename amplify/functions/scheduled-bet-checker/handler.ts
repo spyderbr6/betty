@@ -8,7 +8,7 @@ import { getAmplifyDataClientConfig } from '@aws-amplify/backend/function/runtim
 import { env } from '$amplify/env/scheduled-bet-checker';
 import { notificationMeta } from '../../shared/notificationCatalog';
 import { ledgerApply } from '../../shared/moneyClient';
-import { refundTransactionId } from '../../shared/settlementLogic';
+import { cancelExpiredBet } from './cancelExpired';
 
 const { resourceConfig, libraryOptions } = await getAmplifyDataClientConfig(env);
 Amplify.configure(resourceConfig, libraryOptions);
@@ -96,47 +96,28 @@ async function updateExpiredBets(): Promise<{ updated: number; cancelled: number
 
           updated++;
         } else {
-          // Return every stake first, through the ledger (the money function), each under
-          // a fixed id. The bet is marked CANCELLED only once all of them have gone
-          // through: if one fails, the bet stays ACTIVE and expired, the next run tries
-          // again, and the refunds already made are not repeated. This used to cancel
-          // first and then refund by reading and writing balances, so a failed refund was
-          // stranded behind a cancelled bet and a concurrent write could be lost.
-          let allRefunded = true;
-          for (const refund of outcome.refunds) {
-            try {
-              const result = await ledgerApply(client, [
-                {
-                  transactionId: refundTransactionId(refund.participantId),
-                  userId: refund.userId,
-                  type: 'BET_CANCELLED',
-                  delta: refund.amount,
-                  amount: refund.amount,
-                  status: 'COMPLETED',
-                  mode: 'create',
-                  relatedBetId: bet.id,
-                  relatedParticipantId: refund.participantId,
-                  notes: `Refund: ${outcome.reason}`,
-                },
-              ]);
-              if (result.status !== 'applied' && result.status !== 'already_applied') {
-                throw new Error(JSON.stringify(result));
-              }
-              console.log(`💸 Refunded $${refund.amount} to ${refund.userId} for bet ${bet.id} (${result.status})`);
-            } catch (refundError) {
-              // Keep going: one failed refund must not stop the others
-              console.error(`❌ Failed to refund ${refund.userId} for bet ${bet.id}:`, refundError);
-              allRefunded = false;
-              errors++;
-            }
+          // Every stake is returned and the bet cancelled in one ledger transaction (the
+          // money function); see cancelExpired.ts. This used to cancel and then refund by
+          // reading and writing balances, so a concurrent write could be lost.
+          const cancellation = await cancelExpiredBet(
+            (entries, stateUpdates) => ledgerApply(client, entries, stateUpdates),
+            bet.id,
+            outcome.refunds,
+            outcome.reason
+          );
+          if (cancellation.status === 'skipped') {
+            console.log(`⏭️ [Scheduled] Bet ${bet.id} not cancelled: ${cancellation.reason}`);
+            continue;
           }
-          if (!allRefunded) continue;
+          console.log(`💸 [Scheduled] Cancelled bet ${bet.id}, ${outcome.refunds.length} stake(s) returned`);
 
-          await client.models.Bet.update({
-            id: bet.id,
-            status: 'CANCELLED',
-            resolutionReason: outcome.reason
-          });
+          // The ledger wrote the bet directly, which fires no subscription; touch it
+          // through AppSync so open apps see the cancellation
+          try {
+            await client.models.Bet.update({ id: bet.id });
+          } catch (touchError) {
+            console.warn(`Could not notify subscribers for bet ${bet.id}:`, touchError);
+          }
 
           // Notify bet creator that their bet was cancelled
           try {

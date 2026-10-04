@@ -136,9 +136,15 @@ async function settleBet(betId: string): Promise<SettleResult> {
   const finished = await applyLedger([], [
     { table: 'Bet', id: betId, set: { status: 'RESOLVED' }, expect: { status: 'PENDING_RESOLUTION' } },
   ]);
-  if (finished.status !== 'applied' && finished.status !== 'state_changed') {
+  if (finished.status === 'state_changed') {
+    // A concurrent run marked it first. Only that run reports settled, so the caller's
+    // one-off work (the creator's trust reward) happens once.
+    return { status: 'skipped', reason: 'already resolved by another run' };
+  }
+  if (finished.status !== 'applied') {
     throw new Error(`Could not mark bet ${betId} resolved: ${JSON.stringify(finished)}`);
   }
+  await touchBet(betId);
 
   return {
     status: 'settled',
@@ -212,6 +218,15 @@ async function touchUsers(userIds: string[]): Promise<void> {
       // The money moved; a missed live update is fixed by the next read
       console.warn(`[Money] Could not notify subscribers for user ${id}:`, error);
     }
+  }
+}
+
+/** The same for a bet whose status the ledger changed (the app's Bet.onUpdate). */
+async function touchBet(id: string): Promise<void> {
+  try {
+    await client.models.Bet.update({ id });
+  } catch (error) {
+    console.warn(`[Money] Could not notify subscribers for bet ${id}:`, error);
   }
 }
 

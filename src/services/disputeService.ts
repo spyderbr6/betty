@@ -338,10 +338,14 @@ export class DisputeService {
       // For now, just update bet status back to PENDING_RESOLUTION for admin to manually fix
 
       if (status === 'RESOLVED_FOR_FILER') {
-        // Dispute upheld - creator was wrong
+        // Dispute upheld - creator was wrong. Clearing the winner sends the bet back to
+        // the creator to resolve again: ResolveScreen offers Resolve only while
+        // winningSide is empty, and the payout Lambda will not pay without one (it also
+        // refuses to pay a result an upheld dispute overturned).
         await client.models.Bet.update({
           id: dispute.betId,
-          status: 'PENDING_RESOLUTION'
+          status: 'PENDING_RESOLUTION',
+          winningSide: null
         });
 
         // Apply trust score penalties and rewards
