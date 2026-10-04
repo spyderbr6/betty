@@ -31,6 +31,7 @@ export const ModalHeader: React.FC<ModalHeaderProps> = ({
           activeOpacity={0.7}
           accessibilityLabel="Close modal"
           accessibilityRole="button"
+          testID="modal-close"
         >
           <Ionicons name="close" size={24} color={colors.textPrimary} />
         </TouchableOpacity>

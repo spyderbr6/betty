@@ -128,10 +128,6 @@ export const LiveEventsScreen: React.FC = () => {
     // Join is now handled by BetCard via context — this callback is for compatibility
   };
 
-  const handleBalancePress = () => {
-    console.log('Balance pressed');
-  };
-
   // Removed - Header handles notifications internally now
 
   const handleSearchChange = (query: string) => {
@@ -249,7 +245,6 @@ export const LiveEventsScreen: React.FC = () => {
     <SafeAreaView style={styles.container} edges={['top']} testID="screen-live">
       <Header
         showBalance={true}
-        onBalancePress={handleBalancePress}
         variant="default"
       />
       

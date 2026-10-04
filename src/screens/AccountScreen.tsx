@@ -1,6 +1,7 @@
 /**
  * Account Screen
- * User profile and account management
+ * Profile card, wallet card, and the way into Friends, Wallet, Stats, Pro, Settings and
+ * Help & About.
  */
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -21,17 +22,14 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { generateClient } from 'aws-amplify/data';
 import { fetchUserAttributes } from 'aws-amplify/auth';
 import type { Schema } from '../../amplify/data/resource';
-import { colors, spacing, commonStyles, textStyles } from '../styles';
+import { colors, spacing, commonStyles, textStyles, typography } from '../styles';
 import { Header } from '../components/ui/Header';
 import { ProfileEditor } from '../components/ui/ProfileEditor';
 import { FriendsScreen } from './FriendsScreen';
 import { DetailedStatsScreen } from './DetailedStatsScreen';
-import { BettingHistoryScreen } from './BettingHistoryScreen';
-import { PaymentMethodsScreen } from './PaymentMethodsScreen';
-import { TrustSafetyScreen } from './TrustSafetyScreen';
+import { WalletScreen, type WalletAction } from './WalletScreen';
 import { SettingsScreen } from './SettingsScreen';
-import { SupportScreen } from './SupportScreen';
-import { AboutScreen } from './AboutScreen';
+import { HelpScreen } from './HelpScreen';
 import { AdminDashboardScreen } from './AdminDashboardScreen';
 import { AdminDisputeScreen } from './AdminDisputeScreen';
 import { AdminTestingScreen } from './AdminTestingScreen';
@@ -41,6 +39,7 @@ import { ProfileEditForm, User } from '../types/betting';
 import { getProfilePictureUrl, updateProfilePicture } from '../services/imageUploadService';
 import { showAlert } from '../components/ui/CustomAlert';
 import { ensureUserRecord } from '../services/userRecordService';
+import { TransactionService } from '../services/transactionService';
 
 // Initialize GraphQL client
 const client = generateClient<Schema>();
@@ -61,12 +60,10 @@ export const AccountScreen: React.FC = () => {
   const [showProfileEditor, setShowProfileEditor] = useState(false);
   const [showFriendsScreen, setShowFriendsScreen] = useState(false);
   const [showDetailedStats, setShowDetailedStats] = useState(false);
-  const [showBettingHistory, setShowBettingHistory] = useState(false);
-  const [showPaymentMethods, setShowPaymentMethods] = useState(false);
-  const [showTrustSafety, setShowTrustSafety] = useState(false);
+  // null: closed. 'view' opens the Wallet as is; an action opens it straight into that flow.
+  const [walletOpen, setWalletOpen] = useState<WalletAction | 'view' | null>(null);
   const [showSettings, setShowSettings] = useState(false);
-  const [showSupport, setShowSupport] = useState(false);
-  const [showAbout, setShowAbout] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   const [showAdminDashboard, setShowAdminDashboard] = useState(false);
   const [showAdminDispute, setShowAdminDispute] = useState(false);
   const [showAdminTesting, setShowAdminTesting] = useState(false);
@@ -198,47 +195,8 @@ export const AccountScreen: React.FC = () => {
 
   const fetchPendingPayouts = async () => {
     if (!user) return;
-
-    try {
-      // PENDING BET_WON transactions for this user, through the userId index rather than a
-      // filtered Scan of the whole table. A filter applies to the rows read, not the rows
-      // returned, so a page can come back short or empty while more matches remain:
-      // follow nextToken until it runs out.
-      const pendingTransactions: Schema['Transaction']['type'][] = [];
-      let nextToken: string | null | undefined;
-      do {
-        const page = await client.models.Transaction.transactionsByUser(
-          { userId: user.userId },
-          {
-            filter: {
-              and: [
-                { type: { eq: 'BET_WON' } },
-                { status: { eq: 'PENDING' } },
-              ],
-            },
-            nextToken,
-          }
-        );
-        pendingTransactions.push(...(page.data || []));
-        nextToken = page.nextToken;
-      } while (nextToken);
-
-      // Calculate total pending payouts (use actualAmount for net after fees)
-      const total = pendingTransactions.reduce((sum, transaction) => {
-        // Use actualAmount (net after fees) if available, otherwise fall back to amount
-        const netAmount = transaction.actualAmount !== undefined && transaction.actualAmount !== null
-          ? transaction.actualAmount
-          : transaction.amount || 0;
-        return sum + netAmount;
-      }, 0) || 0;
-
-      setPendingPayouts(total);
-
-    } catch (error) {
-      console.error('Error fetching pending payouts:', error);
-      // Don't show alert for this, it's not critical
-      setPendingPayouts(0);
-    }
+    // Shared with the Wallet; never throws (a failed read counts as nothing pending)
+    setPendingPayouts(await TransactionService.getPendingPayoutTotal(user.userId));
   };
 
   const onRefresh = async () => {
@@ -280,24 +238,15 @@ export const AccountScreen: React.FC = () => {
     setShowDetailedStats(true);
   };
 
-  const handleHistoryPress = () => {
-    setShowBettingHistory(true);
+  const handleHelpPress = () => {
+    setShowHelp(true);
   };
 
-  const handleSupportPress = () => {
-    setShowSupport(true);
-  };
-
-  const handlePaymentMethodsPress = () => {
-    setShowPaymentMethods(true);
-  };
-
-  const handleTrustSafetyPress = () => {
-    setShowTrustSafety(true);
-  };
-
-  const handleAboutPress = () => {
-    setShowAbout(true);
+  // A deposit or withdrawal in the Wallet changes what the wallet card shows; reload it
+  // in place (no spinner) when the Wallet closes.
+  const closeWallet = () => {
+    setWalletOpen(null);
+    fetchUserStats();
   };
 
   const handleAdminDashboardPress = () => {
@@ -482,30 +431,72 @@ export const AccountScreen: React.FC = () => {
             </TouchableOpacity>
 
             <View style={styles.profileInfo}>
-              <TouchableOpacity onPress={handleEditProfile} activeOpacity={0.7} testID="account-edit-name">
-                <Text style={styles.displayName}>
+              <TouchableOpacity
+                style={styles.nameRow}
+                onPress={handleEditProfile}
+                activeOpacity={0.7}
+                testID="account-edit-name"
+                accessibilityRole="button"
+                accessibilityLabel="Edit display name"
+              >
+                <Text style={styles.displayName} numberOfLines={1}>
                   {userProfile.displayName || 'Set Display Name'}
                 </Text>
+                <Ionicons name="pencil" size={14} color={colors.textMuted} style={styles.nameEditIcon} />
               </TouchableOpacity>
 
-              {/* Balance Breakdown */}
-              <View style={styles.balanceBreakdown}>
-                <View style={styles.balanceRow}>
-                  <Text style={styles.balanceLabel}>Available:</Text>
-                  <Text style={styles.balanceValue}>${userProfile.balance.toFixed(2)}</Text>
-                </View>
-                {pendingPayouts > 0 && (
-                  <View style={styles.balanceRow}>
-                    <Text style={styles.balanceLabel}>Pending Payouts:</Text>
-                    <Text style={styles.pendingValue} testID="account-pending-payouts">${pendingPayouts.toFixed(2)}</Text>
-                  </View>
-                )}
-                <View style={styles.balanceRow}>
-                  <Text style={styles.balanceLabel}>Trust Score:</Text>
-                  <Text style={styles.trustScore}>{userProfile.trustScore.toFixed(1)}/10</Text>
-                </View>
+              <View style={styles.trustChip}>
+                <Ionicons name="shield-checkmark" size={12} color={colors.primary} />
+                <Text style={styles.trustChipText}>Trust {userProfile.trustScore.toFixed(1)}/10</Text>
               </View>
             </View>
+          </View>
+        </View>
+
+        {/* Wallet card */}
+        <View style={styles.walletCard} testID="account-wallet-card">
+          <TouchableOpacity
+            style={styles.walletSummary}
+            onPress={() => setWalletOpen('view')}
+            activeOpacity={0.7}
+            testID="account-wallet-open"
+          >
+            <View>
+              <Text style={styles.walletLabel}>Available</Text>
+              <Text style={styles.walletBalance} testID="account-balance">
+                ${userProfile.balance.toFixed(2)}
+              </Text>
+              {pendingPayouts > 0 && (
+                <Text style={styles.walletPending}>
+                  <Text testID="account-pending-payouts">${pendingPayouts.toFixed(2)}</Text> pending payouts
+                </Text>
+              )}
+            </View>
+            <View style={styles.walletLink}>
+              <Text style={styles.walletLinkText}>Activity</Text>
+              <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+            </View>
+          </TouchableOpacity>
+
+          <View style={styles.walletActions}>
+            <TouchableOpacity
+              style={[styles.walletButton, styles.walletButtonPrimary]}
+              onPress={() => setWalletOpen('addFunds')}
+              activeOpacity={0.8}
+              testID="account-add-funds"
+            >
+              <Ionicons name="add" size={18} color={colors.background} />
+              <Text style={styles.walletButtonPrimaryText}>Add funds</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.walletButton, styles.walletButtonSecondary]}
+              onPress={() => setWalletOpen('withdraw')}
+              activeOpacity={0.8}
+              testID="account-withdraw"
+            >
+              <Ionicons name="arrow-up" size={18} color={colors.textPrimary} />
+              <Text style={styles.walletButtonSecondaryText}>Withdraw</Text>
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -590,24 +581,21 @@ export const AccountScreen: React.FC = () => {
             title="Friends"
             subtitle="Manage your friends and send invites"
             onPress={handleFriendsPress}
+            testID="account-friends"
+          />
+          <MenuOption
+            icon="wallet-outline"
+            title="Wallet"
+            subtitle="Balance, deposits, withdrawals and activity"
+            onPress={() => setWalletOpen('view')}
+            testID="account-wallet"
           />
           <MenuOption
             icon="bar-chart-outline"
-            title="Detailed Stats"
-            subtitle="View comprehensive betting analytics"
+            title="Stats"
+            subtitle="Wins, losses and streaks"
             onPress={handleStatsPress}
-          />
-          <MenuOption
-            icon="time-outline"
-            title="Betting History"
-            subtitle="Review past bets and outcomes"
-            onPress={handleHistoryPress}
-          />
-          <MenuOption
-            icon="card-outline"
-            title="Payment Methods"
-            subtitle="Manage deposits and withdrawals"
-            onPress={handlePaymentMethodsPress}
+            testID="account-stats"
           />
           <MenuOption
             icon={user?.subscriptionTier === 'PRO' ? 'star' : 'star-outline'}
@@ -616,30 +604,18 @@ export const AccountScreen: React.FC = () => {
             onPress={() => setShowSubscription(true)}
           />
           <MenuOption
-            icon="shield-checkmark-outline"
-            title="Trust & Safety"
-            subtitle="Security settings and verification"
-            onPress={handleTrustSafetyPress}
-            testID="account-trust-safety"
-          />
-          <MenuOption
             icon="settings-outline"
             title="Settings"
-            subtitle="App preferences and notifications"
+            subtitle="Notifications, privacy, account and security"
             onPress={handleSettingsPress}
             testID="account-settings"
           />
           <MenuOption
             icon="help-circle-outline"
-            title="Support"
-            subtitle="Get help and contact support"
-            onPress={handleSupportPress}
-          />
-          <MenuOption
-            icon="information-circle-outline"
-            title="About"
-            subtitle="App version and legal information"
-            onPress={handleAboutPress}
+            title="Help & About"
+            subtitle="Feedback, FAQ, legal and app version"
+            onPress={handleHelpPress}
+            testID="account-help"
           />
         </View>
 
@@ -704,42 +680,20 @@ export const AccountScreen: React.FC = () => {
         )}
       </Modal>
 
-      {/* Betting History Modal */}
+      {/* Wallet Modal */}
       <Modal
-        visible={showBettingHistory}
+        visible={walletOpen !== null}
         animationType="slide"
         presentationStyle="fullScreen"
-        onRequestClose={() => setShowBettingHistory(false)}
+        onRequestClose={closeWallet}
       >
-        {showBettingHistory && (
-          <BettingHistoryScreen
-            onClose={() => setShowBettingHistory(false)}
+        {walletOpen !== null && (
+          <WalletScreen
+            key={walletOpen}
+            onClose={closeWallet}
+            initialAction={walletOpen === 'view' ? undefined : walletOpen}
             navigation={navigation}
           />
-        )}
-      </Modal>
-
-      {/* Payment Methods Modal */}
-      <Modal
-        visible={showPaymentMethods}
-        animationType="slide"
-        presentationStyle="fullScreen"
-        onRequestClose={() => setShowPaymentMethods(false)}
-      >
-        {showPaymentMethods && (
-          <PaymentMethodsScreen onClose={() => setShowPaymentMethods(false)} />
-        )}
-      </Modal>
-
-      {/* Trust & Safety Modal */}
-      <Modal
-        visible={showTrustSafety}
-        animationType="slide"
-        presentationStyle="fullScreen"
-        onRequestClose={() => setShowTrustSafety(false)}
-      >
-        {showTrustSafety && (
-          <TrustSafetyScreen onClose={() => setShowTrustSafety(false)} />
         )}
       </Modal>
 
@@ -755,27 +709,15 @@ export const AccountScreen: React.FC = () => {
         )}
       </Modal>
 
-      {/* Support Modal */}
+      {/* Help & About Modal */}
       <Modal
-        visible={showSupport}
+        visible={showHelp}
         animationType="slide"
         presentationStyle="fullScreen"
-        onRequestClose={() => setShowSupport(false)}
+        onRequestClose={() => setShowHelp(false)}
       >
-        {showSupport && (
-          <SupportScreen onClose={() => setShowSupport(false)} />
-        )}
-      </Modal>
-
-      {/* About Modal */}
-      <Modal
-        visible={showAbout}
-        animationType="slide"
-        presentationStyle="fullScreen"
-        onRequestClose={() => setShowAbout(false)}
-      >
-        {showAbout && (
-          <AboutScreen onClose={() => setShowAbout(false)} />
+        {showHelp && (
+          <HelpScreen onClose={() => setShowHelp(false)} />
         )}
       </Modal>
 
@@ -991,43 +933,104 @@ const styles = StyleSheet.create({
   profileInfo: {
     flex: 1,
   },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.xs,
+  },
   displayName: {
     ...textStyles.h3,
     color: colors.textPrimary,
-    marginBottom: spacing.xs,
-    fontWeight: '700',
+    fontWeight: typography.fontWeight.bold,
+    flexShrink: 1,
   },
-  balanceBreakdown: {
-    marginVertical: spacing.xs,
-    paddingVertical: spacing.xs,
+  nameEditIcon: {
+    marginLeft: spacing.xs,
+  },
+  trustChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: colors.primary + '20',
+    borderRadius: spacing.radius.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs / 2,
+  },
+  trustChipText: {
+    ...textStyles.caption,
+    color: colors.primary,
+    fontWeight: typography.fontWeight.semibold,
+    marginLeft: spacing.xs,
+    includeFontPadding: false,
+  },
+
+  // Wallet card
+  walletCard: {
+    backgroundColor: colors.surface,
+    marginTop: spacing.md,
+    padding: spacing.lg,
     borderTopWidth: 1,
     borderBottomWidth: 1,
-    borderColor: colors.border + '40',
+    borderColor: colors.border,
   },
-  balanceRow: {
+  walletSummary: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginVertical: spacing.xs / 2,
   },
-  balanceLabel: {
+  walletLabel: {
     ...textStyles.caption,
-    color: colors.textMuted,
+    color: colors.textSecondary,
   },
-  balanceValue: {
+  walletBalance: {
+    ...textStyles.balance,
+    color: colors.textPrimary,
+  },
+  walletPending: {
+    ...textStyles.caption,
+    color: colors.warning,
+    marginTop: spacing.xs / 2,
+  },
+  walletLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  walletLinkText: {
+    ...textStyles.bodySmall,
+    color: colors.textSecondary,
+    marginRight: spacing.xs / 2,
+  },
+  walletActions: {
+    flexDirection: 'row',
+    marginTop: spacing.md,
+  },
+  walletButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.sm,
+    borderRadius: spacing.radius.md,
+  },
+  walletButtonPrimary: {
+    backgroundColor: colors.primary,
+    marginRight: spacing.xs,
+  },
+  walletButtonSecondary: {
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginLeft: spacing.xs,
+  },
+  walletButtonPrimaryText: {
+    ...textStyles.button,
+    color: colors.background,
+    marginLeft: spacing.xs,
+  },
+  walletButtonSecondaryText: {
     ...textStyles.button,
     color: colors.textPrimary,
-    fontWeight: '600',
-  },
-  pendingValue: {
-    ...textStyles.button,
-    color: colors.warning,
-    fontWeight: '600',
-  },
-  trustScore: {
-    ...textStyles.button,
-    color: colors.primary,
-    fontWeight: '600',
+    marginLeft: spacing.xs,
   },
 
   // Menu section

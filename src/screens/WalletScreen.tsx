@@ -1,6 +1,8 @@
 /**
- * Payment Methods Screen
- * Manage deposits, withdrawals, and payment methods
+ * Wallet Screen
+ * Balance, pending payouts, deposits and withdrawals, withdrawal methods, and the way into
+ * the full transaction history (Activity). Opened from Account and from the header
+ * balance on every tab.
  */
 
 import React, { useState, useEffect } from 'react';
@@ -11,6 +13,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -25,22 +28,33 @@ import { TransactionService } from '../services/transactionService';
 import { PaymentMethodService } from '../services/paymentMethodService';
 import type { PaymentMethod } from '../services/paymentMethodService';
 import { showAlert } from '../components/ui/CustomAlert';
+import { ActivityScreen } from './ActivityScreen';
 
-interface PaymentMethodsScreenProps {
+export type WalletAction = 'addFunds' | 'withdraw';
+
+interface WalletScreenProps {
   onClose: () => void;
+  /** Open straight into adding funds or withdrawing (the Account screen's buttons). */
+  initialAction?: WalletAction;
+  /** For Activity's links to bet and squares details. */
+  navigation?: any; // eslint-disable-line @typescript-eslint/no-explicit-any
+  /** The tab the Wallet was opened from, for Activity's links back. Defaults to Account. */
+  returnToTab?: string;
 }
 
-export const PaymentMethodsScreen: React.FC<PaymentMethodsScreenProps> = ({ onClose }) => {
+export const WalletScreen: React.FC<WalletScreenProps> = ({ onClose, initialAction, navigation, returnToTab }) => {
   const { user } = useAuth();
   const [balance, setBalance] = useState(0);
+  const [pendingPayouts, setPendingPayouts] = useState(0);
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Modal states
-  const [showAddFundsModal, setShowAddFundsModal] = useState(false);
-  const [showWithdrawModal, setShowWithdrawModal] = useState(false);
+  const [showAddFundsModal, setShowAddFundsModal] = useState(initialAction === 'addFunds');
+  const [showWithdrawModal, setShowWithdrawModal] = useState(initialAction === 'withdraw');
   const [showAddMethodModal, setShowAddMethodModal] = useState(false);
+  const [showActivity, setShowActivity] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -54,13 +68,15 @@ export const PaymentMethodsScreen: React.FC<PaymentMethodsScreenProps> = ({ onCl
     try {
       if (!silent) setIsLoading(true);
 
-      // Load balance and payment methods in parallel
-      const [userBalance, methods] = await Promise.all([
+      // Load balance, pending payouts and payment methods in parallel
+      const [userBalance, pending, methods] = await Promise.all([
         TransactionService.getUserBalance(user.userId),
+        TransactionService.getPendingPayoutTotal(user.userId),
         PaymentMethodService.getUserPaymentMethods(user.userId),
       ]);
 
       setBalance(userBalance);
+      setPendingPayouts(pending);
       setPaymentMethods(methods);
     } catch (error) {
       console.error('Error loading payment data:', error);
@@ -168,8 +184,8 @@ export const PaymentMethodsScreen: React.FC<PaymentMethodsScreenProps> = ({ onCl
   // the user back to the start. Keeping the modals mounted in a stable position makes that
   // structurally impossible, whatever future loading states get added.
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
-      <ModalHeader title="Payment Methods" onClose={onClose} />
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']} testID="screen-wallet">
+      <ModalHeader title="Wallet" onClose={onClose} />
 
       {isLoading ? (
         <View style={styles.loadingContainer}>
@@ -182,8 +198,13 @@ export const PaymentMethodsScreen: React.FC<PaymentMethodsScreenProps> = ({ onCl
           <Text style={styles.sectionTitle}>CURRENT BALANCE</Text>
           <View style={styles.balanceCard}>
             <Ionicons name="wallet-outline" size={32} color={colors.primary} />
-            <Text style={styles.balanceAmount}>{formatCurrency(balance)}</Text>
+            <Text style={styles.balanceAmount} testID="wallet-balance">{formatCurrency(balance)}</Text>
             <Text style={styles.balanceLabel}>Available to bet</Text>
+            {pendingPayouts > 0 && (
+              <Text style={styles.pendingLabel} testID="wallet-pending-payouts">
+                {formatCurrency(pendingPayouts)} in pending payouts
+              </Text>
+            )}
             <TouchableOpacity
               style={styles.refreshButton}
               onPress={refreshData}
@@ -208,6 +229,7 @@ export const PaymentMethodsScreen: React.FC<PaymentMethodsScreenProps> = ({ onCl
             style={styles.actionButton}
             onPress={() => setShowAddFundsModal(true)}
             activeOpacity={0.7}
+            testID="wallet-add-funds"
           >
             <View style={styles.actionButtonLeft}>
               <View style={[styles.actionIcon, { backgroundColor: colors.success + '20' }]}>
@@ -222,12 +244,28 @@ export const PaymentMethodsScreen: React.FC<PaymentMethodsScreenProps> = ({ onCl
             style={styles.actionButton}
             onPress={() => setShowWithdrawModal(true)}
             activeOpacity={0.7}
+            testID="wallet-withdraw"
           >
             <View style={styles.actionButtonLeft}>
               <View style={[styles.actionIcon, { backgroundColor: colors.warning + '20' }]}>
                 <Ionicons name="arrow-up-circle" size={24} color={colors.warning} />
               </View>
               <Text style={styles.actionButtonText}>Withdraw Funds</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => setShowActivity(true)}
+            activeOpacity={0.7}
+            testID="wallet-activity"
+          >
+            <View style={styles.actionButtonLeft}>
+              <View style={[styles.actionIcon, { backgroundColor: colors.info + '20' }]}>
+                <Ionicons name="receipt-outline" size={24} color={colors.info} />
+              </View>
+              <Text style={styles.actionButtonText}>Activity</Text>
             </View>
             <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
           </TouchableOpacity>
@@ -300,6 +338,26 @@ export const PaymentMethodsScreen: React.FC<PaymentMethodsScreenProps> = ({ onCl
         onClose={() => setShowAddMethodModal(false)}
         onSuccess={refreshData}
       />
+      <Modal
+        visible={showActivity}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setShowActivity(false)}
+      >
+        {showActivity && (
+          <ActivityScreen
+            onClose={() => setShowActivity(false)}
+            // A transaction links to its bet on another tab; the Wallet has to close too,
+            // or it stays over the screen that was navigated to
+            onNavigateAway={() => {
+              setShowActivity(false);
+              onClose();
+            }}
+            navigation={navigation}
+            returnToTab={returnToTab}
+          />
+        )}
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -361,6 +419,11 @@ const styles = StyleSheet.create({
   balanceLabel: {
     ...textStyles.body,
     color: colors.textSecondary,
+    marginTop: spacing.xs,
+  },
+  pendingLabel: {
+    ...textStyles.bodySmall,
+    color: colors.warning,
     marginTop: spacing.xs,
   },
   refreshButton: {

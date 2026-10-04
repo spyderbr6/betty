@@ -495,10 +495,6 @@ export const ResolveScreen: React.FC = () => {
     console.log('Pending bet pressed:', bet.title);
   };
 
-  const handleBalancePress = () => {
-    console.log('Balance pressed');
-  };
-
   // Removed - Header handles notifications internally now
 
 
@@ -506,7 +502,6 @@ export const ResolveScreen: React.FC = () => {
     <SafeAreaView style={styles.container} edges={['top']} testID="screen-resolve">
       <Header
         showBalance={true}
-        onBalancePress={handleBalancePress}
       />
 
       <ScrollView

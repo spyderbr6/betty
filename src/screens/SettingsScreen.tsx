@@ -1,6 +1,6 @@
 /**
  * Settings Screen
- * Notification settings, privacy and app preferences
+ * Notifications, privacy, account and security
  */
 
 import React, { useState, useEffect } from 'react';
@@ -11,6 +11,7 @@ import { colors, spacing, textStyles } from '../styles';
 import { ModalHeader } from '../components/ui/ModalHeader';
 import { useAuth } from '../contexts/AuthContext';
 import { NotificationPreferencesPanel } from '../components/settings/NotificationPreferencesPanel';
+import { SecuritySection } from '../components/settings/SecuritySection';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
 import { showAlert } from '../components/ui/CustomAlert';
@@ -138,6 +139,10 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
             </Text>
           </View>
         </View>
+
+        {/* Account and Security (formerly the Trust & Safety screen) */}
+        <SecuritySection />
+        <View style={styles.bottomSpacer} />
       </ScrollView>
     </SafeAreaView>
   );
@@ -230,5 +235,8 @@ const styles = StyleSheet.create({
     marginLeft: spacing.sm,
     flex: 1,
     lineHeight: 18,
+  },
+  bottomSpacer: {
+    height: spacing.xl,
   },
 });

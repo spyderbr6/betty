@@ -710,6 +710,44 @@ export class TransactionService {
   }
 
   /**
+   * Total of a user's winnings that are awarded but not yet paid out (PENDING BET_WON),
+   * net of fees. Used by the Account screen and the Wallet.
+   *
+   * Goes through the userId index rather than a filtered Scan of the whole table. A filter
+   * applies to the rows read, not the rows returned, so a page can come back short or
+   * empty while more matches remain: follows nextToken until it runs out.
+   */
+  static async getPendingPayoutTotal(userId: string): Promise<number> {
+    try {
+      let total = 0;
+      let nextToken: string | null | undefined;
+      do {
+        const page = await client.models.Transaction.transactionsByUser(
+          { userId },
+          {
+            filter: {
+              and: [
+                { type: { eq: 'BET_WON' } },
+                { status: { eq: 'PENDING' } },
+              ],
+            },
+            nextToken,
+          }
+        );
+        for (const transaction of page.data || []) {
+          // actualAmount is the net after fees; fall back to amount when it is absent
+          total += transaction.actualAmount ?? transaction.amount ?? 0;
+        }
+        nextToken = page.nextToken;
+      } while (nextToken);
+      return total;
+    } catch (error) {
+      console.error('[Transaction] Error fetching pending payouts:', error);
+      return 0;
+    }
+  }
+
+  /**
    * Get transaction history for a user
    */
   static async getUserTransactions(

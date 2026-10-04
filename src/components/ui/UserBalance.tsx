@@ -26,6 +26,7 @@ export interface UserBalanceProps {
   showLabel?: boolean;
   size?: 'small' | 'medium' | 'large';
   variant?: 'default' | 'compact' | 'header';
+  testID?: string;
 }
 
 export const UserBalance: React.FC<UserBalanceProps> = ({
@@ -33,6 +34,7 @@ export const UserBalance: React.FC<UserBalanceProps> = ({
   showLabel = true,
   size = 'medium',
   variant = 'default',
+  testID,
 }) => {
   const { user } = useAuth();
   const [balance, setBalance] = useState<number>(0);
@@ -157,7 +159,7 @@ export const UserBalance: React.FC<UserBalanceProps> = ({
 
   if (onPress) {
     return (
-      <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
+      <TouchableOpacity onPress={onPress} activeOpacity={0.7} testID={testID} accessibilityRole="button">
         {content}
       </TouchableOpacity>
     );

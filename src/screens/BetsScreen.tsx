@@ -73,10 +73,6 @@ export const BetsScreen: React.FC = () => {
     console.log('Bet pressed:', bet.title);
   };
 
-  const handleBalancePress = () => {
-    console.log('Balance pressed');
-  };
-
   const handleEndBet = async (bet: Bet) => {
     try {
       await client.models.Bet.update({
@@ -129,7 +125,6 @@ export const BetsScreen: React.FC = () => {
     <SafeAreaView style={styles.container} edges={['top']} testID="screen-bets">
       <Header
         showBalance={true}
-        onBalancePress={handleBalancePress}
       />
 
       {/* Toast Banner */}

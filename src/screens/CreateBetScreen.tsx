@@ -635,10 +635,6 @@ export const CreateBetScreen: React.FC = () => {
     }, 0);
   };
 
-  const handleBalancePress = () => {
-    console.log('Balance pressed');
-  };
-
   // Removed - Header handles notifications internally now
 
   // Friend selection helpers
@@ -661,7 +657,6 @@ export const CreateBetScreen: React.FC = () => {
     <SafeAreaView style={styles.container} edges={['top']} testID="screen-create-bet">
       <Header
         showBalance={true}
-        onBalancePress={handleBalancePress}
         variant="default"
       />
 
