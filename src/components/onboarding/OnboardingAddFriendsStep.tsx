@@ -125,6 +125,7 @@ export const OnboardingAddFriendsStep: React.FC<OnboardingAddFriendsStepProps> =
                 style={styles.skipButton}
                 onPress={onSkip}
                 accessibilityLabel="Skip adding friends"
+                testID="onboarding-skip-friends"
                 accessibilityRole="button"
               >
                 <Text style={styles.skipButtonText}>Skip for now</Text>

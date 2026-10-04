@@ -1,6 +1,7 @@
 /**
  * Profile Editor Component
- * Allows users to edit their display name and profile picture
+ * Edits the display name. The profile picture is changed by tapping the avatar on the
+ * Account screen, which goes straight to the picker.
  */
 
 import React, { useState } from 'react';
@@ -11,12 +12,11 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
-  Image,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, typography, textStyles } from '../../styles';
 import { ProfileEditForm, User } from '../../types/betting';
-import { updateProfilePicture } from '../../services/imageUploadService';
+import { ModalHeader } from './ModalHeader';
 import { showAlert } from './CustomAlert';
 
 interface ProfileEditorProps {
@@ -33,9 +33,7 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({
   loading = false,
 }) => {
   const [displayName, setDisplayName] = useState(user.displayName || '');
-  const [profilePicture, setProfilePicture] = useState(user.profilePictureUrl || '');
   const [isValid, setIsValid] = useState(true);
-  const [isUploadingImage, setIsUploadingImage] = useState(false);
 
   const validateForm = () => {
     const trimmedName = displayName.trim();
@@ -59,7 +57,6 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({
     try {
       const profileData: ProfileEditForm = {
         displayName: displayName.trim(),
-        profilePicture: profilePicture || undefined,
       };
       await onSave(profileData);
     } catch (error) {
@@ -68,86 +65,13 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({
     }
   };
 
-  const handleProfilePicturePress = async () => {
-    if (isUploadingImage) return;
-
-    try {
-      setIsUploadingImage(true);
-
-      const result = await updateProfilePicture(user.id, profilePicture);
-
-      if (result.success && result.url) {
-        setProfilePicture(result.url);
-
-        // Automatically save the profile picture to the database
-        try {
-          const profileData: ProfileEditForm = {
-            displayName: displayName.trim() || user.displayName || '',
-            profilePicture: result.url,
-          };
-          await onSave(profileData);
-          // Success alert is shown by the parent component
-        } catch (saveError) {
-          console.error('Error saving profile picture:', saveError);
-          showAlert('Error', 'Profile picture uploaded but failed to save. Please try clicking Save Changes.');
-        }
-      } else {
-        showAlert('Error', result.error || 'Failed to update profile picture');
-      }
-    } catch (error) {
-      console.error('Error updating profile picture:', error);
-      showAlert('Error', 'Failed to update profile picture. Please try again.');
-    } finally {
-      setIsUploadingImage(false);
-    }
-  };
-
-  const hasChanges =
-    displayName.trim() !== (user.displayName || '') ||
-    profilePicture !== (user.profilePictureUrl || '');
+  const hasChanges = displayName.trim() !== (user.displayName || '');
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Edit Profile</Text>
-        <TouchableOpacity
-          style={styles.closeButton}
-          onPress={onCancel}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="close" size={24} color={colors.textSecondary} />
-        </TouchableOpacity>
-      </View>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+      <ModalHeader title="Edit Profile" onClose={onCancel} />
 
       <View style={styles.content}>
-        {/* Profile Picture Section */}
-        <View style={styles.pictureSection}>
-          <TouchableOpacity
-            style={styles.pictureContainer}
-            onPress={handleProfilePicturePress}
-            activeOpacity={0.7}
-            disabled={isUploadingImage}
-          >
-            {profilePicture ? (
-              <Image source={{ uri: profilePicture }} style={styles.profileImage} resizeMode="cover" />
-            ) : (
-              <View style={styles.placeholderImage}>
-                <Ionicons name="person" size={40} color={colors.textMuted} />
-              </View>
-            )}
-            <View style={styles.editBadge}>
-              {isUploadingImage ? (
-                <ActivityIndicator size="small" color={colors.background} />
-              ) : (
-                <Ionicons name="camera" size={16} color={colors.background} />
-              )}
-            </View>
-          </TouchableOpacity>
-          <Text style={styles.pictureLabel}>
-            {isUploadingImage ? 'Uploading...' : 'Tap to change profile picture'}
-          </Text>
-        </View>
-
         {/* Display Name Section */}
         <View style={styles.inputSection}>
           <Text style={styles.inputLabel}>Display Name</Text>
@@ -168,6 +92,7 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({
               autoCapitalize="words"
               returnKeyType="done"
               onSubmitEditing={handleSave}
+              testID="profile-editor-name"
             />
             <Text style={styles.characterCount}>
               {displayName.length}/30
@@ -210,11 +135,12 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({
         <TouchableOpacity
           style={[
             styles.saveButton,
-            (!hasChanges || !isValid || loading || isUploadingImage) && styles.saveButtonDisabled
+            (!hasChanges || !isValid || loading) && styles.saveButtonDisabled
           ]}
           onPress={handleSave}
-          disabled={!hasChanges || !isValid || loading || isUploadingImage}
+          disabled={!hasChanges || !isValid || loading}
           activeOpacity={0.7}
+          testID="profile-editor-save"
         >
           {loading ? (
             <ActivityIndicator size="small" color={colors.background} />
@@ -223,7 +149,7 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({
           )}
         </TouchableOpacity>
       </View>
-    </View>
+    </SafeAreaView>
   );
 };
 
@@ -232,71 +158,11 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  title: {
-    ...textStyles.h3,
-    color: colors.textPrimary,
-    fontWeight: typography.fontWeight.bold,
-  },
-  closeButton: {
-    padding: spacing.xs,
-  },
 
   content: {
     flex: 1,
     paddingHorizontal: spacing.md,
     paddingTop: spacing.lg,
-  },
-
-  // Profile Picture
-  pictureSection: {
-    alignItems: 'center',
-    marginBottom: spacing.xl,
-  },
-  pictureContainer: {
-    position: 'relative',
-    marginBottom: spacing.sm,
-  },
-  profileImage: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-  },
-  placeholderImage: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: colors.border,
-  },
-  editBadge: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    backgroundColor: colors.primary,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: colors.background,
-  },
-  pictureLabel: {
-    ...textStyles.caption,
-    color: colors.textMuted,
-    textAlign: 'center',
   },
 
   // Input Sections
@@ -327,6 +193,7 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.base,
     color: colors.textPrimary,
     fontFamily: typography.fontFamily.regular,
+    textAlignVertical: 'center',
   },
   characterCount: {
     ...textStyles.caption,

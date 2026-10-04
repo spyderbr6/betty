@@ -170,6 +170,7 @@ export const OnboardingProfilePictureStep: React.FC<OnboardingProfilePictureStep
         <TouchableOpacity
           style={styles.primaryButton}
           onPress={handleSelectImage}
+          testID="onboarding-choose-photo"
           disabled={isUploading}
           accessibilityLabel={profilePictureUrl ? 'Change profile picture' : 'Choose profile picture'}
           accessibilityRole="button"
@@ -190,6 +191,7 @@ export const OnboardingProfilePictureStep: React.FC<OnboardingProfilePictureStep
           style={styles.skipButton}
           onPress={onSkip}
           accessibilityLabel="Skip adding profile picture"
+          testID="onboarding-skip-picture"
           accessibilityRole="button"
         >
           <Text style={styles.skipButtonText}>Skip for now</Text>
@@ -200,6 +202,7 @@ export const OnboardingProfilePictureStep: React.FC<OnboardingProfilePictureStep
             style={styles.nextButton}
             onPress={onNext}
             accessibilityLabel="Continue to next step"
+            testID="onboarding-next-picture"
             accessibilityRole="button"
           >
             <Text style={styles.nextButtonText}>Next</Text>

@@ -134,6 +134,7 @@ export const OnboardingAddFundsStep: React.FC<OnboardingAddFundsStepProps> = ({
             style={styles.skipButton}
             onPress={onSkip}
             accessibilityLabel="Skip adding funds"
+            testID="onboarding-skip-funds"
             accessibilityRole="button"
           >
             <Text style={styles.skipButtonText}>Skip for now</Text>

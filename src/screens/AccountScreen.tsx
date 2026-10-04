@@ -3,7 +3,7 @@
  * User profile and account management
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -28,7 +28,6 @@ import { FriendsScreen } from './FriendsScreen';
 import { DetailedStatsScreen } from './DetailedStatsScreen';
 import { BettingHistoryScreen } from './BettingHistoryScreen';
 import { PaymentMethodsScreen } from './PaymentMethodsScreen';
-import { CURRENT_TOS_VERSION, CURRENT_PRIVACY_VERSION } from '../constants/policies';
 import { TrustSafetyScreen } from './TrustSafetyScreen';
 import { SettingsScreen } from './SettingsScreen';
 import { SupportScreen } from './SupportScreen';
@@ -39,9 +38,9 @@ import { AdminTestingScreen } from './AdminTestingScreen';
 import { SubscriptionScreen } from './SubscriptionScreen';
 import { useAuth } from '../contexts/AuthContext';
 import { ProfileEditForm, User } from '../types/betting';
-import { getProfilePictureUrl } from '../services/imageUploadService';
-import { NotificationPreferencesService } from '../services/notificationPreferencesService';
+import { getProfilePictureUrl, updateProfilePicture } from '../services/imageUploadService';
 import { showAlert } from '../components/ui/CustomAlert';
+import { ensureUserRecord } from '../services/userRecordService';
 
 // Initialize GraphQL client
 const client = generateClient<Schema>();
@@ -76,12 +75,20 @@ export const AccountScreen: React.FC = () => {
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
   const [pendingPayouts, setPendingPayouts] = useState(0);
+  // The S3 key behind userProfile.profilePictureUrl (which holds a signed URL for display).
+  // The upload service needs the key to delete the picture being replaced.
+  const [profilePictureKey, setProfilePictureKey] = useState<string | undefined>(undefined);
+  const [isUploadingPicture, setIsUploadingPicture] = useState(false);
+  const hasLoadedRef = useRef(false);
 
+  // Keyed on fields, not the user object, which AuthContext replaces on every silent auth
+  // refresh. The picture key is included so a picture set elsewhere (onboarding refreshes
+  // auth after its upload) still reaches this screen.
   useEffect(() => {
     if (user) {
       fetchUserStats();
     }
-  }, [user]);
+  }, [user?.userId, user?.profilePictureUrl]);
 
   // Handle navigation params (e.g., from notification tap)
   useEffect(() => {
@@ -98,21 +105,23 @@ export const AccountScreen: React.FC = () => {
     if (!user) return;
 
     try {
-      setIsLoading(true);
+      // Full-screen spinner on the first load only. Later loads (pull-to-refresh, after a
+      // profile save) update in place rather than blanking the screen.
+      if (!hasLoadedRef.current) setIsLoading(true);
 
-      // Always fetch real user info from Cognito first
-      let displayNameFromCognito = '';
-      let realEmail = user.username; // fallback
-      try {
-        const userAttributes = await fetchUserAttributes();
-        displayNameFromCognito = userAttributes.name || '';
-        realEmail = userAttributes.email || user.username;
-      } catch (error) {
-        console.log('Could not fetch Cognito user attributes:', error);
-      }
-
-      // Try to get existing user data
-      const { data: userData } = await client.models.User.get({ id: user.userId });
+      // Independent reads, so run them together rather than one after another.
+      const [userAttributes, userData] = await Promise.all([
+        fetchUserAttributes().catch((error) => {
+          console.log('Could not fetch Cognito user attributes:', error);
+          return null;
+        }),
+        // Creates the record if it is missing: the retry for a create that failed at
+        // sign-in, without waiting for the next auth check.
+        ensureUserRecord({ userId: user.userId, username: user.username }),
+        fetchPendingPayouts(),
+      ]);
+      const displayNameFromCognito = userAttributes?.name || '';
+      const realEmail = userAttributes?.email || user.username;
 
       if (userData) {
         // Update existing user with real email if it's a placeholder
@@ -147,13 +156,14 @@ export const AccountScreen: React.FC = () => {
           }
         }
 
-        // Get fresh signed URL for profile picture if it exists
+        // profilePictureUrl on the record is the S3 key; the screen needs a signed URL
         let profilePictureUrl = undefined;
         if (userData.profilePictureUrl) {
           const signedUrl = await getProfilePictureUrl(userData.profilePictureUrl);
           profilePictureUrl = signedUrl || undefined;
         }
 
+        setProfilePictureKey(userData.profilePictureUrl || undefined);
         setUserProfile({
           id: userData.id!,
           username: userData.username!,
@@ -169,88 +179,11 @@ export const AccountScreen: React.FC = () => {
           updatedAt: userData.updatedAt || new Date().toISOString(),
         });
       } else {
-        // User record should already be created by AuthContext on first login.
-        // If we still don't have it, create it as a fallback.
-        console.log('[AccountScreen] No User record found, creating as fallback for:', user.userId);
-        const currentTime = new Date().toISOString();
-        try {
-          const newUser = await client.models.User.create({
-            id: user.userId,
-            username: user.username,
-            email: realEmail,
-            displayName: displayNameFromCognito || undefined,
-            balance: 0,
-            trustScore: 5.0,
-            totalBets: 0,
-            totalWinnings: 0,
-            winRate: 0,
-            tosAccepted: true,
-            tosAcceptedAt: currentTime,
-            tosVersion: CURRENT_TOS_VERSION,
-            privacyPolicyAccepted: true,
-            privacyPolicyAcceptedAt: currentTime,
-            privacyPolicyVersion: CURRENT_PRIVACY_VERSION,
-          });
-
-          if (newUser.data) {
-            try {
-              await NotificationPreferencesService.createDefaultPreferences(newUser.data.id!);
-            } catch (prefError) {
-              console.warn('[AccountScreen] Failed to create notification preferences:', prefError);
-            }
-
-            let profilePictureUrl = undefined;
-            if (newUser.data.profilePictureUrl) {
-              const signedUrl = await getProfilePictureUrl(newUser.data.profilePictureUrl);
-              profilePictureUrl = signedUrl || undefined;
-            }
-
-            setUserProfile({
-              id: newUser.data.id!,
-              username: newUser.data.username!,
-              email: newUser.data.email!,
-              displayName: newUser.data.displayName || undefined,
-              profilePictureUrl: profilePictureUrl,
-              balance: newUser.data.balance ?? 0,
-              trustScore: newUser.data.trustScore || 5.0,
-              totalBets: newUser.data.totalBets || 0,
-              totalWinnings: newUser.data.totalWinnings || 0,
-              winRate: newUser.data.winRate || 0,
-              createdAt: newUser.data.createdAt || new Date().toISOString(),
-              updatedAt: newUser.data.updatedAt || new Date().toISOString(),
-            });
-          }
-        } catch (createError) {
-          // Record may have been created by AuthContext concurrently — re-fetch
-          console.warn('[AccountScreen] Create failed (may already exist), re-fetching:', createError);
-          const { data: retryData } = await client.models.User.get({ id: user.userId });
-          if (retryData) {
-            let profilePictureUrl = undefined;
-            if (retryData.profilePictureUrl) {
-              const signedUrl = await getProfilePictureUrl(retryData.profilePictureUrl);
-              profilePictureUrl = signedUrl || undefined;
-            }
-            setUserProfile({
-              id: retryData.id!,
-              username: retryData.username!,
-              email: retryData.email!,
-              displayName: retryData.displayName || undefined,
-              profilePictureUrl: profilePictureUrl,
-              balance: retryData.balance ?? 0,
-              trustScore: retryData.trustScore || 5.0,
-              totalBets: retryData.totalBets || 0,
-              totalWinnings: retryData.totalWinnings || 0,
-              winRate: retryData.winRate || 0,
-              createdAt: retryData.createdAt || new Date().toISOString(),
-              updatedAt: retryData.updatedAt || new Date().toISOString(),
-            });
-          }
-        }
+        // ensureUserRecord tried to create it and could not; Try Again tries again
+        console.warn('[AccountScreen] No User record for:', user.userId);
       }
 
-      // Fetch pending payouts
-      await fetchPendingPayouts();
-
+      hasLoadedRef.current = true;
     } catch (error) {
       console.error('Error fetching user stats:', error);
       showAlert(
@@ -267,19 +200,31 @@ export const AccountScreen: React.FC = () => {
     if (!user) return;
 
     try {
-      // Get all PENDING transactions of type BET_WON for this user
-      const { data: pendingTransactions } = await client.models.Transaction.list({
-        filter: {
-          and: [
-            { userId: { eq: user.userId } },
-            { type: { eq: 'BET_WON' } },
-            { status: { eq: 'PENDING' } }
-          ]
-        }
-      });
+      // PENDING BET_WON transactions for this user, through the userId index rather than a
+      // filtered Scan of the whole table. A filter applies to the rows read, not the rows
+      // returned, so a page can come back short or empty while more matches remain:
+      // follow nextToken until it runs out.
+      const pendingTransactions: Schema['Transaction']['type'][] = [];
+      let nextToken: string | null | undefined;
+      do {
+        const page = await client.models.Transaction.transactionsByUser(
+          { userId: user.userId },
+          {
+            filter: {
+              and: [
+                { type: { eq: 'BET_WON' } },
+                { status: { eq: 'PENDING' } },
+              ],
+            },
+            nextToken,
+          }
+        );
+        pendingTransactions.push(...(page.data || []));
+        nextToken = page.nextToken;
+      } while (nextToken);
 
       // Calculate total pending payouts (use actualAmount for net after fees)
-      const total = pendingTransactions?.reduce((sum, transaction) => {
+      const total = pendingTransactions.reduce((sum, transaction) => {
         // Use actualAmount (net after fees) if available, otherwise fall back to amount
         const netAmount = transaction.actualAmount !== undefined && transaction.actualAmount !== null
           ? transaction.actualAmount
@@ -375,41 +320,61 @@ export const AccountScreen: React.FC = () => {
     setShowProfileEditor(true);
   };
 
+  // Tapping the avatar goes straight to the picker; no editor screen in between.
+  // Same sequence as onboarding's picture step: upload, then save the S3 key on the User.
+  const handleAvatarPress = async () => {
+    if (!userProfile || isUploadingPicture) return;
+
+    try {
+      setIsUploadingPicture(true);
+
+      const result = await updateProfilePicture(userProfile.id, profilePictureKey);
+      if (!result.success || !result.url) {
+        // Closing the picker without choosing is not an error
+        if (result.error && result.error !== 'Image selection cancelled') {
+          showAlert('Error', result.error);
+        }
+        return;
+      }
+
+      // result.url is the S3 key, not a displayable URL
+      const s3Key = result.url;
+      await client.models.User.update({ id: userProfile.id, profilePictureUrl: s3Key });
+      const signedUrl = await getProfilePictureUrl(s3Key);
+
+      setProfilePictureKey(s3Key);
+      setUserProfile((current) =>
+        current ? { ...current, profilePictureUrl: signedUrl || undefined } : current
+      );
+    } catch (error) {
+      console.error('Error updating profile picture:', error);
+      showAlert('Error', 'Failed to update profile picture. Please try again.');
+    } finally {
+      setIsUploadingPicture(false);
+    }
+  };
+
   const handleSaveProfile = async (profileData: ProfileEditForm) => {
     if (!userProfile) return;
 
     try {
       setIsUpdatingProfile(true);
 
-      // Build update object - only include fields that are being changed
-      const updateData: any = {
+      // The editor only edits the display name; the picture is changed from the avatar
+      const updatedUser = await client.models.User.update({
         id: userProfile.id,
         displayName: profileData.displayName,
         displayNameLower: profileData.displayName ? profileData.displayName.toLowerCase() : undefined,
-      };
-
-      // Only update profile picture if it's explicitly provided and different from current
-      if (profileData.profilePicture !== undefined && profileData.profilePicture !== userProfile.profilePictureUrl) {
-        updateData.profilePictureUrl = profileData.profilePicture;
-      }
-
-      // Update user profile in database
-      const updatedUser = await client.models.User.update(updateData);
+      });
 
       if (updatedUser.data) {
-        // Update local state
         setUserProfile({
           ...userProfile,
           displayName: updatedUser.data.displayName || undefined,
-          profilePictureUrl: updatedUser.data.profilePictureUrl || undefined,
           updatedAt: updatedUser.data.updatedAt || new Date().toISOString(),
         });
 
         setShowProfileEditor(false);
-
-        // Refresh user stats to ensure profile picture is updated everywhere
-        await fetchUserStats();
-
         showAlert('Success', 'Profile updated successfully!');
       }
     } catch (error) {
@@ -489,8 +454,12 @@ export const AccountScreen: React.FC = () => {
           <View style={styles.profileHeader}>
             <TouchableOpacity
               style={styles.avatarContainer}
-              onPress={handleEditProfile}
+              onPress={handleAvatarPress}
+              disabled={isUploadingPicture}
               activeOpacity={0.7}
+              testID="account-avatar"
+              accessibilityRole="button"
+              accessibilityLabel="Change profile picture"
             >
               {userProfile.profilePictureUrl ? (
                 <Image
@@ -504,12 +473,16 @@ export const AccountScreen: React.FC = () => {
                 </View>
               )}
               <View style={styles.editProfileBadge}>
-                <Ionicons name="pencil" size={14} color={colors.background} />
+                {isUploadingPicture ? (
+                  <ActivityIndicator size="small" color={colors.background} />
+                ) : (
+                  <Ionicons name="camera" size={14} color={colors.background} />
+                )}
               </View>
             </TouchableOpacity>
 
             <View style={styles.profileInfo}>
-              <TouchableOpacity onPress={handleEditProfile} activeOpacity={0.7}>
+              <TouchableOpacity onPress={handleEditProfile} activeOpacity={0.7} testID="account-edit-name">
                 <Text style={styles.displayName}>
                   {userProfile.displayName || 'Set Display Name'}
                 </Text>
@@ -524,7 +497,7 @@ export const AccountScreen: React.FC = () => {
                 {pendingPayouts > 0 && (
                   <View style={styles.balanceRow}>
                     <Text style={styles.balanceLabel}>Pending Payouts:</Text>
-                    <Text style={styles.pendingValue}>${pendingPayouts.toFixed(2)}</Text>
+                    <Text style={styles.pendingValue} testID="account-pending-payouts">${pendingPayouts.toFixed(2)}</Text>
                   </View>
                 )}
                 <View style={styles.balanceRow}>
@@ -647,6 +620,7 @@ export const AccountScreen: React.FC = () => {
             title="Trust & Safety"
             subtitle="Security settings and verification"
             onPress={handleTrustSafetyPress}
+            testID="account-trust-safety"
           />
           <MenuOption
             icon="settings-outline"
@@ -687,7 +661,8 @@ export const AccountScreen: React.FC = () => {
       <Modal
         visible={showProfileEditor}
         animationType="slide"
-        presentationStyle="pageSheet"
+        presentationStyle="fullScreen"
+        onRequestClose={handleCancelProfileEdit}
       >
         {showProfileEditor && (
           <ProfileEditor

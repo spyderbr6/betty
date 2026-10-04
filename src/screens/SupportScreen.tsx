@@ -48,7 +48,7 @@ export const SupportScreen: React.FC<SupportScreenProps> = ({ onClose }) => {
 
           <FAQItem
             question="How do I create a bet?"
-            answer="Tap the '+' icon on the home screen, fill in the bet details, and invite friends to join."
+            answer="Open the Create tab, fill in the bet details, and invite friends to join."
           />
 
           <FAQItem
@@ -63,7 +63,7 @@ export const SupportScreen: React.FC<SupportScreenProps> = ({ onClose }) => {
 
           <FAQItem
             question="How do I add friends?"
-            answer="Go to the Friends tab and search by username, email, or display name to send friend requests."
+            answer="Open Account, then Friends, and search by username, email, or display name to send friend requests."
           />
         </View>
 
