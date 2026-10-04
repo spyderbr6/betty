@@ -134,6 +134,7 @@ export const baseHandlers = (
   // the list* forms are what a regressed call site would reach for, so leaving
   // them mapped keeps the unhandled-operation assertion meaningful rather than
   // turning a regression into a silent empty screen.
+  transactionsByUser: list(),
   friendshipsByUser1: list(),
   friendshipsByUser2: list(),
   betInvitationsByToUser: list(),

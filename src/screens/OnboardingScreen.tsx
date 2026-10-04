@@ -255,7 +255,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({
         {/* Header with Progress */}
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Welcome to SideBet</Text>
-          <Text style={styles.headerSubtitle}>
+          <Text style={styles.headerSubtitle} testID="onboarding-step">
             Step {currentStep} of {TOTAL_STEPS}
           </Text>
 

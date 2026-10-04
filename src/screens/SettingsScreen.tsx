@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, StyleSheet, Switch, TouchableOpacity } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, Switch } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, textStyles } from '../styles';
@@ -138,33 +138,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
             </Text>
           </View>
         </View>
-
-        {/* App Preferences */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>APP PREFERENCES</Text>
-
-          <TouchableOpacity style={styles.menuItem} activeOpacity={0.7}>
-            <View style={styles.menuItemLeft}>
-              <Ionicons name="language-outline" size={22} color={colors.textSecondary} />
-              <View style={styles.menuItemText}>
-                <Text style={styles.menuItemTitle}>Language</Text>
-                <Text style={styles.menuItemSubtitle}>English</Text>
-              </View>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.menuItem} activeOpacity={0.7}>
-            <View style={styles.menuItemLeft}>
-              <Ionicons name="cash-outline" size={22} color={colors.textSecondary} />
-              <View style={styles.menuItemText}>
-                <Text style={styles.menuItemTitle}>Currency</Text>
-                <Text style={styles.menuItemSubtitle}>USD ($)</Text>
-              </View>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
-          </TouchableOpacity>
-        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -240,33 +213,6 @@ const styles = StyleSheet.create({
   settingRowSubtitle: {
     ...textStyles.caption,
     color: colors.textMuted,
-    marginTop: 2,
-  },
-  menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.lg,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  menuItemLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  menuItemText: {
-    marginLeft: spacing.md,
-    flex: 1,
-  },
-  menuItemTitle: {
-    ...textStyles.button,
-    color: colors.textPrimary,
-  },
-  menuItemSubtitle: {
-    ...textStyles.caption,
-    color: colors.textSecondary,
     marginTop: 2,
   },
   privacyNote: {

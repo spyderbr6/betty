@@ -40,6 +40,7 @@ export const TrustSafetyScreen: React.FC<TrustSafetyScreenProps> = ({ onClose })
   const [phoneNumber, setPhoneNumber] = useState('');
   const [phoneVerified, setPhoneVerified] = useState(false);
   const [isLoadingPhone, setIsLoadingPhone] = useState(false);
+  const [email, setEmail] = useState('');
 
   // Check MFA status on mount
   useEffect(() => {
@@ -58,31 +59,41 @@ export const TrustSafetyScreen: React.FC<TrustSafetyScreenProps> = ({ onClose })
 
   const loadPhoneNumber = async () => {
     try {
-      // First try to get phone from Cognito (authoritative source)
-      const userAttributes = await fetchUserAttributes();
+      // Cognito is the authoritative source; the User record is a copy of it
+      const [userAttributes, userRecord] = await Promise.all([
+        fetchUserAttributes(),
+        user?.userId ? client.models.User.get({ id: user.userId }) : Promise.resolve(null),
+      ]);
+      const userData = userRecord?.data;
       const cognitoPhone = userAttributes.phone_number;
       const cognitoPhoneVerified = userAttributes.phone_number_verified === 'true';
+
+      setEmail(userAttributes.email || '');
 
       if (cognitoPhone) {
         setPhoneNumber(cognitoPhone);
         setPhoneVerified(cognitoPhoneVerified);
 
-        // Update database to match Cognito
-        if (user?.userId) {
+        // Copy to the User record only when it is out of date. This used to write on
+        // every visit, and stamped phoneNumberVerifiedAt with the visit time each time.
+        const recordStale =
+          userData &&
+          (userData.phoneNumber !== cognitoPhone ||
+            (userData.phoneNumberVerified ?? false) !== cognitoPhoneVerified);
+        if (user?.userId && recordStale) {
+          const becameVerified = cognitoPhoneVerified && !userData.phoneNumberVerified;
           await client.models.User.update({
             id: user.userId,
             phoneNumber: cognitoPhone,
             phoneNumberVerified: cognitoPhoneVerified,
-            phoneNumberVerifiedAt: cognitoPhoneVerified ? new Date().toISOString() : undefined,
+            // Stamp the time only when verification is new; otherwise leave it alone
+            ...(becameVerified ? { phoneNumberVerifiedAt: new Date().toISOString() } : {}),
           });
         }
-      } else if (user?.userId) {
+      } else if (userData?.phoneNumber) {
         // Fallback to database if Cognito doesn't have phone
-        const { data: userData } = await client.models.User.get({ id: user.userId });
-        if (userData?.phoneNumber) {
-          setPhoneNumber(userData.phoneNumber);
-          setPhoneVerified(userData.phoneNumberVerified || false);
-        }
+        setPhoneNumber(userData.phoneNumber);
+        setPhoneVerified(userData.phoneNumberVerified || false);
       }
     } catch (error) {
       console.error('Error loading phone number:', error);
@@ -143,7 +154,8 @@ export const TrustSafetyScreen: React.FC<TrustSafetyScreenProps> = ({ onClose })
               <Ionicons name="mail" size={24} color={colors.success} />
               <Text style={styles.verificationTitle}>Email Verified</Text>
             </View>
-            <Text style={styles.verificationEmail}>{user?.username}</Text>
+            {/* user.username is the Cognito username, not the address */}
+            <Text style={styles.verificationEmail} testID="trust-email">{email}</Text>
           </View>
 
           {/* Phone Verification Card */}
@@ -177,37 +189,6 @@ export const TrustSafetyScreen: React.FC<TrustSafetyScreenProps> = ({ onClose })
             {!phoneVerified && (
               <Text style={styles.verificationSubtext}>Tap to verify your phone number</Text>
             )}
-          </TouchableOpacity>
-        </View>
-
-        {/* Privacy */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>PRIVACY</Text>
-
-          <TouchableOpacity style={styles.menuItem} activeOpacity={0.7}>
-            <View style={styles.menuItemLeft}>
-              <View style={[styles.menuIcon, { backgroundColor: colors.primary + '20' }]}>
-                <Ionicons name="eye-off-outline" size={22} color={colors.primary} />
-              </View>
-              <View style={styles.menuItemText}>
-                <Text style={styles.menuItemTitle}>Profile Visibility</Text>
-                <Text style={styles.menuItemSubtitle}>Friends only</Text>
-              </View>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.menuItem} activeOpacity={0.7}>
-            <View style={styles.menuItemLeft}>
-              <View style={[styles.menuIcon, { backgroundColor: colors.error + '20' }]}>
-                <Ionicons name="ban-outline" size={22} color={colors.error} />
-              </View>
-              <View style={styles.menuItemText}>
-                <Text style={styles.menuItemTitle}>Blocked Users</Text>
-                <Text style={styles.menuItemSubtitle}>Manage blocked accounts</Text>
-              </View>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
           </TouchableOpacity>
         </View>
 
