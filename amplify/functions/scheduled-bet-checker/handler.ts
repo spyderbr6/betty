@@ -7,6 +7,8 @@ import { getAmplifyDataClientConfig } from '@aws-amplify/backend/function/runtim
 // @ts-ignore - Generated at build time by Amplify
 import { env } from '$amplify/env/scheduled-bet-checker';
 import { notificationMeta } from '../../shared/notificationCatalog';
+import { ledgerApply } from '../../shared/moneyClient';
+import { refundTransactionId } from '../../shared/settlementLogic';
 
 const { resourceConfig, libraryOptions } = await getAmplifyDataClientConfig(env);
 Amplify.configure(resourceConfig, libraryOptions);
@@ -43,10 +45,15 @@ async function updateExpiredBets(): Promise<{ updated: number; cancelled: number
     const now = new Date();
     const currentISOString = now.toISOString();
 
-    // Get ACTIVE bets using GSI (scan filter only returns first page!), then filter by deadline
-    const { data: activeBets } = await client.models.Bet.betsByStatus({
-      status: 'ACTIVE'
-    });
+    // Every page of ACTIVE bets through the GSI, then filter by deadline. One page could
+    // leave expired bets, and the stakes they hold, waiting indefinitely.
+    const activeBets: any[] = [];
+    let nextToken: string | null | undefined;
+    do {
+      const page = await client.models.Bet.betsByStatus({ status: 'ACTIVE' }, { nextToken });
+      activeBets.push(...(page.data ?? []));
+      nextToken = page.nextToken;
+    } while (nextToken);
     const expiredActiveBets = activeBets?.filter((bet: any) => bet.deadline && bet.deadline < currentISOString) || [];
 
     if (!expiredActiveBets || expiredActiveBets.length === 0) {
@@ -89,48 +96,47 @@ async function updateExpiredBets(): Promise<{ updated: number; cancelled: number
 
           updated++;
         } else {
+          // Return every stake first, through the ledger (the money function), each under
+          // a fixed id. The bet is marked CANCELLED only once all of them have gone
+          // through: if one fails, the bet stays ACTIVE and expired, the next run tries
+          // again, and the refunds already made are not repeated. This used to cancel
+          // first and then refund by reading and writing balances, so a failed refund was
+          // stranded behind a cancelled bet and a concurrent write could be lost.
+          let allRefunded = true;
+          for (const refund of outcome.refunds) {
+            try {
+              const result = await ledgerApply(client, [
+                {
+                  transactionId: refundTransactionId(refund.participantId),
+                  userId: refund.userId,
+                  type: 'BET_CANCELLED',
+                  delta: refund.amount,
+                  amount: refund.amount,
+                  status: 'COMPLETED',
+                  mode: 'create',
+                  relatedBetId: bet.id,
+                  relatedParticipantId: refund.participantId,
+                  notes: `Refund: ${outcome.reason}`,
+                },
+              ]);
+              if (result.status !== 'applied' && result.status !== 'already_applied') {
+                throw new Error(JSON.stringify(result));
+              }
+              console.log(`💸 Refunded $${refund.amount} to ${refund.userId} for bet ${bet.id} (${result.status})`);
+            } catch (refundError) {
+              // Keep going: one failed refund must not stop the others
+              console.error(`❌ Failed to refund ${refund.userId} for bet ${bet.id}:`, refundError);
+              allRefunded = false;
+              errors++;
+            }
+          }
+          if (!allRefunded) continue;
+
           await client.models.Bet.update({
             id: bet.id,
             status: 'CANCELLED',
             resolutionReason: outcome.reason
           });
-
-          // Return every stake. The old cancellation path set the status and
-          // notified, and refunded nobody - which was survivable only because it
-          // was unreachable. It is reachable now.
-          for (const refund of outcome.refunds) {
-            try {
-              const { data: participantUser } = await client.models.User.get({ id: refund.userId });
-              const balanceBefore = participantUser?.balance || 0;
-              const balanceAfter = balanceBefore + refund.amount;
-
-              // Same shape as the squares refund in scheduled-squares-checker,
-              // which is the existing precedent for returning a stake.
-              const refundedAt = new Date().toISOString();
-              await client.models.Transaction.create({
-                userId: refund.userId,
-                type: 'BET_CANCELLED',
-                status: 'COMPLETED',
-                amount: refund.amount,
-                platformFee: 0,
-                balanceBefore,
-                balanceAfter,
-                relatedBetId: bet.id,
-                relatedParticipantId: refund.participantId,
-                notes: `Refund: ${outcome.reason}`,
-                createdAt: refundedAt,
-                completedAt: refundedAt,
-              });
-
-              await client.models.User.update({ id: refund.userId, balance: balanceAfter });
-              console.log(`💸 Refunded $${refund.amount} to ${refund.userId} for bet ${bet.id}`);
-            } catch (refundError) {
-              // Keep going: one failed refund must not strand the others, and the
-              // bet is already CANCELLED so it will not be paid out twice.
-              console.error(`❌ Failed to refund ${refund.userId} for bet ${bet.id}:`, refundError);
-              errors++;
-            }
-          }
 
           // Notify bet creator that their bet was cancelled
           try {

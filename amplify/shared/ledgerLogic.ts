@@ -347,3 +347,11 @@ export function classifyCancellation(
   if (sawBalance) return 'balance_changed';
   return 'other';
 }
+
+/** What applying movements came to (the money function's ledgerApply result). */
+export type LedgerResult =
+  | { status: 'applied'; balances: UserBalanceChange[] }
+  | { status: 'already_applied' }
+  | { status: 'state_changed' }
+  | { status: 'insufficient_funds'; userId: string; balance: number; required: number }
+  | { status: 'rejected'; reason: string };

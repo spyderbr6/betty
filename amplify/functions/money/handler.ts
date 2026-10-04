@@ -20,11 +20,12 @@ import { getAmplifyDataClientConfig } from '@aws-amplify/backend/function/runtim
 import { env } from '$amplify/env/money';
 import { type AmplifyResolverEvent, resolverFieldName } from '../../shared/amplifyResolverEvent';
 import { accountIdFromArn, classifyCaller, type Caller } from '../../shared/callerAuth';
-import type { LedgerEntry, StateUpdate } from '../../shared/ledgerLogic';
-import { planSettlement } from '../../shared/settlementLogic';
+import type { LedgerEntry, StateUpdate, LedgerResult } from '../../shared/ledgerLogic';
+import { hasOpenDispute, overturnedByDispute, planSettlement, type DisputeSummary } from '../../shared/settlementLogic';
 import { notificationMeta } from '../../shared/notificationCatalog';
 import { isProActive } from '../../../src/config/subscriptionConfig';
-import { applyLedger, type LedgerResult } from './ledgerExecutor';
+import { applyLedger } from './ledgerExecutor';
+import { parseAwsJson, type SettleResult } from '../../shared/moneyClient';
 
 const { resourceConfig, libraryOptions } = await getAmplifyDataClientConfig(env);
 Amplify.configure(resourceConfig, libraryOptions);
@@ -62,11 +63,8 @@ interface LedgerApplyArgs {
   stateUpdates?: StateUpdate[] | string | null;
 }
 
-/** AppSync passes AWSJSON arguments as strings. */
-function parseJson<T>(value: T | string | null | undefined, fallback: T): T {
-  if (value === null || value === undefined) return fallback;
-  return typeof value === 'string' ? (JSON.parse(value) as T) : value;
-}
+/** AppSync passes AWSJSON arguments as JSON text, possibly encoded twice. */
+const parseJson = <T>(value: unknown, fallback: T): T => parseAwsJson<T>(value, fallback);
 
 async function ledgerApply(args: LedgerApplyArgs): Promise<LedgerResult> {
   const entries = parseJson<LedgerEntry[]>(args.entries, []);
@@ -77,10 +75,6 @@ async function ledgerApply(args: LedgerApplyArgs): Promise<LedgerResult> {
 }
 
 // --- settleBet ----------------------------------------------------------------------
-
-type SettleResult =
-  | { status: 'settled'; paid: number; refunded: number }
-  | { status: 'skipped'; reason: string };
 
 /**
  * Pay out one bet. Safe to call repeatedly: every payout has a deterministic ledger id, and
@@ -98,7 +92,12 @@ async function settleBet(betId: string): Promise<SettleResult> {
     const othersJoined = participantsForWindow.some((p) => p.userId !== bet.creatorId);
     if (othersJoined) return { status: 'skipped', reason: 'dispute window open' };
   }
-  if (await hasOpenDispute(betId)) return { status: 'skipped', reason: 'open dispute' };
+  const disputes = await listDisputes(betId);
+  if (hasOpenDispute(disputes)) return { status: 'skipped', reason: 'open dispute' };
+  // An upheld dispute sends the bet back for re-resolution; the old result must not be paid
+  if (overturnedByDispute(disputes, bet.disputeWindowEndsAt)) {
+    return { status: 'skipped', reason: 'overturned by an upheld dispute; awaiting re-resolution' };
+  }
 
   const participants = await listParticipants(betId);
   const proUserIds = new Set<string>();
@@ -167,19 +166,19 @@ async function listParticipants(betId: string): Promise<ParticipantRow[]> {
 }
 
 /**
- * Through the disputesByBet index. The payout processor used a filtered Scan, which reads
- * one page of the table: an open dispute past that page did not stop the payout.
+ * Every dispute on a bet, through the disputesByBet index. The payout processor used a
+ * filtered Scan, which reads one page of the table: an open dispute past that page did
+ * not stop the payout.
  */
-async function hasOpenDispute(betId: string): Promise<boolean> {
+async function listDisputes(betId: string): Promise<DisputeSummary[]> {
+  const rows: DisputeSummary[] = [];
   let nextToken: string | null | undefined;
   do {
     const page = await client.models.Dispute.disputesByBet({ betId }, { nextToken });
-    if ((page.data ?? []).some((d: { status?: string }) => d.status === 'PENDING' || d.status === 'UNDER_REVIEW')) {
-      return true;
-    }
+    rows.push(...((page.data ?? []) as DisputeSummary[]));
     nextToken = page.nextToken;
   } while (nextToken);
-  return false;
+  return rows;
 }
 
 async function supersedeStrayPayouts(betId: string, keep: Set<string>): Promise<void> {

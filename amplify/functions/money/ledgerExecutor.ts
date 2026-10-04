@@ -14,8 +14,8 @@ import {
   planLedgerWrite,
   type LedgerEntry,
   type StateUpdate,
+  type LedgerResult,
   type TableNames,
-  type UserBalanceChange,
 } from '../../shared/ledgerLogic';
 
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
@@ -36,13 +36,6 @@ export function tableNames(): TableNames {
   }
   return names as TableNames;
 }
-
-export type LedgerResult =
-  | { status: 'applied'; balances: UserBalanceChange[] }
-  | { status: 'already_applied' }
-  | { status: 'state_changed' }
-  | { status: 'insufficient_funds'; userId: string; balance: number; required: number }
-  | { status: 'rejected'; reason: string };
 
 const MAX_ATTEMPTS = 5;
 

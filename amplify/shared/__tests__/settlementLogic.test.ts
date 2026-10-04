@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { planSettlement, type SettlementParticipant } from '../settlementLogic';
+import { hasOpenDispute, overturnedByDispute, planSettlement, type SettlementParticipant } from '../settlementLogic';
 import { WINNINGS_FEE_RATE } from '../../../src/config/subscriptionConfig';
 
 const p = (id: string, side: string, amount: number, userId = `u-${id}`): SettlementParticipant => ({ id, userId, side, amount });
@@ -73,5 +73,40 @@ describe('planSettlement', () => {
   it('pays nothing and refunds nothing for a bet with no stakes', () => {
     const plan = planSettlement({ ...base, participants: [] });
     expect(plan.entries).toEqual([]);
+  });
+});
+
+describe('overturnedByDispute', () => {
+  const resolvedAt = '2026-10-01T12:00:00.000Z';
+  const windowEnds = '2026-10-03T12:00:00.000Z'; // resolution + 48h
+
+  it('blocks payout of a resolution a dispute upheld afterwards', () => {
+    expect(overturnedByDispute([{ status: 'RESOLVED_FOR_FILER', resolvedAt: '2026-10-02T09:00:00.000Z' }], windowEnds)).toBe(true);
+  });
+
+  it('allows payout once the creator has resolved again (a new window)', () => {
+    const reResolvedWindow = '2026-10-04T15:00:00.000Z'; // re-resolved 2026-10-02T15:00
+    expect(overturnedByDispute([{ status: 'RESOLVED_FOR_FILER', resolvedAt: '2026-10-02T09:00:00.000Z' }], reResolvedWindow)).toBe(false);
+  });
+
+  it('ignores disputes that were dismissed or found for the creator', () => {
+    expect(overturnedByDispute([{ status: 'DISMISSED', resolvedAt: '2026-10-02T09:00:00.000Z' }, { status: 'RESOLVED_FOR_CREATOR', resolvedAt: resolvedAt }], windowEnds)).toBe(false);
+  });
+
+  it('does not pay when it cannot tell when the bet was resolved', () => {
+    expect(overturnedByDispute([{ status: 'RESOLVED_FOR_FILER', resolvedAt: '2026-10-02T09:00:00.000Z' }], null)).toBe(true);
+    expect(overturnedByDispute([{ status: 'RESOLVED_FOR_FILER', resolvedAt: null }], windowEnds)).toBe(true);
+  });
+
+  it('has nothing to say with no disputes', () => {
+    expect(overturnedByDispute([], windowEnds)).toBe(false);
+  });
+});
+
+describe('hasOpenDispute', () => {
+  it('is true for pending or under-review disputes only', () => {
+    expect(hasOpenDispute([{ status: 'PENDING' }])).toBe(true);
+    expect(hasOpenDispute([{ status: 'UNDER_REVIEW' }])).toBe(true);
+    expect(hasOpenDispute([{ status: 'DISMISSED' }, { status: 'RESOLVED_FOR_FILER' }])).toBe(false);
   });
 });

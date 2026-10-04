@@ -130,3 +130,37 @@ export function planSettlement(input: SettlementInput): SettlementPlan {
 
   return { entries, payouts, refundedNoWinners: false };
 }
+
+/** The dispute window a resolution opens (ResolveScreen sets disputeWindowEndsAt to this). */
+export const DISPUTE_WINDOW_MS = 48 * 60 * 60 * 1000;
+
+export interface DisputeSummary {
+  status?: string | null;
+  resolvedAt?: string | null;
+}
+
+/**
+ * Whether the bet's current resolution was overturned by an upheld dispute and has not
+ * been redone. When an admin upholds a dispute (RESOLVED_FOR_FILER) the bet goes back to
+ * PENDING_RESOLUTION for the creator to resolve again; until then the old result, and the
+ * payouts recorded with it, must not be paid. The payout Lambda used to pay them anyway
+ * once the dispute was no longer PENDING.
+ *
+ * A resolution happened at disputeWindowEndsAt minus the window. A dispute upheld after
+ * that moment overturned this resolution; re-resolving sets a new window, which moves the
+ * resolution time past the dispute and clears this.
+ */
+export function overturnedByDispute(
+  disputes: DisputeSummary[],
+  disputeWindowEndsAt: string | null | undefined
+): boolean {
+  const upheld = disputes.filter((d) => d.status === 'RESOLVED_FOR_FILER');
+  if (upheld.length === 0) return false;
+  if (!disputeWindowEndsAt) return true; // cannot tell when it was resolved: do not pay
+  const resolvedAt = new Date(disputeWindowEndsAt).getTime() - DISPUTE_WINDOW_MS;
+  return upheld.some((d) => !d.resolvedAt || new Date(d.resolvedAt).getTime() >= resolvedAt);
+}
+
+export function hasOpenDispute(disputes: DisputeSummary[]): boolean {
+  return disputes.some((d) => d.status === 'PENDING' || d.status === 'UNDER_REVIEW');
+}
