@@ -29,6 +29,8 @@
  *  10. money (buySquares, cancelSquaresGame): rows, debit and counts together; a sold or
  *      raced square sells once; retries and short balances; the filling purchase locks
  *      the grid with server-drawn numbers; who may cancel, and every buyer refunded
+ *  11. scheduled-squares-checker, overtime: periods 1-3 pay as they come, the final share
+ *      waits for the end and pays once on the overtime score; payouts total the pot
  *
  * The Lambdas act on ALL sandbox data when invoked, exactly as their schedules do.
  *
@@ -617,6 +619,44 @@ try {
     const oliBefore = await balance(oli);
     const byAdmin = await asUser(pat, 'cancelSquaresGame', { squaresGameId: stuck, reason: 'Scores never arrived' }, ['admins']);
     check('only an admin can release a stuck game, and the buyers are refunded', byCreatorLate.reason === 'NOT_CANCELLABLE' && byAdmin.status === 'cancelled' && same(await balance(oli), oliBefore + 2), `${JSON.stringify(byCreatorLate)} ${JSON.stringify(byAdmin)}`);
+
+    // 11. Overtime: the final share pays once, on the final score, when the game is over ----
+    // Tied 24-24 after regulation, 30-24 after overtime. Rows and columns are numbered
+    // 0-9 in order, so a score's square is (home % 10, away % 10).
+    const otEvent = await create('liveEvent', {
+      id: `${run}-ot-event`, externalId: `${run}-ot-event`, sport: 'NFL', homeTeam: 'H', awayTeam: 'A',
+      scheduledTime: hoursAgo(4), status: 'LIVE',
+      homePeriodScores: JSON.stringify([7, 10, 17, 24, 30]), awayPeriodScores: JSON.stringify([3, 14, 17, 24, 24]),
+    });
+    const ot = await create('squaresGame', {
+      id: `${run}-sq-ot`, title: `${run} sq-ot`, eventId: otEvent, creatorId: alice, pricePerSquare: 10,
+      totalPot: 40, squaresSold: 4, status: 'LIVE', locksAt: hoursAgo(3), isPrivate: false,
+      numbersAssigned: true, rowNumbers: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9], colNumbers: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+      payoutStructure: JSON.stringify({ period1: 0.15, period2: 0.25, period3: 0.15, period4: 0.45 }),
+    });
+    const [quarters, overtimeWinner, regulationSquare] = [await user('ot-q'), await user('ot-final'), await user('ot-reg')];
+    const otNow = new Date().toISOString();
+    for (const [uid, r, c] of [[quarters, 7, 3], [quarters, 7, 7], [overtimeWinner, 0, 4], [regulationSquare, 4, 4]]) {
+      await create('squaresPurchase', { squaresGameId: ot, userId: uid, ownerName: uid, gridRow: r, gridCol: c, amount: 10, purchasedAt: otNow });
+    }
+    for (const p of ['PERIOD_1', 'PERIOD_2', 'PERIOD_3', 'PERIOD_4', 'PERIOD_5']) {
+      ledgerIds.push(`squares-payout#${ot}#${p}`);
+      created.push(['squaresPayout', `${ot}#${p}`]);
+    }
+    const otPayouts = async () => (await gql('query ($id: ID!) { payoutsBySquaresGame(squaresGameId: $id) { items { period amount userId } } }', { id: ot })).payoutsBySquaresGame.items;
+
+    await invoke('scheduledsquareschecker');
+    const live = await otPayouts();
+    check('while the game is live, periods 1-3 pay and the final waits', live.map((p) => p.period).sort().join() === 'PERIOD_1,PERIOD_2,PERIOD_3' && (await get('squaresGame', ot, 'status')).status === 'LIVE', JSON.stringify(live));
+
+    await gql('mutation ($i: UpdateLiveEventInput!) { updateLiveEvent(input: $i) { id } }', { i: { id: otEvent, status: 'FINISHED' } });
+    await invoke('scheduledsquareschecker');
+    const done = await otPayouts();
+    const final = done.find((p) => p.period === 'PERIOD_4');
+    const grossTotal = done.reduce((sum, p) => sum + p.amount, 0);
+    check('the final share goes to the overtime score, once, and nothing pays overtime itself', final?.userId === overtimeWinner && final.amount === 18 && done.length === 4 && same(await balance(regulationSquare), 0), JSON.stringify(done));
+    check('everything paid adds up to the pot, not more', same(grossTotal, 40) && same((await balance(quarters)) + (await balance(overtimeWinner)), 40 * 0.97), `gross ${grossTotal}, credited ${(await balance(quarters)) + (await balance(overtimeWinner))}`);
+    check('with all four paid the game resolves', (await get('squaresGame', ot, 'status')).status === 'RESOLVED');
     for (const h of (await gql('query ($f: ModelTrustScoreHistoryFilterInput) { listTrustScoreHistories(filter: $f, limit: 1000) { items { id } } }', { f: { relatedBetId: { eq: a.id } } })).listTrustScoreHistories.items) {
       created.push(['trustScoreHistory', h.id]);
     }

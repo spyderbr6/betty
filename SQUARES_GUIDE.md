@@ -54,6 +54,14 @@ row = rowNumbers.indexOf(homeScore % 10)
    bought that square the period is recorded as a house win — a payout row is
    still written, so the outcome is auditable rather than silently dropped.
 
+   **The final share pays on the final score.** Periods 1-3 pay as their scores
+   arrive. The period 4 share waits until the event is FINISHED and pays once, on
+   the last score, overtime included: a game tied after regulation and decided in
+   overtime pays the overtime score's square. Overtime periods are never paid on
+   their own, so payouts total exactly the pot (`squaresMoney.periodsToSettle`).
+   They used to be paid period 4's share again, which paid out 145% of the pot with
+   the default split. A game resolves once it has its four payouts.
+
 ## Data model
 
 | Model | Holds |

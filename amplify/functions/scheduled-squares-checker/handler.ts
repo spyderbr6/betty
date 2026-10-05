@@ -10,6 +10,9 @@ import { ledgerApply } from '../../shared/moneyClient';
 import { isProActive } from '../../../src/config/subscriptionConfig';
 import {
   calculatePayout,
+  FINAL_PERIOD,
+  periodsToSettle,
+  settledPeriodCount,
   cancelSquaresGame,
   periodPayoutEntry,
   potFromPurchases,
@@ -347,34 +350,23 @@ async function processPeriodScoresForLiveGames(): Promise<number> {
 
       const paidPeriods = new Set(existingPayouts.map((p: any) => p.period));
 
-      // Determine max periods to process (up to 6 for double overtime)
-      // Standard: 4 periods (Q1, Q2, Q3, Q4)
-      // Overtime: 5 periods (Q1, Q2, Q3, Q4, OT)
-      // Double OT: 6 periods (Q1, Q2, Q3, Q4, OT1, OT2)
-      const maxPeriods = Math.min(Math.max(homePeriodScores.length, awayPeriodScores.length), 6);
+      // Periods 1-3 pay as their scores arrive; the final share pays once, on the final
+      // score (overtime included), when the game is over (squaresMoney.periodsToSettle).
+      // Overtime periods used to be paid period 4's share again, paying out more than the pot.
+      const toSettle = periodsToSettle({
+        homeScores: homePeriodScores,
+        awayScores: awayPeriodScores,
+        eventFinished: event.status === 'FINISHED',
+        paid: paidPeriods,
+      });
 
-      console.log(`🔍 Game ${fullGame.id}: Will process ${maxPeriods} periods (already paid: ${paidPeriods.size})`);
+      console.log(`🔍 Game ${fullGame.id}: settling ${toSettle.map((s) => s.period).join(', ') || 'nothing'} (already paid: ${paidPeriods.size})`);
 
-      if (maxPeriods > 4) {
-        console.log(`⚠️  Game ${fullGame.id} has ${maxPeriods} periods (overtime detected)`);
-      }
+      for (const { period, scoreIndex } of toSettle) {
+        const periodEnum = `PERIOD_${period}` as const;
 
-      // Process each available period dynamically
-      for (let period = 1; period <= maxPeriods; period++) {
-        const periodEnum = `PERIOD_${period}` as 'PERIOD_1' | 'PERIOD_2' | 'PERIOD_3' | 'PERIOD_4' | 'PERIOD_5' | 'PERIOD_6';
-
-        // Skip if already paid
-        if (paidPeriods.has(periodEnum)) continue;
-
-        // Check if period score is available
-        const periodIndex = period - 1;
-        if (periodIndex >= homePeriodScores.length || periodIndex >= awayPeriodScores.length) {
-          console.log(`Period ${period} scores not available yet for game ${fullGame.id}`);
-          continue;
-        }
-
-        const homeScore = homePeriodScores[periodIndex];
-        const awayScore = awayPeriodScores[periodIndex];
+        const homeScore = homePeriodScores[scoreIndex];
+        const awayScore = awayPeriodScores[scoreIndex];
 
         console.log(`🏆 Processing Period ${period} for game ${fullGame.id}: ${awayScore}-${homeScore} (last digits: ${awayScore % 10}-${homeScore % 10})`);
 
@@ -621,9 +613,10 @@ async function resolveCompletedGames(): Promise<number> {
       const isEventFinished = event.status === 'FINISHED';
 
       if (isEventFinished || isOldGame) {
-        // Determine expected number of periods from event data
-        let expectedPeriods = 4; // Default to 4 periods
-
+        // Four payouts make a game: periods 1-3 and the final score (overtime included).
+        // Overtime periods are not payouts of their own (squaresMoney.periodsToSettle).
+        const expectedPeriods = FINAL_PERIOD;
+        let periodsPlayed = 0;
         if (event.homePeriodScores && event.awayPeriodScores) {
           try {
             const homePeriodScores = typeof event.homePeriodScores === 'string'
@@ -632,22 +625,23 @@ async function resolveCompletedGames(): Promise<number> {
             const awayPeriodScores = typeof event.awayPeriodScores === 'string'
               ? JSON.parse(event.awayPeriodScores) as number[]
               : event.awayPeriodScores as number[];
-
-            // Calculate expected periods (up to 6 for double OT)
             if (Array.isArray(homePeriodScores) && Array.isArray(awayPeriodScores)) {
-              expectedPeriods = Math.min(Math.max(homePeriodScores.length, awayPeriodScores.length), 6);
+              periodsPlayed = Math.min(homePeriodScores.length, awayPeriodScores.length);
             }
           } catch (parseError) {
-            console.log(`⚠️  Could not parse period scores for game ${game.id}, defaulting to 4 periods`);
+            console.log(`⚠️  Could not parse period scores for game ${game.id}`);
           }
         }
 
-        // Count payouts
-        const { data: payouts } = await client.models.SquaresPayout.payoutsBySquaresGame({
-          squaresGameId: game.id
-        });
+        const payoutCount = settledPeriodCount(await payoutsOf(game.id));
 
-        const payoutCount = payouts?.length || 0;
+        if (payoutCount < expectedPeriods && periodsPlayed >= expectedPeriods && !isOldGame) {
+          // The final score is in but its payout is not recorded yet (it pays in the step
+          // before this one, and may have failed this run). Leave the game LIVE so the
+          // next run pays it; moving it on now would strand the final share.
+          console.log(`⏳ Game ${game.id}: final score in, payout not recorded yet (${payoutCount}/${expectedPeriods}); retrying next run`);
+          continue;
+        }
 
         if (payoutCount >= expectedPeriods) {
           // All periods paid - resolve game

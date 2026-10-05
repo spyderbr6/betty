@@ -69,6 +69,44 @@ export function calculatePayout(period: number, pot: number, payoutStructure: Re
   return Math.round(pot * share * 100) / 100;
 }
 
+/** The payout periods: three as they finish, then the final score. */
+export const FINAL_PERIOD = 4;
+
+/**
+ * Which periods to pay now, and the score each is paid on. Scores are running totals, one
+ * per period played, overtime included.
+ *
+ * Periods 1-3 pay on their own score as soon as it is in. The final share (period 4's)
+ * pays once, on the final score, and only once the game is over: if it goes to overtime,
+ * the overtime score decides it. Overtime periods are never paid separately. They used to
+ * be paid period 4's share again on top of period 4 itself, so a game that went to
+ * overtime paid out 145% of the pot with the default split.
+ */
+export function periodsToSettle(params: {
+  homeScores: number[];
+  awayScores: number[];
+  eventFinished: boolean;
+  /** Periods already recorded (PERIOD_n). */
+  paid: Set<string>;
+}): Array<{ period: 1 | 2 | 3 | 4; scoreIndex: number }> {
+  const { homeScores, awayScores, eventFinished, paid } = params;
+  const played = Math.min(homeScores.length, awayScores.length);
+  const settle: Array<{ period: 1 | 2 | 3 | 4; scoreIndex: number }> = [];
+  for (const period of [1, 2, 3] as const) {
+    if (played >= period && !paid.has(`PERIOD_${period}`)) settle.push({ period, scoreIndex: period - 1 });
+  }
+  if (eventFinished && played >= FINAL_PERIOD && !paid.has(`PERIOD_${FINAL_PERIOD}`)) {
+    settle.push({ period: FINAL_PERIOD, scoreIndex: played - 1 });
+  }
+  return settle;
+}
+
+/** Recorded payouts that count towards a game's four (overtime periods are not payouts). */
+export function settledPeriodCount(payouts: Array<{ period?: string | null }>): number {
+  const periods = new Set(payouts.map((p) => p.period).filter((p) => /^PERIOD_[1-4]$/.test(p ?? '')));
+  return periods.size;
+}
+
 export function periodPayoutEntry(params: {
   gameId: string;
   period: SquaresPeriod;

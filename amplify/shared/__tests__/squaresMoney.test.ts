@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   calculatePayout,
   checkSquaresCancel,
+  periodsToSettle,
+  settledPeriodCount,
   cancelSquaresGame,
   periodPayoutEntry,
   potFromPurchases,
@@ -93,6 +95,48 @@ describe('periodPayoutEntry', () => {
     expect(a.transactionId).toBe(b.transactionId);
     expect(a.transactionId).toBe(squaresPayoutTransactionId('g1', 'PERIOD_2'));
     expect(squaresPayoutRecordId('g1', 'PERIOD_2')).toBe('g1#PERIOD_2');
+  });
+});
+
+describe('periodsToSettle', () => {
+  const plan = (home: number[], away: number[], eventFinished: boolean, paid: string[] = []) =>
+    periodsToSettle({ homeScores: home, awayScores: away, eventFinished, paid: new Set(paid) });
+
+  it('pays periods 1-3 as their scores come in', () => {
+    expect(plan([7, 10], [3, 14], false)).toEqual([
+      { period: 1, scoreIndex: 0 },
+      { period: 2, scoreIndex: 1 },
+    ]);
+  });
+
+  it('holds the final share until the game is over', () => {
+    expect(plan([7, 10, 17, 24], [3, 14, 17, 24], false, ['PERIOD_1', 'PERIOD_2', 'PERIOD_3'])).toEqual([]);
+  });
+
+  it('pays the final share on the final score when the game ends in regulation', () => {
+    expect(plan([7, 10, 17, 24], [3, 14, 17, 21], true, ['PERIOD_1', 'PERIOD_2', 'PERIOD_3'])).toEqual([{ period: 4, scoreIndex: 3 }]);
+  });
+
+  it('pays the final share once, on the overtime score, and never pays overtime itself', () => {
+    // Tied 24-24 after regulation, 30-24 after overtime: the final share follows 30-24
+    expect(plan([7, 10, 17, 24, 30], [3, 14, 17, 24, 24], true, ['PERIOD_1', 'PERIOD_2', 'PERIOD_3'])).toEqual([{ period: 4, scoreIndex: 4 }]);
+    expect(plan([7, 10, 17, 24, 27, 30], [3, 14, 17, 24, 27, 27], true, ['PERIOD_1', 'PERIOD_2', 'PERIOD_3'])).toEqual([{ period: 4, scoreIndex: 5 }]);
+  });
+
+  it('pays nothing already recorded, and nothing for a final that never arrived', () => {
+    expect(plan([7, 10, 17, 24], [3, 14, 17, 24], true, ['PERIOD_1', 'PERIOD_2', 'PERIOD_3', 'PERIOD_4'])).toEqual([]);
+    expect(plan([7, 10, 17], [3, 14, 17], true, ['PERIOD_1', 'PERIOD_2', 'PERIOD_3'])).toEqual([]);
+  });
+
+  it('never pays out more than the pot: four shares at most, each once', () => {
+    const shares = { period1: 0.15, period2: 0.25, period3: 0.15, period4: 0.45 };
+    const settled = plan([7, 10, 17, 24, 30, 33], [3, 14, 17, 24, 24, 24], true);
+    const total = settled.reduce((sum, s) => sum + calculatePayout(s.period, 100, shares), 0);
+    expect(total).toBe(100);
+  });
+
+  it('only periods 1-4 count towards resolving the game', () => {
+    expect(settledPeriodCount([{ period: 'PERIOD_1' }, { period: 'PERIOD_2' }, { period: 'PERIOD_5' }, { period: 'PERIOD_2' }])).toBe(2);
   });
 });
 
