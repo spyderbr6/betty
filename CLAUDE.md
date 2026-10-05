@@ -109,7 +109,7 @@ The `CustomAlertController` is already mounted in `App.tsx` - no additional setu
 - **Database**: DynamoDB with GSI query patterns (`betsByStatus`, `squaresGamesByStatus`) and denormalized participant counts
 - **File Storage**: S3 with entity-based access controls
 - **Real-time**: Targeted GraphQL subscriptions (not `observeQuery`) for incremental state updates
-- **Optimistic Updates**: Not currently in effect for bet joins. `BetDataContext.joinBet` implements one but has no callers; the UI joins through `BetCard.confirmJoinBet`, which writes to the server before the card changes.
+- **Optimistic Updates**: None for bet joins. A join is one call to the server's `joinBet` mutation (`src/services/joinBetService.ts`); the card changes when it answers.
 
 ### Scheduled Lambda Functions
 The app uses AWS Lambda functions with EventBridge schedules for automated background tasks:
@@ -234,7 +234,7 @@ async function yourMainFunction() {
 
 ### Core Betting System
 - **Bet Creation**: Template-based betting with custom side names
-- **Bet Joining**: Confirmation sheet, then server-side balance validation and deduction. If the transaction fails after the participant row is written, the participant is deleted to compensate. No optimistic UI update — see the note under BetDataContext.
+- **Bet Joining**: Confirmation sheet, then the server's `joinBet` mutation (money function; rules in `amplify/shared/joinLogic.ts`). The server checks the bet is open and before its deadline, the stake, the balance, a second join and private-bet invitations, then writes the participant row, the stake and the bet's counts in one ledger transaction. The app writes none of them. Used by `BetCard` and by accepting an invitation (which marks the invitation accepted only after the join succeeds).
 - **Bet Resolution**: Creator-initiated resolution with automatic payouts
 - **Real-time Updates**: Targeted subscriptions via BetDataContext with denormalized participant counts (`sideACount`, `sideBCount`, `participantUserIds`) on the Bet record
 - **Bet Sorting**: Automatic sorting by creation time (newest first) with status priority (LIVE > ACTIVE > PENDING_RESOLUTION)
@@ -474,7 +474,6 @@ updateProfilePicture(userId, currentUrl?) -> {
 // 2. 11 targeted subscriptions: Bet/SquaresGame onCreate/onUpdate/onDelete,
 //    BetInvitation/SquaresInvitation onCreate/onUpdate, Friendship/SquaresPurchase onCreate
 // 3. Derived state via useMemo: Automatically recomputes filtered lists when underlying data changes
-// 4. Optimistic updates: implemented in joinBet below, but DEAD — nothing calls it
 
 // Denormalized Bet Fields (eliminates participant queries for list views):
 //   sideACount: number    — count of Side A participants
@@ -492,11 +491,7 @@ betInvitations: BetInvitation[]        // Pending bet invitations for user
 squaresInvitations: SquaresInvitation[] // Pending squares invitations for user
 
 // Actions:
-joinBet(bet, side, amount) -> Promise<boolean>    // DEAD CODE — no callers anywhere in src.
-                                                  // Joining runs through BetCard.confirmJoinBet
-                                                  // instead, which has no optimistic update.
-                                                  // Delete this or route the UI through it.
-acceptBetInvitation(invitation, side) -> Promise<boolean>
+acceptBetInvitation(invitation, side) -> Promise<boolean>  // joins via joinBet, then marks it accepted
 declineBetInvitation(invitation) -> Promise<void>
 refresh() -> Promise<void>                         // Force full reload
 
@@ -505,6 +500,19 @@ const { myBets, joinableBets, betInvitations, refresh } = useBetData();
 ```
 
 **Important:** `bulkLoadingService.ts` still exists but is **dead code** — no screens import from it. All data loading goes through BetDataContext.
+
+### Money (server-side ledger)
+
+**Balances change only on the server.** The `money` Lambda (`amplify/functions/money/`) is
+the one place a balance or money record is written: each movement is a single DynamoDB
+transaction (compare-and-swap on the balance, a fixed id per movement so retries cannot
+double-pay, never below zero) built by `amplify/shared/ledgerLogic.ts`. The scheduled
+Lambdas and the Stripe webhook reach it through `amplify/shared/moneyClient.ts`; the app
+reaches it through user-facing mutations (`joinBet` so far). The plan, what is done and
+what is left (the app still writes some money records directly until step 3 finishes) is
+in [docs/SECURITY_PLAN.md](./docs/SECURITY_PLAN.md). Do not add a new balance write
+anywhere else. Sandbox checks: `scripts/sandbox-money-check.mjs` and
+`scripts/sandbox-money-flows-check.mjs` (sandbox only; they refuse other endpoints).
 
 ### Transaction Service
 ```typescript
@@ -527,7 +535,8 @@ TransactionService.createWithdrawal(userId, amount, paymentMethodId, venmoUserna
   - Validates sufficient balance before creating request
 
 TransactionService.recordBetPlacement(userId, amount, betId, participantId) -> Promise<Transaction>
-  - Automatically called when user joins bet
+  - Only the creator's stake in CreateBetScreen still uses it (moving to the server, step 3b)
+  - Joins no longer do: they go through the joinBet mutation
   - Creates COMPLETED transaction
   - Deducts balance immediately
 
@@ -552,7 +561,7 @@ TransactionService.updateTransactionStatus(transactionId, status, failureReason?
   - Sends notifications for status changes
 
 // Usage Examples:
-// User joins bet (automatic)
+// Creator's stake when creating a bet (joins use the joinBet mutation instead)
 const transaction = await TransactionService.recordBetPlacement(
   userId,
   50,
@@ -1071,7 +1080,7 @@ e2e/
 ├── auth.spec.ts          # Login, password reset, sign up (unauthenticated)
 ├── app-shell.spec.ts     # Session boot, tab navigation, bet list rendering
 ├── create-bet.spec.ts    # Create-bet form validation
-├── join-bet.spec.ts      # Joining: guards, success, compensating delete
+├── join-bet.spec.ts      # Joining through joinBet: refusals, success, no client money writes
 ├── invitations.spec.ts   # Bet invitations listed and declined
 ├── notification-settings.spec.ts # Push prompt timing, device registration, sign-out scope
 ├── notification-preferences.spec.ts # Category alerts/feed, quiet hours, device list, feed filtering

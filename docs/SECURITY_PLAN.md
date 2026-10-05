@@ -1,7 +1,10 @@
 # Money and Authorization Security Plan
 
-Status: **proposed, not started.** Written 2026-10-04 from a read of every write path.
-Nothing here has been changed in code yet.
+Status (branch `money-security`): **steps 1 and 2 done; step 3 in progress** (3a joins
+done). Written 2026-10-04 from a read of every write path; §1-§3 describe the code as it
+was then. Decisions in §6: admins are a Cognito `admins` group (the owner's account only);
+a minimum-version gate comes before locking the rules; Venmo deposits are deleted;
+withdrawals reserve the amount when requested; no audit (no real users yet).
 
 The working assumption was that the payout Lambda is the only thing writing balances.
 It is not. Balances, transactions, payouts and admin approvals are written from users'
