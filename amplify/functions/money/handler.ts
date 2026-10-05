@@ -19,7 +19,7 @@ import { getAmplifyDataClientConfig } from '@aws-amplify/backend/function/runtim
 // @ts-ignore - Generated at build time by Amplify
 import { env } from '$amplify/env/money';
 import { type AmplifyResolverEvent, resolverFieldName } from '../../shared/amplifyResolverEvent';
-import { accountIdFromArn, classifyCaller, type Caller } from '../../shared/callerAuth';
+import { accountIdFromArn, classifyCaller, isAdmin, type Caller } from '../../shared/callerAuth';
 import type { LedgerEntry, StateUpdate, LedgerResult } from '../../shared/ledgerLogic';
 import { hasOpenDispute, overturnedByDispute, payoutTransactionId, planSettlement, type DisputeSummary } from '../../shared/settlementLogic';
 import { notificationMeta } from '../../shared/notificationCatalog';
@@ -30,6 +30,9 @@ import { checkJoin, planJoin, type JoinResult } from '../../shared/joinLogic';
 import { invalidField, planCreateBet, type CreateBetArgs, type CreateBetResult } from '../../shared/createBetLogic';
 import { checkResolve, planResolve, type ExistingLedgerRow, type ResolvePlan, type ResolveResult } from '../../shared/resolveLogic';
 import { checkAccept, planAccept, type AcceptParticipant, type AcceptResult } from '../../shared/acceptLogic';
+import { checkBuy, ownsAllRequested, planBuy, planLock, purchaseTransactionId, type BuyResult, type Square } from '../../shared/squaresBuyLogic';
+import { cancelSquaresGame, checkSquaresCancel, type SquaresCancelRefusal } from '../../shared/squaresMoney';
+import { randomInt } from 'node:crypto';
 
 const { resourceConfig, libraryOptions } = await getAmplifyDataClientConfig(env);
 Amplify.configure(resourceConfig, libraryOptions);
@@ -58,6 +61,13 @@ export const handler = async (event: AmplifyResolverEvent, context: Context): Pr
     }
     case 'acceptBetResult':
       return acceptBetResult(requireUser(caller, fieldName), (event.arguments as { betId: string }).betId);
+    case 'buySquares':
+      return buySquares(requireUser(caller, fieldName), event.arguments as unknown as BuySquaresArgs);
+    case 'cancelSquaresGame': {
+      requireUser(caller, fieldName);
+      const { squaresGameId, reason } = event.arguments as { squaresGameId: string; reason?: string | null };
+      return cancelSquaresGameFor(caller as Extract<Caller, { kind: 'user' }>, squaresGameId, reason);
+    }
     default:
       throw new Error(`Unknown operation ${fieldName}`);
   }
@@ -586,6 +596,195 @@ async function notifyClosingEarly(
     } catch (error) {
       console.warn(`[Money] Early-close notification failed for ${participant.userId}:`, error);
     }
+  }
+}
+
+// --- buySquares and cancelSquaresGame (app users) ------------------------------------
+
+interface BuySquaresArgs {
+  squaresGameId: string;
+  ownerName: string;
+  squares: unknown;
+}
+
+const GRID_SIZE = 100;
+
+/**
+ * Buy squares as the caller: checked on the server, and one purchase row per square (a
+ * fixed id each, so a square sells once), the debit and the game's counts in one ledger
+ * transaction (squaresBuyLogic). A purchase that fills the grid locks it here, with
+ * numbers drawn on the server.
+ */
+async function buySquares(userId: string, args: BuySquaresArgs): Promise<BuyResult> {
+  const { squaresGameId, ownerName } = args;
+  const squares = parseJson<unknown>(args.squares, null);
+  const { data: game } = await client.models.SquaresGame.get({ id: squaresGameId });
+  const sold = async () =>
+    (await listSquaresPurchases(squaresGameId)).map((p) => ({ row: p.gridRow, col: p.gridCol, userId: p.userId }));
+
+  const purchases = game ? await sold() : [];
+  // A repeat of this user's own purchase (its answer lost, say) is answered as bought, not
+  // as taken, once its ledger row confirms it is that exact purchase. Nothing is charged.
+  if (ownsAllRequested(squares, purchases, userId)) {
+    const { data: earlier } = await client.models.Transaction.get({
+      id: purchaseTransactionId(squaresGameId, userId, squares as Square[]),
+    });
+    if (earlier) {
+      const { data: me } = await client.models.User.get({ id: userId });
+      const count = (squares as Square[]).length;
+      return { status: 'bought', squares: count, total: earlier.amount ?? 0, balance: me?.balance ?? 0, locked: Boolean(game.numbersAssigned) };
+    }
+  }
+
+  const refusal = checkBuy({ game, squares, ownerName, taken: purchases });
+  if (refusal) return { status: 'refused', ...refusal };
+
+  const plan = planBuy({ game, userId, ownerName, squares: squares as Square[], now: new Date().toISOString() });
+  const result = await applyLedger(plan.entries, plan.stateUpdates);
+  let balance: number;
+  switch (result.status) {
+    case 'applied':
+      balance = result.balances.find((b) => b.userId === userId)?.after ?? 0;
+      break;
+    case 'already_applied': {
+      // This user bought exactly these squares before: a retry
+      const { data: me } = await client.models.User.get({ id: userId });
+      balance = me?.balance ?? 0;
+      break;
+    }
+    case 'insufficient_funds':
+      return { status: 'refused', reason: 'INSUFFICIENT_FUNDS', balance: result.balance, required: result.required };
+    case 'state_changed': {
+      // A square sold or the game locked in the meantime: say which from a fresh read
+      const { data: fresh } = await client.models.SquaresGame.get({ id: squaresGameId });
+      const again = checkBuy({ game: fresh, squares, ownerName, taken: fresh ? await sold() : [] });
+      return again ? { status: 'refused', ...again } : { status: 'refused', reason: 'BUSY' };
+    }
+    default:
+      throw new Error(`Buy squares in ${squaresGameId}: ${JSON.stringify(result)}`);
+  }
+
+  await touchUsers([userId]);
+  await touchSquaresGame(squaresGameId);
+  const count = (squares as Square[]).length;
+  await notify(userId, 'SQUARES_PURCHASE_CONFIRMED', 'Squares Purchased!',
+    `You bought ${count} square${count > 1 ? 's' : ''} for ${ownerName.trim()} in "${game.title}".`, 'MEDIUM', { squaresGameId });
+
+  const locked = (game.squaresSold ?? 0) + count >= GRID_SIZE ? await lockFullGrid(squaresGameId) : false;
+  return { status: 'bought', squares: count, total: plan.total, balance, locked };
+}
+
+/** Lock a full grid with numbers drawn here. True if this call locked it. */
+async function lockFullGrid(squaresGameId: string): Promise<boolean> {
+  const { data: game } = await client.models.SquaresGame.get({ id: squaresGameId });
+  if (!game || game.status !== 'ACTIVE' || game.numbersAssigned || (game.squaresSold ?? 0) < GRID_SIZE) return false;
+  const result = await applyLedger([], [planLock(squaresGameId, (max) => randomInt(max))]);
+  if (result.status !== 'applied') return false; // the scheduled checker locked it first
+  await touchSquaresGame(squaresGameId);
+  const buyers = new Set((await listSquaresPurchases(squaresGameId)).map((p) => p.userId));
+  for (const buyer of buyers) {
+    await notify(buyer, 'SQUARES_GRID_LOCKED', 'Numbers Assigned!',
+      `Grid is locked for "${game.title}". Numbers have been assigned. Good luck!`, 'HIGH', { squaresGameId });
+  }
+  return true;
+}
+
+/**
+ * Cancel a game as its creator or an admin, refunding every buyer in the same ledger
+ * transaction as the status change (squaresMoney.cancelSquaresGame). The creator's phone
+ * used to compute and write the refunds.
+ */
+async function cancelSquaresGameFor(
+  caller: Extract<Caller, { kind: 'user' }>,
+  squaresGameId: string,
+  reason: string | null | undefined
+): Promise<{ status: 'cancelled'; refunded: number } | { status: 'refused'; reason: SquaresCancelRefusal }> {
+  const { data: game } = await client.models.SquaresGame.get({ id: squaresGameId });
+  const payouts = game ? await listSquaresPayouts(squaresGameId) : [];
+  const refusal = checkSquaresCancel(game, caller.sub, isAdmin(caller), payouts.length);
+  if (refusal) return { status: 'refused', reason: refusal };
+
+  const byCreator = game.creatorId === caller.sub;
+  const why = (typeof reason === 'string' && reason.trim().slice(0, 200)) || (byCreator ? 'Cancelled by game creator' : 'Cancelled by admin');
+  const purchases = await listSquaresPurchases(squaresGameId);
+  const { outcome, refunds } = await cancelSquaresGame(
+    (entries, stateUpdates) => applyLedger(entries, stateUpdates),
+    squaresGameId,
+    game.status,
+    purchases,
+    why
+  );
+  if (outcome.status === 'skipped') return { status: 'refused', reason: 'NOT_CANCELLABLE' };
+
+  await touchUsers(refunds.map((r) => r.userId));
+  await touchSquaresGame(squaresGameId);
+  for (const { userId, amount } of refunds) {
+    await notify(userId, 'SQUARES_GAME_CANCELLED', 'Game Cancelled',
+      `"${game.title}" was cancelled. You received a $${amount.toFixed(2)} refund.`, 'MEDIUM', { squaresGameId });
+  }
+  return { status: 'cancelled', refunded: refunds.length };
+}
+
+interface SquaresPurchaseRow {
+  id: string;
+  userId: string;
+  gridRow: number;
+  gridCol: number;
+  amount: number;
+}
+
+async function listSquaresPurchases(squaresGameId: string): Promise<SquaresPurchaseRow[]> {
+  const rows: SquaresPurchaseRow[] = [];
+  let nextToken: string | null | undefined;
+  do {
+    const page = await client.models.SquaresPurchase.purchasesBySquaresGame({ squaresGameId }, { nextToken });
+    rows.push(...((page.data ?? []) as SquaresPurchaseRow[]));
+    nextToken = page.nextToken;
+  } while (nextToken);
+  return rows;
+}
+
+async function listSquaresPayouts(squaresGameId: string): Promise<Array<{ id: string; period?: string | null }>> {
+  const rows: Array<{ id: string; period?: string | null }> = [];
+  let nextToken: string | null | undefined;
+  do {
+    const page = await client.models.SquaresPayout.payoutsBySquaresGame({ squaresGameId }, { nextToken });
+    rows.push(...(page.data ?? []));
+    nextToken = page.nextToken;
+  } while (nextToken);
+  return rows;
+}
+
+/** The game was written directly; touch it so subscribers to SquaresGame.onUpdate see it. */
+async function touchSquaresGame(id: string): Promise<void> {
+  try {
+    await client.models.SquaresGame.update({ id });
+  } catch (error) {
+    console.warn(`[Money] Could not notify subscribers for squares game ${id}:`, error);
+  }
+}
+
+async function notify(
+  userId: string,
+  type: Parameters<typeof notificationMeta>[0],
+  title: string,
+  message: string,
+  priority: 'LOW' | 'MEDIUM' | 'HIGH',
+  actionData: Record<string, unknown>
+): Promise<void> {
+  try {
+    await client.models.Notification.create({
+      userId,
+      type,
+      ...notificationMeta(type),
+      title,
+      message,
+      isRead: false,
+      priority,
+      actionData: JSON.stringify(actionData),
+    });
+  } catch (error) {
+    console.warn(`[Money] ${type} notification failed for ${userId}:`, error);
   }
 }
 

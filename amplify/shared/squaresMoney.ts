@@ -12,9 +12,9 @@
  *   trial were charged.
  */
 
-import { netWinnings, winningsFee } from '../../../src/config/subscriptionConfig';
-import { toCents, type LedgerEntry } from '../../shared/ledgerLogic';
-import { cancelWithRefunds, type ApplyLedger, type CancelOutcome } from '../../shared/cancelWithRefunds';
+import { netWinnings, winningsFee } from '../../src/config/subscriptionConfig';
+import { toCents, type LedgerEntry } from './ledgerLogic';
+import { cancelWithRefunds, type ApplyLedger, type CancelOutcome } from './cancelWithRefunds';
 
 export interface PurchaseRow {
   id?: string | null;
@@ -106,6 +106,36 @@ export function refundEntries(gameId: string, purchases: PurchaseRow[], reason: 
     relatedSquaresGameId: gameId,
     notes: `Game cancelled - refund (${reason})`,
   }));
+}
+
+export type SquaresCancelRefusal = 'NOT_FOUND' | 'NOT_ALLOWED' | 'NOT_CANCELLABLE' | 'ALREADY_PAID';
+
+/** A creator may cancel their game until it goes live, as the game screen offers. */
+const CREATOR_CANCELLABLE = ['ACTIVE', 'SETUP', 'LOCKED'];
+/**
+ * An admin may also cancel a live or stuck game: the admin squares tab is the only way to
+ * release the money in a game whose scores never arrive (it waits in PENDING_RESOLUTION).
+ */
+const ADMIN_CANCELLABLE = [...CREATOR_CANCELLABLE, 'LIVE', 'PENDING_RESOLUTION'];
+
+/**
+ * Whether an app user may cancel a game (the cancelSquaresGame mutation): its creator
+ * before it goes live, or an admin until it is resolved; never once a period has paid
+ * out, since refunding every stake then pays those winners twice.
+ */
+export function checkSquaresCancel(
+  game: { creatorId?: string | null; status?: string | null } | null | undefined,
+  userId: string,
+  isAdmin: boolean,
+  payoutsRecorded: number
+): SquaresCancelRefusal | null {
+  if (!game) return 'NOT_FOUND';
+  const isCreator = game.creatorId === userId;
+  if (!isCreator && !isAdmin) return 'NOT_ALLOWED';
+  const allowed = isAdmin ? ADMIN_CANCELLABLE : CREATOR_CANCELLABLE;
+  if (!allowed.includes(game.status ?? '')) return 'NOT_CANCELLABLE';
+  if (payoutsRecorded > 0) return 'ALREADY_PAID';
+  return null;
 }
 
 /**

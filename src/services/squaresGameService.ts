@@ -14,7 +14,7 @@ import type { Schema } from '../../amplify/data/resource';
 import { TransactionService } from './transactionService';
 import { NotificationService } from './notificationService';
 import { netWinnings } from '../config/subscriptionConfig';
-import { cancelRefusalReason } from './cancelRules';
+import { buyFailureMessage, cancelFailureMessage, parseMoneyResult, type BuyResult, type CancelResult } from './squaresMoneyLogic';
 
 const client = generateClient<Schema>();
 
@@ -108,218 +108,54 @@ export class SquaresGameService {
   }
 
   /**
-   * Purchase square(s) with owner name
+   * Purchase square(s) with owner name.
+   *
+   * One call to the server's buySquares mutation: it checks the game is open, the squares
+   * free and the balance, then writes one purchase row per square, the debit and the
+   * game's counts in one transaction, and locks a full grid with numbers it draws itself.
+   * This phone used to create the rows, debit in a separate call, update the counts with
+   * a read-then-write, and draw the grid's numbers when it filled the grid.
+   * Throws with a message for the purchase sheet when the purchase did not go through.
    */
-  static async purchaseSquares(params: PurchaseSquaresParams): Promise<any[]> {
+  static async purchaseSquares(params: PurchaseSquaresParams): Promise<BuyResult> {
+    const { squaresGameId, userId, ownerName, squares } = params;
+
+    let result: BuyResult | null = null;
     try {
-      const { squaresGameId, userId, ownerName, squares } = params;
-
-      // Get game
-      const { data: game } = await client.models.SquaresGame.get({ id: squaresGameId });
-      if (!game) {
-        throw new Error('Game not found');
-      }
-
-      // Validate game status
-      if (game.status !== 'ACTIVE' && game.status !== 'SETUP') {
-        throw new Error('Game is not accepting purchases');
-      }
-
-      // Get existing purchases
-      const { data: existingPurchases } = await client.models.SquaresPurchase.list({
-        filter: { squaresGameId: { eq: squaresGameId } },
-      });
-
-      // Build set of occupied squares
-      const occupiedSquares = new Set(
-        existingPurchases?.map((p) => `${p.gridRow},${p.gridCol}`) || []
-      );
-
-      // Validate squares are available
-      for (const sq of squares) {
-        if (sq.row < 0 || sq.row > 9 || sq.col < 0 || sq.col > 9) {
-          throw new Error(`Invalid square position: (${sq.row}, ${sq.col})`);
-        }
-        if (occupiedSquares.has(`${sq.row},${sq.col}`)) {
-          throw new Error(`Square (${sq.row}, ${sq.col}) is already taken`);
-        }
-      }
-
-      // Calculate total cost
-      const totalCost = squares.length * game.pricePerSquare;
-
-      // Check user balance
-      const { data: user } = await client.models.User.get({ id: userId });
-      if (!user) {
-        throw new Error('User not found');
-      }
-
-      if (user.balance < totalCost) {
-        throw new Error('Insufficient balance');
-      }
-
-      // Create purchases
-      const purchases: any[] = [];
-      const now = new Date().toISOString();
-
-      for (const sq of squares) {
-        const { data: purchase, errors } = await client.models.SquaresPurchase.create({
-          squaresGameId,
-          userId,
-          ownerName: ownerName.trim(),
-          gridRow: sq.row,
-          gridCol: sq.col,
-          amount: game.pricePerSquare,
-          purchasedAt: now,
-        });
-
-        if (errors) {
-          console.error('[SquaresGame] Error creating purchase:', errors);
-          throw new Error('Failed to create purchase');
-        }
-
-        if (purchase) {
-          purchases.push(purchase);
-        }
-      }
-
-      // Deduct from buyer's balance
-      // Build square positions string: "3 squares (A3, B5, C7)"
-      const squareCount = purchases.length;
-      const squarePositionsString = squareCount <= 3
-        ? purchases.map(p => {
-            const rowLabel = String.fromCharCode(65 + p.gridRow); // A-J
-            const colLabel = p.gridCol + 1; // 1-10
-            return `${rowLabel}${colLabel}`;
-          }).join(', ')
-        : `${squareCount} squares`;
-
-      const transaction = await TransactionService.recordSquaresPurchase(
-        userId,
-        totalCost,
+      const { data, errors } = await client.mutations.buySquares({
         squaresGameId,
-        purchases.map((p) => p.id).join(','),
-        game.title,
-        squarePositionsString
-      );
-
-      // Update transaction IDs on purchases
-      for (const purchase of purchases) {
-        await client.models.SquaresPurchase.update({
-          id: purchase.id,
-          transactionId: transaction?.id,
-        });
-      }
-
-      // Update game's squares sold count and total pot
-      const newSquaresSold = game.squaresSold + squares.length;
-      const newTotalPot = game.totalPot + totalCost;
-
-      await client.models.SquaresGame.update({
-        id: squaresGameId,
-        squaresSold: newSquaresSold,
-        totalPot: newTotalPot,
-        updatedAt: new Date().toISOString(),
+        ownerName,
+        squares: JSON.stringify(squares.map((s) => ({ row: s.row, col: s.col }))),
       });
-
-      // Send confirmation notification
-      await NotificationService.createNotification({
-        userId,
-        type: 'SQUARES_PURCHASE_CONFIRMED',
-        title: 'Squares Purchased!',
-        message: `You bought ${squares.length} square${squares.length > 1 ? 's' : ''} for ${ownerName}. Grid: ${newSquaresSold}/100`,
-        priority: 'MEDIUM',
-        actionData: { squaresGameId },
-      });
-
-      // Auto-accept any pending invitation for this user/game
-      try {
-        const { data: pendingInvitations } = await client.models.SquaresInvitation.squaresInvitationsByGame({
-          squaresGameId,
-        });
-        const myInvitation = (pendingInvitations || []).find(
-          inv => inv.toUserId === userId && inv.status === 'PENDING'
-        );
-        if (myInvitation) {
-          await client.models.SquaresInvitation.update({
-            id: myInvitation.id,
-            status: 'ACCEPTED',
-            updatedAt: new Date().toISOString(),
-          });
-          console.log('[SquaresGame] Auto-accepted invitation', myInvitation.id);
-        }
-      } catch (invError) {
-        console.warn('[SquaresGame] Failed to auto-accept invitation:', invError);
-      }
-
-      // Check if grid is now full (100 squares)
-      if (newSquaresSold >= 100) {
-        await this.lockGridAndAssignNumbers(squaresGameId);
-      }
-
-      console.log('[SquaresGame] Purchased', squares.length, 'squares for', ownerName);
-      return purchases;
+      if (errors?.length) console.error('[SquaresGame] buySquares failed:', errors);
+      else result = parseMoneyResult<BuyResult>(data, ['bought', 'refused']);
     } catch (error) {
-      console.error('[SquaresGame] Error in purchaseSquares:', error);
-      throw error;
+      console.error('[SquaresGame] buySquares threw:', error);
     }
-  }
+    if (result?.status !== 'bought') throw new Error(buyFailureMessage(result));
 
-  /**
-   * Lock grid and assign random numbers
-   */
-  static async lockGridAndAssignNumbers(squaresGameId: string): Promise<boolean> {
+    // Auto-accept any pending invitation for this user/game
     try {
-      const { data: game } = await client.models.SquaresGame.get({ id: squaresGameId });
-      if (!game) {
-        throw new Error('Game not found');
-      }
-
-      // Already locked
-      if (game.numbersAssigned) {
-        console.log('[SquaresGame] Grid already locked:', squaresGameId);
-        return true;
-      }
-
-      // Generate random numbers
-      const rowNumbers = this.shuffleArray([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
-      const colNumbers = this.shuffleArray([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
-
-      // Update game
-      await client.models.SquaresGame.update({
-        id: squaresGameId,
-        rowNumbers,
-        colNumbers,
-        numbersAssigned: true,
-        status: 'LOCKED',
-        updatedAt: new Date().toISOString(),
+      const { data: pendingInvitations } = await client.models.SquaresInvitation.squaresInvitationsByGame({
+        squaresGameId,
       });
-
-      // Get all buyers (unique userIds)
-      const { data: purchases } = await client.models.SquaresPurchase.list({
-        filter: { squaresGameId: { eq: squaresGameId } },
-      });
-
-      const buyerIds = new Set(purchases?.map((p) => p.userId) || []);
-
-      // Send notifications to all buyers
-      for (const buyerId of buyerIds) {
-        await NotificationService.createNotification({
-          userId: buyerId,
-          type: 'SQUARES_GRID_LOCKED',
-          title: 'Numbers Assigned!',
-          message: 'Grid is locked and numbers have been assigned. Good luck!',
-          priority: 'HIGH',
-          actionData: { squaresGameId },
+      const myInvitation = (pendingInvitations || []).find(
+        inv => inv.toUserId === userId && inv.status === 'PENDING'
+      );
+      if (myInvitation) {
+        await client.models.SquaresInvitation.update({
+          id: myInvitation.id,
+          status: 'ACCEPTED',
+          updatedAt: new Date().toISOString(),
         });
+        console.log('[SquaresGame] Auto-accepted invitation', myInvitation.id);
       }
-
-      console.log('[SquaresGame] Locked grid and assigned numbers:', squaresGameId);
-      return true;
-    } catch (error) {
-      console.error('[SquaresGame] Error in lockGridAndAssignNumbers:', error);
-      throw error;
+    } catch (invError) {
+      console.warn('[SquaresGame] Failed to auto-accept invitation:', invError);
     }
+
+    console.log('[SquaresGame] Purchased', result.squares, 'squares for', ownerName);
+    return result;
   }
 
   /**
@@ -438,74 +274,26 @@ export class SquaresGameService {
   }
 
   /**
-   * Cancel game and refund all participants
+   * Cancel game and refund all participants.
+   *
+   * One call to the server's cancelSquaresGame mutation: it checks the caller is the
+   * creator or an admin and that no period has paid out (refunding then would pay those
+   * winners twice), then refunds every buyer and cancels the game in one transaction, and
+   * tells the buyers. This phone used to compute and write the refunds itself.
+   * Throws with a message when the cancellation did not go through.
    */
   static async cancelSquaresGame(squaresGameId: string, reason: string): Promise<boolean> {
+    let result: CancelResult | null = null;
     try {
-      const { data: game } = await client.models.SquaresGame.get({ id: squaresGameId });
-      if (!game) {
-        throw new Error('Game not found');
-      }
-
-      // Refuse if any period has already paid out. Cancelling refunds every
-      // stake in full, so doing that after a payout distributes the same money
-      // twice: the winner keeps their payout and gets their stake back, funded by
-      // stakes that have already been handed out. A part-played game needs its
-      // remaining scores, not a cancellation.
-      const { data: existingPayouts } = await client.models.SquaresPayout.payoutsBySquaresGame({
-        squaresGameId,
-      });
-      const refusal = cancelRefusalReason(existingPayouts);
-      if (refusal) throw new Error(refusal);
-
-      // Get all purchases
-      const { data: purchases } = await client.models.SquaresPurchase.purchasesBySquaresGame({
-        squaresGameId,
-      });
-
-      // Refund buyers if any purchases exist
-      const refundMap = new Map<string, number>();
-
-      if (purchases && purchases.length > 0) {
-        for (const purchase of purchases) {
-          const currentRefund = refundMap.get(purchase.userId) || 0;
-          refundMap.set(purchase.userId, currentRefund + purchase.amount);
-        }
-
-        // Process refunds
-        for (const [userId, amount] of refundMap.entries()) {
-          await TransactionService.recordSquaresRefund(userId, amount, squaresGameId, 'multiple');
-        }
-      }
-
-      // Update game status
-      await client.models.SquaresGame.update({
-        id: squaresGameId,
-        status: 'CANCELLED',
-        resolutionReason: reason,
-        updatedAt: new Date().toISOString(),
-      });
-
-      // Send notifications to all buyers
-      if (refundMap.size > 0) {
-        for (const [buyerId, refundAmount] of refundMap.entries()) {
-          await NotificationService.createNotification({
-            userId: buyerId,
-            type: 'SQUARES_GAME_CANCELLED',
-            title: 'Game Cancelled',
-            message: `${game.title} was cancelled. You received a $${refundAmount.toFixed(2)} refund.`,
-            priority: 'MEDIUM',
-            actionData: { squaresGameId },
-          });
-        }
-      }
-
-      console.log('[SquaresGame] Cancelled game and refunded', refundMap.size, 'buyers');
-      return true;
+      const { data, errors } = await client.mutations.cancelSquaresGame({ squaresGameId, reason });
+      if (errors?.length) console.error('[SquaresGame] cancelSquaresGame failed:', errors);
+      else result = parseMoneyResult<CancelResult>(data, ['cancelled', 'refused']);
     } catch (error) {
-      console.error('[SquaresGame] Error in cancelSquaresGame:', error);
-      throw error;
+      console.error('[SquaresGame] cancelSquaresGame threw:', error);
     }
+    if (result?.status !== 'cancelled') throw new Error(cancelFailureMessage(result));
+    console.log('[SquaresGame] Cancelled game and refunded', result.refunded, 'buyers');
+    return true;
   }
 
   /**
@@ -633,15 +421,4 @@ export class SquaresGameService {
     return Math.round(grossPayout * 100) / 100;
   }
 
-  /**
-   * Shuffle array (Fisher-Yates algorithm)
-   */
-  private static shuffleArray(array: number[]): number[] {
-    const shuffled = [...array];
-    for (let i = shuffled.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-    }
-    return shuffled;
-  }
 }

@@ -76,6 +76,7 @@ export const SquaresGameCard: React.FC<SquaresGameCardProps> = ({
 
   return (
     <TouchableOpacity
+      testID={`squares-card-${squaresGame.id}`}
       style={[styles.card, compact && styles.compactCard]}
       onPress={onPress}
       activeOpacity={0.7}

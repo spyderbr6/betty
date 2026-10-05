@@ -15,7 +15,15 @@ import { TEST_USER, signInAs } from './fixtures/session';
  * This tab lists games and can cancel one, which refunds every buyer. It used to
  * list only ACTIVE, LOCKED and LIVE, so the stuck games were the exact ones it
  * could not reach.
+ *
+ * Cancelling is one request: the server's cancelSquaresGame checks the caller is
+ * an admin and that no period has paid, then refunds every buyer and cancels the
+ * game in one transaction. The phone used to compute and write the refunds; the
+ * refund amounts are now unit tests of the server's plan (squaresMoney.test.ts).
  */
+
+/** The writes the phone used to make when cancelling; none may happen now. */
+const CLIENT_WRITES = ['createTransaction', 'updateUser', 'updateSquaresGame'];
 
 const STUCK_GAME = {
   id: 'game-stuck',
@@ -92,25 +100,45 @@ test('a game stuck awaiting resolution is listed', async ({ page }) => {
   await expect(page.getByTestId(`admin-squares-${STUCK_GAME.id}`)).toBeVisible({ timeout: 15_000 });
 });
 
-test('cancelling a stuck game refunds every buyer', async ({ page }) => {
+test('cancelling a stuck game asks the server, with the reason, and writes no refunds itself', async ({ page }) => {
   await signInAs(page);
-  const written: Record<string, unknown>[] = [];
-  await mockAppSync(page, handlers({}, written));
+  const sent: Record<string, unknown>[] = [];
+  const { calls } = await mockAppSync(
+    page,
+    handlers(
+      {
+        cancelSquaresGame: (variables) => {
+          sent.push(variables);
+          return JSON.stringify({ status: 'cancelled', refunded: 2 });
+        },
+      },
+      []
+    )
+  );
 
   await openSquaresTab(page);
   await page.getByTestId(`admin-cancel-${STUCK_GAME.id}`).dispatchEvent('click');
   await page.getByTestId('admin-cancel-reason').fill('Final scores never arrived from the feed');
   await page.getByTestId('admin-confirm-cancel').dispatchEvent('click');
 
-  await expect
-    .poll(
-      () => written.map(fields).filter((t) => t.type === 'SQUARES_REFUND').length,
-      { timeout: 15_000 }
-    )
-    .toBe(2);
+  await expect.poll(() => sent.length, { timeout: 15_000 }).toBe(1);
+  expect(sent[0]).toEqual({ squaresGameId: STUCK_GAME.id, reason: 'Final scores never arrived from the feed' });
+  for (const write of CLIENT_WRITES) expect(calls).not.toContain(write);
+});
 
-  const refunds = written.map(fields).filter((t) => t.type === 'SQUARES_REFUND');
-  expect(refunds.map((r) => r.amount).sort()).toEqual([50, 50]);
+test('a cancellation the server refuses is reported', async ({ page }) => {
+  await signInAs(page);
+  await mockAppSync(
+    page,
+    handlers({ cancelSquaresGame: () => JSON.stringify({ status: 'refused', reason: 'ALREADY_PAID' }) }, [])
+  );
+
+  await openSquaresTab(page);
+  await page.getByTestId(`admin-cancel-${STUCK_GAME.id}`).dispatchEvent('click');
+  await page.getByTestId('admin-cancel-reason').fill('Final scores never arrived from the feed');
+  await page.getByTestId('admin-confirm-cancel').dispatchEvent('click');
+
+  await expect(page.getByTestId('alert-message')).toContainText('already paid out', { timeout: 15_000 });
 });
 
 /**

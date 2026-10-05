@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   calculatePayout,
+  checkSquaresCancel,
   cancelSquaresGame,
   periodPayoutEntry,
   potFromPurchases,
@@ -8,9 +9,9 @@ import {
   squaresPayoutRecordId,
   squaresPayoutTransactionId,
 } from '../squaresMoney';
-import { WINNINGS_FEE_RATE } from '../../../../src/config/subscriptionConfig';
-import type { ApplyLedger } from '../../../shared/cancelWithRefunds';
-import type { LedgerEntry, LedgerResult, StateUpdate } from '../../../shared/ledgerLogic';
+import { WINNINGS_FEE_RATE } from '../../../src/config/subscriptionConfig';
+import type { ApplyLedger } from '../cancelWithRefunds';
+import type { LedgerEntry, LedgerResult, StateUpdate } from '../ledgerLogic';
 
 const purchase = (userId: string, amount: number) => ({ id: `${userId}-${amount}-${Math.random()}`, userId, amount });
 
@@ -92,6 +93,39 @@ describe('periodPayoutEntry', () => {
     expect(a.transactionId).toBe(b.transactionId);
     expect(a.transactionId).toBe(squaresPayoutTransactionId('g1', 'PERIOD_2'));
     expect(squaresPayoutRecordId('g1', 'PERIOD_2')).toBe('g1#PERIOD_2');
+  });
+});
+
+describe('checkSquaresCancel', () => {
+  const game = (over: Record<string, unknown> = {}) => ({ creatorId: 'creator', status: 'ACTIVE', ...over });
+
+  it('lets the creator or an admin cancel before the game goes live', () => {
+    expect(checkSquaresCancel(game(), 'creator', false, 0)).toBeNull();
+    expect(checkSquaresCancel(game({ status: 'LOCKED' }), 'someone', true, 0)).toBeNull();
+  });
+
+  it('refuses anyone else', () => {
+    expect(checkSquaresCancel(game(), 'someone', false, 0)).toBe('NOT_ALLOWED');
+    expect(checkSquaresCancel(null, 'creator', false, 0)).toBe('NOT_FOUND');
+  });
+
+  it('refuses the creator once the game is live, finished or cancelled', () => {
+    for (const status of ['LIVE', 'PENDING_RESOLUTION', 'RESOLVED', 'CANCELLED']) {
+      expect(checkSquaresCancel(game({ status }), 'creator', false, 0)).toBe('NOT_CANCELLABLE');
+    }
+  });
+
+  it('lets an admin release a live or stuck game, but not a finished one', () => {
+    expect(checkSquaresCancel(game({ status: 'LIVE' }), 'admin', true, 0)).toBeNull();
+    expect(checkSquaresCancel(game({ status: 'PENDING_RESOLUTION' }), 'admin', true, 0)).toBeNull();
+    expect(checkSquaresCancel(game({ status: 'RESOLVED' }), 'admin', true, 0)).toBe('NOT_CANCELLABLE');
+    expect(checkSquaresCancel(game({ status: 'CANCELLED' }), 'admin', true, 0)).toBe('NOT_CANCELLABLE');
+    // ...and never once a period has paid
+    expect(checkSquaresCancel(game({ status: 'PENDING_RESOLUTION' }), 'admin', true, 2)).toBe('ALREADY_PAID');
+  });
+
+  it('refuses once any period has paid, which would pay those winners twice', () => {
+    expect(checkSquaresCancel(game({ status: 'LOCKED' }), 'creator', false, 1)).toBe('ALREADY_PAID');
   });
 });
 

@@ -118,6 +118,7 @@ export const PurchaseSquaresModal: React.FC<PurchaseSquaresModalProps> = ({
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Owner Name *</Text>
             <TextInput
+              testID="squares-owner-name"
               style={styles.input}
               placeholder="Your name or someone else's"
               placeholderTextColor={colors.textMuted}
@@ -193,6 +194,7 @@ export const PurchaseSquaresModal: React.FC<PurchaseSquaresModalProps> = ({
         {/* Confirm Button */}
         <View style={styles.footer}>
           <TouchableOpacity
+            testID="squares-confirm-purchase"
             style={[styles.confirmButton, (!ownerName.trim() || isSubmitting) && styles.confirmButtonDisabled]}
             onPress={handleConfirm}
             disabled={!ownerName.trim() || isSubmitting}

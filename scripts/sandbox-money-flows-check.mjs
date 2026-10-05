@@ -26,6 +26,9 @@
  *      winner, not the old
  *   9. money (acceptBetResult): only participants accept, only a result; the last acceptance
  *      closes the window early and the payout follows
+ *  10. money (buySquares, cancelSquaresGame): rows, debit and counts together; a sold or
+ *      raced square sells once; retries and short balances; the filling purchase locks
+ *      the grid with server-drawn numbers; who may cancel, and every buyer refunded
  *
  * The Lambdas act on ALL sandbox data when invoked, exactly as their schedules do.
  *
@@ -97,12 +100,12 @@ async function invoke(key) {
  * a signed-in user (Amplify's resolver payload with a user-pool identity): the handler,
  * the ledger and the tables are the real ones; only AppSync's sign-in check is skipped.
  */
-async function asUser(userId, fieldName, args) {
+async function asUser(userId, fieldName, args, groups = null) {
   const event = {
     typeName: 'Mutation',
     fieldName,
     arguments: args,
-    identity: { sub: userId, username: userId, claims: { sub: userId }, groups: null },
+    identity: { sub: userId, username: userId, claims: { sub: userId }, groups },
     source: null,
     request: { headers: {} },
     prev: null,
@@ -544,6 +547,76 @@ try {
     check('the last acceptance closes the window early', last.closedEarly === true && new Date(closedAt).getTime() < Date.now(), `${JSON.stringify(last)} window ${closedAt}`);
     await invoke('payoutprocessor');
     check('the payout follows without waiting 48 hours', (await get('bet', a.id, 'status')).status === 'RESOLVED' && same(await balance(a.creator), 14.55), `creator ${await balance(a.creator)}`);
+
+    // 10. Squares through the server (buySquares, cancelSquaresGame) -----------------------
+    const eventForSquares = await create('liveEvent', {
+      id: `${run}-sq-event`, externalId: `${run}-sq-event`, sport: 'NFL', homeTeam: 'H', awayTeam: 'A',
+      scheduledTime: new Date(Date.now() + 86_400_000).toISOString(), status: 'UPCOMING',
+    });
+    const squaresGame = async (tag, fields = {}) =>
+      create('squaresGame', {
+        id: `${run}-${tag}`, title: `${run} ${tag}`, eventId: eventForSquares, creatorId: alice, pricePerSquare: 2,
+        totalPot: 0, squaresSold: 0, status: 'ACTIVE', numbersAssigned: false, isPrivate: false,
+        locksAt: new Date(Date.now() + 86_400_000).toISOString(),
+        payoutStructure: JSON.stringify({ period1: 0.25, period2: 0.25, period3: 0.25, period4: 0.25 }), ...fields,
+      });
+    const cellIds = (gameId, cells) => cells.map(([r, c]) => `${gameId}#${r}-${c}`);
+    const buyId = (gameId, userId, cells) => `squares-buy#${gameId}#${userId}#${cells.map(([r, c]) => `${r}${c}`).sort().join('.')}`;
+    const buy = async (userId, gameId, cells, owner = 'Owner') => {
+      cellIds(gameId, cells).forEach((id) => created.push(['squaresPurchase', id]));
+      ledgerIds.push(buyId(gameId, userId, cells), `squares-refund#${gameId}#${userId}`);
+      return asUser(userId, 'buySquares', { squaresGameId: gameId, ownerName: owner, squares: JSON.stringify(cells.map(([row, col]) => ({ row, col }))) });
+    };
+
+    const g = await squaresGame('sq-buy');
+    const [mia, ned, oli, pat] = [await user('mia'), await user('ned'), await user('oli'), await user('pat')];
+    for (const [who, amount] of [[mia, 10], [ned, 10], [oli, 10], [pat, 1]]) await credit(who, amount);
+
+    const bought = await buy(mia, g, [[0, 0], [0, 1]], 'Mia');
+    const gs = await get('squaresGame', g, 'squaresSold totalPot');
+    const row = await get('squaresPurchase', `${g}#0-1`, 'userId ownerName amount purchasedAt transactionId');
+    check('buying writes one row per square, the debit and the counts together', bought.status === 'bought' && same(bought.balance, 6) && same(await balance(mia), 6) && gs.squaresSold === 2 && gs.totalPot === 4 && row?.userId === mia && row.amount === 2 && Boolean(row.purchasedAt), `${JSON.stringify(bought)} ${JSON.stringify(gs)} ${JSON.stringify(row)}`);
+
+    const clash = await buy(ned, g, [[0, 1], [5, 5]]);
+    check('a square already sold is refused, and nothing is written', clash.reason === 'SQUARE_TAKEN' && clash.taken?.[0]?.col === 1 && same(await balance(ned), 10) && !(await get('squaresPurchase', `${g}#5-5`, 'id')), JSON.stringify(clash));
+
+    const race = await Promise.all([buy(ned, g, [[7, 7]]), buy(oli, g, [[7, 7]])]);
+    const winners = race.filter((r) => r.status === 'bought').length;
+    const losers = race.filter((r) => r.reason === 'SQUARE_TAKEN').length;
+    const charged = (await balance(ned)) + (await balance(oli));
+    check('two buyers racing for one square: one gets it, one is charged', winners === 1 && losers === 1 && same(charged, 18), `${race.map((r) => r.status + (r.reason ? ':' + r.reason : ''))} charged total ${20 - charged}`);
+
+    const rebuy = await buy(mia, g, [[0, 0], [0, 1]], 'Mia');
+    check('retrying the same purchase charges nothing more', rebuy.status === 'bought' && same(await balance(mia), 6), JSON.stringify(rebuy));
+
+    const short = await buy(pat, g, [[9, 9]]);
+    check('a purchase the balance cannot cover writes nothing', short.reason === 'INSUFFICIENT_FUNDS' && !(await get('squaresPurchase', `${g}#9-9`, 'id')) && same(await balance(pat), 1), JSON.stringify(short));
+
+    const strangerCancel = await asUser(pat, 'cancelSquaresGame', { squaresGameId: g, reason: 'nope' });
+    check('only the creator or an admin can cancel', strangerCancel.reason === 'NOT_ALLOWED', JSON.stringify(strangerCancel));
+    const cancelled = await asUser(alice, 'cancelSquaresGame', { squaresGameId: g, reason: null });
+    const raceWinner = race[0].status === 'bought' ? ned : oli;
+    check('the creator cancels and every buyer gets back what they paid', cancelled.status === 'cancelled' && (await get('squaresGame', g, 'status')).status === 'CANCELLED' && same(await balance(mia), 10) && same(await balance(raceWinner), 10), `${JSON.stringify(cancelled)} mia ${await balance(mia)} racer ${await balance(raceWinner)}`);
+
+    // Filling the grid locks it, with numbers drawn on the server
+    const full = await squaresGame('sq-full', { pricePerSquare: 1, squaresSold: 98, totalPot: 98 });
+    const filled = await buy(pat, full, [[4, 4]]);
+    await credit(pat, 1);
+    const fillLast = await buy(pat, full, [[4, 5]]);
+    const fg = await get('squaresGame', full, 'status numbersAssigned rowNumbers colNumbers squaresSold');
+    const isPermutation = (a) => Array.isArray(a) && [...a].sort((x, y) => x - y).join() === '0,1,2,3,4,5,6,7,8,9';
+    check('the purchase that fills the grid locks it with a full set of numbers', filled.status === 'bought' && fillLast.locked === true && fg.status === 'LOCKED' && fg.numbersAssigned === true && isPermutation(fg.rowNumbers) && isPermutation(fg.colNumbers), `${JSON.stringify(fillLast)} ${JSON.stringify(fg)}`);
+    const afterLock = await buy(mia, full, [[0, 0]]);
+    check('a locked grid takes no more purchases', afterLock.reason === 'NOT_OPEN', JSON.stringify(afterLock));
+
+    // An admin releases a game stuck awaiting resolution
+    const stuck = await squaresGame('sq-stuck');
+    await buy(oli, stuck, [[2, 2]]);
+    await gql('mutation ($i: UpdateSquaresGameInput!) { updateSquaresGame(input: $i) { id } }', { i: { id: stuck, status: 'PENDING_RESOLUTION' } });
+    const byCreatorLate = await asUser(alice, 'cancelSquaresGame', { squaresGameId: stuck, reason: null });
+    const oliBefore = await balance(oli);
+    const byAdmin = await asUser(pat, 'cancelSquaresGame', { squaresGameId: stuck, reason: 'Scores never arrived' }, ['admins']);
+    check('only an admin can release a stuck game, and the buyers are refunded', byCreatorLate.reason === 'NOT_CANCELLABLE' && byAdmin.status === 'cancelled' && same(await balance(oli), oliBefore + 2), `${JSON.stringify(byCreatorLate)} ${JSON.stringify(byAdmin)}`);
     for (const h of (await gql('query ($f: ModelTrustScoreHistoryFilterInput) { listTrustScoreHistories(filter: $f, limit: 1000) { items { id } } }', { f: { relatedBetId: { eq: a.id } } })).listTrustScoreHistories.items) {
       created.push(['trustScoreHistory', h.id]);
     }

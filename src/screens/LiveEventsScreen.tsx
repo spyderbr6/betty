@@ -121,7 +121,14 @@ export const LiveEventsScreen: React.FC = () => {
 
   const handleSquaresGamePress = (game: SquaresGame) => {
     console.log('Squares game pressed:', game.title);
-    navigation.navigate('SquaresGameDetail', { gameId: game.id });
+    // The Join tab is a plain screen: SquaresGameDetail lives in the Bets tab's stack, so
+    // navigating to it by name from here found no such route and did nothing. Go through
+    // the Bets tab, the way notification taps do (services/notificationRoutes.ts).
+    (navigation as any).navigate('Bets', { // eslint-disable-line @typescript-eslint/no-explicit-any
+      screen: 'SquaresGameDetail',
+      initial: false,
+      params: { gameId: game.id },
+    });
   };
 
   const handleJoinBet = () => {

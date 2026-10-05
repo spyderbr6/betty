@@ -15,7 +15,7 @@ import {
   potFromPurchases,
   squaresPayoutRecordId,
   type SquaresPeriod,
-} from './squaresMoney';
+} from '../../shared/squaresMoney';
 
 // CRITICAL: Top-level await configuration - required for proper client initialization
 const { resourceConfig, libraryOptions } = await getAmplifyDataClientConfig(env);

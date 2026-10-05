@@ -339,7 +339,7 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
       await loadSquaresGames();
     } catch (error) {
       console.error('[AdminDashboard] Error cancelling game:', error);
-      showAlert('Error', 'Failed to cancel game');
+      showAlert('Error', error instanceof Error && error.message ? error.message : 'Failed to cancel game');
     } finally {
       setProcessingId(null);
       setGameToCancel(null);

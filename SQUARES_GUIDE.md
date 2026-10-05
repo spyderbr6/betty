@@ -18,20 +18,29 @@ pot splits across the four periods. The split is a percentage per period that
 must total 100; the UI defaults to 15 / 25 / 15 / 45, weighting the final score
 most heavily. Games are private by default.
 
-**2. Buying.** Players buy squares at `pricePerSquare`. Each purchase records the
-grid position. `squaresSold` and `totalPot` are denormalised onto the game so
-list views do not have to count purchases.
+**2. Buying.** Players buy squares at `pricePerSquare` through the server's `buySquares`
+mutation (`amplify/shared/squaresBuyLogic.ts`). It checks the game is open, the squares
+are free and the balance covers them, then writes one purchase row per square, the debit
+and the game's denormalised `squaresSold` and `totalPot` in one ledger transaction. Each
+square's row has a fixed id (`<gameId>#<row>-<col>`), so a square can only be sold once,
+even to two buyers at the same moment.
 
-**3. Locking.** At `locksAt` the scheduled checker locks the grid and only then
-assigns numbers: two independent shuffles of 0–9, stored as `rowNumbers` and
-`colNumbers`, with `numbersAssigned` flipped true.
+**3. Locking.** At `locksAt` the scheduled checker locks the grid, or `buySquares` does
+when a purchase fills it, and only then assigns numbers: two independent shuffles of
+0–9, drawn on the server and stored as `rowNumbers` and `colNumbers`, with
+`numbersAssigned` flipped true. (The phone of the buyer who filled the grid used to draw
+them.)
 
    Assigning numbers *after* sales close is the point. Nobody can pick a square
    knowing which digits it will carry, so every square is equally valuable at
    purchase time.
 
    A game that has not sold enough squares by `locksAt` is cancelled and the
-   creator is notified.
+   creator is notified. Any cancellation refunds every buyer in the same ledger
+   transaction as the status change. The app cancels through the server's
+   `cancelSquaresGame` mutation: the creator until the game goes live, an admin until
+   it is resolved (the only way to release a game stuck in PENDING_RESOLUTION), and
+   nobody once a period has paid out.
 
 **4. Resolution.** At the end of each period the checker takes the last digit of
 each team's score and looks up the owner:
@@ -72,7 +81,7 @@ real-world period end by up to one interval. That is expected.
 | `src/components/betting/SquaresGrid.tsx` | The 10x10 grid |
 | `src/components/betting/SquaresGameCard.tsx` | List representation |
 | `src/screens/SquaresGameDetailScreen.tsx` | Single game view |
-| `src/services/squaresGameService.ts` | Queries and purchase flow |
+| `src/services/squaresGameService.ts` | Queries; buying and cancelling call the server's mutations |
 
 State comes through `BetDataContext`, which exposes `mySquaresGames`,
 `joinableSquaresGames`, `joinableFriendsSquaresGames` and `squaresInvitations`

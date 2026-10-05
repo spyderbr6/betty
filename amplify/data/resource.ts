@@ -962,6 +962,33 @@ const schema = a.schema({
     .handler(a.handler.function(money))
     .authorization((allow) => [allow.authenticated()]),
 
+  // Buy squares as the signed-in user: checked on the server, and one purchase row per
+  // square (a fixed id each, so a square sells once), the debit and the game's counts in
+  // one ledger transaction (shared/squaresBuyLogic.ts). A purchase that fills the grid
+  // locks it with numbers drawn on the server. squares is [{ row, col }, ...].
+  buySquares: a
+    .mutation()
+    .arguments({
+      squaresGameId: a.id().required(),
+      ownerName: a.string().required(),
+      squares: a.json().required(),
+    })
+    .returns(a.json())
+    .handler(a.handler.function(money))
+    .authorization((allow) => [allow.authenticated()]),
+
+  // Cancel a squares game as its creator or an admin, refunding every buyer in the same
+  // ledger transaction as the status change (shared/squaresMoney.ts).
+  cancelSquaresGame: a
+    .mutation()
+    .arguments({
+      squaresGameId: a.id().required(),
+      reason: a.string(),
+    })
+    .returns(a.json())
+    .handler(a.handler.function(money))
+    .authorization((allow) => [allow.authenticated()]),
+
   // A participant accepts the bet's result; when every participant but the creator has,
   // the dispute window closes early so the payout runs sooner (shared/acceptLogic.ts).
   // Returns { status: 'accepted', closedEarly, accepted, total } or { status: 'refused', reason }.

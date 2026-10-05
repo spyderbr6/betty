@@ -190,6 +190,7 @@ export const SquaresGrid: React.FC<SquaresGridProps> = ({
                     return (
                       <TouchableOpacity
                         key={colIndex}
+                        testID={`squares-cell-${rowIndex}-${colIndex}`}
                         style={[
                           styles.gridCell,
                           { width: CELL_SIZE, height: CELL_SIZE },

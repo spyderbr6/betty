@@ -508,7 +508,7 @@ the one place a balance or money record is written: each movement is a single Dy
 transaction (compare-and-swap on the balance, a fixed id per movement so retries cannot
 double-pay, never below zero) built by `amplify/shared/ledgerLogic.ts`. The scheduled
 Lambdas and the Stripe webhook reach it through `amplify/shared/moneyClient.ts`; the app
-reaches it through user-facing mutations (`joinBet`, `resolveBet`, `acceptBetResult`, and `createBetWithStake` for a new
+reaches it through user-facing mutations (`joinBet`, `resolveBet`, `acceptBetResult`, `buySquares`, `cancelSquaresGame`, and `createBetWithStake` for a new
 bet with its creator's stake, so far). The plan, what is done and
 what is left (the app still writes some money records directly until step 3 finishes) is
 in [docs/SECURITY_PLAN.md](./docs/SECURITY_PLAN.md). Do not add a new balance write
@@ -1068,6 +1068,7 @@ e2e/
 ├── join-bet.spec.ts      # Joining through joinBet: refusals, success, no client money writes
 ├── resolve-bet.spec.ts   # Resolving through resolveBet: the choice is sent, nothing else written
 ├── accept-result.spec.ts # Accepting a result through acceptBetResult (early close is server-side)
+├── buy-squares.spec.ts   # Buying squares through buySquares, from the Join tab
 ├── invitations.spec.ts   # Bet invitations listed and declined
 ├── notification-settings.spec.ts # Push prompt timing, device registration, sign-out scope
 ├── notification-preferences.spec.ts # Category alerts/feed, quiet hours, device list, feed filtering
