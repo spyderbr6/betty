@@ -146,18 +146,22 @@ export interface DisputeSummary {
  * payouts recorded with it, must not be paid. The payout Lambda used to pay them anyway
  * once the dispute was no longer PENDING.
  *
- * A resolution happened at disputeWindowEndsAt minus the window. A dispute upheld after
- * that moment overturned this resolution; re-resolving sets a new window, which moves the
- * resolution time past the dispute and clears this.
+ * The resolution time is the bet's resolvedAt, which the server's resolveBet records. A
+ * bet resolved before that existed is taken to have been resolved at disputeWindowEndsAt
+ * minus the window (which early closure moves, so resolvedAt is preferred). A dispute
+ * upheld after that moment overturned this resolution; re-resolving sets a new time past
+ * the dispute and clears this.
  */
 export function overturnedByDispute(
   disputes: DisputeSummary[],
-  disputeWindowEndsAt: string | null | undefined
+  bet: { resolvedAt?: string | null; disputeWindowEndsAt?: string | null }
 ): boolean {
   const upheld = disputes.filter((d) => d.status === 'RESOLVED_FOR_FILER');
   if (upheld.length === 0) return false;
-  if (!disputeWindowEndsAt) return true; // cannot tell when it was resolved: do not pay
-  const resolvedAt = new Date(disputeWindowEndsAt).getTime() - DISPUTE_WINDOW_MS;
+  let resolvedAt: number;
+  if (bet.resolvedAt) resolvedAt = new Date(bet.resolvedAt).getTime();
+  else if (bet.disputeWindowEndsAt) resolvedAt = new Date(bet.disputeWindowEndsAt).getTime() - DISPUTE_WINDOW_MS;
+  else return true; // cannot tell when it was resolved: do not pay
   return upheld.some((d) => !d.resolvedAt || new Date(d.resolvedAt).getTime() >= resolvedAt);
 }
 

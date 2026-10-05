@@ -239,6 +239,7 @@ const schema = a.schema({
       winningSide: a.string(), // Which side won
       resolutionReason: a.string(), // Why the bet was resolved this way
       disputeWindowEndsAt: a.datetime(), // When the 48-hour dispute window closes
+      resolvedAt: a.datetime(), // When the creator picked the winner (written by the server's resolveBet)
       eventId: a.id(), // Optional link to live event
       isPrivate: a.boolean().default(false), // Private bets only visible to invited users
       isTestBet: a.boolean().default(false), // Flag for admin test bets (excludes from real bet lists)
@@ -942,6 +943,31 @@ const schema = a.schema({
       side: a.string().required(),
       amount: a.float().required(),
     })
+    .returns(a.json())
+    .handler(a.handler.function(money))
+    .authorization((allow) => [allow.authenticated()]),
+
+  // The bet's creator picks the winner: checked on the server, payouts computed from the
+  // stakes, and the bet, each participant's outcome and the pending winnings written in
+  // one ledger transaction (shared/resolveLogic.ts). No money moves until the payout
+  // processor pays after the 48-hour dispute window. Returns { status: 'resolved', ... }
+  // or { status: 'refused', reason }.
+  resolveBet: a
+    .mutation()
+    .arguments({
+      betId: a.id().required(),
+      winningSide: a.string().required(),
+    })
+    .returns(a.json())
+    .handler(a.handler.function(money))
+    .authorization((allow) => [allow.authenticated()]),
+
+  // A participant accepts the bet's result; when every participant but the creator has,
+  // the dispute window closes early so the payout runs sooner (shared/acceptLogic.ts).
+  // Returns { status: 'accepted', closedEarly, accepted, total } or { status: 'refused', reason }.
+  acceptBetResult: a
+    .mutation()
+    .arguments({ betId: a.id().required() })
     .returns(a.json())
     .handler(a.handler.function(money))
     .authorization((allow) => [allow.authenticated()]),

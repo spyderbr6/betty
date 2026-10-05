@@ -81,25 +81,34 @@ describe('overturnedByDispute', () => {
   const windowEnds = '2026-10-03T12:00:00.000Z'; // resolution + 48h
 
   it('blocks payout of a resolution a dispute upheld afterwards', () => {
-    expect(overturnedByDispute([{ status: 'RESOLVED_FOR_FILER', resolvedAt: '2026-10-02T09:00:00.000Z' }], windowEnds)).toBe(true);
+    expect(overturnedByDispute([{ status: 'RESOLVED_FOR_FILER', resolvedAt: '2026-10-02T09:00:00.000Z' }], { disputeWindowEndsAt: windowEnds })).toBe(true);
   });
 
   it('allows payout once the creator has resolved again (a new window)', () => {
     const reResolvedWindow = '2026-10-04T15:00:00.000Z'; // re-resolved 2026-10-02T15:00
-    expect(overturnedByDispute([{ status: 'RESOLVED_FOR_FILER', resolvedAt: '2026-10-02T09:00:00.000Z' }], reResolvedWindow)).toBe(false);
+    expect(overturnedByDispute([{ status: 'RESOLVED_FOR_FILER', resolvedAt: '2026-10-02T09:00:00.000Z' }], { disputeWindowEndsAt: reResolvedWindow })).toBe(false);
   });
 
   it('ignores disputes that were dismissed or found for the creator', () => {
-    expect(overturnedByDispute([{ status: 'DISMISSED', resolvedAt: '2026-10-02T09:00:00.000Z' }, { status: 'RESOLVED_FOR_CREATOR', resolvedAt: resolvedAt }], windowEnds)).toBe(false);
+    expect(overturnedByDispute([{ status: 'DISMISSED', resolvedAt: '2026-10-02T09:00:00.000Z' }, { status: 'RESOLVED_FOR_CREATOR', resolvedAt: resolvedAt }], { disputeWindowEndsAt: windowEnds })).toBe(false);
   });
 
   it('does not pay when it cannot tell when the bet was resolved', () => {
-    expect(overturnedByDispute([{ status: 'RESOLVED_FOR_FILER', resolvedAt: '2026-10-02T09:00:00.000Z' }], null)).toBe(true);
-    expect(overturnedByDispute([{ status: 'RESOLVED_FOR_FILER', resolvedAt: null }], windowEnds)).toBe(true);
+    expect(overturnedByDispute([{ status: 'RESOLVED_FOR_FILER', resolvedAt: '2026-10-02T09:00:00.000Z' }], { disputeWindowEndsAt: null })).toBe(true);
+    expect(overturnedByDispute([{ status: 'RESOLVED_FOR_FILER', resolvedAt: null }], { disputeWindowEndsAt: windowEnds })).toBe(true);
+  });
+
+  it('uses the recorded resolution time when there is one, not the window', () => {
+    const upheld = [{ status: 'RESOLVED_FOR_FILER', resolvedAt: '2026-10-02T09:00:00.000Z' }];
+    // Re-resolved after the dispute, then the window was closed early (moved to now):
+    // inferring from the window would put the resolution 48h back, before the dispute
+    expect(overturnedByDispute(upheld, { resolvedAt: '2026-10-02T15:00:00.000Z', disputeWindowEndsAt: '2026-10-02T16:00:00.000Z' })).toBe(false);
+    // Resolved before the dispute was upheld: overturned, whatever the window says
+    expect(overturnedByDispute(upheld, { resolvedAt: '2026-10-01T12:00:00.000Z', disputeWindowEndsAt: '2026-10-09T00:00:00.000Z' })).toBe(true);
   });
 
   it('has nothing to say with no disputes', () => {
-    expect(overturnedByDispute([], windowEnds)).toBe(false);
+    expect(overturnedByDispute([], { disputeWindowEndsAt: windowEnds })).toBe(false);
   });
 });
 

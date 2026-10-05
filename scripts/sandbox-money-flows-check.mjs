@@ -20,6 +20,12 @@
  *      land together and read back like an app-created bet; a retry charges nothing;
  *      short balances and invalid fields write nothing; another user cannot create over
  *      an existing bet id
+ *   8. money (resolveBet): only the creator resolves; the winner, time and window, PENDING
+ *      winnings with the server's fee and $0 losses are recorded and no money moves; then
+ *      the payout processor pays them; an upheld dispute and a re-resolution pay the new
+ *      winner, not the old
+ *   9. money (acceptBetResult): only participants accept, only a result; the last acceptance
+ *      closes the window early and the payout follows
  *
  * The Lambdas act on ALL sandbox data when invoked, exactly as their schedules do.
  *
@@ -444,6 +450,103 @@ try {
     const hijack = await asUser(harry, 'createBetWithStake', form({ betId: newBetId, amount: 1 }));
     const after = await get('bet', newBetId, 'creatorId totalPot');
     check('another user cannot create over an existing bet id', hijack.reason === 'INVALID' && hijack.field === 'betId' && after.creatorId === ginny && same(await balance(harry), 1), `${JSON.stringify(hijack)} ${JSON.stringify(after)}`);
+
+    // 8. Resolving through the server (resolveBet), then paying out ------------------------
+    const setBet = (id, fields) => gql('mutation ($i: UpdateBetInput!) { updateBet(input: $i) { id } }', { i: { id, ...fields } });
+    const pair = async (tag) => {
+      const creator = await user(`${tag}-creator`);
+      const taker = await user(`${tag}-taker`);
+      await credit(creator, 5);
+      await credit(taker, 5);
+      const id = randomUUID();
+      trackCreate(id, creator);
+      trackJoin(id, taker);
+      for (const pid of [`${id}#${creator}`, `${id}#${taker}`]) ledgerIds.push(`payout#${pid}`, `loss#${pid}`);
+      await asUser(creator, 'createBetWithStake', form({ betId: id, amount: 5, side: 'A' }));
+      await joinAs(taker, id, 'B', 5);
+      return { id, creator, taker, cPid: `${id}#${creator}`, tPid: `${id}#${taker}` };
+    };
+    const tx = (id) => get('transaction', id, 'status type amount actualAmount platformFee');
+
+    const r = await pair('res');
+    const byTaker = await asUser(r.taker, 'resolveBet', { betId: r.id, winningSide: 'B' });
+    check('only the creator can resolve', byTaker.reason === 'NOT_CREATOR', JSON.stringify(byTaker));
+
+    const resolvedNow = await asUser(r.creator, 'resolveBet', { betId: r.id, winningSide: 'A' });
+    const rb2 = await get('bet', r.id, 'status winningSide resolvedAt disputeWindowEndsAt');
+    const hoursOpen = (new Date(rb2.disputeWindowEndsAt).getTime() - new Date(rb2.resolvedAt).getTime()) / 3600_000;
+    check('resolving records the winner, the time and a 48-hour window', resolvedNow.status === 'resolved' && rb2.status === 'PENDING_RESOLUTION' && rb2.winningSide === 'A' && Math.round(hoursOpen) === 48, JSON.stringify(rb2));
+    const pending = await tx(`payout#${r.cPid}`);
+    const lost = await tx(`loss#${r.tPid}`);
+    check('the winnings are PENDING with the server\'s fee, the loss is recorded at $0', pending?.status === 'PENDING' && pending.amount === 10 && pending.actualAmount === 9.7 && pending.platformFee === 0.3 && lost?.status === 'COMPLETED' && lost.amount === 0, `${JSON.stringify(pending)} ${JSON.stringify(lost)}`);
+    check('no money moves at resolution', same(await balance(r.creator), 0) && same(await balance(r.taker), 0));
+    const parts = await Promise.all([get('participant', r.cPid, 'payout status'), get('participant', r.tPid, 'payout status')]);
+    check('each participant\'s outcome is recorded for the app', parts[0].payout === 10 && parts[0].status === 'ACCEPTED' && parts[1].payout === 0 && parts[1].status === 'DECLINED', JSON.stringify(parts));
+    const twice = await asUser(r.creator, 'resolveBet', { betId: r.id, winningSide: 'B' });
+    check('a resolved bet cannot be resolved again', twice.reason === 'NOT_RESOLVABLE', JSON.stringify(twice));
+    const lateJoiner = await user('late');
+    await credit(lateJoiner, 5);
+    const lateJoin = await joinAs(lateJoiner, r.id, 'B', 5);
+    check('a resolved bet cannot be joined', lateJoin.reason === 'NOT_OPEN', JSON.stringify(lateJoin));
+
+    // The window passes: the payout processor pays what the resolution recorded
+    await setBet(r.id, { disputeWindowEndsAt: hoursAgo(0.1) });
+    await invoke('payoutprocessor');
+    const paidRow = await tx(`payout#${r.cPid}`);
+    check('after the window the winner is paid, once', (await get('bet', r.id, 'status')).status === 'RESOLVED' && paidRow.status === 'COMPLETED' && same(await balance(r.creator), 9.7) && same(await balance(r.taker), 0), `${JSON.stringify(paidRow)} creator ${await balance(r.creator)}`);
+    for (const h of (await gql('query ($f: ModelTrustScoreHistoryFilterInput) { listTrustScoreHistories(filter: $f, limit: 1000) { items { id } } }', { f: { relatedBetId: { eq: r.id } } })).listTrustScoreHistories.items) {
+      created.push(['trustScoreHistory', h.id]);
+    }
+
+    // An upheld dispute sends the bet back; the creator re-resolves the other way
+    const d = await pair('dsp');
+    await asUser(d.creator, 'resolveBet', { betId: d.id, winningSide: 'A' });
+    await new Promise((resolve) => setTimeout(resolve, 1100)); // the dispute is upheld after the resolution
+    await create('dispute', {
+      betId: d.id, filedBy: d.taker, againstUserId: d.creator, reason: 'INCORRECT_RESOLUTION', description: run,
+      status: 'RESOLVED_FOR_FILER', resolvedAt: new Date().toISOString(),
+    });
+    await setBet(d.id, { winningSide: null }); // what disputeService does on an upheld dispute
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    const reResolved = await asUser(d.creator, 'resolveBet', { betId: d.id, winningSide: 'B' });
+    const [oldWin, oldLoss, newWin, newLoss] = await Promise.all([
+      tx(`payout#${d.cPid}`), tx(`loss#${d.tPid}`), tx(`payout#${d.tPid}`), tx(`loss#${d.cPid}`),
+    ]);
+    check('re-resolving cancels the overturned result and records the new one', reResolved.status === 'resolved' && oldWin.status === 'CANCELLED' && oldLoss.status === 'CANCELLED' && newWin.status === 'PENDING' && newWin.amount === 10 && newLoss.status === 'COMPLETED', JSON.stringify({ oldWin, oldLoss, newWin, newLoss }));
+    await setBet(d.id, { disputeWindowEndsAt: hoursAgo(0.1) });
+    await invoke('payoutprocessor');
+    check('after the window the new winner is paid and the old one is not', (await get('bet', d.id, 'status')).status === 'RESOLVED' && same(await balance(d.taker), 9.7) && same(await balance(d.creator), 0), `taker ${await balance(d.taker)}, creator ${await balance(d.creator)}`);
+    for (const h of (await gql('query ($f: ModelTrustScoreHistoryFilterInput) { listTrustScoreHistories(filter: $f, limit: 1000) { items { id } } }', { f: { relatedBetId: { eq: d.id } } })).listTrustScoreHistories.items) {
+      created.push(['trustScoreHistory', h.id]);
+    }
+
+    // 9. Accepting the result (acceptBetResult): everyone accepts, the window closes early --
+    const a = await pair('acc');
+    const thirdTaker = await user('acc-third');
+    await credit(thirdTaker, 5);
+    trackJoin(a.id, thirdTaker);
+    ledgerIds.push(`payout#${a.id}#${thirdTaker}`, `loss#${a.id}#${thirdTaker}`);
+    await joinAs(thirdTaker, a.id, 'B', 5);
+    const early = await asUser(a.taker, 'acceptBetResult', { betId: a.id });
+    check('a result cannot be accepted before there is one', early.reason === 'NOT_AWAITING', JSON.stringify(early));
+    await asUser(a.creator, 'resolveBet', { betId: a.id, winningSide: 'A' });
+    const windowBefore = (await get('bet', a.id, 'disputeWindowEndsAt')).disputeWindowEndsAt;
+
+    const byCreator = await asUser(a.creator, 'acceptBetResult', { betId: a.id });
+    const byStranger = await asUser(lateJoiner, 'acceptBetResult', { betId: a.id });
+    check('the creator and outsiders cannot accept', byCreator.reason === 'IS_CREATOR' && byStranger.reason === 'NOT_PARTICIPANT', `${JSON.stringify(byCreator)} ${JSON.stringify(byStranger)}`);
+
+    const first = await asUser(a.taker, 'acceptBetResult', { betId: a.id });
+    const stillOpen = (await get('bet', a.id, 'disputeWindowEndsAt')).disputeWindowEndsAt;
+    check('one acceptance of two leaves the window open', first.status === 'accepted' && !first.closedEarly && first.accepted === 1 && first.total === 2 && stillOpen === windowBefore, JSON.stringify(first));
+    const last = await asUser(thirdTaker, 'acceptBetResult', { betId: a.id });
+    const closedAt = (await get('bet', a.id, 'disputeWindowEndsAt')).disputeWindowEndsAt;
+    check('the last acceptance closes the window early', last.closedEarly === true && new Date(closedAt).getTime() < Date.now(), `${JSON.stringify(last)} window ${closedAt}`);
+    await invoke('payoutprocessor');
+    check('the payout follows without waiting 48 hours', (await get('bet', a.id, 'status')).status === 'RESOLVED' && same(await balance(a.creator), 14.55), `creator ${await balance(a.creator)}`);
+    for (const h of (await gql('query ($f: ModelTrustScoreHistoryFilterInput) { listTrustScoreHistories(filter: $f, limit: 1000) { items { id } } }', { f: { relatedBetId: { eq: a.id } } })).listTrustScoreHistories.items) {
+      created.push(['trustScoreHistory', h.id]);
+    }
   }
 } catch (error) {
   console.error('ERROR', error.message ?? error);

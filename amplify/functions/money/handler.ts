@@ -21,13 +21,15 @@ import { env } from '$amplify/env/money';
 import { type AmplifyResolverEvent, resolverFieldName } from '../../shared/amplifyResolverEvent';
 import { accountIdFromArn, classifyCaller, type Caller } from '../../shared/callerAuth';
 import type { LedgerEntry, StateUpdate, LedgerResult } from '../../shared/ledgerLogic';
-import { hasOpenDispute, overturnedByDispute, planSettlement, type DisputeSummary } from '../../shared/settlementLogic';
+import { hasOpenDispute, overturnedByDispute, payoutTransactionId, planSettlement, type DisputeSummary } from '../../shared/settlementLogic';
 import { notificationMeta } from '../../shared/notificationCatalog';
 import { isProActive } from '../../../src/config/subscriptionConfig';
 import { applyLedger } from './ledgerExecutor';
 import { parseAwsJson, type SettleResult } from '../../shared/moneyClient';
 import { checkJoin, planJoin, type JoinResult } from '../../shared/joinLogic';
 import { invalidField, planCreateBet, type CreateBetArgs, type CreateBetResult } from '../../shared/createBetLogic';
+import { checkResolve, planResolve, type ExistingLedgerRow, type ResolvePlan, type ResolveResult } from '../../shared/resolveLogic';
+import { checkAccept, planAccept, type AcceptParticipant, type AcceptResult } from '../../shared/acceptLogic';
 
 const { resourceConfig, libraryOptions } = await getAmplifyDataClientConfig(env);
 Amplify.configure(resourceConfig, libraryOptions);
@@ -50,6 +52,12 @@ export const handler = async (event: AmplifyResolverEvent, context: Context): Pr
       return joinBet(requireUser(caller, fieldName), event.arguments as unknown as JoinBetArgs);
     case 'createBetWithStake':
       return createBetWithStake(requireUser(caller, fieldName), event.arguments as unknown as CreateBetArgs);
+    case 'resolveBet': {
+      const { betId, winningSide } = event.arguments as { betId: string; winningSide: string };
+      return resolveBet(requireUser(caller, fieldName), betId, winningSide);
+    }
+    case 'acceptBetResult':
+      return acceptBetResult(requireUser(caller, fieldName), (event.arguments as { betId: string }).betId);
     default:
       throw new Error(`Unknown operation ${fieldName}`);
   }
@@ -110,7 +118,7 @@ async function settleBet(betId: string): Promise<SettleResult> {
   const disputes = await listDisputes(betId);
   if (hasOpenDispute(disputes)) return { status: 'skipped', reason: 'open dispute' };
   // An upheld dispute sends the bet back for re-resolution; the old result must not be paid
-  if (overturnedByDispute(disputes, bet.disputeWindowEndsAt)) {
+  if (overturnedByDispute(disputes, bet)) {
     return { status: 'skipped', reason: 'overturned by an upheld dispute; awaiting re-resolution' };
   }
 
@@ -362,6 +370,222 @@ async function createBetWithStake(userId: string, args: CreateBetArgs): Promise<
       return { status: 'refused', reason: 'INVALID', field: 'betId' };
     default:
       throw new Error(`Create bet ${args.betId}: ${JSON.stringify(result)}`);
+  }
+}
+
+// --- resolveBet (the bet's creator) ---------------------------------------------------
+
+/** Writes per transaction, under DynamoDB's 100 with room for the ledger's own items. */
+const RESOLVE_BATCH = 90;
+
+/**
+ * The creator picks the winner: checked on the server, payouts computed from the stakes,
+ * and the bet, each participant's outcome and the pending winnings written in one ledger
+ * transaction guarded on the bet being unchanged since it was read (resolveLogic). No
+ * money moves; the payout processor pays after the dispute window.
+ */
+async function resolveBet(userId: string, betId: string, winningSide: string): Promise<ResolveResult> {
+  const { data: bet } = await client.models.Bet.get({ id: betId });
+  const refusal = checkResolve(bet, userId, winningSide);
+  if (refusal) return { status: 'refused', reason: refusal };
+
+  const participants = await listParticipants(betId);
+  const proUserIds = new Set<string>();
+  for (const id of new Set(participants.map((p) => p.userId))) {
+    const { data: participantUser } = await client.models.User.get({ id });
+    if (isProActive(participantUser)) proUserIds.add(id);
+  }
+  const odds = parseJson<{ sideAName?: string; sideBName?: string }>(bet.odds, {});
+  const plan = planResolve({
+    bet,
+    winningSide: winningSide as 'A' | 'B',
+    sideNames: { A: odds.sideAName, B: odds.sideBName },
+    participants: participants.map((p) => ({ id: p.id, userId: p.userId, side: p.side, amount: p.amount ?? 0 })),
+    proUserIds,
+    existing: await listBetTransactions(betId),
+    now: new Date().toISOString(),
+  });
+
+  let result: LedgerResult;
+  if (plan.entries.length + plan.stateUpdates.length <= RESOLVE_BATCH) {
+    result = await applyLedger(plan.entries, plan.stateUpdates);
+  } else {
+    // Too many participants for one transaction. The resolution itself (the bet) commits
+    // first, alone and guarded; the records follow in batches. They are idempotent, and
+    // only for display: settlement recomputes every payout from the stakes.
+    result = await applyLedger([], plan.stateUpdates.slice(0, 1));
+    if (result.status === 'applied') {
+      const rest = [
+        ...plan.entries.map((entry) => ({ entry })),
+        ...plan.stateUpdates.slice(1).map((update) => ({ update })),
+      ];
+      for (let i = 0; i < rest.length; i += RESOLVE_BATCH) {
+        const batch = rest.slice(i, i + RESOLVE_BATCH);
+        const done = await applyLedger(
+          batch.flatMap((b) => ('entry' in b ? [b.entry] : [])),
+          batch.flatMap((b) => ('update' in b ? [b.update] : []))
+        );
+        if (done.status !== 'applied' && done.status !== 'already_applied' && done.status !== 'state_changed') {
+          console.error(`[Money] Resolution records for bet ${betId} incomplete: ${JSON.stringify(done)}`);
+        }
+      }
+    }
+  }
+
+  if (result.status === 'state_changed' || result.status === 'already_applied') {
+    // Someone joined, or it was resolved, since it was read: say which from a fresh read
+    const { data: fresh } = await client.models.Bet.get({ id: betId });
+    return { status: 'refused', reason: checkResolve(fresh, userId, winningSide) ?? 'BUSY' };
+  }
+  if (result.status !== 'applied') {
+    throw new Error(`Resolve bet ${betId}: ${JSON.stringify(result)}`);
+  }
+
+  await touchBet(betId);
+  await notifyResolved(plan, bet, winningSide as 'A' | 'B', odds, userId);
+  return {
+    status: 'resolved',
+    winningSide: winningSide as 'A' | 'B',
+    disputeWindowEndsAt: plan.disputeWindowEndsAt,
+    winners: plan.winners,
+    refundedNoWinners: plan.refundedNoWinners,
+  };
+}
+
+/** Every ledger row recorded against a bet (id, type, status), through transactionsByBet. */
+async function listBetTransactions(betId: string): Promise<ExistingLedgerRow[]> {
+  const rows: ExistingLedgerRow[] = [];
+  let nextToken: string | null | undefined;
+  do {
+    const page = await client.models.Transaction.transactionsByBet({ relatedBetId: betId }, { nextToken });
+    rows.push(...((page.data ?? []) as ExistingLedgerRow[]).map((r) => ({ id: r.id, type: r.type, status: r.status })));
+    nextToken = page.nextToken;
+  } while (nextToken);
+  return rows;
+}
+
+/** Tell each participant but the creator how it went, with the server's figures. */
+async function notifyResolved(
+  plan: ResolvePlan,
+  bet: { id: string; title?: string | null },
+  winningSide: 'A' | 'B',
+  odds: { sideAName?: string; sideBName?: string },
+  creatorId: string
+): Promise<void> {
+  const winnerName = (winningSide === 'A' ? odds.sideAName : odds.sideBName) || `Side ${winningSide}`;
+  const title = bet.title ?? 'the bet';
+  for (const outcome of plan.outcomes) {
+    if (outcome.userId === creatorId) continue;
+    try {
+      await client.models.Notification.create({
+        userId: outcome.userId,
+        type: 'BET_RESOLVED',
+        ...notificationMeta('BET_RESOLVED'),
+        title: outcome.won ? 'Bet Won! (Pending)' : plan.refundedNoWinners ? 'Bet Resolved' : 'Bet Lost',
+        message: outcome.won
+          ? `You won $${outcome.net.toFixed(2)} on "${title}". Funds will be available in 48 hours if no disputes are filed.`
+          : plan.refundedNoWinners
+            ? `Nobody backed ${winnerName} on "${title}", so every stake will be returned after the 48-hour dispute window.`
+            : `You lost on "${title}". The winner was ${winnerName}.`,
+        isRead: false,
+        priority: outcome.won ? 'HIGH' : 'MEDIUM',
+        actionType: 'view_bet',
+        actionData: { betId: bet.id },
+        relatedBetId: bet.id,
+      });
+    } catch (error) {
+      console.warn(`[Money] Resolution notification failed for ${outcome.userId}:`, error);
+    }
+  }
+}
+
+// --- acceptBetResult (a participant) --------------------------------------------------
+
+/**
+ * A participant accepts the result; when everyone but the creator has, the dispute window
+ * closes early (acceptLogic). Both in one transaction guarded on the result being unchanged.
+ */
+async function acceptBetResult(userId: string, betId: string): Promise<AcceptResult> {
+  const { data: bet } = await client.models.Bet.get({ id: betId });
+  const participants = bet ? await listAcceptParticipants(betId) : [];
+  const refusal = checkAccept(bet, userId, participants);
+  if (refusal) return { status: 'refused', reason: refusal };
+
+  const plan = planAccept({ bet, userId, participants, now: new Date().toISOString() });
+  if (plan.stateUpdates.length) {
+    const result = await applyLedger([], plan.stateUpdates);
+    if (result.status === 'state_changed') return { status: 'refused', reason: 'NOT_AWAITING' };
+    if (result.status !== 'applied') throw new Error(`Accept ${betId}: ${JSON.stringify(result)}`);
+  }
+
+  if (plan.closesEarly) {
+    await touchBet(betId);
+    await notifyClosingEarly(bet, participants);
+  } else if (plan.stateUpdates.length && bet.creatorId) {
+    try {
+      await client.models.Notification.create({
+        userId: bet.creatorId,
+        type: 'BET_RESOLVED',
+        ...notificationMeta('BET_RESOLVED'),
+        title: 'Bet Result Accepted',
+        message: `${plan.accepted} of ${plan.total} participants have accepted the result for "${bet.title}"`,
+        isRead: false,
+        priority: 'MEDIUM',
+        actionType: 'view_bet',
+        actionData: { betId },
+        relatedBetId: betId,
+        relatedUserId: userId,
+      });
+    } catch (error) {
+      console.warn(`[Money] Acceptance notification failed for ${bet.creatorId}:`, error);
+    }
+  }
+  return { status: 'accepted', closedEarly: plan.closesEarly, accepted: plan.accepted, total: plan.total };
+}
+
+async function listAcceptParticipants(betId: string): Promise<Array<AcceptParticipant & { side: string }>> {
+  const rows: Array<AcceptParticipant & { side: string }> = [];
+  let nextToken: string | null | undefined;
+  do {
+    const page = await client.models.Participant.participantsByBet({ betId }, { nextToken });
+    for (const p of page.data ?? []) rows.push({ id: p.id, userId: p.userId, side: p.side, hasAcceptedResult: p.hasAcceptedResult });
+    nextToken = page.nextToken;
+  } while (nextToken);
+  return rows;
+}
+
+/** Everyone accepted: tell each participant, winners with what they will receive. */
+async function notifyClosingEarly(
+  bet: { id: string; title?: string | null; winningSide?: string | null },
+  participants: Array<AcceptParticipant & { side: string }>
+): Promise<void> {
+  for (const participant of participants) {
+    const won = participant.side === bet.winningSide;
+    let net = 0;
+    if (won) {
+      const { data: pending } = await client.models.Transaction.get({ id: payoutTransactionId(participant.id) });
+      net = pending?.actualAmount ?? pending?.amount ?? 0;
+    }
+    try {
+      await client.models.Notification.create({
+        userId: participant.userId,
+        type: 'BET_RESOLVED',
+        ...notificationMeta('BET_RESOLVED'),
+        title: 'Bet Closing Early!',
+        message: won
+          ? net > 0
+            ? `All participants accepted the result! You'll receive $${net.toFixed(2)} within 5 minutes.`
+            : `All participants accepted the result! Your winnings will arrive within 5 minutes.`
+          : `All participants accepted the result of "${bet.title}". Better luck next time!`,
+        isRead: false,
+        priority: 'HIGH',
+        actionType: 'view_bet',
+        actionData: { betId: bet.id },
+        relatedBetId: bet.id,
+      });
+    } catch (error) {
+      console.warn(`[Money] Early-close notification failed for ${participant.userId}:`, error);
+    }
   }
 }
 

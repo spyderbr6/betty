@@ -169,7 +169,7 @@ export const BetCard: React.FC<BetCardProps> = ({
     setIsAccepting(true);
 
     try {
-      const success = await BetAcceptanceService.acceptBetResult(bet.id, user.userId);
+      const success = await BetAcceptanceService.acceptBetResult(bet.id);
 
       if (success) {
         // Update local state to show acceptance
@@ -588,6 +588,7 @@ export const BetCard: React.FC<BetCardProps> = ({
               {/* Accept Result Button - Only for NON-CREATOR participants who haven't accepted yet */}
               {userParticipation.hasJoined && !acceptanceProgress.hasUserAccepted && bet.creatorId !== user?.userId && (
                 <TouchableOpacity
+                  testID="bet-accept-result"
                   style={styles.acceptButton}
                   onPress={handleAcceptResult}
                   activeOpacity={0.7}

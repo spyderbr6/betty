@@ -235,7 +235,7 @@ async function yourMainFunction() {
 ### Core Betting System
 - **Bet Creation**: Template-based betting with custom side names. Submitting is one call to the server's `createBetWithStake` mutation (`amplify/shared/createBetLogic.ts`): it re-checks the form and the balance, then writes the bet, the creator's participant row and their stake in one transaction. The app picks the bet id (a UUID, kept across a retry whose outcome is unknown) so a lost answer cannot create a second bet. Invitations to friends are still sent from the app afterwards.
 - **Bet Joining**: Confirmation sheet, then the server's `joinBet` mutation (money function; rules in `amplify/shared/joinLogic.ts`). The server checks the bet is open and before its deadline, the stake, the balance, a second join and private-bet invitations, then writes the participant row, the stake and the bet's counts in one ledger transaction. The app writes none of them. Used by `BetCard` and by accepting an invitation (which marks the invitation accepted only after the join succeeds).
-- **Bet Resolution**: Creator-initiated resolution with automatic payouts
+- **Bet Resolution**: The creator picks the winner; the app sends that to the server's `resolveBet` mutation (`amplify/shared/resolveLogic.ts`), which checks the caller created the bet, computes every payout and fee from the stakes (Pro looked up on the server), and records the winner, `resolvedAt`, the 48-hour dispute window, each participant's outcome, PENDING winnings (what the wallet shows as pending payouts) and $0 loss records. No money moves until `payout-processor` settles after the window (`settleBet`, which recomputes the payouts). Re-resolving after an upheld dispute cancels the overturned records.
 - **Real-time Updates**: Targeted subscriptions via BetDataContext with denormalized participant counts (`sideACount`, `sideBCount`, `participantUserIds`) on the Bet record
 - **Bet Sorting**: Automatic sorting by creation time (newest first) with status priority (LIVE > ACTIVE > PENDING_RESOLUTION)
 - **State Architecture**: Centralized BetDataContext provides derived views (`myBets`, `joinableBets`, etc.) consumed by BetsScreen and LiveEventsScreen
@@ -508,7 +508,7 @@ the one place a balance or money record is written: each movement is a single Dy
 transaction (compare-and-swap on the balance, a fixed id per movement so retries cannot
 double-pay, never below zero) built by `amplify/shared/ledgerLogic.ts`. The scheduled
 Lambdas and the Stripe webhook reach it through `amplify/shared/moneyClient.ts`; the app
-reaches it through user-facing mutations (`joinBet`, and `createBetWithStake` for a new
+reaches it through user-facing mutations (`joinBet`, `resolveBet`, `acceptBetResult`, and `createBetWithStake` for a new
 bet with its creator's stake, so far). The plan, what is done and
 what is left (the app still writes some money records directly until step 3 finishes) is
 in [docs/SECURITY_PLAN.md](./docs/SECURITY_PLAN.md). Do not add a new balance write
@@ -539,15 +539,9 @@ TransactionService.recordBetPlacement(userId, amount, betId, participantId) -> P
   - NO CALLERS (to be deleted, security plan step 3g): joining uses the joinBet mutation and
     creating a bet uses createBetWithStake, both of which take the stake on the server
 
-TransactionService.recordBetWinnings(userId, amount, betId, participantId) -> Promise<Transaction>
-  - Automatically called when bet is resolved
-  - Creates COMPLETED transaction
-  - Credits balance with winnings
-
-TransactionService.recordBetCancellation(userId, amount, betId, participantId) -> Promise<Transaction>
-  - Refunds user when bet is cancelled
-  - Creates COMPLETED transaction
-  - Credits balance with original bet amount
+TransactionService.recordBetWinnings / recordBetCancellation / recordBetLoss
+  - NO CALLERS (to be deleted, step 3g). Winnings are paid by payout-processor through the
+    money function; refunds by the scheduled checkers; losses are recorded by resolveBet
 
 TransactionService.getUserTransactions(userId, options?) -> Promise<Transaction[]>
   - Get user's transaction history with filtering
@@ -1072,6 +1066,8 @@ e2e/
 ├── app-shell.spec.ts     # Session boot, tab navigation, bet list rendering
 ├── create-bet.spec.ts    # Create-bet form validation
 ├── join-bet.spec.ts      # Joining through joinBet: refusals, success, no client money writes
+├── resolve-bet.spec.ts   # Resolving through resolveBet: the choice is sent, nothing else written
+├── accept-result.spec.ts # Accepting a result through acceptBetResult (early close is server-side)
 ├── invitations.spec.ts   # Bet invitations listed and declined
 ├── notification-settings.spec.ts # Push prompt timing, device registration, sign-out scope
 ├── notification-preferences.spec.ts # Category alerts/feed, quiet hours, device list, feed filtering
