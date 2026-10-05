@@ -233,7 +233,7 @@ async function yourMainFunction() {
 ## Current App Features
 
 ### Core Betting System
-- **Bet Creation**: Template-based betting with custom side names
+- **Bet Creation**: Template-based betting with custom side names. Submitting is one call to the server's `createBetWithStake` mutation (`amplify/shared/createBetLogic.ts`): it re-checks the form and the balance, then writes the bet, the creator's participant row and their stake in one transaction. The app picks the bet id (a UUID, kept across a retry whose outcome is unknown) so a lost answer cannot create a second bet. Invitations to friends are still sent from the app afterwards.
 - **Bet Joining**: Confirmation sheet, then the server's `joinBet` mutation (money function; rules in `amplify/shared/joinLogic.ts`). The server checks the bet is open and before its deadline, the stake, the balance, a second join and private-bet invitations, then writes the participant row, the stake and the bet's counts in one ledger transaction. The app writes none of them. Used by `BetCard` and by accepting an invitation (which marks the invitation accepted only after the join succeeds).
 - **Bet Resolution**: Creator-initiated resolution with automatic payouts
 - **Real-time Updates**: Targeted subscriptions via BetDataContext with denormalized participant counts (`sideACount`, `sideBCount`, `participantUserIds`) on the Bet record
@@ -508,7 +508,8 @@ the one place a balance or money record is written: each movement is a single Dy
 transaction (compare-and-swap on the balance, a fixed id per movement so retries cannot
 double-pay, never below zero) built by `amplify/shared/ledgerLogic.ts`. The scheduled
 Lambdas and the Stripe webhook reach it through `amplify/shared/moneyClient.ts`; the app
-reaches it through user-facing mutations (`joinBet` so far). The plan, what is done and
+reaches it through user-facing mutations (`joinBet`, and `createBetWithStake` for a new
+bet with its creator's stake, so far). The plan, what is done and
 what is left (the app still writes some money records directly until step 3 finishes) is
 in [docs/SECURITY_PLAN.md](./docs/SECURITY_PLAN.md). Do not add a new balance write
 anywhere else. Sandbox checks: `scripts/sandbox-money-check.mjs` and
@@ -535,10 +536,8 @@ TransactionService.createWithdrawal(userId, amount, paymentMethodId, venmoUserna
   - Validates sufficient balance before creating request
 
 TransactionService.recordBetPlacement(userId, amount, betId, participantId) -> Promise<Transaction>
-  - Only the creator's stake in CreateBetScreen still uses it (moving to the server, step 3b)
-  - Joins no longer do: they go through the joinBet mutation
-  - Creates COMPLETED transaction
-  - Deducts balance immediately
+  - NO CALLERS (to be deleted, security plan step 3g): joining uses the joinBet mutation and
+    creating a bet uses createBetWithStake, both of which take the stake on the server
 
 TransactionService.recordBetWinnings(userId, amount, betId, participantId) -> Promise<Transaction>
   - Automatically called when bet is resolved
@@ -561,14 +560,6 @@ TransactionService.updateTransactionStatus(transactionId, status, failureReason?
   - Sends notifications for status changes
 
 // Usage Examples:
-// Creator's stake when creating a bet (joins use the joinBet mutation instead)
-const transaction = await TransactionService.recordBetPlacement(
-  userId,
-  50,
-  betId,
-  participantId
-);
-
 // User requests deposit (manual admin approval needed)
 const deposit = await TransactionService.createDeposit(
   userId,

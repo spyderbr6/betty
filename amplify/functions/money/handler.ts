@@ -27,6 +27,7 @@ import { isProActive } from '../../../src/config/subscriptionConfig';
 import { applyLedger } from './ledgerExecutor';
 import { parseAwsJson, type SettleResult } from '../../shared/moneyClient';
 import { checkJoin, planJoin, type JoinResult } from '../../shared/joinLogic';
+import { invalidField, planCreateBet, type CreateBetArgs, type CreateBetResult } from '../../shared/createBetLogic';
 
 const { resourceConfig, libraryOptions } = await getAmplifyDataClientConfig(env);
 Amplify.configure(resourceConfig, libraryOptions);
@@ -47,6 +48,8 @@ export const handler = async (event: AmplifyResolverEvent, context: Context): Pr
       return settleBet((event.arguments as { betId: string }).betId);
     case 'joinBet':
       return joinBet(requireUser(caller, fieldName), event.arguments as unknown as JoinBetArgs);
+    case 'createBetWithStake':
+      return createBetWithStake(requireUser(caller, fieldName), event.arguments as unknown as CreateBetArgs);
     default:
       throw new Error(`Unknown operation ${fieldName}`);
   }
@@ -318,6 +321,47 @@ async function notifyJoined(creatorId: string, joinerId: string, betTitle: strin
     });
   } catch (error) {
     console.warn(`[Money] Join notification failed for ${creatorId}:`, error);
+  }
+}
+
+// --- createBetWithStake (app users) ---------------------------------------------------
+
+/**
+ * Create a bet with the caller as its first participant: the bet, their participant row
+ * and their stake in one ledger transaction (createBetLogic). The app chooses the bet id,
+ * so a retried tap finds its own earlier write rather than making a second bet.
+ */
+async function createBetWithStake(userId: string, args: CreateBetArgs): Promise<CreateBetResult> {
+  const field = invalidField(args);
+  if (field) return { status: 'refused', reason: 'INVALID', field };
+
+  const { data: creator } = await client.models.User.get({ id: userId });
+  const creatorName = creator?.displayName || creator?.username || 'User';
+  const plan = planCreateBet({ args, userId, creatorName, now: new Date().toISOString() });
+
+  const result = await applyLedger(plan.entries, plan.stateUpdates);
+  switch (result.status) {
+    case 'applied':
+      await touchUsers([userId]);
+      // The bet was written directly, which fires no onCreate; the touch's onUpdate is what
+      // puts it in open apps' feeds (BetDataContext adds a bet it has not seen)
+      await touchBet(args.betId);
+      return { status: 'created', betId: args.betId, balance: result.balances.find((b) => b.userId === userId)?.after ?? 0 };
+    case 'already_applied': {
+      // This user's stake on this bet exists. It is a retry of their own create only if
+      // they created the bet: someone who joined it has a stake row there too.
+      const { data: existing } = await client.models.Bet.get({ id: args.betId });
+      if (existing?.creatorId !== userId) return { status: 'refused', reason: 'INVALID', field: 'betId' };
+      const { data: me } = await client.models.User.get({ id: userId });
+      return { status: 'created', betId: args.betId, balance: me?.balance ?? 0 };
+    }
+    case 'insufficient_funds':
+      return { status: 'refused', reason: 'INSUFFICIENT_FUNDS', balance: result.balance, required: result.required };
+    case 'state_changed':
+      // The id is another bet's: refuse rather than touch it
+      return { status: 'refused', reason: 'INVALID', field: 'betId' };
+    default:
+      throw new Error(`Create bet ${args.betId}: ${JSON.stringify(result)}`);
   }
 }
 

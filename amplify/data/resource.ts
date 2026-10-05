@@ -946,6 +946,29 @@ const schema = a.schema({
     .handler(a.handler.function(money))
     .authorization((allow) => [allow.authenticated()]),
 
+  // Create a bet with the signed-in user as its first participant: the bet, their
+  // participant row and their stake are one ledger transaction (shared/createBetLogic.ts).
+  // betId is chosen by the app (a UUID) so a retried tap cannot make a second bet.
+  // (Not "createBet": Amplify generates that name for the Bet model.)
+  createBetWithStake: a
+    .mutation()
+    .arguments({
+      betId: a.id().required(),
+      title: a.string().required(),
+      description: a.string().required(),
+      category: a.string().required(),
+      amount: a.float().required(),
+      side: a.string().required(),
+      sideAName: a.string().required(),
+      sideBName: a.string().required(),
+      deadlineMinutes: a.integer().required(),
+      isPrivate: a.boolean(),
+      eventId: a.id(),
+    })
+    .returns(a.json())
+    .handler(a.handler.function(money))
+    .authorization((allow) => [allow.authenticated()]),
+
 }).authorization((allow) => [
   // Allow the Lambda functions to be invoked and access data
   allow.resource(scheduledBetChecker).to(["query", "listen", "mutate"]),

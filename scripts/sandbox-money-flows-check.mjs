@@ -16,6 +16,10 @@
  *      together; second joins, short balances, wrong stakes, private bets without an
  *      invitation and bets past their deadline are refused with nothing written;
  *      simultaneous joins all count; callers that are not app users are refused
+ *   7. money (createBetWithStake): the bet, the creator's participant row and the stake
+ *      land together and read back like an app-created bet; a retry charges nothing;
+ *      short balances and invalid fields write nothing; another user cannot create over
+ *      an existing bet id
  *
  * The Lambdas act on ALL sandbox data when invoked, exactly as their schedules do.
  *
@@ -87,11 +91,11 @@ async function invoke(key) {
  * a signed-in user (Amplify's resolver payload with a user-pool identity): the handler,
  * the ledger and the tables are the real ones; only AppSync's sign-in check is skipped.
  */
-async function joinAs(userId, betId, side, amount) {
+async function asUser(userId, fieldName, args) {
   const event = {
     typeName: 'Mutation',
-    fieldName: 'joinBet',
-    arguments: { betId, side, amount },
+    fieldName,
+    arguments: args,
     identity: { sub: userId, username: userId, claims: { sub: userId }, groups: null },
     source: null,
     request: { headers: {} },
@@ -99,9 +103,11 @@ async function joinAs(userId, betId, side, amount) {
   };
   const result = await lambda.send(new InvokeCommand({ FunctionName: functions.money, Payload: Buffer.from(JSON.stringify(event)) }));
   const payload = Buffer.from(result.Payload ?? []).toString();
-  if (result.FunctionError) throw new Error(`joinBet failed: ${payload}`);
+  if (result.FunctionError) throw new Error(`${fieldName} failed: ${payload}`);
   return JSON.parse(payload);
 }
+
+const joinAs = (userId, betId, side, amount) => asUser(userId, 'joinBet', { betId, side, amount });
 
 // --- signed GraphQL ---------------------------------------------------------------------
 const signer = new SignatureV4({ credentials: defaultProvider(), region, service: 'appsync', sha256: Sha256 });
@@ -385,6 +391,59 @@ try {
       refused = String(error.message).includes('Unauthorized');
     }
     check('joinBet refuses callers that are not signed-in users', refused);
+
+    // 7. Creating a bet through the server (createBetWithStake) ----------------------------
+    const { randomUUID } = await import('node:crypto');
+    const form = (over = {}) => ({
+      title: `${run} created`, description: 'sandbox-money-flows-check', category: 'CUSTOM', amount: 4,
+      side: 'A', sideAName: 'Yes', sideBName: 'No', deadlineMinutes: 30, isPrivate: false, ...over,
+    });
+    const trackCreate = (newBetId, userId) => {
+      created.push(['bet', newBetId]);
+      created.push(['participant', `${newBetId}#${userId}`]);
+      ledgerIds.push(`stake#${newBetId}#${userId}`);
+    };
+
+    const ginny = await user('ginny');
+    await credit(ginny, 10);
+    const newBetId = randomUUID();
+    trackCreate(newBetId, ginny);
+    const made = await asUser(ginny, 'createBetWithStake', form({ betId: newBetId }));
+    const nb = await get('bet', newBetId, 'status creatorId betAmount totalPot sideACount sideBCount participantUserIds odds deadline category isTestBet');
+    const np = await get('participant', `${newBetId}#${ginny}`, 'side amount status');
+    check('create writes the bet, the creator\'s row and the stake together', made.status === 'created' && same(made.balance, 6) && same(await balance(ginny), 6) && np?.side === 'A' && np.amount === 4, JSON.stringify(made));
+    check('the new bet is ACTIVE with the creator counted', nb?.status === 'ACTIVE' && nb.creatorId === ginny && nb.betAmount === 4 && nb.totalPot === 4 && nb.sideACount === 1 && nb.sideBCount === 0 && nb.participantUserIds.join() === ginny && nb.category === 'CUSTOM' && nb.isTestBet === false, JSON.stringify(nb));
+    const odds = JSON.parse(nb.odds);
+    check('the bet\'s odds read back as the app writes them', odds.sideAName === 'Yes' && odds.sideBName === 'No', nb.odds);
+    const indexed = await gql('query ($f: ModelBetFilterInput) { betsByStatus(status: ACTIVE, filter: $f) { items { id } nextToken } }', { f: { id: { eq: newBetId } } });
+    let inIndex = indexed.betsByStatus.items.length > 0;
+    for (let token = indexed.betsByStatus.nextToken; !inIndex && token; ) {
+      const page = await gql('query ($f: ModelBetFilterInput, $t: String) { betsByStatus(status: ACTIVE, filter: $f, nextToken: $t) { items { id } nextToken } }', { f: { id: { eq: newBetId } }, t: token });
+      inIndex = page.betsByStatus.items.length > 0;
+      token = page.betsByStatus.nextToken;
+    }
+    check('the new bet is in the ACTIVE feed index', inIndex);
+
+    const retried = await asUser(ginny, 'createBetWithStake', form({ betId: newBetId }));
+    check('retrying the same create charges nothing more', retried.status === 'created' && same(await balance(ginny), 6), JSON.stringify(retried));
+
+    const harry = await user('harry');
+    await credit(harry, 5);
+    trackJoin(newBetId, harry);
+    const joinedNew = await joinAs(harry, newBetId, 'B', 4);
+    check('a server-created bet can be joined', joinedNew.status === 'joined' && same(await balance(harry), 1), JSON.stringify(joinedNew));
+
+    const poorBetId = randomUUID();
+    trackCreate(poorBetId, harry);
+    const poorCreate = await asUser(harry, 'createBetWithStake', form({ betId: poorBetId, amount: 3 }));
+    check('a create the balance cannot cover writes nothing', poorCreate.reason === 'INSUFFICIENT_FUNDS' && !(await get('bet', poorBetId, 'id')) && same(await balance(harry), 1), JSON.stringify(poorCreate));
+
+    const badDeadline = await asUser(harry, 'createBetWithStake', form({ betId: randomUUID(), amount: 1, deadlineMinutes: 0 }));
+    check('a create with an invalid field is refused', badDeadline.reason === 'INVALID' && badDeadline.field === 'deadlineMinutes', JSON.stringify(badDeadline));
+
+    const hijack = await asUser(harry, 'createBetWithStake', form({ betId: newBetId, amount: 1 }));
+    const after = await get('bet', newBetId, 'creatorId totalPot');
+    check('another user cannot create over an existing bet id', hijack.reason === 'INVALID' && hijack.field === 'betId' && after.creatorId === ginny && same(await balance(harry), 1), `${JSON.stringify(hijack)} ${JSON.stringify(after)}`);
   }
 } catch (error) {
   console.error('ERROR', error.message ?? error);

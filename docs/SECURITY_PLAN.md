@@ -1,6 +1,6 @@
 # Money and Authorization Security Plan
 
-Status (branch `money-security`): **steps 1 and 2 done; step 3 in progress** (3a joins
+Status (branch `money-security`): **steps 1 and 2 done; step 3 in progress** (3a joins, 3b bet creation
 done). Written 2026-10-04 from a read of every write path; §1-§3 describe the code as it
 was then. Decisions in §6: admins are a Cognito `admins` group (the owner's account only);
 a minimum-version gate comes before locking the rules; Venmo deposits are deleted;
