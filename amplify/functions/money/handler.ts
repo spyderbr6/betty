@@ -26,6 +26,7 @@ import { notificationMeta } from '../../shared/notificationCatalog';
 import { isProActive } from '../../../src/config/subscriptionConfig';
 import { applyLedger } from './ledgerExecutor';
 import { parseAwsJson, type SettleResult } from '../../shared/moneyClient';
+import { checkJoin, planJoin, type JoinResult } from '../../shared/joinLogic';
 
 const { resourceConfig, libraryOptions } = await getAmplifyDataClientConfig(env);
 Amplify.configure(resourceConfig, libraryOptions);
@@ -44,6 +45,8 @@ export const handler = async (event: AmplifyResolverEvent, context: Context): Pr
     case 'settleBet':
       requireInternal(caller, fieldName);
       return settleBet((event.arguments as { betId: string }).betId);
+    case 'joinBet':
+      return joinBet(requireUser(caller, fieldName), event.arguments as unknown as JoinBetArgs);
     default:
       throw new Error(`Unknown operation ${fieldName}`);
   }
@@ -54,6 +57,15 @@ function requireInternal(caller: Caller, operation: string): void {
     console.warn(`[Money] Refused ${operation} for`, caller.kind === 'denied' ? caller.reason : caller.kind);
     throw new Error('Unauthorized');
   }
+}
+
+/** A signed-in app user; returns their id (the Cognito sub). Everything else is refused. */
+function requireUser(caller: Caller, operation: string): string {
+  if (caller.kind !== 'user') {
+    console.warn(`[Money] Refused ${operation} for`, caller.kind === 'denied' ? caller.reason : caller.kind);
+    throw new Error('Unauthorized');
+  }
+  return caller.sub;
 }
 
 // --- ledgerApply --------------------------------------------------------------------
@@ -202,6 +214,111 @@ async function supersedeStrayPayouts(betId: string, keep: Set<string>): Promise<
     }
     nextToken = page.nextToken;
   } while (nextToken);
+}
+
+// --- joinBet (app users) --------------------------------------------------------------
+
+interface JoinBetArgs {
+  betId: string;
+  side: string;
+  amount: number;
+}
+
+/**
+ * Join a bet as the caller: checks on the server (joinLogic.checkJoin), then the
+ * participant row, the stake and the bet's counts in one ledger transaction.
+ */
+async function joinBet(userId: string, args: JoinBetArgs): Promise<JoinResult> {
+  const { betId, side, amount } = args;
+  const now = new Date().toISOString();
+
+  const { data: bet } = await client.models.Bet.get({ id: betId });
+  const participants = bet ? await listParticipants(betId) : [];
+  const refusal = checkJoin({
+    bet,
+    userId,
+    side,
+    amount,
+    now,
+    alreadyJoined: participants.some((p) => p.userId === userId),
+    invited: bet?.isPrivate ? await isInvited(userId, betId) : false,
+  });
+  if (refusal) return { status: 'refused', reason: refusal };
+
+  const odds = parseJson<{ sideAName?: string; sideBName?: string }>(bet.odds, {});
+  const sideName = (side === 'A' ? odds.sideAName : odds.sideBName) || `Side ${side}`;
+  const plan = planJoin({ bet, userId, side: side as 'A' | 'B', sideName, now });
+
+  const result = await applyLedger(plan.entries, plan.stateUpdates);
+  switch (result.status) {
+    case 'applied':
+      break;
+    case 'insufficient_funds':
+      return { status: 'refused', reason: 'INSUFFICIENT_FUNDS', balance: result.balance, required: result.required };
+    case 'already_applied':
+      // The stake row exists: this user's join went through before
+      return { status: 'refused', reason: 'ALREADY_JOINED' };
+    case 'state_changed': {
+      // The bet closed, passed its deadline or was joined by this user in the meantime;
+      // say which, from a fresh read
+      const { data: fresh } = await client.models.Bet.get({ id: betId });
+      const again = checkJoin({
+        bet: fresh,
+        userId,
+        side,
+        amount,
+        now: new Date().toISOString(),
+        alreadyJoined: (await listParticipants(betId)).some((p) => p.userId === userId),
+        invited: true,
+      });
+      return { status: 'refused', reason: again ?? 'BUSY' };
+    }
+    default:
+      throw new Error(`Join ${plan.participantId}: ${JSON.stringify(result)}`);
+  }
+
+  await touchUsers([userId]);
+  await touchBet(betId);
+  if (bet.creatorId && bet.creatorId !== userId) {
+    await notifyJoined(bet.creatorId, userId, bet.title ?? 'your bet', betId, bet.betAmount);
+  }
+  const balance = result.balances.find((b) => b.userId === userId)?.after ?? 0;
+  return { status: 'joined', participantId: plan.participantId, amount: bet.betAmount, balance };
+}
+
+/** Whether the user holds a pending or accepted invitation to the bet. */
+async function isInvited(userId: string, betId: string): Promise<boolean> {
+  let nextToken: string | null | undefined;
+  do {
+    const page = await client.models.BetInvitation.betInvitationsByToUser(
+      { toUserId: userId },
+      { filter: { betId: { eq: betId } }, nextToken }
+    );
+    if ((page.data ?? []).some((i: { status?: string }) => i.status === 'PENDING' || i.status === 'ACCEPTED')) return true;
+    nextToken = page.nextToken;
+  } while (nextToken);
+  return false;
+}
+
+async function notifyJoined(creatorId: string, joinerId: string, betTitle: string, betId: string, amount: number): Promise<void> {
+  try {
+    const { data: joiner } = await client.models.User.get({ id: joinerId });
+    await client.models.Notification.create({
+      userId: creatorId,
+      type: 'BET_JOINED',
+      ...notificationMeta('BET_JOINED'),
+      title: 'Someone Joined Your Bet!',
+      message: `${joiner?.displayName || joiner?.username || 'Someone'} joined "${betTitle}" with $${amount}`,
+      isRead: false,
+      priority: 'HIGH',
+      actionType: 'view_bet',
+      actionData: { betId },
+      relatedBetId: betId,
+      relatedUserId: joinerId,
+    });
+  } catch (error) {
+    console.warn(`[Money] Join notification failed for ${creatorId}:`, error);
+  }
 }
 
 // --- helpers ------------------------------------------------------------------------

@@ -103,7 +103,8 @@ async function updateExpiredBets(): Promise<{ updated: number; cancelled: number
             (entries, stateUpdates) => ledgerApply(client, entries, stateUpdates),
             bet.id,
             outcome.refunds,
-            outcome.reason
+            outcome.reason,
+            bet.updatedAt
           );
           if (cancellation.status === 'skipped') {
             console.log(`⏭️ [Scheduled] Bet ${bet.id} not cancelled: ${cancellation.reason}`);

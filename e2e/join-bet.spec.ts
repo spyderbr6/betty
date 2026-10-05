@@ -6,15 +6,22 @@ import { TEST_USER, signInAs } from './fixtures/session';
 /**
  * Joining a bet, as the UI actually does it.
  *
- * Note there are two join implementations in the codebase and only one of them
- * runs: BetCard.confirmJoinBet does the work directly, while
- * BetDataContext.joinBet — the version with the optimistic update and rollback —
- * has no callers at all. These tests drive BetCard's path, so they cover its
- * guards and its compensating delete, not any optimistic rollback.
+ * The join is one call: the server's joinBet mutation checks it and writes the
+ * participant row, the stake and the bet's counts in one transaction
+ * (amplify/shared/joinLogic.ts). The app used to make those writes itself, so
+ * these tests now pin that it makes none of them: whatever joinBet answers, the
+ * card shows it, and no Participant, Transaction, User or Bet write leaves the
+ * phone.
  *
  * Joinable bets live on the Live tab, which defaults to a friends-only view, so
  * the fixture has to supply a friendship or the list renders empty.
  */
+
+/** The writes the app used to make itself; none may happen now. */
+const CLIENT_MONEY_WRITES = ['createParticipant', 'createTransaction', 'updateUser', 'updateBet', 'deleteParticipant'];
+
+/** joinBet returns AWSJSON: the answer arrives as JSON text. */
+const joinAnswer = (answer: Record<string, unknown>) => () => JSON.stringify(answer);
 
 const friendship = {
   id: 'friendship-1',
@@ -66,7 +73,11 @@ test("a friend's open bet is offered with join controls", async ({ page }) => {
 
 test('refuses the join when the balance will not cover the stake', async ({ page }) => {
   await signInAs(page);
-  await mockAppSync(page, withOpenBet({ betAmount: 25 }, { balance: 5 }));
+  const { calls } = await mockAppSync(page, {
+    ...withOpenBet({ betAmount: 25 }, { balance: 5 }),
+    // The server checks the balance; the answer carries what it found
+    joinBet: joinAnswer({ status: 'refused', reason: 'INSUFFICIENT_FUNDS', balance: 5, required: 25 }),
+  });
   await openLiveTab(page);
 
   await expect(page.getByTestId('join-side-a')).toBeVisible({ timeout: 15_000 });
@@ -83,26 +94,11 @@ test('refuses the join when the balance will not cover the stake', async ({ page
   await expect(page.getByTestId('alert-message')).toContainText('You need $25');
   await expect(page.getByTestId('alert-message')).toContainText('$5.00');
 
-  // Nothing was committed: the card is still joinable and no participant was
-  // created. (This path has no optimistic update to undo — the balance is
-  // checked before anything is written.)
+  // Nothing was committed: the card is still joinable, and the only write the
+  // app attempted was the join request itself.
   await expect(page.getByTestId('join-side-a')).toBeVisible();
-});
-
-/**
- * Handlers for the write path. A successful join touches seven operations, which
- * is why the guard tests above stop short of it: createParticipant, then the
- * transaction (Transaction.create plus the User.update that debits the balance),
- * then Bet.update for the denormalised counts, then the creator's notification.
- */
-const joinWrites = (over: Record<string, (v: Record<string, unknown>) => unknown> = {}) => ({
-  createParticipant: () => ({ id: 'participant-1', status: 'ACCEPTED' }),
-  createTransaction: () => ({ id: 'transaction-1', status: 'COMPLETED' }),
-  updateUser: (variables: Record<string, unknown>) => ({ ...variables }),
-  updateBet: (variables: Record<string, unknown>) => ({ ...variables }),
-  deleteParticipant: (variables: Record<string, unknown>) => ({ ...variables }),
-  createNotification: () => ({ id: 'notification-1' }),
-  ...over,
+  expect(calls).toContain('joinBet');
+  for (const write of CLIENT_MONEY_WRITES) expect(calls).not.toContain(write);
 });
 
 const confirmJoin = async (page: Page) => {
@@ -116,20 +112,20 @@ test('a successful join takes the stake and marks the bet joined', async ({ page
   await signInAs(page);
   const { calls } = await mockAppSync(page, {
     ...withOpenBet({ betAmount: 25 }, { balance: 250 }),
-    ...joinWrites(),
+    joinBet: joinAnswer({ status: 'joined', participantId: 'bet-open#user', amount: 25, balance: 225 }),
   });
   await openLiveTab(page);
 
   await confirmJoin(page);
 
   await expect(page.getByTestId('alert-title')).toHaveText('Joined Successfully!');
-  // The confirmation quotes the balance after the debit, so it is worth pinning:
-  // 250 - 25. A wrong figure here means the wrong amount left the account.
+  // The confirmation quotes the balance the server reports after the debit, so
+  // it is worth pinning: a wrong figure here means the wrong amount left.
   await expect(page.getByTestId('alert-message')).toContainText('$225.00');
 
-  expect(calls).toContain('createParticipant');
-  expect(calls).toContain('createTransaction');
-  expect(calls).toContain('updateBet');
+  // One request; the server wrote the participant, the stake and the counts
+  expect(calls).toContain('joinBet');
+  for (const write of CLIENT_MONEY_WRITES) expect(calls).not.toContain(write);
 
   // The card itself has to reflect it, not just the alert: the join controls are
   // replaced by a JOINED marker once the side is recorded locally.
@@ -137,21 +133,32 @@ test('a successful join takes the stake and marks the bet joined', async ({ page
   await expect(page.getByTestId('bet-card-bet-open')).toContainText('JOINED');
 });
 
-test('a failed transaction deletes the participant it just created', async ({ page }) => {
+test('a join the server refuses explains why and leaves the bet joinable', async ({ page }) => {
+  await signInAs(page);
+  await mockAppSync(page, {
+    ...withOpenBet({ betAmount: 25 }, { balance: 250 }),
+    // The card was on screen past the deadline: the server, not the card, says no
+    joinBet: joinAnswer({ status: 'refused', reason: 'EXPIRED' }),
+  });
+  await openLiveTab(page);
+
+  await confirmJoin(page);
+
+  await expect(page.getByTestId('alert-title')).toHaveText('Bet Closed');
+  await expect(page.getByTestId('join-side-a')).toBeVisible();
+});
+
+test('a join request that fails outright says so and changes nothing', async ({ page }) => {
   await signInAs(page);
   const { calls } = await mockAppSync(page, {
     ...withOpenBet({ betAmount: 25 }, { balance: 250 }),
-    // The participant row is written first, so a transaction that fails after it
-    // would otherwise leave a participant in a bet they never paid into.
-    ...joinWrites({ createTransaction: () => null }),
+    joinBet: () => null,
   });
   await openLiveTab(page);
 
   await confirmJoin(page);
 
   await expect(page.getByTestId('alert-title')).toHaveText('Error');
-  expect(calls).toContain('createParticipant');
-  expect(calls).toContain('deleteParticipant');
-  // Never reached: the bet must not be updated when the stake was not taken.
-  expect(calls).not.toContain('updateBet');
+  await expect(page.getByTestId('join-side-a')).toBeVisible();
+  for (const write of CLIENT_MONEY_WRITES) expect(calls).not.toContain(write);
 });

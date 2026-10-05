@@ -932,6 +932,20 @@ const schema = a.schema({
     .handler(a.handler.function(money))
     .authorization((allow) => [allow.authenticated()]),
 
+  // Join a bet as the signed-in user: checked on the server, and the participant row, the
+  // stake and the bet's counts are one ledger transaction (shared/joinLogic.ts). Returns
+  // { status: 'joined', participantId, amount, balance } or { status: 'refused', reason }.
+  joinBet: a
+    .mutation()
+    .arguments({
+      betId: a.id().required(),
+      side: a.string().required(),
+      amount: a.float().required(),
+    })
+    .returns(a.json())
+    .handler(a.handler.function(money))
+    .authorization((allow) => [allow.authenticated()]),
+
 }).authorization((allow) => [
   // Allow the Lambda functions to be invoked and access data
   allow.resource(scheduledBetChecker).to(["query", "listen", "mutate"]),

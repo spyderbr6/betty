@@ -40,6 +40,12 @@ describe('cancelExpiredBet', () => {
     }
   });
 
+  it('cancels only if the bet is unchanged since it was read, so a late join is not stranded', async () => {
+    const { apply, calls } = fakeLedger([{ status: 'applied', balances: [] }]);
+    await cancelExpiredBet(apply, 'bet-1', refunds(1), 'r', '2026-10-04T12:00:00.000Z');
+    expect(calls[0].stateUpdates[0].expect).toEqual({ status: 'ACTIVE', updatedAt: '2026-10-04T12:00:00.000Z' });
+  });
+
   it('leaves the bet for the next run when the write is refused', async () => {
     const { apply } = fakeLedger([{ status: 'rejected', reason: 'boom' }]);
     await expect(cancelExpiredBet(apply, 'bet-1', refunds(1), 'r')).rejects.toThrow(/refused/);

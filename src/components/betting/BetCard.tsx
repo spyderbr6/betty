@@ -12,22 +12,16 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { generateClient } from 'aws-amplify/data';
-import { getCurrentUser } from 'aws-amplify/auth';
-import type { Schema } from '../../../amplify/data/resource';
 import { colors, typography, spacing, textStyles, shadows } from '../../styles';
 import { Bet, BetStatus } from '../../types/betting';
 import { formatCurrency } from '../../utils/formatting';
 import { useAuth } from '../../contexts/AuthContext';
 import { useBetData } from '../../contexts/BetDataContext';
-import { NotificationService } from '../../services/notificationService';
-import { TransactionService } from '../../services/transactionService';
+import { joinBet } from '../../services/joinBetService';
+import { joinMessage } from '../../services/joinBetLogic';
 import { BetAcceptanceService } from '../../services/betAcceptanceService';
 import { FileDisputeModal } from '../ui/FileDisputeModal';
 import { showAlert } from '../ui/CustomAlert';
-
-// Initialize GraphQL client
-const client = generateClient<Schema>();
 
 export interface BetCardProps {
   bet: Bet;
@@ -232,111 +226,19 @@ export const BetCard: React.FC<BetCardProps> = ({
     setSelectedSide(side);
 
     try {
-      const user = await getCurrentUser();
+      // The server checks the join (open, before the deadline, not already in, the stake,
+      // the balance) and writes the participant, the stake and the bet's counts in one
+      // transaction. It also tells the creator.
+      const result = await joinBet(bet.id, side, amount);
+      const { title, message } = joinMessage(result, amount);
+      showAlert(title, message);
 
-      // Check if user already joined this bet (server-side validation)
-      const { data: existingParticipants } = await client.models.Participant.list({
-        filter: {
-          betId: { eq: bet.id },
-          userId: { eq: user.userId }
-        }
-      });
-
-      if (existingParticipants && existingParticipants.length > 0) {
-        // User already joined - update local state to reflect this
-        const existingParticipant = existingParticipants[0];
-        setJoinedSide(existingParticipant.side as 'A' | 'B');
-        setJoinedAmount(existingParticipant.amount);
-        showAlert(
-          'Already Joined',
-          'You have already joined this bet.'
-        );
-        return;
-      }
-
-      // Check user balance
-      const { data: userData } = await client.models.User.get({ id: user.userId });
-      const currentBalance = userData?.balance || 0;
-
-      if (currentBalance < amount) {
-        showAlert(
-          'Insufficient Balance',
-          `You need $${amount} to join this bet, but your current balance is $${currentBalance.toFixed(2)}.`
-        );
-        return;
-      }
-
-      // Create participant record
-      const result = await client.models.Participant.create({
-        betId: bet.id,
-        userId: user.userId,
-        side: side,
-        amount: amount,
-        status: 'ACCEPTED',
-        payout: 0,
-      });
-
-      if (result.data) {
-        const participantId = result.data.id || '';
-        const sideName = side === 'A' ? (bet.odds.sideAName || 'Side A') : (bet.odds.sideBName || 'Side B');
-        const transaction = await TransactionService.recordBetPlacement(
-          user.userId,
-          amount,
-          bet.id,
-          participantId,
-          bet.title,
-          sideName
-        );
-
-        if (!transaction) {
-          await client.models.Participant.delete({ id: participantId });
-          throw new Error('Failed to record transaction');
-        }
-
-        // Update bet total pot and denormalized participant counts
-        await client.models.Bet.update({
-          id: bet.id,
-          totalPot: (bet.totalPot || 0) + amount,
-          sideACount: (bet.sideACount || 0) + (side === 'A' ? 1 : 0),
-          sideBCount: (bet.sideBCount || 0) + (side === 'B' ? 1 : 0),
-          participantUserIds: [...(bet.participantUserIds || []), user.userId],
-          updatedAt: new Date().toISOString()
-        });
-
-        // Notify bet creator
-        if (bet.creatorId !== user.userId) {
-          try {
-            const { data: joinedUserData } = await client.models.User.get({ id: user.userId });
-            if (joinedUserData) {
-              await NotificationService.createNotification({
-                userId: bet.creatorId,
-                type: 'BET_JOINED',
-                title: 'Someone Joined Your Bet!',
-                message: `${joinedUserData.displayName || joinedUserData.username} joined "${bet.title}" with $${amount}`,
-                priority: 'HIGH',
-                actionType: 'view_bet',
-                actionData: { betId: bet.id },
-                relatedBetId: bet.id,
-                relatedUserId: user.userId,
-              });
-            }
-          } catch (notificationError) {
-            console.warn('Failed to send bet joined notification:', notificationError);
-          }
-        }
-
-        showAlert(
-          'Joined Successfully!',
-          `You've joined the bet with $${amount}. Your new balance is $${(currentBalance - amount).toFixed(2)}.`
-        );
-
+      if (result?.status === 'joined') {
         onJoinBet?.(bet.id, side, amount);
 
         // Track which side we joined locally (for immediate UI feedback)
         setJoinedSide(side);
-        setJoinedAmount(amount);
-      } else {
-        throw new Error('Failed to join bet');
+        setJoinedAmount(result.amount);
       }
     } catch (error) {
       console.error('Error joining bet:', error);

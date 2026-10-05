@@ -75,10 +75,24 @@ export interface StateUpdate {
   table: TableKey;
   id: string;
   set: Record<string, unknown>;
+  /** Attribute -> number added to it; a missing attribute counts as 0 (a participant count). */
+  add?: Record<string, number>;
+  /** Attribute -> values appended to the list; a missing attribute counts as empty. */
+  append?: Record<string, unknown[]>;
   /** Attribute -> required current value. A missing attribute can be required with null. */
   expect?: Record<string, unknown>;
+  /**
+   * Attribute -> value it must currently be greater than (a deadline still ahead of now).
+   * ISO-8601 UTC times compare correctly as text.
+   */
+  expectAfter?: Record<string, string | number>;
   /** Require the item to exist (default true). */
   mustExist?: boolean;
+  /**
+   * Create the item instead: refused if it already exists, so a fixed id makes the create
+   * idempotent. Sets createdAt and the model's __typename, as AppSync would.
+   */
+  create?: { typename: string };
 }
 
 export type TableKey = 'User' | 'Transaction' | 'Bet' | 'Participant' | 'SquaresGame' | 'SquaresPurchase';
@@ -144,10 +158,27 @@ export function planLedgerWrite(input: LedgerPlanInput, tables: TableNames): Led
     }
   }
   const touchedUsers = new Set(entries.map((e) => e.userId));
+  const updatedItems = new Set<string>();
   for (const update of stateUpdates) {
     // The user's row is already in the transaction as its balance update
     if (update.table === 'User' && touchedUsers.has(update.id)) {
       return { ok: false, reason: 'INVALID', message: `State update on user ${update.id} whose balance also changes` };
+    }
+    // DynamoDB allows one operation per item per transaction
+    const itemKey = `${update.table}#${update.id}`;
+    if (updatedItems.has(itemKey)) {
+      return { ok: false, reason: 'INVALID', message: `Two state updates on ${itemKey}` };
+    }
+    updatedItems.add(itemKey);
+    // One attribute may be written one way only
+    const written = [...Object.keys(update.set), ...Object.keys(update.add ?? {}), ...Object.keys(update.append ?? {})];
+    written.push('updatedAt'); // always set by the ledger
+    if (update.create) written.push('createdAt', '__typename');
+    if (new Set(written).size !== written.length) {
+      return { ok: false, reason: 'INVALID', message: `An attribute of ${itemKey} is written twice` };
+    }
+    if (Object.values(update.add ?? {}).some((n) => !Number.isFinite(n))) {
+      return { ok: false, reason: 'INVALID', message: `Bad increment on ${itemKey}` };
     }
   }
 
@@ -295,7 +326,34 @@ function stateUpdateItem(update: StateUpdate, now: string, tables: TableNames): 
     values[`:s_${key}`] = value;
     sets.push(`#s_${key} = :s_${key}`);
   }
-  const conditions: string[] = update.mustExist === false ? [] : ['attribute_exists(#id)'];
+  for (const [key, value] of Object.entries(update.add ?? {})) {
+    names[`#a_${key}`] = key;
+    values[`:a_${key}`] = value;
+    values[':zero'] = 0;
+    sets.push(`#a_${key} = if_not_exists(#a_${key}, :zero) + :a_${key}`);
+  }
+  for (const [key, value] of Object.entries(update.append ?? {})) {
+    names[`#l_${key}`] = key;
+    values[`:l_${key}`] = value;
+    values[':emptyList'] = [];
+    sets.push(`#l_${key} = list_append(if_not_exists(#l_${key}, :emptyList), :l_${key})`);
+  }
+  let conditions: string[];
+  if (update.create) {
+    // A new item: refused if one with this id exists
+    names['#createdAt'] = 'createdAt';
+    names['#typename'] = '__typename';
+    values[':typename'] = update.create.typename;
+    sets.push('#createdAt = :now', '#typename = :typename');
+    conditions = ['attribute_not_exists(#id)'];
+  } else {
+    conditions = update.mustExist === false ? [] : ['attribute_exists(#id)'];
+  }
+  for (const [key, value] of Object.entries(update.expectAfter ?? {})) {
+    names[`#g_${key}`] = key;
+    values[`:g_${key}`] = value;
+    conditions.push(`#g_${key} > :g_${key}`);
+  }
   for (const [key, value] of Object.entries(update.expect ?? {})) {
     names[`#e_${key}`] = key;
     if (value === null) {

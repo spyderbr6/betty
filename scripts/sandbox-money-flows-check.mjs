@@ -12,6 +12,10 @@
  *   4. scheduled-squares-checker: a LOCKED game whose event is gone refunds every buyer
  *   5. scheduled-squares-checker: a period winner is paid from the purchases (not the
  *      totalPot field), once, with one payout record
+ *   6. money (joinBet): a join writes the participant, the stake and the bet's counts
+ *      together; second joins, short balances, wrong stakes, private bets without an
+ *      invitation and bets past their deadline are refused with nothing written;
+ *      simultaneous joins all count; callers that are not app users are refused
  *
  * The Lambdas act on ALL sandbox data when invoked, exactly as their schedules do.
  *
@@ -57,12 +61,12 @@ while (stacks.length) {
   for (const r of StackResources) {
     if (r.ResourceType === 'AWS::CloudFormation::Stack' && r.PhysicalResourceId) stacks.push(r.PhysicalResourceId);
     if (r.ResourceType !== 'AWS::Lambda::Function' || !r.PhysicalResourceId) continue;
-    for (const key of ['scheduledbetchecker', 'payoutprocessor', 'scheduledsquareschecker']) {
+    for (const key of ['scheduledbetchecker', 'payoutprocessor', 'scheduledsquareschecker', 'money']) {
       if (r.LogicalResourceId.toLowerCase().replace(/[^a-z]/g, '').includes(key)) functions[key] = r.PhysicalResourceId;
     }
   }
 }
-for (const key of ['scheduledbetchecker', 'payoutprocessor', 'scheduledsquareschecker']) {
+for (const key of ['scheduledbetchecker', 'payoutprocessor', 'scheduledsquareschecker', 'money']) {
   if (!functions[key]) {
     console.error(`Could not find the ${key} function in ${stackName}.`);
     process.exit(1);
@@ -75,6 +79,28 @@ async function invoke(key) {
   const payload = Buffer.from(result.Payload ?? []).toString();
   if (result.FunctionError) throw new Error(`${key} failed: ${payload}`);
   return payload;
+}
+
+/**
+ * joinBet as an app user. Creating and signing in a Cognito user is out of reach of the
+ * local profile, so this invokes the money function with the event AppSync would send for
+ * a signed-in user (Amplify's resolver payload with a user-pool identity): the handler,
+ * the ledger and the tables are the real ones; only AppSync's sign-in check is skipped.
+ */
+async function joinAs(userId, betId, side, amount) {
+  const event = {
+    typeName: 'Mutation',
+    fieldName: 'joinBet',
+    arguments: { betId, side, amount },
+    identity: { sub: userId, username: userId, claims: { sub: userId }, groups: null },
+    source: null,
+    request: { headers: {} },
+    prev: null,
+  };
+  const result = await lambda.send(new InvokeCommand({ FunctionName: functions.money, Payload: Buffer.from(JSON.stringify(event)) }));
+  const payload = Buffer.from(result.Payload ?? []).toString();
+  if (result.FunctionError) throw new Error(`joinBet failed: ${payload}`);
+  return JSON.parse(payload);
 }
 
 // --- signed GraphQL ---------------------------------------------------------------------
@@ -286,6 +312,79 @@ try {
     );
     check('period winner paid 25% of the purchases, net of fee', same(await balance(bob), bobBefore + 1.94) && tx?.amount === 2 && tx.platformFee === 0.06, `bob +${((await balance(bob)) - bobBefore).toFixed(2)}, ${JSON.stringify(tx)}`);
     check('overlapping runs record the period once', payouts.payoutsBySquaresGame.items.length === 1, JSON.stringify(payouts.payoutsBySquaresGame.items));
+  }
+
+  // 6. Joining a bet through the server (joinBet) ------------------------------------------
+  {
+    const credit = async (userId, amount) => {
+      const id = `zz-flow-credit#${userId}#${Date.now()}`;
+      ledgerIds.push(id);
+      const data = await gql('mutation ($e: AWSJSON!) { ledgerApply(entries: $e) }', {
+        e: JSON.stringify([{ transactionId: id, userId, type: 'ADMIN_ADJUSTMENT', delta: amount, amount: Math.abs(amount), status: 'COMPLETED', mode: 'create', notes: run }]),
+      });
+      return JSON.parse(data.ledgerApply);
+    };
+    const open = (tag, fields = {}) =>
+      bet(tag, {
+        creatorId: alice, status: 'ACTIVE', deadline: new Date(Date.now() + 3600_000).toISOString(),
+        betAmount: 5, totalPot: 5, sideACount: 1, sideBCount: 0, participantUserIds: [alice], isPrivate: false, ...fields,
+      });
+    const trackJoin = (betId, userId) => {
+      created.push(['participant', `${betId}#${userId}`]);
+      ledgerIds.push(`stake#${betId}#${userId}`);
+    };
+
+    const betId = await open('join');
+    await participant(betId, alice, 'A', 5);
+    const carol = await user('carol');
+    const bobBefore = await balance(bob);
+    await credit(bob, 7 - bobBefore); // bob holds exactly $7
+    await credit(carol, 3);
+
+    trackJoin(betId, bob);
+    const joined = await joinAs(bob, betId, 'B', 5);
+    const b = await get('bet', betId, 'totalPot sideACount sideBCount participantUserIds');
+    const p = await get('participant', `${betId}#${bob}`, 'side amount status joinedAt');
+    check('join takes the stake and returns the new balance', joined.status === 'joined' && same(joined.balance, 2) && same(await balance(bob), 2), JSON.stringify(joined));
+    check('join writes the participant row', p?.side === 'B' && p.amount === 5 && p.status === 'ACCEPTED' && Boolean(p.joinedAt), JSON.stringify(p));
+    check('join updates the counts, pot and list in the same write', b.sideBCount === 1 && b.sideACount === 1 && b.totalPot === 10 && b.participantUserIds.includes(bob), JSON.stringify(b));
+    const listed = await gql('query ($id: ID!) { participantsByBet(betId: $id) { items { id } } }', { id: betId });
+    check('the new participant is in the bet\'s participant index', listed.participantsByBet.items.some((i) => i.id === `${betId}#${bob}`));
+
+    const again = await joinAs(bob, betId, 'A', 5);
+    check('a second join is refused and charges nothing', again.reason === 'ALREADY_JOINED' && same(await balance(bob), 2), JSON.stringify(again));
+
+    trackJoin(betId, carol);
+    const poor = await joinAs(carol, betId, 'B', 5);
+    check('a join the balance cannot cover is refused, with nothing written', poor.reason === 'INSUFFICIENT_FUNDS' && same(await balance(carol), 3) && !(await get('participant', `${betId}#${carol}`, 'id')), JSON.stringify(poor));
+
+    const changed = await joinAs(carol, betId, 'B', 1);
+    check('a join for a stake other than the bet\'s is refused', changed.reason === 'AMOUNT_CHANGED', JSON.stringify(changed));
+
+    const privateId = await open('join-private', { isPrivate: true });
+    const privateTry = await joinAs(carol, privateId, 'B', 5);
+    check('a private bet needs an invitation', privateTry.reason === 'NOT_INVITED', JSON.stringify(privateTry));
+
+    const expiredId = await open('join-expired', { deadline: hoursAgo(0.1) });
+    const late = await joinAs(carol, expiredId, 'B', 5);
+    check('a bet past its deadline cannot be joined, even while still ACTIVE', late.reason === 'EXPIRED', JSON.stringify(late));
+
+    // Three people join one bet at the same moment: every count lands
+    const rushId = await open('join-rush');
+    const rushers = [await user('dave'), await user('erin'), await user('frank')];
+    for (const r of rushers) { await credit(r, 5); trackJoin(rushId, r); }
+    const rush = await Promise.all(rushers.map((r) => joinAs(r, rushId, 'B', 5)));
+    const rb = await get('bet', rushId, 'totalPot sideBCount participantUserIds');
+    check('simultaneous joins all count', rush.every((r) => r.status === 'joined') && rb.sideBCount === 3 && rb.totalPot === 20 && rb.participantUserIds.length === 4, `${rush.map((r) => r.status)} ${JSON.stringify(rb)}`);
+
+    // Our own Lambdas (IAM) are not app users: joinBet through AppSync refuses them
+    let refused = false;
+    try {
+      await gql('mutation ($b: ID!, $s: String!, $a: Float!) { joinBet(betId: $b, side: $s, amount: $a) }', { b: betId, s: 'B', a: 5 });
+    } catch (error) {
+      refused = String(error.message).includes('Unauthorized');
+    }
+    check('joinBet refuses callers that are not signed-in users', refused);
   }
 } catch (error) {
   console.error('ERROR', error.message ?? error);

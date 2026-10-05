@@ -26,15 +26,27 @@ export function refundEntry(betId: string, refund: Refund, reason: string): Ledg
   };
 }
 
+/**
+ * `readUpdatedAt` is the bet's updatedAt when the checker listed it. Requiring it unchanged
+ * means a join that lands after the participants were read (the index can lag a moment
+ * behind the deadline) makes this run skip the bet; the next run sees the joiner and sends
+ * the bet to resolution instead of cancelling it with their stake unreturned.
+ */
 export function cancelExpiredBet(
   apply: ApplyLedger,
   betId: string,
   refunds: Refund[],
-  reason: string
+  reason: string,
+  readUpdatedAt?: string | null
 ): Promise<CancelOutcome> {
   return cancelWithRefunds(
     apply,
-    { table: 'Bet', id: betId, set: { status: 'CANCELLED', resolutionReason: reason }, expect: { status: 'ACTIVE' } },
+    {
+      table: 'Bet',
+      id: betId,
+      set: { status: 'CANCELLED', resolutionReason: reason },
+      expect: { status: 'ACTIVE', ...(typeof readUpdatedAt === 'string' ? { updatedAt: readUpdatedAt } : {}) },
+    },
     refunds.map((refund) => refundEntry(betId, refund, reason))
   );
 }

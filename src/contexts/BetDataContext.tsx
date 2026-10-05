@@ -13,7 +13,8 @@ import type { Schema } from '../../amplify/data/resource';
 import { useAuth } from './AuthContext';
 import { Bet, BetInvitation, BetInvitationStatus, SquaresInvitation } from '../types/betting';
 import { NotificationService } from '../services/notificationService';
-import { TransactionService } from '../services/transactionService';
+import { joinBet } from '../services/joinBetService';
+import { joinMessage } from '../services/joinBetLogic';
 import { showAlert } from '../components/ui/CustomAlert';
 
 const client = generateClient<Schema>();
@@ -64,7 +65,6 @@ interface BetDataContextValue {
 
   // Actions
   refresh: () => Promise<void>;
-  joinBet: (bet: Bet, side: 'A' | 'B', amount: number) => Promise<boolean>;
   acceptBetInvitation: (invitation: BetInvitation, selectedSide: string) => Promise<boolean>;
   declineBetInvitation: (invitation: BetInvitation) => Promise<void>;
   declineSquaresInvitation: (invitation: SquaresInvitation) => Promise<void>;
@@ -917,161 +917,32 @@ export const BetDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
     await loadAllData(true);
   }, [loadAllData]);
 
-  const joinBet = useCallback(async (bet: Bet, side: 'A' | 'B', amount: number): Promise<boolean> => {
-    if (!user?.userId) return false;
-
-    // Optimistic update: move bet from joinable → myBets
-    const updatedBet: Bet = {
-      ...bet,
-      sideACount: (bet.sideACount || 0) + (side === 'A' ? 1 : 0),
-      sideBCount: (bet.sideBCount || 0) + (side === 'B' ? 1 : 0),
-      participantUserIds: [...(bet.participantUserIds || []), user.userId],
-      totalPot: (bet.totalPot || 0) + amount,
-    };
-
-    setAllBets(prev => {
-      const updated = new Map(prev);
-      updated.set(bet.id, updatedBet);
-      return updated;
-    });
-
-    try {
-      // Server-side: check for existing participation
-      const { data: existingParticipants } = await client.models.Participant.list({
-        filter: { betId: { eq: bet.id }, userId: { eq: user.userId } }
-      });
-
-      if (existingParticipants && existingParticipants.length > 0) {
-        showAlert('Already Joined', 'You have already joined this bet.');
-        return true; // Already joined, not an error
-      }
-
-      // Check balance
-      const { data: userData } = await client.models.User.get({ id: user.userId });
-      const currentBalance = userData?.balance || 0;
-
-      if (currentBalance < amount) {
-        // Rollback optimistic update
-        setAllBets(prev => {
-          const updated = new Map(prev);
-          updated.set(bet.id, bet);
-          return updated;
-        });
-        showAlert(
-          'Insufficient Balance',
-          `You need $${amount} to join this bet, but your current balance is $${currentBalance.toFixed(2)}.`
-        );
-        return false;
-      }
-
-      // Create participant
-      const result = await client.models.Participant.create({
-        betId: bet.id,
-        userId: user.userId,
-        side: side,
-        amount: amount,
-        status: 'ACCEPTED',
-        payout: 0,
-      });
-
-      if (!result.data) throw new Error('Failed to create participant');
-
-      const participantId = result.data.id || '';
-      const sideName = side === 'A' ? (bet.odds.sideAName || 'Side A') : (bet.odds.sideBName || 'Side B');
-
-      // Record transaction
-      const transaction = await TransactionService.recordBetPlacement(
-        user.userId,
-        amount,
-        bet.id,
-        participantId,
-        bet.title,
-        sideName
-      );
-
-      if (!transaction) {
-        await client.models.Participant.delete({ id: participantId });
-        throw new Error('Failed to record transaction');
-      }
-
-      // Update bet record (denormalized counts + pot)
-      await client.models.Bet.update({
-        id: bet.id,
-        totalPot: (bet.totalPot || 0) + amount,
-        sideACount: (bet.sideACount || 0) + (side === 'A' ? 1 : 0),
-        sideBCount: (bet.sideBCount || 0) + (side === 'B' ? 1 : 0),
-        participantUserIds: [...(bet.participantUserIds || []), user.userId],
-        updatedAt: new Date().toISOString(),
-      });
-
-      // Notify creator
-      if (bet.creatorId !== user.userId) {
-        try {
-          const { data: joinedUserData } = await client.models.User.get({ id: user.userId });
-          if (joinedUserData) {
-            await NotificationService.createNotification({
-              userId: bet.creatorId,
-              type: 'BET_JOINED',
-              title: 'Someone Joined Your Bet!',
-              message: `${joinedUserData.displayName || joinedUserData.username} joined "${bet.title}" with $${amount}`,
-              priority: 'HIGH',
-              actionType: 'view_bet',
-              actionData: { betId: bet.id },
-              relatedBetId: bet.id,
-              relatedUserId: user.userId,
-            });
-          }
-        } catch (notificationError) {
-          console.warn('Failed to send bet joined notification:', notificationError);
-        }
-      }
-
-      showAlert(
-        'Joined Successfully!',
-        `You've joined the bet with $${amount}. Your new balance is $${(currentBalance - amount).toFixed(2)}.`
-      );
-
-      return true;
-    } catch (error) {
-      console.error('Error joining bet:', error);
-      // Rollback optimistic update
-      setAllBets(prev => {
-        const updated = new Map(prev);
-        updated.set(bet.id, bet);
-        return updated;
-      });
-      showAlert('Error', 'Failed to join bet. Please try again.');
-      return false;
-    }
-  }, [user?.userId]);
-
   const acceptBetInvitationAction = useCallback(async (invitation: BetInvitation, selectedSide: string): Promise<boolean> => {
     if (!user?.userId || !invitation.bet) return false;
 
     const betAmount = invitation.bet.betAmount || 0;
+    const removeInvitation = () =>
+      setBetInvitationsMap(prev => {
+        const updated = new Map(prev);
+        updated.delete(invitation.id);
+        return updated;
+      });
 
     try {
-      // Check bet is still active
-      const { data: currentBet } = await client.models.Bet.get({ id: invitation.betId });
-      if (!currentBet || currentBet.status !== 'ACTIVE') {
-        showAlert('Bet Not Available', 'This bet is no longer available to join.');
-        setBetInvitationsMap(prev => {
-          const updated = new Map(prev);
-          updated.delete(invitation.id);
-          return updated;
-        });
-        return false;
-      }
+      if (selectedSide !== 'A' && selectedSide !== 'B') throw new Error(`Invalid side ${selectedSide}`);
 
-      // Check balance
-      const { data: currentUser } = await client.models.User.get({ id: user.userId });
-      const currentBalance = currentUser?.balance || 0;
-
-      if (currentBalance < betAmount) {
-        showAlert(
-          'Insufficient Balance',
-          `You need $${betAmount.toFixed(2)} to join this bet, but you only have $${currentBalance.toFixed(2)}.`
-        );
+      // Join first, through the server (joinBetService): it checks the bet is open, the
+      // deadline, the invitation and the balance, and writes the participant, the stake
+      // and the bet's counts in one transaction. The invitation used to be marked
+      // accepted before the join, so a join that failed left it accepted and unpaid.
+      const result = await joinBet(invitation.betId, selectedSide, betAmount);
+      if (result?.status !== 'joined') {
+        const { title, message } = joinMessage(result, betAmount);
+        showAlert(title, message);
+        // The bet is gone or closed: the invitation can no longer be acted on
+        if (result?.status === 'refused' && ['NOT_FOUND', 'NOT_OPEN', 'EXPIRED'].includes(result.reason)) {
+          removeInvitation();
+        }
         return false;
       }
 
@@ -1102,53 +973,8 @@ export const BetDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
         console.warn('Failed to send bet invitation accepted notification:', notificationError);
       }
 
-      // Create participant
-      const participantResult = await client.models.Participant.create({
-        betId: invitation.betId,
-        userId: user.userId,
-        side: selectedSide,
-        amount: betAmount,
-        status: 'ACCEPTED',
-        payout: 0,
-        joinedAt: new Date().toISOString(),
-      });
-
-      if (!participantResult.data) throw new Error('Failed to create participant record');
-
-      // Record transaction
-      const participantId = participantResult.data.id || '';
-      const betOdds = currentBet.odds ? (typeof currentBet.odds === 'string' ? JSON.parse(currentBet.odds) : currentBet.odds) : { sideAName: 'Side A', sideBName: 'Side B' };
-      const joinedSideName = selectedSide === 'A' ? (betOdds.sideAName || 'Side A') : (betOdds.sideBName || 'Side B');
-
-      const transaction = await TransactionService.recordBetPlacement(
-        user.userId,
-        betAmount,
-        invitation.betId,
-        participantId,
-        currentBet.title || 'Bet',
-        joinedSideName
-      );
-
-      if (!transaction) {
-        await client.models.Participant.delete({ id: participantId });
-        throw new Error('Failed to record transaction');
-      }
-
-      // Update bet denormalized counts
-      await client.models.Bet.update({
-        id: invitation.betId,
-        totalPot: (currentBet.totalPot || 0) + betAmount,
-        sideACount: (currentBet.sideACount || 0) + (selectedSide === 'A' ? 1 : 0),
-        sideBCount: (currentBet.sideBCount || 0) + (selectedSide === 'B' ? 1 : 0),
-        participantUserIds: [...(currentBet.participantUserIds || []), user.userId],
-      });
-
       // Optimistic removal of invitation from local state
-      setBetInvitationsMap(prev => {
-        const updated = new Map(prev);
-        updated.delete(invitation.id);
-        return updated;
-      });
+      removeInvitation();
 
       return true;
     } catch (error) {
@@ -1272,7 +1098,6 @@ export const BetDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
     isInitialLoading,
     isRefreshing,
     refresh,
-    joinBet,
     acceptBetInvitation: acceptBetInvitationAction,
     declineBetInvitation: declineBetInvitationAction,
     declineSquaresInvitation: declineSquaresInvitationAction,
@@ -1291,7 +1116,6 @@ export const BetDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
     isInitialLoading,
     isRefreshing,
     refresh,
-    joinBet,
     acceptBetInvitationAction,
     declineBetInvitationAction,
     declineSquaresInvitationAction,

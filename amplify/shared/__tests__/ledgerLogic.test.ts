@@ -183,6 +183,43 @@ describe('planLedgerWrite', () => {
     expect(state && 'Update' in state && state.Update.ConditionExpression).toBe('attribute_exists(#id) AND attribute_not_exists(#e_payoutStatus)');
   });
 
+  const stateItem = (stateUpdates: Parameters<typeof planLedgerWrite>[0]['stateUpdates']) => {
+    const plan = ok(planLedgerWrite({ entries: [entry()], balances: { 'u-1': 50 }, stateUpdates, now: NOW }, tables));
+    const item = plan.items.find((i) => 'Update' in i && i.Update.TableName !== tables.User && i.Update.TableName !== tables.Transaction);
+    if (!item || !('Update' in item)) throw new Error('no state item');
+    return item.Update;
+  };
+
+  it('creates an item only if its id is free, with createdAt and __typename', () => {
+    const update = stateItem([{ table: 'Participant', id: 'bet-1#u-1', set: { betId: 'bet-1' }, create: { typename: 'Participant' } }]);
+    expect(update.ConditionExpression).toBe('attribute_not_exists(#id)');
+    expect(update.UpdateExpression).toContain('#createdAt = :now');
+    expect(update.ExpressionAttributeValues).toMatchObject({ ':typename': 'Participant', ':now': NOW, ':s_betId': 'bet-1' });
+  });
+
+  it('adds to counters and appends to lists, treating missing ones as empty', () => {
+    const update = stateItem([{ table: 'Bet', id: 'bet-1', set: {}, add: { sideACount: 1, totalPot: 25 }, append: { participantUserIds: ['u-1'] } }]);
+    expect(update.UpdateExpression).toContain('#a_sideACount = if_not_exists(#a_sideACount, :zero) + :a_sideACount');
+    expect(update.UpdateExpression).toContain('#l_participantUserIds = list_append(if_not_exists(#l_participantUserIds, :emptyList), :l_participantUserIds)');
+    expect(update.ExpressionAttributeValues).toMatchObject({ ':a_totalPot': 25, ':l_participantUserIds': ['u-1'], ':zero': 0, ':emptyList': [] });
+  });
+
+  it('can require a time still ahead (a deadline not yet passed)', () => {
+    const update = stateItem([{ table: 'Bet', id: 'bet-1', set: {}, add: { sideACount: 1 }, expect: { status: 'ACTIVE' }, expectAfter: { deadline: NOW } }]);
+    expect(update.ConditionExpression).toBe('attribute_exists(#id) AND #g_deadline > :g_deadline AND #e_status = :e_status');
+    expect(update.ExpressionAttributeValues).toMatchObject({ ':g_deadline': NOW, ':e_status': 'ACTIVE' });
+  });
+
+  it('refuses two updates to one item, or one attribute written two ways', () => {
+    const plan = (stateUpdates: Parameters<typeof planLedgerWrite>[0]['stateUpdates']) =>
+      planLedgerWrite({ entries: [], balances: {}, stateUpdates, now: NOW }, tables);
+    expect(plan([{ table: 'Bet', id: 'b', set: { a: 1 } }, { table: 'Bet', id: 'b', set: { c: 1 } }])).toMatchObject({ ok: false, reason: 'INVALID' });
+    expect(plan([{ table: 'Bet', id: 'b', set: { n: 1 }, add: { n: 1 } }])).toMatchObject({ ok: false, reason: 'INVALID' });
+    expect(plan([{ table: 'Bet', id: 'b', set: { updatedAt: 'x' } }])).toMatchObject({ ok: false, reason: 'INVALID' });
+    expect(plan([{ table: 'Participant', id: 'p', set: { createdAt: 'x' }, create: { typename: 'Participant' } }])).toMatchObject({ ok: false, reason: 'INVALID' });
+    expect(plan([{ table: 'Bet', id: 'b', set: {}, add: { n: Number.NaN } }])).toMatchObject({ ok: false, reason: 'INVALID' });
+  });
+
   it('refuses invalid input', () => {
     expect(planLedgerWrite({ entries: [entry(), entry()], balances: { 'u-1': 50 }, now: NOW }, tables)).toMatchObject({ ok: false, reason: 'INVALID' });
     expect(planLedgerWrite({ entries: [entry({ amount: -1 })], balances: { 'u-1': 50 }, now: NOW }, tables)).toMatchObject({ ok: false, reason: 'INVALID' });
