@@ -35,6 +35,7 @@ import { cancelSquaresGame, checkSquaresCancel, type SquaresCancelRefusal } from
 import { checkWithdraw, planDecide, planWithdraw, type DecideRefusal, type WithdrawResult } from '../../shared/withdrawLogic';
 import { DEFAULT_TRUST_SCORE, MAX_TRUST_SCORE, MIN_TRUST_SCORE, TRUST_CHANGES } from '../../../src/config/trustScoreConfig';
 import { checkResolveDispute, planUphold, type DisputeOutcome, type ResolveDisputeResult } from '../../shared/disputeLogic';
+import { newUserRecord, type EnsureUserRecordResult, type NewUserRecordArgs } from '../../shared/userRecordLogic';
 import { randomInt } from 'node:crypto';
 
 const { resourceConfig, libraryOptions } = await getAmplifyDataClientConfig(env);
@@ -69,6 +70,11 @@ export const handler = async (event: AmplifyResolverEvent, context: Context): Pr
     case 'adminDecideTransaction': {
       requireUser(caller, fieldName);
       return adminDecideTransaction(caller as Extract<Caller, { kind: 'user' }>, event.arguments as unknown as DecideArgs);
+    }
+    case 'ensureMyUserRecord': {
+      const userId = requireUser(caller, fieldName);
+      const identityUsername = (event.identity as { username?: unknown } | null)?.username;
+      return ensureMyUserRecord(userId, typeof identityUsername === 'string' && identityUsername ? identityUsername : userId, event.arguments as NewUserRecordArgs);
     }
     case 'adminResolveDispute': {
       requireUser(caller, fieldName);
@@ -725,6 +731,30 @@ async function adminDecideTransaction(caller: Extract<Caller, { kind: 'user' }>,
   }
 
   return { status: 'decided', outcome, userId, credited: plan.entry.delta };
+}
+
+// --- ensureMyUserRecord (app users) --------------------------------------------------------
+
+/**
+ * Create the caller's own User record if it does not exist, with the money and role fields
+ * fixed (userRecordLogic). Through AppSync, so the app's subscriptions see it. "exists"
+ * when it is already there or another call created it first; the app reads it either way.
+ */
+async function ensureMyUserRecord(userId: string, username: string, args: NewUserRecordArgs): Promise<EnsureUserRecordResult> {
+  const { data: existing } = await client.models.User.get({ id: userId });
+  if (existing) return { status: 'exists' };
+
+  const record = newUserRecord({ userId, username, args, now: new Date().toISOString() });
+  try {
+    const { data: created, errors } = await client.models.User.create(record);
+    if (created) return { status: 'created' };
+    console.warn(`[Money] User record create for ${userId} returned errors:`, JSON.stringify(errors));
+  } catch (error) {
+    console.warn(`[Money] User record create for ${userId} threw:`, error);
+  }
+  // Most often a concurrent call created it first (the conditional create fails)
+  const { data: raced } = await client.models.User.get({ id: userId });
+  return raced ? { status: 'exists' } : { status: 'refused', reason: 'INVALID' };
 }
 
 // --- adminResolveDispute (admins) --------------------------------------------------------

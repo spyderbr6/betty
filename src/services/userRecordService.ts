@@ -36,7 +36,23 @@ export function ensureUserRecord(params: {
   return ensureUserRecordWith<UserRecord>(
     {
       get: async (id) => (await userModel().get({ id })).data ?? null,
-      create: (input) => userModel().create(input),
+      // The server creates the record (docs/SECURITY_PLAN.md step 3f): only for the caller,
+      // with balance 0, the default trust score and role USER, whatever is sent. It used to
+      // be a client User.create with every field the app chose. Only the display details
+      // are passed; the record is then read back, so the guard in ensureUserRecordWith
+      // (read, create, re-read after a lost race) works exactly as before.
+      create: async (input) => {
+        const { data, errors } = await client.mutations.ensureMyUserRecord({
+          email: input.email as string | undefined,
+          displayName: input.displayName as string | undefined,
+          tosVersion: input.tosVersion as string | undefined,
+          privacyVersion: input.privacyVersion as string | undefined,
+        });
+        if (errors?.length) return { data: null, errors };
+        const result = typeof data === 'string' ? JSON.parse(data) : data;
+        if (result?.status !== 'created' && result?.status !== 'exists') return { data: null, errors: [result] };
+        return { data: (await userModel().get({ id: input.id as string })).data ?? null };
+      },
       fetchAttributes: () => fetchUserAttributes(),
       createDefaultPreferences: (id) => NotificationPreferencesService.createDefaultPreferences(id),
       tosVersion: CURRENT_TOS_VERSION,

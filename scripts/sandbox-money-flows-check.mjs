@@ -37,6 +37,8 @@
  *  13. money (adminResolveDispute): admins only; upholding clears the winner and cancels
  *      pending payouts so the creator resolves again; dismissing leaves the result; a
  *      paid bet's dispute cannot be upheld
+ *  14. money (ensureMyUserRecord): the server creates the caller's own record with balance
+ *      0 and role USER whatever is sent, and a second call changes nothing
  *
  * The Lambdas act on ALL sandbox data when invoked, exactly as their schedules do.
  *
@@ -756,6 +758,15 @@ try {
     const d3 = await disputeOn(r.id, r.taker, r.creator);
     const onPaid = await asAdmin('adminResolveDispute', { disputeId: d3, outcome: 'RESOLVED_FOR_FILER' });
     check('a dispute against a bet already paid cannot be upheld here', onPaid.reason === 'ALREADY_PAID' && (await get('bet', r.id, 'status')).status === 'RESOLVED', JSON.stringify(onPaid));
+
+    // 14. A new user's own record (ensureMyUserRecord) ---------------------------------------
+    const newcomer = `${run}-newcomer`;
+    created.push(['user', newcomer]);
+    const made14 = await asUser(newcomer, 'ensureMyUserRecord', { email: 'new@example.invalid', displayName: 'New Person', tosVersion: 'v1', privacyVersion: 'v1', balance: 1000, role: 'ADMIN' });
+    const rec = await get('user', newcomer, 'id balance role trustScore displayName email tosAccepted');
+    check('a new user\'s record is created by the server, with balance 0 and role USER whatever is sent', made14.status === 'created' && rec?.balance === 0 && rec.role === 'USER' && rec.trustScore === 5 && rec.displayName === 'New Person' && rec.tosAccepted === true, `${JSON.stringify(made14)} ${JSON.stringify(rec)}`);
+    const again14 = await asUser(newcomer, 'ensureMyUserRecord', { displayName: 'Someone Else' });
+    check('a second call finds it and changes nothing', again14.status === 'exists' && (await get('user', newcomer, 'displayName')).displayName === 'New Person', JSON.stringify(again14));
     for (const h of (await gql('query ($f: ModelTrustScoreHistoryFilterInput) { listTrustScoreHistories(filter: $f, limit: 1000) { items { id } } }', { f: { relatedBetId: { eq: a.id } } })).listTrustScoreHistories.items) {
       created.push(['trustScoreHistory', h.id]);
     }

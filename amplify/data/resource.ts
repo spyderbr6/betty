@@ -991,6 +991,21 @@ const schema = a.schema({
     .handler(a.handler.function(money))
     .authorization((allow) => [allow.authenticated()]),
 
+  // Create the signed-in user's own User record if it does not exist, with balance 0, the
+  // default trust score and role USER fixed by the server (shared/userRecordLogic.ts).
+  // Returns { status: 'created' | 'exists' }; the app reads the record either way.
+  ensureMyUserRecord: a
+    .mutation()
+    .arguments({
+      email: a.string(),
+      displayName: a.string(),
+      tosVersion: a.string(),
+      privacyVersion: a.string(),
+    })
+    .returns(a.json())
+    .handler(a.handler.function(money))
+    .authorization((allow) => [allow.authenticated()]),
+
   // An admin (Cognito admins group) decides a dispute: upheld clears the winner and
   // cancels the bet's pending payouts in one ledger transaction so the creator resolves
   // again; dismissed / for the creator lets the payout go ahead (shared/disputeLogic.ts).
