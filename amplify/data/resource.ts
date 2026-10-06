@@ -8,6 +8,7 @@ import { stripePaymentIntent } from "../functions/stripe-payment-intent/resource
 import { stripeWebhook } from "../functions/stripe-webhook/resource";
 import { stripeManage } from "../functions/stripe-manage/resource";
 import { deviceRegistry } from "../functions/device-registry/resource";
+import { money } from "../functions/money/resource";
 import { NOTIFICATION_TYPES, NOTIFICATION_CATEGORIES } from "../shared/notificationCatalog";
 
 /*== SIDEBET BETTING PLATFORM SCHEMA =======================================
@@ -238,6 +239,7 @@ const schema = a.schema({
       winningSide: a.string(), // Which side won
       resolutionReason: a.string(), // Why the bet was resolved this way
       disputeWindowEndsAt: a.datetime(), // When the 48-hour dispute window closes
+      resolvedAt: a.datetime(), // When the creator picked the winner (written by the server's resolveBet)
       eventId: a.id(), // Optional link to live event
       isPrivate: a.boolean().default(false), // Private bets only visible to invited users
       isTestBet: a.boolean().default(false), // Flag for admin test bets (excludes from real bet lists)
@@ -351,6 +353,13 @@ const schema = a.schema({
       // Relations
       bet: a.belongsTo('Bet', 'betId'),
     })
+    .secondaryIndexes((index) => [
+      // Disputes on a bet. Settlement must see every open dispute; a filtered Scan reads
+      // one page of the table and could miss one.
+      index('betId')
+        .sortKeys(['createdAt'])
+        .queryField('disputesByBet'),
+    ])
     .authorization((allow) => [
       allow.owner().to(['create', 'read']),
       allow.authenticated().to(['read', 'create', 'update']) // Admins can update to resolve
@@ -559,7 +568,13 @@ const schema = a.schema({
       // and the webhook returns 200 without ever crediting the balance. Only card
       // deposits carry a stripePaymentIntentId, so only they land in this index.
       index('stripePaymentIntentId')
-        .queryField('transactionsByStripePaymentIntentId')
+        .queryField('transactionsByStripePaymentIntentId'),
+      // Every ledger row for a bet: settlement and dispute handling find payouts this way.
+      // The payout processor used a filtered Scan, which reads one page of the table, then
+      // marked the bet resolved: payouts past that page were never made.
+      index('relatedBetId')
+        .sortKeys(['createdAt'])
+        .queryField('transactionsByBet')
     ])
     .authorization((allow) => [
       allow.owner().to(['create', 'read']), // Users can create their own transactions and read them
@@ -897,6 +912,175 @@ const schema = a.schema({
     .handler(a.handler.function(stripeManage))
     .authorization((allow) => [allow.authenticated()]),
 
+  // --- Money (docs/SECURITY_PLAN.md) ---------------------------------------------
+  // Internal: for our own Lambdas only. The authorization rule is required to declare the
+  // operation; the money handler refuses every caller that is not an IAM role in this
+  // account (shared/callerAuth.ts), so app users cannot use these.
+  ledgerApply: a
+    .mutation()
+    .arguments({
+      entries: a.json().required(),
+      stateUpdates: a.json(),
+    })
+    .returns(a.json())
+    .handler(a.handler.function(money))
+    .authorization((allow) => [allow.authenticated()]),
+
+  settleBet: a
+    .mutation()
+    .arguments({ betId: a.id().required() })
+    .returns(a.json())
+    .handler(a.handler.function(money))
+    .authorization((allow) => [allow.authenticated()]),
+
+  // Join a bet as the signed-in user: checked on the server, and the participant row, the
+  // stake and the bet's counts are one ledger transaction (shared/joinLogic.ts). Returns
+  // { status: 'joined', participantId, amount, balance } or { status: 'refused', reason }.
+  joinBet: a
+    .mutation()
+    .arguments({
+      betId: a.id().required(),
+      side: a.string().required(),
+      amount: a.float().required(),
+    })
+    .returns(a.json())
+    .handler(a.handler.function(money))
+    .authorization((allow) => [allow.authenticated()]),
+
+  // The bet's creator picks the winner: checked on the server, payouts computed from the
+  // stakes, and the bet, each participant's outcome and the pending winnings written in
+  // one ledger transaction (shared/resolveLogic.ts). No money moves until the payout
+  // processor pays after the 48-hour dispute window. Returns { status: 'resolved', ... }
+  // or { status: 'refused', reason }.
+  resolveBet: a
+    .mutation()
+    .arguments({
+      betId: a.id().required(),
+      winningSide: a.string().required(),
+    })
+    .returns(a.json())
+    .handler(a.handler.function(money))
+    .authorization((allow) => [allow.authenticated()]),
+
+  // Request a withdrawal to one of the user's Venmo accounts: the amount leaves the
+  // balance now as a PENDING withdrawal, with the fee computed here (shared/withdrawLogic.ts).
+  // requestId is the app's (a UUID), so a repeated request reaches the same withdrawal.
+  requestWithdrawal: a
+    .mutation()
+    .arguments({
+      requestId: a.id().required(),
+      amount: a.float().required(),
+      paymentMethodId: a.id().required(),
+    })
+    .returns(a.json())
+    .handler(a.handler.function(money))
+    .authorization((allow) => [allow.authenticated()]),
+
+  // An admin (the Cognito admins group, checked by the money function) approves or
+  // rejects a pending deposit or withdrawal; the money and the status change are one
+  // ledger transaction. actualAmount is a lower amount actually received on a deposit.
+  adminDecideTransaction: a
+    .mutation()
+    .arguments({
+      transactionId: a.id().required(),
+      approve: a.boolean().required(),
+      reason: a.string(),
+      actualAmount: a.float(),
+    })
+    .returns(a.json())
+    .handler(a.handler.function(money))
+    .authorization((allow) => [allow.authenticated()]),
+
+  // Create the signed-in user's own User record if it does not exist, with balance 0, the
+  // default trust score and role USER fixed by the server (shared/userRecordLogic.ts).
+  // Returns { status: 'created' | 'exists' }; the app reads the record either way.
+  ensureMyUserRecord: a
+    .mutation()
+    .arguments({
+      email: a.string(),
+      displayName: a.string(),
+      tosVersion: a.string(),
+      privacyVersion: a.string(),
+    })
+    .returns(a.json())
+    .handler(a.handler.function(money))
+    .authorization((allow) => [allow.authenticated()]),
+
+  // An admin (Cognito admins group) decides a dispute: upheld clears the winner and
+  // cancels the bet's pending payouts in one ledger transaction so the creator resolves
+  // again; dismissed / for the creator lets the payout go ahead (shared/disputeLogic.ts).
+  adminResolveDispute: a
+    .mutation()
+    .arguments({
+      disputeId: a.id().required(),
+      outcome: a.string().required(),
+      resolution: a.string(),
+      adminNotes: a.string(),
+    })
+    .returns(a.json())
+    .handler(a.handler.function(money))
+    .authorization((allow) => [allow.authenticated()]),
+
+  // Buy squares as the signed-in user: checked on the server, and one purchase row per
+  // square (a fixed id each, so a square sells once), the debit and the game's counts in
+  // one ledger transaction (shared/squaresBuyLogic.ts). A purchase that fills the grid
+  // locks it with numbers drawn on the server. squares is [{ row, col }, ...].
+  buySquares: a
+    .mutation()
+    .arguments({
+      squaresGameId: a.id().required(),
+      ownerName: a.string().required(),
+      squares: a.json().required(),
+    })
+    .returns(a.json())
+    .handler(a.handler.function(money))
+    .authorization((allow) => [allow.authenticated()]),
+
+  // Cancel a squares game as its creator or an admin, refunding every buyer in the same
+  // ledger transaction as the status change (shared/squaresMoney.ts).
+  cancelSquaresGame: a
+    .mutation()
+    .arguments({
+      squaresGameId: a.id().required(),
+      reason: a.string(),
+    })
+    .returns(a.json())
+    .handler(a.handler.function(money))
+    .authorization((allow) => [allow.authenticated()]),
+
+  // A participant accepts the bet's result; when every participant but the creator has,
+  // the dispute window closes early so the payout runs sooner (shared/acceptLogic.ts).
+  // Returns { status: 'accepted', closedEarly, accepted, total } or { status: 'refused', reason }.
+  acceptBetResult: a
+    .mutation()
+    .arguments({ betId: a.id().required() })
+    .returns(a.json())
+    .handler(a.handler.function(money))
+    .authorization((allow) => [allow.authenticated()]),
+
+  // Create a bet with the signed-in user as its first participant: the bet, their
+  // participant row and their stake are one ledger transaction (shared/createBetLogic.ts).
+  // betId is chosen by the app (a UUID) so a retried tap cannot make a second bet.
+  // (Not "createBet": Amplify generates that name for the Bet model.)
+  createBetWithStake: a
+    .mutation()
+    .arguments({
+      betId: a.id().required(),
+      title: a.string().required(),
+      description: a.string().required(),
+      category: a.string().required(),
+      amount: a.float().required(),
+      side: a.string().required(),
+      sideAName: a.string().required(),
+      sideBName: a.string().required(),
+      deadlineMinutes: a.integer().required(),
+      isPrivate: a.boolean(),
+      eventId: a.id(),
+    })
+    .returns(a.json())
+    .handler(a.handler.function(money))
+    .authorization((allow) => [allow.authenticated()]),
+
 }).authorization((allow) => [
   // Allow the Lambda functions to be invoked and access data
   allow.resource(scheduledBetChecker).to(["query", "listen", "mutate"]),
@@ -908,6 +1092,7 @@ const schema = a.schema({
   allow.resource(stripeWebhook).to(["query", "listen", "mutate"]),
   allow.resource(stripeManage).to(["query", "listen", "mutate"]),
   allow.resource(deviceRegistry).to(["query", "mutate"]),
+  allow.resource(money).to(["query", "listen", "mutate"]),
 ]);
 
 export type Schema = ClientSchema<typeof schema>;

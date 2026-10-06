@@ -142,6 +142,9 @@ export const SquaresGameDetailScreen = ({ route, navigation }: any) => {
 
       // Refresh data
       loadGameData();
+      // The purchase rows are written by the server, which fires no onCreate: refresh so
+      // this game joins the buyer's own list
+      refresh();
     } catch (error) {
       throw error; // Let modal handle the error
     }
@@ -184,7 +187,7 @@ export const SquaresGameDetailScreen = ({ route, navigation }: any) => {
               );
             } catch (error) {
               console.error('Error cancelling game:', error);
-              showAlert('Error', 'Failed to cancel the game. Please try again.');
+              showAlert('Error', error instanceof Error && error.message ? error.message : 'Failed to cancel the game. Please try again.');
             } finally {
               setCancelling(false);
             }
@@ -385,6 +388,7 @@ export const SquaresGameDetailScreen = ({ route, navigation }: any) => {
           )}
 
           <TouchableOpacity
+            testID="squares-buy"
             style={[styles.buyButton, selectedSquares.length === 0 && styles.buyButtonDisabled]}
             onPress={handleBuySquares}
             disabled={selectedSquares.length === 0}

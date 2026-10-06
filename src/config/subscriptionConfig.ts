@@ -28,6 +28,20 @@ export function calculateDepositFee(depositDollars: number): number {
 export const WITHDRAWAL_FEE_RATE = 0.02; // 2% charged on withdrawals
 export const WINNINGS_FEE_RATE = 0.03; // 3% charged on bet/squares winnings
 
+/** The smallest withdrawal, enforced by the app's form and by the server. */
+export const MIN_WITHDRAWAL = 10;
+
+/**
+ * Fee on a withdrawal: the one place it is computed, by the server when the withdrawal is
+ * requested and by the app's confirmation screen, so what the user is shown is what they
+ * are charged. Pro waives it. (The confirmation screen used to show no fee at all while
+ * 2% was recorded.)
+ */
+export function withdrawalFee(amount: number, isPro: boolean): number {
+  if (isPro || amount <= 0) return 0;
+  return Math.round(amount * WITHDRAWAL_FEE_RATE * 100) / 100;
+}
+
 /**
  * Platform fee on winnings. The only place this multiplication should happen.
  *

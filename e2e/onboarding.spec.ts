@@ -18,15 +18,25 @@ test('a new user is created, onboards with a photo, and lands in the app', async
   let record: Vars | null = null;
   // Every write in order, so the test can show the create came before onboarding's writes
   const writes: { op: 'create' | 'update'; input: Vars }[] = [];
-  await mockAppSync(
+  const { calls } = await mockAppSync(
     page,
     baseHandlers({
       getUser: () => record,
-      createUser: (v) => {
-        const input = (v as { input: Vars }).input;
-        writes.push({ op: 'create', input });
-        record = { ...input, role: 'USER', onboardingCompleted: false, onboardingStep: 0 };
-        return record;
+      // The server creates the record (ensureMyUserRecord), with the money and role
+      // fields its own; the phone sends only display details. This stands in for it.
+      ensureMyUserRecord: (v) => {
+        writes.push({ op: 'create', input: v });
+        record = {
+          id: TEST_USER.userId,
+          username: TEST_USER.userId,
+          email: v.email,
+          displayName: v.displayName,
+          balance: 0,
+          role: 'USER',
+          onboardingCompleted: false,
+          onboardingStep: 0,
+        };
+        return JSON.stringify({ status: 'created' });
       },
       updateUser: (v) => {
         const input = (v as { input: Vars }).input;
@@ -45,6 +55,8 @@ test('a new user is created, onboards with a photo, and lands in the app', async
   // Onboarding opens over the app for the new account
   await expect(page.getByTestId('onboarding-step')).toHaveText('Step 1 of 3', { timeout: 30_000 });
   expect(writes[0]?.op).toBe('create');
+  // The record is the server's to create: the phone never sends createUser
+  expect(calls).not.toContain('createUser');
 
   // Step 1: choose a photo. The picker is a file input on web.
   const chooser = page.waitForEvent('filechooser', { timeout: 15_000 });

@@ -57,6 +57,55 @@ test('declining an invitation takes it off the list', async ({ page }) => {
   expect(calls).toContain('updateBetInvitation');
 });
 
+/**
+ * Accepting is a join. It goes through the server's joinBet first, and only a join
+ * that went through marks the invitation accepted: the invitation used to be
+ * accepted before the join, so a failed join left it accepted and unpaid.
+ */
+const acceptable = (joinBet: () => unknown) =>
+  withInvitation({
+    betInvitationsByToUser: list([betInvitation({ invitedSide: 'A' })]),
+    updateBetInvitation: (variables) => ({ ...variables, status: 'ACCEPTED' }),
+    joinBet,
+  });
+
+test('accepting joins through the server, then marks the invitation accepted', async ({ page }) => {
+  await signInAs(page);
+  const { calls } = await mockAppSync(
+    page,
+    acceptable(() => JSON.stringify({ status: 'joined', participantId: 'bet-open#user', amount: 10, balance: 90 }))
+  );
+
+  await openJoinTab(page);
+  await expect(page.getByTestId('invitation-card-inv-1')).toBeVisible({ timeout: 15_000 });
+  await page.getByTestId('invitation-accept').dispatchEvent('click');
+
+  await expect(page.getByTestId('invitation-card-inv-1')).toBeHidden({ timeout: 15_000 });
+  expect(calls).toContain('joinBet');
+  expect(calls.indexOf('joinBet')).toBeLessThan(calls.indexOf('updateBetInvitation'));
+  // The participant, stake and counts are the server's; the app writes none of them
+  for (const write of ['createParticipant', 'createTransaction', 'updateUser', 'updateBet']) {
+    expect(calls).not.toContain(write);
+  }
+});
+
+test('a refused join leaves the invitation pending', async ({ page }) => {
+  await signInAs(page);
+  const { calls } = await mockAppSync(
+    page,
+    acceptable(() => JSON.stringify({ status: 'refused', reason: 'INSUFFICIENT_FUNDS', balance: 2, required: 10 }))
+  );
+
+  await openJoinTab(page);
+  await expect(page.getByTestId('invitation-card-inv-1')).toBeVisible({ timeout: 15_000 });
+  await page.getByTestId('invitation-accept').dispatchEvent('click');
+
+  await expect(page.getByTestId('alert-title')).toHaveText('Insufficient Balance');
+  await expect(page.getByTestId('invitation-card-inv-1')).toBeVisible();
+  expect(calls).toContain('joinBet');
+  expect(calls).not.toContain('updateBetInvitation');
+});
+
 test('the Bets tab points at Join rather than hiding the invitation', async ({ page }) => {
   await signInAs(page);
   await mockAppSync(page, withInvitation());

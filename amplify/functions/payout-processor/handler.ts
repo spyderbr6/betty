@@ -6,7 +6,7 @@ import { Amplify } from 'aws-amplify';
 import { getAmplifyDataClientConfig } from '@aws-amplify/backend/function/runtime';
 // @ts-ignore - Generated at build time by Amplify
 import { env } from '$amplify/env/payout-processor';
-import { notificationMeta } from '../../shared/notificationCatalog';
+import { settleBet } from '../../shared/moneyClient';
 
 const { resourceConfig, libraryOptions } = await getAmplifyDataClientConfig(env);
 Amplify.configure(resourceConfig, libraryOptions);
@@ -30,262 +30,99 @@ export const handler: EventBridgeHandler<"Scheduled Event", null, boolean> = asy
 };
 
 /**
- * Process bets where the 48-hour dispute window has expired
- * - Complete pending transactions
- * - Update bet status to RESOLVED
- * - Apply trust score rewards for clean resolutions
+ * Find bets whose dispute window has passed and settle each one.
+ *
+ * Settlement itself is the money function's settleBet (docs/SECURITY_PLAN.md): it
+ * computes every payout from the stakes on the server, checks for open and upheld
+ * disputes, and credits through the atomic ledger. This function used to credit whatever
+ * amounts the pending transactions held - rows the creator's phone wrote, and which any
+ * signed-in user could create - after finding them with a filtered Scan that read one
+ * page of the table, then marking the bet resolved whether or not every payout was found.
  */
 async function processCompletedDisputeWindows(): Promise<{
   processed: number;
+  skipped: number;
   errors: number;
-  totalPayouts: number;
 }> {
   let processed = 0;
+  let skipped = 0;
   let errors = 0;
-  let totalPayouts = 0;
+  const now = new Date();
 
-  try {
-    console.log('🕐 [Payout] Checking for bets ready for payout...');
+  // Every page: one page of a busy status could leave bets waiting forever
+  const pendingBets: any[] = [];
+  let nextToken: string | null | undefined;
+  do {
+    const page = await client.models.Bet.betsByStatus({ status: 'PENDING_RESOLUTION' }, { nextToken });
+    pendingBets.push(...(page.data ?? []));
+    nextToken = page.nextToken;
+  } while (nextToken);
 
-    const now = new Date();
-    const currentISOString = now.toISOString();
+  if (pendingBets.length === 0) {
+    console.log('✅ [Payout] No bets pending resolution');
+    return { processed, skipped, errors };
+  }
+  console.log(`📊 [Payout] Found ${pendingBets.length} bets pending resolution`);
 
-    // Get all PENDING_RESOLUTION bets using GSI (scan filter only returns first page!)
-    const { data: pendingBets } = await client.models.Bet.betsByStatus({
-      status: 'PENDING_RESOLUTION'
-    });
+  for (const bet of pendingBets) {
+    if (!bet.id || !bet.creatorId) continue;
 
-    if (!pendingBets || pendingBets.length === 0) {
-      console.log('✅ [Payout] No bets pending resolution');
-      return { processed: 0, errors: 0, totalPayouts: 0 };
-    }
-
-    console.log(`📊 [Payout] Found ${pendingBets.length} bets pending resolution`);
-
-    // Filter to find bets ready for payout
-    const betsReadyForPayout = [];
-    for (const bet of pendingBets) {
-      if (!bet.id || !bet.creatorId) continue;
-
-      // Indexed lookup; this was a filtered Scan per bet.
-      const { data: participants } = await client.models.Participant.participantsByBet({
-        betId: bet.id
-      });
-
-      const nonCreatorParticipants = participants?.filter((p: any) => p.userId !== bet.creatorId) || [];
+    try {
+      const { data: participants } = await client.models.Participant.participantsByBet({ betId: bet.id });
       const candidate = {
         winningSide: bet.winningSide,
         disputeWindowEndsAt: bet.disputeWindowEndsAt,
-        hasNonCreatorParticipants: nonCreatorParticipants.length > 0,
+        hasNonCreatorParticipants: (participants ?? []).some((p: any) => p.userId !== bet.creatorId),
       };
-
-      if (isReadyForPayout(candidate, now)) {
-        if (!candidate.hasNonCreatorParticipants) {
-          console.log(`🎯 [Payout] Bet ${bet.id} has no non-creator participants - no dispute window to wait for`);
-        }
-        betsReadyForPayout.push(bet);
-      } else {
+      if (!isReadyForPayout(candidate, now)) {
         console.log(`⏭️ [Payout] Skipping bet ${bet.id}: ${payoutSkipReason(candidate, now)}`);
+        skipped++;
+        continue;
       }
-    }
 
-    if (betsReadyForPayout.length === 0) {
-      console.log('✅ [Payout] No bets ready for payout yet');
-      return { processed: 0, errors: 0, totalPayouts: 0 };
-    }
-
-    console.log(`💰 [Payout] Processing ${betsReadyForPayout.length} bet(s) ready for payout`);
-
-    // Process each bet
-    for (const bet of betsReadyForPayout) {
-      try {
-        if (!bet.id) {
-          console.error('❌ Bet missing ID, skipping');
-          errors++;
-          continue;
-        }
-
-        console.log(`💰 Processing payout for bet "${bet.title}" (${bet.id})`);
-
-        // Check if there are any pending disputes for this bet
-        const { data: disputes } = await client.models.Dispute.list({
-          filter: {
-            and: [
-              { betId: { eq: bet.id } },
-              { status: { eq: 'PENDING' } }
-            ]
-          }
-        });
-
-        if (disputes && disputes.length > 0) {
-          console.log(`⚠️ Bet ${bet.id} has ${disputes.length} pending dispute(s), skipping payout`);
-          // Don't process - dispute needs to be resolved first
-          continue;
-        }
-
-        // Get all pending transactions for this bet
-        const { data: pendingTransactions } = await client.models.Transaction.list({
-          filter: {
-            and: [
-              { relatedBetId: { eq: bet.id } },
-              { status: { eq: 'PENDING' } }
-            ]
-          }
-        });
-
-        if (!pendingTransactions || pendingTransactions.length === 0) {
-          console.log(`⚠️ No pending transactions found for bet ${bet.id}`);
-          // Update bet to RESOLVED anyway (edge case: bet with no winners?)
-          await client.models.Bet.update({
-            id: bet.id,
-            status: 'RESOLVED'
-          });
-          processed++;
-          continue;
-        }
-
-        console.log(`💵 Completing ${pendingTransactions.length} pending payout(s) for bet ${bet.id}`);
-
-        // Complete each pending transaction and update user balance
-        for (const transaction of pendingTransactions) {
-          try {
-            if (!transaction.id || !transaction.userId) {
-              console.error('❌ Transaction missing ID or userId, skipping');
-              continue;
-            }
-
-            // Get user's current balance BEFORE crediting
-            const { data: user } = await client.models.User.get({ id: transaction.userId });
-            if (!user) {
-              console.error(`❌ User ${transaction.userId} not found, skipping transaction`);
-              continue;
-            }
-
-            const currentBalance = user.balance || 0;
-
-            // Calculate platform fee for BET_WON transactions (3%)
-            let platformFee = 0;
-            let netAmount = transaction.amount || 0;
-
-            if (transaction.type === 'BET_WON') {
-              platformFee = Math.round((transaction.amount || 0) * 0.03 * 100) / 100;
-              netAmount = (transaction.amount || 0) - platformFee;
-              console.log(`💰 Applying 3% platform fee: Gross: $${transaction.amount}, Fee: $${platformFee}, Net: $${netAmount}`);
-            }
-
-            // Use actualAmount if available (net after platform fee), otherwise calculate from amount
-            const amountToCredit = transaction.actualAmount !== undefined && transaction.actualAmount !== null
-              ? transaction.actualAmount
-              : netAmount;
-            const newBalance = currentBalance + amountToCredit;
-
-            // Update transaction status to COMPLETED with correct balance fields
-            await client.models.Transaction.update({
-              id: transaction.id,
-              status: 'COMPLETED',
-              platformFee: platformFee,
-              balanceBefore: currentBalance,
-              balanceAfter: newBalance,
-              completedAt: new Date().toISOString()
-            });
-
-            // Update user balance with NET amount (after fee)
-            await client.models.User.update({
-              id: transaction.userId,
-              balance: newBalance
-            });
-
-            console.log(`✅ User ${transaction.userId} balance updated: ${currentBalance} → ${newBalance} (credited: $${amountToCredit})`);
-            totalPayouts++;
-
-            // Send notification to winner with NET amount
-            try {
-              const netAmount = transaction.actualAmount || transaction.amount || 0;
-              const platformFee = transaction.platformFee || 0;
-              const message = platformFee > 0
-                ? `You won $${netAmount.toFixed(2)} on "${bet.title}" (platform fee: $${platformFee.toFixed(2)})`
-                : `You won $${netAmount.toFixed(2)} on "${bet.title}"`;
-
-              await client.models.Notification.create({
-                userId: transaction.userId,
-                type: 'BET_RESOLVED',
-                ...notificationMeta('BET_RESOLVED'),
-                title: 'Bet Won!',
-                message: message,
-                isRead: false,
-                priority: 'HIGH',
-                actionType: 'view_bet',
-                actionData: { betId: bet.id },
-                relatedBetId: bet.id,
-              });
-            } catch (notificationError) {
-              console.warn(`Failed to send payout notification:`, notificationError);
-            }
-
-          } catch (txError) {
-            console.error(`❌ Error completing transaction ${transaction.id}:`, txError);
-            errors++;
-          }
-        }
-
-        // Update bet status to RESOLVED
-        await client.models.Bet.update({
-          id: bet.id,
-          status: 'RESOLVED'
-        });
-
-        // Apply trust score reward for clean resolution (+0.2)
-        if (bet.creatorId) {
-          try {
-            const { data: creator } = await client.models.User.get({ id: bet.creatorId });
-            if (creator) {
-              const currentScore = creator.trustScore || 5.0;
-              const change = 0.2;
-              const newTrustScore = Math.max(0, Math.min(10, currentScore + change));
-
-              await client.models.User.update({
-                id: bet.creatorId,
-                trustScore: newTrustScore
-              });
-
-              // Record trust score change
-              await client.models.TrustScoreHistory.create({
-                userId: bet.creatorId,
-                change: change,
-                newScore: newTrustScore,
-                reason: `Bet "${bet.title}" resolved fairly without disputes`,
-                relatedBetId: bet.id,
-                createdAt: new Date().toISOString()
-              });
-
-              console.log(`⭐ Trust score reward applied to creator ${bet.creatorId}: ${currentScore.toFixed(2)} → ${newTrustScore.toFixed(2)} (+${change})`);
-
-              // Check for milestone rewards
-              await checkAndApplyMilestones(bet.creatorId);
-            }
-          } catch (trustError) {
-            console.warn(`Failed to update trust score for creator ${bet.creatorId}:`, trustError);
-          }
-        }
-
-        processed++;
-        console.log(`✅ Payout completed for bet ${bet.id}`);
-
-        // Small delay to avoid overwhelming the database
-        await new Promise(resolve => setTimeout(resolve, 100));
-
-      } catch (error) {
-        console.error(`❌ Error processing payout for bet ${bet.id}:`, error);
-        errors++;
+      const result = await settleBet(client, bet.id);
+      if (result.status !== 'settled') {
+        console.log(`⏭️ [Payout] Bet ${bet.id} not settled: ${result.reason}`);
+        skipped++;
+        continue;
       }
+
+      console.log(`✅ [Payout] Settled bet ${bet.id}: ${result.paid} paid, ${result.refunded} refunded`);
+      processed++;
+      await rewardCreator(bet);
+    } catch (error) {
+      // settleBet is idempotent: the next run picks up where this one stopped
+      console.error(`❌ [Payout] Error settling bet ${bet.id}:`, error);
+      errors++;
     }
+  }
 
-    console.log(`🎯 [Payout] Processing complete: ${processed} bets, ${totalPayouts} payouts, ${errors} errors`);
-    return { processed, errors, totalPayouts };
+  return { processed, skipped, errors };
+}
 
-  } catch (error) {
-    console.error('❌ Error in processCompletedDisputeWindows:', error);
-    throw error;
+/** Trust score reward for a clean resolution (+0.2), then any milestone. */
+async function rewardCreator(bet: { id: string; title?: string | null; creatorId: string }): Promise<void> {
+  try {
+    const { data: creator } = await client.models.User.get({ id: bet.creatorId });
+    if (!creator) return;
+    const currentScore = creator.trustScore || 5.0;
+    const change = 0.2;
+    const newTrustScore = Math.max(0, Math.min(10, currentScore + change));
+
+    await client.models.User.update({ id: bet.creatorId, trustScore: newTrustScore });
+    await client.models.TrustScoreHistory.create({
+      userId: bet.creatorId,
+      change,
+      newScore: newTrustScore,
+      reason: `Bet "${bet.title}" resolved fairly without disputes`,
+      relatedBetId: bet.id,
+      createdAt: new Date().toISOString(),
+    });
+    console.log(`⭐ Trust score reward applied to creator ${bet.creatorId}: ${currentScore.toFixed(2)} → ${newTrustScore.toFixed(2)} (+${change})`);
+
+    await checkAndApplyMilestones(bet.creatorId);
+  } catch (trustError) {
+    console.warn(`Failed to update trust score for creator ${bet.creatorId}:`, trustError);
   }
 }
 

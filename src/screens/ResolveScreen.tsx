@@ -23,9 +23,8 @@ import { SquaresGameCard } from '../components/betting/SquaresGameCard';
 import { Bet } from '../types/betting';
 import { useAuth } from '../contexts/AuthContext';
 import { formatCurrency } from '../utils/formatting';
-import { NotificationService } from '../services/notificationService';
-import { TransactionService } from '../services/transactionService';
-import { winningsFee } from '../config/subscriptionConfig';
+import { resolveBet } from '../services/resolveBetService';
+import { resolveMessage } from '../services/resolveBetLogic';
 import { showAlert } from '../components/ui/CustomAlert';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
@@ -285,145 +284,25 @@ export const ResolveScreen: React.FC = () => {
     setIsResolving(bet.id);
 
     try {
-      // Participants are fetched here rather than at load. The full list is only
-      // needed to pay a bet out, and that is one bet on demand - loading them for
-      // every listed bet was an N+1 of filtered Scans. participantsByBet is the
-      // GSI for exactly this lookup.
-      const participantRows = await client.models.Participant.participantsByBet({ betId: bet.id });
-      const participants = (participantRows.data || [])
-        .filter((row: any) => row?.id && row?.userId && row?.side)
-        .map((row: any) => ({
-          id: row.id as string,
-          betId: row.betId as string,
-          userId: row.userId as string,
-          side: row.side as string,
-          amount: row.amount || 0,
-          status: row.status as 'PENDING' | 'ACCEPTED' | 'DECLINED',
-          payout: row.payout || 0,
-          joinedAt: row.joinedAt || new Date().toISOString(),
+      // One server call: it checks this user created the bet and that it can be
+      // resolved, computes every payout from the stakes (with each winner's fee), and
+      // records the winner, the 48-hour window, each participant's outcome and the
+      // pending winnings together. It also tells the participants. This phone used to
+      // compute the payouts and fees itself and write them, and recorded each loss
+      // through a call that rewrote the loser's balance.
+      const winnerName = (winningSide === 'A' ? bet.odds.sideAName : bet.odds.sideBName) || `Side ${winningSide}`;
+      const result = await resolveBet(bet.id, winningSide);
+      const { title, message } = resolveMessage(result, winnerName);
+
+      if (result?.status === 'resolved') {
+        // Clear the selection for this bet
+        setSelectedSides(prev => ({
+          ...prev,
+          [bet.id]: null
         }));
-
-      // Calculate payouts for each participant
-      const winners = participants.filter((p) => p.side === winningSide);
-      const totalWinnerAmount = winners.reduce((sum, p) => sum + p.amount, 0);
-      const totalPot = bet.totalPot;
-
-      // Calculate dispute window end time (48 hours from now)
-      const disputeWindowEndsAt = new Date();
-      disputeWindowEndsAt.setHours(disputeWindowEndsAt.getHours() + 48);
-
-      // Update bet status to PENDING_RESOLUTION (48-hour dispute window)
-      await client.models.Bet.update({
-        id: bet.id,
-        status: 'PENDING_RESOLUTION',
-        winningSide: winningSide,
-        resolutionReason: `Resolved by creator. Winner: ${winningSide === 'A' ? bet.odds.sideAName || 'Side A' : bet.odds.sideBName || 'Side B'}`,
-        disputeWindowEndsAt: disputeWindowEndsAt.toISOString(),
-        updatedAt: new Date().toISOString()
-      });
-
-      // Create pending payout transactions (balance NOT updated yet - happens after 48h dispute window)
-      if (participants.length > 0) {
-        await Promise.all(
-          participants.map(async (participant) => {
-            const isWinner = participant.side === winningSide;
-            let payout = 0;
-
-            if (isWinner && totalWinnerAmount > 0) {
-              // Winner gets their original amount back plus their share of the total pot
-              const winnerShare = participant.amount / totalWinnerAmount;
-              payout = totalPot * winnerShare;
-            }
-
-
-            // Update participant record with calculated payout (gross amount)
-            await client.models.Participant.update({
-              id: participant.id,
-              payout: payout,
-              status: isWinner ? 'ACCEPTED' : 'DECLINED'
-            });
-
-            // Pro waives the fee. Both the transaction below and the notification
-            // further down used to hardcode 0.03 and never ask, so Pro members were
-            // charged on every bet they won and then told the reduced figure.
-            // Looked up once so the two cannot disagree.
-            const isPro = await TransactionService.isProSubscriber(participant.userId);
-            const platformFee = winningsFee(payout, isPro);
-            const netPayout = payout - platformFee;
-
-            // Create PENDING transactions (will be completed by payout-processor after 48h)
-            if (isWinner && payout > 0) {
-              // Get current balance for transaction record
-              const { data: userData } = await client.models.User.get({ id: participant.userId });
-              const currentBalance = userData?.balance || 0;
-
-              await client.models.Transaction.create({
-                userId: participant.userId,
-                type: 'BET_WON',
-                status: 'PENDING', // NOT COMPLETED - awaiting dispute window
-                amount: payout, // Gross payout amount (before fees) - consistent with deposits
-                actualAmount: netPayout, // Net amount received after platform fee
-                platformFee, // 0 for Pro
-                balanceBefore: currentBalance,
-                balanceAfter: currentBalance + netPayout, // Projected balance (after fee)
-                relatedBetId: bet.id,
-                relatedParticipantId: participant.id,
-                notes: `Bet winnings (pending 48h dispute window): ${bet.title}`,
-                createdAt: new Date().toISOString()
-              });
-            } else if (!isWinner) {
-              // Record lost bet transaction (zero amount, for tracking/dispute)
-              const winningSideName = winningSide === 'A' ? bet.odds.sideAName : bet.odds.sideBName;
-              await TransactionService.recordBetLoss(
-                participant.userId,
-                bet.id,
-                participant.id,
-                bet.title,
-                winningSideName
-              );
-            }
-
-            // Send bet resolved notification to participant
-            if (participant.userId !== user?.userId) {
-              try {
-                // Same figure the transaction recorded, fee and all.
-                const netPayoutForNotification = isWinner ? netPayout : 0;
-
-                await NotificationService.createNotification({
-                  userId: participant.userId,
-                  type: 'BET_RESOLVED',
-                  title: isWinner ? 'Bet Won! (Pending)' : 'Bet Lost',
-                  message: isWinner
-                    ? `You won $${netPayoutForNotification.toFixed(2)} on "${bet.title}". Funds will be available in 48 hours if no disputes are filed.`
-                    : `You lost on "${bet.title}". The winner was ${winningSide === 'A' ? bet.odds.sideAName : bet.odds.sideBName}.`,
-                  priority: isWinner ? 'HIGH' : 'MEDIUM',
-                  actionType: 'view_bet',
-                  actionData: { betId: bet.id },
-                  relatedBetId: bet.id,
-                  relatedUserId: undefined
-                });
-              } catch (notificationError) {
-                console.warn('Failed to send bet resolved notification to participant:', notificationError);
-              }
-            }
-          })
-        );
       }
 
-
-      // Clear the selection for this bet
-      setSelectedSides(prev => ({
-        ...prev,
-        [bet.id]: null
-      }));
-
-      // Show success message
-      showAlert(
-        'Bet Resolved',
-        `Winner: ${winningSide === 'A' ? bet.odds.sideAName || 'Side A' : bet.odds.sideBName || 'Side B'}\n\nPayouts are pending a 48-hour dispute window. If no disputes are filed, funds will be automatically distributed.`,
-        [{ text: 'OK' }]
-      );
-
+      showAlert(title, message, [{ text: 'OK' }]);
     } catch (error) {
       console.error('Error resolving bet:', error);
       showAlert(
@@ -433,61 +312,6 @@ export const ResolveScreen: React.FC = () => {
       );
     } finally {
       setIsResolving(null);
-    }
-  };
-
-  const updateUserStats = async (userId: string, isWinner: boolean, betAmount: number, payout: number) => {
-    try {
-      // Get current user data
-      const { data: userData } = await client.models.User.get({ id: userId });
-
-      if (userData) {
-        const currentBalance = userData.balance || 0;
-        const currentTotalBets = userData.totalBets || 0;
-        const currentTotalWinnings = userData.totalWinnings || 0;
-        const currentWinRate = userData.winRate || 0;
-
-        // Calculate new stats
-        const newTotalBets = currentTotalBets + 1;
-        let newBalance = currentBalance;
-        let newTotalWinnings = currentTotalWinnings;
-        let newWinRate = currentWinRate;
-
-        if (isWinner) {
-          // Winner balance is already updated by TransactionService.recordBetWinnings
-          // Just update stats here
-          newBalance = currentBalance; // Balance already updated by transaction
-          newTotalWinnings = currentTotalWinnings + (payout - betAmount); // Profit only
-
-          // Calculate new win rate (winners count / total bets)
-          const previousWins = Math.round((currentWinRate / 100) * currentTotalBets);
-          const newWins = previousWins + 1;
-          newWinRate = (newWins / newTotalBets) * 100;
-        } else {
-          // Loser loses their bet amount (already deducted when they joined)
-          // Balance doesn't change as they already paid when joining
-          newTotalWinnings = currentTotalWinnings - betAmount; // Record the loss
-
-          // Calculate new win rate (no new wins)
-          const previousWins = Math.round((currentWinRate / 100) * currentTotalBets);
-          newWinRate = (previousWins / newTotalBets) * 100;
-        }
-
-        // Update user record
-        await client.models.User.update({
-          id: userId,
-          balance: newBalance,
-          totalBets: newTotalBets,
-          totalWinnings: newTotalWinnings,
-          winRate: newWinRate,
-          updatedAt: new Date().toISOString()
-        });
-
-        console.log(`Updated user ${userId} stats: ${isWinner ? 'WIN' : 'LOSS'}, Balance: $${newBalance}, WinRate: ${newWinRate.toFixed(1)}%`);
-      }
-    } catch (error) {
-      console.error(`Error updating user ${userId} stats:`, error);
-      // Don't throw error here to avoid breaking bet resolution
     }
   };
 

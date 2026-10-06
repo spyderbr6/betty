@@ -174,7 +174,6 @@ export const AdminDisputeScreen: React.FC<AdminDisputeScreenProps> = ({ onClose 
         dispute.id,
         status,
         resolutionText,
-        user.userId,
         adminNotes.trim() || undefined
       );
 

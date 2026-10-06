@@ -7,6 +7,7 @@ import { getAmplifyDataClientConfig } from '@aws-amplify/backend/function/runtim
 import { env } from '$amplify/env/stripe-webhook';
 import Stripe from 'stripe';
 import { notificationMeta } from '../../shared/notificationCatalog';
+import { ledgerApply } from '../../shared/moneyClient';
 
 const { resourceConfig, libraryOptions } = await getAmplifyDataClientConfig(env);
 Amplify.configure(resourceConfig, libraryOptions);
@@ -149,28 +150,39 @@ async function handlePaymentIntentSucceeded(paymentIntent: Stripe.PaymentIntent)
     throw new Error(`No transaction found for PaymentIntent ${paymentIntent.id}`);
   }
 
-  // Get current balance
-  const { data: user } = await client.models.User.get({ id: userId });
-  if (!user) {
-    console.error('[StripeWebhook] User not found:', userId);
+  // The PaymentIntent's metadata names who paid; the pending row must be theirs
+  if (pendingTx.userId !== userId) {
+    console.error('[StripeWebhook] Pending transaction belongs to another user:', pendingTx.id, pendingTx.userId, userId);
     return;
   }
 
-  const newBalance = (user.balance ?? 0) + depositAmountDollars;
+  // Complete the pending row and credit the balance in one ledger transaction (the money
+  // function). The row is completed only while still PENDING, so two deliveries of the
+  // same event racing each other credit once; this used to read the balance, add, and
+  // write it back, which could also lose a concurrent payout or bet.
+  const result = await ledgerApply(client, [
+    {
+      transactionId: pendingTx.id,
+      userId,
+      type: 'DEPOSIT',
+      delta: depositAmountDollars,
+      amount: depositAmountDollars,
+      status: 'COMPLETED',
+      mode: 'completePending',
+      stripePaymentIntentId: paymentIntent.id,
+    },
+  ]);
 
-  // Update transaction to COMPLETED
-  await client.models.Transaction.update({
-    id: pendingTx.id,
-    status: 'COMPLETED',
-    balanceBefore: user.balance ?? 0,
-    balanceAfter: newBalance,
-    completedAt: new Date().toISOString(),
-  });
+  if (result.status === 'already_applied') {
+    console.log('[StripeWebhook] PaymentIntent already settled by a concurrent delivery:', paymentIntent.id);
+    return;
+  }
+  if (result.status !== 'applied') {
+    // Throw so the handler returns 500 and Stripe retries
+    throw new Error(`Deposit ${pendingTx.id} not credited: ${JSON.stringify(result)}`);
+  }
 
-  // Credit user balance
-  await client.models.User.update({ id: userId, balance: newBalance });
-
-  console.log(`[StripeWebhook] Deposit completed for user ${userId}: +$${depositAmountDollars} → balance $${newBalance}`);
+  console.log(`[StripeWebhook] Deposit completed for user ${userId}: +$${depositAmountDollars} → balance $${result.balances[0]?.after}`);
 
   await notifyDepositCompleted(userId, depositAmountDollars);
 }

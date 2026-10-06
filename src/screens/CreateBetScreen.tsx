@@ -24,7 +24,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { User } from '../types/betting';
 import { Ionicons } from '@expo/vector-icons';
 import { NotificationService } from '../services/notificationService';
-import { TransactionService } from '../services/transactionService';
+import { createBetWithStake } from '../services/createBetService';
+import { createBetProblem, newBetId } from '../services/createBetLogic';
 import { getProfilePictureUrl } from '../services/imageUploadService';
 import { useEventCheckIn } from '../hooks/useEventCheckIn';
 import { showAlert } from '../components/ui/CustomAlert';
@@ -59,6 +60,8 @@ export const CreateBetScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
   const { checkedInEvent } = useEventCheckIn();
   const scrollRef = React.useRef<ScrollView | null>(null);
+  // The id of the bet being submitted; kept across a retry whose outcome is unknown
+  const pendingBetIdRef = React.useRef<string | null>(null);
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [betTitle, setBetTitle] = useState('');
   const [betDescription, setBetDescription] = useState('');
@@ -367,41 +370,23 @@ export const CreateBetScreen: React.FC = () => {
     setIsCreating(true);
 
     try {
-      // Check user balance before creating bet (user comes from useAuth() at top of component)
-      const { data: userData } = await client.models.User.get({ id: user.userId });
-      const currentBalance = userData?.balance || 0;
-
-      if (currentBalance < amount) {
-        showAlert(
-          'Insufficient Funds',
-          `You need $${amount.toFixed(2)} to create this bet, but you only have $${currentBalance.toFixed(2)}. Please add funds to your account.`
-        );
-        setIsCreating(false);
-        return;
-      }
-
-      // Calculate deadline timestamp
-      const deadlineDate = new Date(Date.now() + deadlineMinutes * 60 * 1000);
-
-      // Prepare odds object - stringify for GraphQL JSON field
-      const oddsObject = JSON.stringify({
-        sideAName: sideAName.trim(),
-        sideBName: sideBName.trim(),
-      });
-
-      // Create bet via GraphQL API with denormalized participant data
-      const result = await client.models.Bet.create({
+      // One server call: it checks the bet and the balance, then writes the bet, the
+      // creator's participant row and their stake in one transaction. The id is chosen
+      // here and kept across a retry whose outcome is unknown, so a second tap after a
+      // lost answer reaches the same bet instead of creating another.
+      if (!pendingBetIdRef.current) pendingBetIdRef.current = newBetId();
+      const betId = pendingBetIdRef.current;
+      const result = await createBetWithStake({
+        betId,
         title: betTitle.trim(),
         description: betDescription.trim(),
-        category: selectedCategory as Schema['Bet']['type']['category'],
-        status: 'ACTIVE',
-        creatorId: user.userId,
-        creatorName: user.displayName || 'User',
-        totalPot: amount,
-        betAmount: amount, // Store the individual bet amount for joining
-        odds: oddsObject,
-        deadline: deadlineDate.toISOString(),
-        isPrivate: isPrivate, // Pass the private bet setting
+        category: selectedCategory,
+        amount,
+        side: selectedSide,
+        sideAName: sideAName.trim(),
+        sideBName: sideBName.trim(),
+        deadlineMinutes,
+        isPrivate,
         // Tag the bet to whatever event the creator is currently checked into.
         // Bet.eventId has existed on the model all along but nothing ever wrote
         // it, so "bets at this game" matched nothing. Inferred rather than asked
@@ -409,112 +394,73 @@ export const CreateBetScreen: React.FC = () => {
         // step back into a flow we are trying to shorten. Undefined when the
         // creator is not checked in anywhere.
         eventId: checkedInEvent?.id,
-        sideACount: selectedSide === 'A' ? 1 : 0,
-        sideBCount: selectedSide === 'B' ? 1 : 0,
-        participantUserIds: [user.userId],
       });
 
-      console.log('GraphQL result:', result);
+      const problem = createBetProblem(result, amount);
+      if (problem) {
+        // A refusal wrote nothing, so the next attempt can use a fresh id; a failed
+        // call may have gone through, so it keeps this one
+        if (result) pendingBetIdRef.current = null;
+        showAlert(problem.title, problem.message);
+        return;
+      }
+      pendingBetIdRef.current = null;
 
-      if (result.data) {
-        // Immediately join the bet as the creator on the selected side
+      // Send invitations to selected friends
+      if (selectedFriends.size > 0) {
         try {
-          const participantResult = await client.models.Participant.create({
-            betId: result.data.id!,
-            userId: user.userId,
-            side: selectedSide,
-            amount: amount,
-            status: 'ACCEPTED',
-            payout: 0,
-            joinedAt: new Date().toISOString(),
+          // Fetch current user's display name from database
+          const { data: currentUserData } = await client.models.User.get({ id: user.userId });
+          const currentUserDisplayName = currentUserData?.displayName || currentUserData?.username || user.username;
+          const invitationPromises = Array.from(selectedFriends).map(async (friendId) => {
+            try {
+              // Create bet invitation (without specific side requirement)
+              await client.models.BetInvitation.create({
+                betId: betId,
+                fromUserId: user.userId,
+                toUserId: friendId,
+                status: 'PENDING',
+                invitedSide: '', // Empty string since they can choose their own side
+                expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // 24 hours
+              });
+
+              // Send notification to friend
+              await NotificationService.notifyBetInvitationReceived(
+                friendId,
+                currentUserDisplayName,
+                betTitle.trim(),
+                user.userId,
+                betId,
+                `${betId}-${friendId}` // Simple invitation ID
+              );
+            } catch (inviteError) {
+              console.error(`Error sending invitation to friend ${friendId}:`, inviteError);
+              // Continue with other invitations even if one fails
+            }
           });
 
-          if (participantResult.data) {
-            // Record transaction for bet placement (this handles balance deduction automatically)
-            const creatorSideName = selectedSide === 'A' ? sideAName.trim() : sideBName.trim();
-            const transaction = await TransactionService.recordBetPlacement(
-              user.userId,
-              amount,
-              result.data.id!,
-              participantResult.data.id,
-              betTitle.trim(),
-              creatorSideName
-            );
-
-            if (!transaction) {
-              console.error('Failed to record transaction for creator joining bet');
-              // Rollback participant creation if transaction fails
-              await client.models.Participant.delete({ id: participantResult.data.id });
-              throw new Error('Failed to record transaction for bet creation');
-            }
-          }
-        } catch (joinErr) {
-          console.error('Error creating participant for new bet:', joinErr);
-          // Rollback bet creation if participant/transaction creation fails
-          await client.models.Bet.delete({ id: result.data.id! });
-          throw joinErr;
+          await Promise.all(invitationPromises);
+          console.log(`Sent ${selectedFriends.size} bet invitations`);
+        } catch (error) {
+          console.error('Error sending friend invitations:', error);
+          // Don't block the success flow if invitations fail
         }
-
-        // Send invitations to selected friends
-        if (selectedFriends.size > 0 && result.data) {
-          try {
-            // Fetch current user's display name from database
-            const { data: currentUserData } = await client.models.User.get({ id: user.userId });
-            const currentUserDisplayName = currentUserData?.displayName || currentUserData?.username || user.username;
-            const betId = result.data.id!;
-            const invitationPromises = Array.from(selectedFriends).map(async (friendId) => {
-              try {
-                // Create bet invitation (without specific side requirement)
-                await client.models.BetInvitation.create({
-                  betId: betId,
-                  fromUserId: user.userId,
-                  toUserId: friendId,
-                  status: 'PENDING',
-                  invitedSide: '', // Empty string since they can choose their own side
-                  expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // 24 hours
-                });
-
-                // Send notification to friend
-                await NotificationService.notifyBetInvitationReceived(
-                  friendId,
-                  currentUserDisplayName,
-                  betTitle.trim(),
-                  user.userId,
-                  betId,
-                  `${betId}-${friendId}` // Simple invitation ID
-                );
-              } catch (inviteError) {
-                console.error(`Error sending invitation to friend ${friendId}:`, inviteError);
-                // Continue with other invitations even if one fails
-              }
-            });
-
-            await Promise.all(invitationPromises);
-            console.log(`Sent ${selectedFriends.size} bet invitations`);
-          } catch (error) {
-            console.error('Error sending friend invitations:', error);
-            // Don't block the success flow if invitations fail
-          }
-        }
-
-        // Scroll to top and reset form immediately after successful creation
-        scrollRef.current?.scrollTo({ y: 0, animated: true });
-
-        // Show toast notification
-        const sideChosen = selectedSide === 'A' ? sideAName : sideBName;
-        setToastMessage(`Bet "${betTitle}" created! You joined on "${sideChosen}"`);
-        setShowToast(true);
-
-        // Hide toast after 3 seconds
-        setTimeout(() => {
-          setShowToast(false);
-        }, 3000);
-
-        resetForm();
-      } else {
-        console.error('GraphQL errors:', result.errors);
-        throw new Error('Failed to create bet');
       }
+
+      // Scroll to top and reset form immediately after successful creation
+      scrollRef.current?.scrollTo({ y: 0, animated: true });
+
+      // Show toast notification
+      const sideChosen = selectedSide === 'A' ? sideAName : sideBName;
+      setToastMessage(`Bet "${betTitle}" created! You joined on "${sideChosen}"`);
+      setShowToast(true);
+
+      // Hide toast after 3 seconds
+      setTimeout(() => {
+        setShowToast(false);
+      }, 3000);
+
+      resetForm();
     } catch (error) {
       console.error('Error creating bet:', error);
       console.error('Full error object:', JSON.stringify(error, null, 2));
@@ -615,6 +561,7 @@ export const CreateBetScreen: React.FC = () => {
   };
 
   const resetForm = () => {
+    pendingBetIdRef.current = null;
     // Clear selection first so subsequent apply visibly re-selects the template
     setSelectedTemplate(null);
 

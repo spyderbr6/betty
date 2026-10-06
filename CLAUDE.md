@@ -109,7 +109,7 @@ The `CustomAlertController` is already mounted in `App.tsx` - no additional setu
 - **Database**: DynamoDB with GSI query patterns (`betsByStatus`, `squaresGamesByStatus`) and denormalized participant counts
 - **File Storage**: S3 with entity-based access controls
 - **Real-time**: Targeted GraphQL subscriptions (not `observeQuery`) for incremental state updates
-- **Optimistic Updates**: Not currently in effect for bet joins. `BetDataContext.joinBet` implements one but has no callers; the UI joins through `BetCard.confirmJoinBet`, which writes to the server before the card changes.
+- **Optimistic Updates**: None for bet joins. A join is one call to the server's `joinBet` mutation (`src/services/joinBetService.ts`); the card changes when it answers.
 
 ### Scheduled Lambda Functions
 The app uses AWS Lambda functions with EventBridge schedules for automated background tasks:
@@ -233,9 +233,9 @@ async function yourMainFunction() {
 ## Current App Features
 
 ### Core Betting System
-- **Bet Creation**: Template-based betting with custom side names
-- **Bet Joining**: Confirmation sheet, then server-side balance validation and deduction. If the transaction fails after the participant row is written, the participant is deleted to compensate. No optimistic UI update — see the note under BetDataContext.
-- **Bet Resolution**: Creator-initiated resolution with automatic payouts
+- **Bet Creation**: Template-based betting with custom side names. Submitting is one call to the server's `createBetWithStake` mutation (`amplify/shared/createBetLogic.ts`): it re-checks the form and the balance, then writes the bet, the creator's participant row and their stake in one transaction. The app picks the bet id (a UUID, kept across a retry whose outcome is unknown) so a lost answer cannot create a second bet. Invitations to friends are still sent from the app afterwards.
+- **Bet Joining**: Confirmation sheet, then the server's `joinBet` mutation (money function; rules in `amplify/shared/joinLogic.ts`). The server checks the bet is open and before its deadline, the stake, the balance, a second join and private-bet invitations, then writes the participant row, the stake and the bet's counts in one ledger transaction. The app writes none of them. Used by `BetCard` and by accepting an invitation (which marks the invitation accepted only after the join succeeds).
+- **Bet Resolution**: The creator picks the winner; the app sends that to the server's `resolveBet` mutation (`amplify/shared/resolveLogic.ts`), which checks the caller created the bet, computes every payout and fee from the stakes (Pro looked up on the server), and records the winner, `resolvedAt`, the 48-hour dispute window, each participant's outcome, PENDING winnings (what the wallet shows as pending payouts) and $0 loss records. No money moves until `payout-processor` settles after the window (`settleBet`, which recomputes the payouts). Re-resolving after an upheld dispute cancels the overturned records.
 - **Real-time Updates**: Targeted subscriptions via BetDataContext with denormalized participant counts (`sideACount`, `sideBCount`, `participantUserIds`) on the Bet record
 - **Bet Sorting**: Automatic sorting by creation time (newest first) with status priority (LIVE > ACTIVE > PENDING_RESOLUTION)
 - **State Architecture**: Centralized BetDataContext provides derived views (`myBets`, `joinableBets`, etc.) consumed by BetsScreen and LiveEventsScreen
@@ -247,20 +247,14 @@ async function yourMainFunction() {
 - **Profile System**: Editable display names and profile pictures
 
 ### Payment Management System
-- **Venmo Integration**: Add funds and withdraw via Venmo (manual admin verification)
-- **Payment Methods**: Add/manage multiple Venmo accounts with verification
-- **Transaction Service**: Complete audit trail for all balance changes
+- **Card deposits**: Stripe (see STRIPE_GUIDE.md); the webhook credits the balance through the server's ledger
+- **Withdrawals**: to any active Venmo account of the user's. The server's `requestWithdrawal` takes the amount (and computes the 2% fee, waived for Pro) when requested; an admin sends the money and approves, or rejects, which returns it. The admin checks the Venmo handle when approving: accounts are not verified first (owner's decision, 2026-10-05)
 - **Unified History**: Single screen showing deposits, withdrawals, bets, wins, refunds
-- **Admin Dashboard**: Full transaction approval interface for admins
+- **Admin Dashboard**: pending deposits and withdrawals, approved or rejected through the server's `adminDecideTransaction`
 
 ### Admin Role System
-- **Role-Based Access Control**: Three user roles (USER, ADMIN, SUPER_ADMIN)
-- **AuthContext Integration**: User role loaded on authentication and stored in context
-- **UI Protection**: Admin dashboard menu option only visible to admin users
-- **Screen Validation**: AdminDashboardScreen validates role on mount
-- **Service-Layer Security**: TransactionService validates admin role before allowing status updates
-- **Database Schema**: User.role field with default value of 'USER'
-- **Admin Functions**: Approve/reject deposits, approve/reject withdrawals, view pending transactions
+- **Admins are the Cognito `admins` group**, checked by the server on every admin action (`amplify/shared/callerAuth.ts`). See the Admin Role System section below.
+- **`User.role`** still drives what the app shows (the Admin Dashboard entry), but grants nothing: anyone could write it on their own record.
 
 ### User Experience
 - **Authentication**: AWS Cognito with native UI components
@@ -474,7 +468,6 @@ updateProfilePicture(userId, currentUrl?) -> {
 // 2. 11 targeted subscriptions: Bet/SquaresGame onCreate/onUpdate/onDelete,
 //    BetInvitation/SquaresInvitation onCreate/onUpdate, Friendship/SquaresPurchase onCreate
 // 3. Derived state via useMemo: Automatically recomputes filtered lists when underlying data changes
-// 4. Optimistic updates: implemented in joinBet below, but DEAD — nothing calls it
 
 // Denormalized Bet Fields (eliminates participant queries for list views):
 //   sideACount: number    — count of Side A participants
@@ -492,11 +485,7 @@ betInvitations: BetInvitation[]        // Pending bet invitations for user
 squaresInvitations: SquaresInvitation[] // Pending squares invitations for user
 
 // Actions:
-joinBet(bet, side, amount) -> Promise<boolean>    // DEAD CODE — no callers anywhere in src.
-                                                  // Joining runs through BetCard.confirmJoinBet
-                                                  // instead, which has no optimistic update.
-                                                  // Delete this or route the UI through it.
-acceptBetInvitation(invitation, side) -> Promise<boolean>
+acceptBetInvitation(invitation, side) -> Promise<boolean>  // joins via joinBet, then marks it accepted
 declineBetInvitation(invitation) -> Promise<void>
 refresh() -> Promise<void>                         // Force full reload
 
@@ -505,6 +494,20 @@ const { myBets, joinableBets, betInvitations, refresh } = useBetData();
 ```
 
 **Important:** `bulkLoadingService.ts` still exists but is **dead code** — no screens import from it. All data loading goes through BetDataContext.
+
+### Money (server-side ledger)
+
+**Balances change only on the server.** The `money` Lambda (`amplify/functions/money/`) is
+the one place a balance or money record is written: each movement is a single DynamoDB
+transaction (compare-and-swap on the balance, a fixed id per movement so retries cannot
+double-pay, never below zero) built by `amplify/shared/ledgerLogic.ts`. The scheduled
+Lambdas and the Stripe webhook reach it through `amplify/shared/moneyClient.ts`; the app
+reaches it through user-facing mutations (`joinBet`, `resolveBet`, `acceptBetResult`, `buySquares`, `cancelSquaresGame`, and `createBetWithStake` for a new
+bet with its creator's stake, so far). The plan, what is done and
+what is left (the app still writes some money records directly until step 3 finishes) is
+in [docs/SECURITY_PLAN.md](./docs/SECURITY_PLAN.md). Do not add a new balance write
+anywhere else. Sandbox checks: `scripts/sandbox-money-check.mjs` and
+`scripts/sandbox-money-flows-check.mjs` (sandbox only; they refuse other endpoints).
 
 ### Transaction Service
 ```typescript
@@ -527,19 +530,12 @@ TransactionService.createWithdrawal(userId, amount, paymentMethodId, venmoUserna
   - Validates sufficient balance before creating request
 
 TransactionService.recordBetPlacement(userId, amount, betId, participantId) -> Promise<Transaction>
-  - Automatically called when user joins bet
-  - Creates COMPLETED transaction
-  - Deducts balance immediately
+  - NO CALLERS (to be deleted, security plan step 3g): joining uses the joinBet mutation and
+    creating a bet uses createBetWithStake, both of which take the stake on the server
 
-TransactionService.recordBetWinnings(userId, amount, betId, participantId) -> Promise<Transaction>
-  - Automatically called when bet is resolved
-  - Creates COMPLETED transaction
-  - Credits balance with winnings
-
-TransactionService.recordBetCancellation(userId, amount, betId, participantId) -> Promise<Transaction>
-  - Refunds user when bet is cancelled
-  - Creates COMPLETED transaction
-  - Credits balance with original bet amount
+TransactionService.recordBetWinnings / recordBetCancellation / recordBetLoss
+  - NO CALLERS (to be deleted, step 3g). Winnings are paid by payout-processor through the
+    money function; refunds by the scheduled checkers; losses are recorded by resolveBet
 
 TransactionService.getUserTransactions(userId, options?) -> Promise<Transaction[]>
   - Get user's transaction history with filtering
@@ -552,14 +548,6 @@ TransactionService.updateTransactionStatus(transactionId, status, failureReason?
   - Sends notifications for status changes
 
 // Usage Examples:
-// User joins bet (automatic)
-const transaction = await TransactionService.recordBetPlacement(
-  userId,
-  50,
-  betId,
-  participantId
-);
-
 // User requests deposit (manual admin approval needed)
 const deposit = await TransactionService.createDeposit(
   userId,
@@ -626,177 +614,40 @@ await PaymentMethodService.verifyPaymentMethod(
 
 ## Admin Role System
 
-### Overview
-The app uses a role-based access control system with three user roles: `USER` (default), `ADMIN`, and `SUPER_ADMIN`. Admin roles have special permissions to approve deposits/withdrawals and manage transactions.
+**Admin is the Cognito `admins` group** (`amplify/auth/resource.ts`), checked by the money
+function on every admin action: approving or rejecting deposits and withdrawals
+(`adminDecideTransaction`), releasing a stuck squares game (`cancelSquaresGame`) and, from
+step 3e-2, resolving disputes. The caller's groups come from their Cognito token, which no user
+can edit. It used to be the `User.role` field, checked on the phone; users could write their
+own record, so anyone could make themselves an admin.
 
-### Architecture
+`User.role` (`USER` / `ADMIN` / `SUPER_ADMIN`) still decides what the app shows, such as the
+Admin Dashboard entry on the Account screen, and grants nothing. An admin needs both: the role
+to see the dashboard, and the group for the server to accept what they do there.
 
-#### 1. Database Schema
-```typescript
-// amplify/data/resource.ts
-User: a.model({
-  // ... other fields
-  role: a.enum(['USER', 'ADMIN', 'SUPER_ADMIN']).default('USER'),
-})
-```
+### Granting admin access
 
-#### 2. AuthContext Integration
-```typescript
-// src/contexts/AuthContext.tsx
-interface User {
-  userId: string;
-  username: string;
-  role: 'USER' | 'ADMIN' | 'SUPER_ADMIN';  // Role included in auth context
-}
+Owner's decision: the group holds only the owner's account.
 
-// Role is fetched from database during authentication
-const { data: userData } = await client.models.User.get({ id: currentUser.userId });
-const newUser = {
-  userId: currentUser.userId,
-  username: currentUser.username,
-  role: userData?.role || 'USER'
-};
-```
+1. **Group** (what the server checks): Cognito console, the user pool, Groups, `admins`, Add
+   users. The user signs out and in again so their token carries the group.
+2. **Role** (what the app shows): set `role` to `ADMIN` on their User row (DynamoDB console).
 
-#### 3. UI Protection Layer
-```typescript
-// src/screens/AccountScreen.tsx
-// Admin Dashboard menu option only visible to admin users
-{(user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN') && (
-  <View style={styles.adminMenuOption}>
-    <TouchableOpacity onPress={handleAdminDashboardPress}>
-      {/* Admin Dashboard menu item with badge */}
-    </TouchableOpacity>
-  </View>
-)}
-```
+### What an admin decides
 
-#### 4. Screen-Level Validation
-```typescript
-// src/screens/AdminDashboardScreen.tsx
-useEffect(() => {
-  // Check admin role on mount
-  if (!user || (user.role !== 'ADMIN' && user.role !== 'SUPER_ADMIN')) {
-    Alert.alert(
-      'Access Denied',
-      'You do not have permission to access the admin dashboard.',
-      [{ text: 'OK', onPress: onClose }]
-    );
-    return;
-  }
-  loadPendingTransactions();
-}, []);
-```
+- **Withdrawals**: requested through `requestWithdrawal`, which took the amount already.
+  Approving (after sending the money to the Venmo handle shown) completes it; rejecting returns
+  the money. A withdrawal requested by an older app version took nothing when requested, so
+  approving it takes the money then (and is refused if the balance no longer covers it).
+- **Card deposits** Stripe has not confirmed (check the PaymentIntent in Stripe first; the
+  approval asks for its last four characters): approving credits it, optionally a lower amount
+  received.
+- Each decision moves the money and the status together, only while the row is PENDING, so a
+  double tap or a decision racing the Stripe webhook cannot move money twice. The user is
+  notified and their trust score adjusted (`src/config/trustScoreConfig.ts`), as before.
 
-#### 5. Service-Layer Security
-```typescript
-// src/services/transactionService.ts
-static async updateTransactionStatus(
-  transactionId: string,
-  status: TransactionStatus,
-  failureReason?: string,
-  processedBy?: string  // Admin user ID required
-): Promise<boolean> {
-  // Validate admin role before allowing status update
-  if (processedBy) {
-    const { data: adminUser } = await client.models.User.get({ id: processedBy });
-    if (!adminUser || (adminUser.role !== 'ADMIN' && adminUser.role !== 'SUPER_ADMIN')) {
-      console.error('[Transaction] Unauthorized: User is not an admin');
-      return false;
-    }
-  }
-
-  // Proceed with transaction status update
-  // ...
-}
-```
-
-### Security Layers
-
-The admin system uses **defense in depth** with multiple security layers:
-
-1. **UI Layer**: Admin options hidden from non-admin users (user convenience)
-2. **Screen Layer**: Role validation when admin screens open (UI security)
-3. **Service Layer**: Role validation before admin operations execute (business logic security)
-4. **Database Layer**: Authorization rules limit transaction mutations (data security)
-
-### Admin Functions
-
-#### Approving Deposits
-```typescript
-// User requests deposit (creates PENDING transaction)
-const deposit = await TransactionService.createDeposit(
-  userId,
-  100,
-  paymentMethodId,
-  'venmo-transaction-id'
-);
-
-// Admin approves (updates to COMPLETED and credits balance)
-await TransactionService.updateTransactionStatus(
-  deposit.id,
-  'COMPLETED',
-  undefined,
-  adminUserId  // Admin role validated here
-);
-```
-
-#### Rejecting Deposits/Withdrawals
-```typescript
-// Admin rejects with reason (updates to FAILED)
-await TransactionService.updateTransactionStatus(
-  transactionId,
-  'FAILED',
-  'Invalid Venmo transaction ID',
-  adminUserId  // Admin role validated here
-);
-```
-
-#### Viewing Pending Transactions
-```typescript
-// Get all pending transactions (admin dashboard)
-const pending = await TransactionService.getPendingTransactions();
-// Returns array of PENDING deposits/withdrawals with full details
-```
-
-### Granting Admin Access
-
-To grant admin access to a user:
-
-1. **Direct Database Update** (development/testing):
-```typescript
-await client.models.User.update({
-  id: 'user-id-here',
-  role: 'ADMIN'
-});
-```
-
-2. **AWS Console** (production):
-   - Open DynamoDB console
-   - Find User table
-   - Locate user by ID
-   - Update `role` field to `ADMIN` or `SUPER_ADMIN`
-
-3. **Future Enhancement**: Create admin management UI for SUPER_ADMIN to grant/revoke admin roles
-
-### Admin Dashboard Features
-
-- **Pending Transaction List**: View all deposits/withdrawals awaiting action
-- **Filter by Type**: Filter to show only deposits or only withdrawals
-- **Transaction Details**: View user ID, Venmo username, transaction ID, balances
-- **Approve Action**: Green checkmark to approve and complete transaction
-- **Reject Action**: Red X to reject with reason (prompts for explanation)
-- **Real-time Updates**: Pull-to-refresh to get latest pending transactions
-- **Stats Summary**: Count of total pending, deposits, and withdrawals
-
-### Important Notes
-
-- **Default Role**: All new users are created with `role: 'USER'`
-- **Role Persistence**: Role is stored in User table and loaded into AuthContext on login
-- **Admin Badge**: Admin dashboard menu item shows orange "ADMIN" badge for visibility
-- **Validation Required**: `processedBy` parameter is required for TransactionService.updateTransactionStatus
-- **Audit Trail**: All admin actions record the admin user ID in `processedBy` field
-- **Notifications**: Users receive notifications when deposits/withdrawals are approved/rejected
+The dashboard lists pending deposits and withdrawals, filters by type, and shows the user,
+Venmo handle, amounts and fee.
 
 ## SideBet Design System Architecture
 
@@ -1071,7 +922,10 @@ e2e/
 ├── auth.spec.ts          # Login, password reset, sign up (unauthenticated)
 ├── app-shell.spec.ts     # Session boot, tab navigation, bet list rendering
 ├── create-bet.spec.ts    # Create-bet form validation
-├── join-bet.spec.ts      # Joining: guards, success, compensating delete
+├── join-bet.spec.ts      # Joining through joinBet: refusals, success, no client money writes
+├── resolve-bet.spec.ts   # Resolving through resolveBet: the choice is sent, nothing else written
+├── accept-result.spec.ts # Accepting a result through acceptBetResult (early close is server-side)
+├── buy-squares.spec.ts   # Buying squares through buySquares, from the Join tab
 ├── invitations.spec.ts   # Bet invitations listed and declined
 ├── notification-settings.spec.ts # Push prompt timing, device registration, sign-out scope
 ├── notification-preferences.spec.ts # Category alerts/feed, quiet hours, device list, feed filtering

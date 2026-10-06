@@ -278,29 +278,6 @@ export class PaymentMethodService {
   }
 
   /**
-   * Verify a payment method (admin action)
-   */
-  static async verifyPaymentMethod(
-    paymentMethodId: string,
-    verificationMethod: VerificationMethod
-  ): Promise<boolean> {
-    try {
-      await client.models.PaymentMethod.update({
-        id: paymentMethodId,
-        isVerified: true,
-        verifiedAt: new Date().toISOString(),
-        verificationMethod,
-      });
-
-      console.log('[PaymentMethod] Payment method verified:', paymentMethodId);
-      return true;
-    } catch (error) {
-      console.error('[PaymentMethod] Error verifying payment method:', error);
-      return false;
-    }
-  }
-
-  /**
    * Update last used timestamp
    */
   static async updateLastUsed(paymentMethodId: string): Promise<void> {

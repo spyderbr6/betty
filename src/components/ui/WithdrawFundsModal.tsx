@@ -21,7 +21,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, typography, textStyles } from '../../styles';
 import { useAuth } from '../../contexts/AuthContext';
 import { ModalHeader } from './ModalHeader';
+import { useProfile } from '../../contexts/ProfileContext';
 import { TransactionService } from '../../services/transactionService';
+import { requestWithdrawal } from '../../services/walletService';
+import { newRequestId, withdrawProblem } from '../../services/walletLogic';
+import { MIN_WITHDRAWAL, WITHDRAWAL_FEE_RATE, isProActive, withdrawalFee } from '../../config/subscriptionConfig';
 import { PaymentMethodService } from '../../services/paymentMethodService';
 import type { PaymentMethod } from '../../services/paymentMethodService';
 import { formatCurrency } from '../../utils/formatting';
@@ -34,8 +38,6 @@ interface WithdrawFundsModalProps {
   onAddPaymentMethod?: () => void;
 }
 
-const MIN_WITHDRAWAL = 10;
-const WITHDRAWAL_FEE_PERCENT = 0; // 0% fee for now, can be changed later
 
 export const WithdrawFundsModal: React.FC<WithdrawFundsModalProps> = ({
   visible,
@@ -44,6 +46,11 @@ export const WithdrawFundsModal: React.FC<WithdrawFundsModalProps> = ({
   onAddPaymentMethod,
 }) => {
   const { user } = useAuth();
+  const { profile } = useProfile();
+  const isPro = isProActive(profile);
+  // The id of the request being submitted; kept across a retry whose outcome is unknown,
+  // so a second tap after a lost answer cannot make a second withdrawal
+  const requestIdRef = React.useRef<string | null>(null);
   const [amount, setAmount] = useState('');
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<PaymentMethod | null>(null);
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
@@ -58,7 +65,8 @@ export const WithdrawFundsModal: React.FC<WithdrawFundsModalProps> = ({
     if (visible && user?.userId) {
       loadData();
     } else {
-      // Reset state when modal closes
+      // Reset state when modal closes (reopening it is a new request)
+      requestIdRef.current = null;
       setAmount('');
       setSelectedPaymentMethod(null);
       setStep('select_method');
@@ -77,11 +85,12 @@ export const WithdrawFundsModal: React.FC<WithdrawFundsModalProps> = ({
         TransactionService.getUserBalance(user.userId),
       ]);
 
-      const venmoMethods = methods.filter(m => m.type === 'VENMO' && m.isVerified);
+      // Any active Venmo account: the admin checks the handle when approving
+      const venmoMethods = methods.filter(m => m.type === 'VENMO' && m.isActive !== false);
       setPaymentMethods(venmoMethods);
       setUserBalance(balance);
 
-      // Auto-select default or first verified method
+      // Auto-select default or first method
       const defaultMethod = venmoMethods.find(m => m.isDefault) || venmoMethods[0];
       if (defaultMethod) {
         setSelectedPaymentMethod(defaultMethod);
@@ -93,12 +102,11 @@ export const WithdrawFundsModal: React.FC<WithdrawFundsModalProps> = ({
     }
   };
 
-  const calculateFee = (amount: number): number => {
-    return amount * (WITHDRAWAL_FEE_PERCENT / 100);
-  };
+  // The fee the server will charge (the same function), so the user sees what they pay
+  const calculateFee = (amount: number): number => withdrawalFee(amount, isPro);
 
   const calculateTotal = (amount: number): number => {
-    return amount - calculateFee(amount);
+    return Math.round((amount - calculateFee(amount)) * 100) / 100;
   };
 
   const validateAmount = (): boolean => {
@@ -125,7 +133,7 @@ export const WithdrawFundsModal: React.FC<WithdrawFundsModalProps> = ({
   const handleContinue = () => {
     if (step === 'select_method') {
       if (!selectedPaymentMethod) {
-        showAlert('Select Payment Method', 'Please select a verified Venmo account');
+        showAlert('Select Payment Method', 'Please select a Venmo account');
         return;
       }
       setStep('enter_amount');
@@ -151,18 +159,26 @@ export const WithdrawFundsModal: React.FC<WithdrawFundsModalProps> = ({
 
       const numAmount = parseFloat(amount);
 
-      // Create pending withdrawal transaction
-      const transaction = await TransactionService.createWithdrawal(
-        user.userId,
-        numAmount,
-        selectedPaymentMethod.id,
-        selectedPaymentMethod.venmoUsername || ''
-      );
+      // One server call: it checks the account is yours, the amount and the balance,
+      // computes the fee, and takes the amount now as a pending withdrawal an admin then
+      // sends or rejects (a rejection returns it). This phone used to only check the
+      // balance, so several requests could add up to more than it.
+      if (!requestIdRef.current) requestIdRef.current = newRequestId();
+      const result = await requestWithdrawal({
+        requestId: requestIdRef.current,
+        amount: numAmount,
+        paymentMethodId: selectedPaymentMethod.id,
+      });
 
-      if (!transaction) {
-        showAlert('Error', 'Failed to create withdrawal request. Please try again.');
+      const problem = withdrawProblem(result);
+      if (problem) {
+        // A refusal wrote nothing, so the next attempt can use a fresh id; a failed call
+        // may have gone through, so it keeps this one
+        if (result) requestIdRef.current = null;
+        showAlert(problem.title, problem.message);
         return;
       }
+      requestIdRef.current = null;
 
       // Update last used timestamp
       await PaymentMethodService.updateLastUsed(selectedPaymentMethod.id);
@@ -206,6 +222,7 @@ export const WithdrawFundsModal: React.FC<WithdrawFundsModalProps> = ({
           {paymentMethods.map((method) => (
             <TouchableOpacity
               key={method.id}
+              testID={`withdraw-method-${method.id}`}
               style={[
                 styles.methodCard,
                 selectedPaymentMethod?.id === method.id && styles.methodCardSelected,
@@ -220,10 +237,12 @@ export const WithdrawFundsModal: React.FC<WithdrawFundsModalProps> = ({
                 <View style={styles.methodDetails}>
                   <Text style={styles.methodName}>{method.displayName}</Text>
                   <Text style={styles.methodUsername}>{method.venmoUsername}</Text>
-                  <View style={styles.verifiedBadge}>
-                    <Ionicons name="checkmark-circle" size={12} color={colors.success} />
-                    <Text style={styles.verifiedText}>Verified</Text>
-                  </View>
+                  {method.isVerified && (
+                    <View style={styles.verifiedBadge}>
+                      <Ionicons name="checkmark-circle" size={12} color={colors.success} />
+                      <Text style={styles.verifiedText}>Verified</Text>
+                    </View>
+                  )}
                 </View>
               </View>
               {selectedPaymentMethod?.id === method.id && (
@@ -235,9 +254,9 @@ export const WithdrawFundsModal: React.FC<WithdrawFundsModalProps> = ({
       ) : (
         <View style={styles.emptyState}>
           <Ionicons name="alert-circle-outline" size={64} color={colors.warning} />
-          <Text style={styles.emptyTitle}>No Verified Accounts</Text>
+          <Text style={styles.emptyTitle}>No Venmo Accounts</Text>
           <Text style={styles.emptyDescription}>
-            You need a verified Venmo account before you can withdraw funds. Please add and verify a payment method first.
+            You need a Venmo account before you can withdraw funds. Please add one first.
           </Text>
           <TouchableOpacity
             style={styles.addMethodButton}
@@ -255,6 +274,7 @@ export const WithdrawFundsModal: React.FC<WithdrawFundsModalProps> = ({
 
       <TouchableOpacity
         style={[styles.continueButton, !selectedPaymentMethod && styles.continueButtonDisabled]}
+        testID="withdraw-continue"
         onPress={handleContinue}
         disabled={!selectedPaymentMethod}
         activeOpacity={0.8}
@@ -282,6 +302,7 @@ export const WithdrawFundsModal: React.FC<WithdrawFundsModalProps> = ({
           <Text style={styles.currencySymbol}>$</Text>
           <View style={styles.amountInputWrapper}>
             <TextInput
+              testID="withdraw-amount"
               style={styles.amountInput}
               placeholder="0.00"
               placeholderTextColor={colors.textMuted}
@@ -341,9 +362,9 @@ export const WithdrawFundsModal: React.FC<WithdrawFundsModalProps> = ({
             <Text style={styles.feeLabel}>Withdrawal Amount</Text>
             <Text style={styles.feeValue}>{formatCurrency(parseFloat(amount))}</Text>
           </View>
-          {WITHDRAWAL_FEE_PERCENT > 0 && (
+          {calculateFee(parseFloat(amount)) > 0 && (
             <View style={styles.feeRow}>
-              <Text style={styles.feeLabel}>Fee ({WITHDRAWAL_FEE_PERCENT}%)</Text>
+              <Text style={styles.feeLabel}>Fee ({Math.round(WITHDRAWAL_FEE_RATE * 100)}%)</Text>
               <Text style={styles.feeValue}>-{formatCurrency(calculateFee(parseFloat(amount)))}</Text>
             </View>
           )}
@@ -374,6 +395,7 @@ export const WithdrawFundsModal: React.FC<WithdrawFundsModalProps> = ({
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.continueButton, styles.continueButtonFlex]}
+          testID="withdraw-continue"
           onPress={handleContinue}
           activeOpacity={0.8}
         >
@@ -394,19 +416,19 @@ export const WithdrawFundsModal: React.FC<WithdrawFundsModalProps> = ({
           <Text style={styles.summaryLabel}>Withdrawal Amount</Text>
           <Text style={styles.summaryValue}>{formatCurrency(parseFloat(amount))}</Text>
         </View>
-        {WITHDRAWAL_FEE_PERCENT > 0 && (
+        {calculateFee(parseFloat(amount)) > 0 && (
           <>
             <View style={styles.summaryDivider} />
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabel}>Processing Fee</Text>
-              <Text style={styles.summaryValue}>-{formatCurrency(calculateFee(parseFloat(amount)))}</Text>
+              <Text testID="withdraw-fee" style={styles.summaryValue}>-{formatCurrency(calculateFee(parseFloat(amount)))}</Text>
             </View>
           </>
         )}
         <View style={styles.summaryDivider} />
         <View style={styles.summaryRow}>
           <Text style={styles.summaryLabelBold}>You'll Receive</Text>
-          <Text style={styles.summaryValueBold}>{formatCurrency(calculateTotal(parseFloat(amount)))}</Text>
+          <Text testID="withdraw-receive" style={styles.summaryValueBold}>{formatCurrency(calculateTotal(parseFloat(amount)))}</Text>
         </View>
         <View style={styles.summaryDivider} />
         <View style={styles.summaryRow}>
@@ -426,7 +448,7 @@ export const WithdrawFundsModal: React.FC<WithdrawFundsModalProps> = ({
         <View style={styles.warningContent}>
           <Text style={styles.warningTitle}>Withdrawal Notice</Text>
           <Text style={styles.warningText}>
-            Your withdrawal request will be reviewed and processed within 1-2 business days. Funds will be sent to your verified Venmo account. You cannot cancel this request once submitted.
+            Your withdrawal request will be reviewed and processed within 1-2 business days. Funds will be sent to your Venmo account. You cannot cancel this request once submitted.
           </Text>
         </View>
       </View>
@@ -438,6 +460,7 @@ export const WithdrawFundsModal: React.FC<WithdrawFundsModalProps> = ({
           <Text style={styles.backButtonText}>Back</Text>
         </TouchableOpacity>
         <TouchableOpacity
+          testID="withdraw-submit"
           style={[styles.submitButton, isSubmitting && styles.submitButtonDisabled]}
           onPress={handleSubmit}
           disabled={isSubmitting}

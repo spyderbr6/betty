@@ -81,11 +81,12 @@ test('first sign-in creates the User record once, before onboarding', async ({ p
     baseHandlers({
       // No record until something creates one
       getUser: () => record,
-      createUser: (v) => {
-        const input = (v as { input: Vars }).input;
-        creates.push(input);
-        record = { ...input, onboardingCompleted: false };
-        return record;
+      // The server creates the record (ensureMyUserRecord) with balance 0 and role USER;
+      // the phone sends only display details. This stands in for it.
+      ensureMyUserRecord: (v) => {
+        creates.push(v);
+        record = { id: TEST_USER.userId, username: TEST_USER.username, email: v.email, balance: 0, role: 'USER', tosAccepted: true, privacyPolicyAccepted: true, onboardingCompleted: false };
+        return JSON.stringify({ status: 'created' });
       },
       createNotificationPreferences: (v) => ({ id: 'prefs-new', ...(v as { input: Vars }).input }),
     })
@@ -94,14 +95,10 @@ test('first sign-in creates the User record once, before onboarding', async ({ p
   await page.goto('/');
 
   await expect.poll(() => creates.length, { timeout: 30_000 }).toBe(1);
-  expect(creates[0]).toMatchObject({
-    id: TEST_USER.userId,
-    username: TEST_USER.username,
-    email: TEST_USER.email,
-    balance: 0,
-    tosAccepted: true,
-    privacyPolicyAccepted: true,
-  });
+  expect(creates[0]).toMatchObject({ email: TEST_USER.email });
+  // Money and role are the server's to set: the phone sends none, and never createUser
+  expect(creates[0]).not.toHaveProperty('balance');
+  expect(calls).not.toContain('createUser');
   // The record exists before onboarding writes to it, so its progress saves land
   await expect.poll(() => calls.includes('createNotificationPreferences')).toBe(true);
   await page.waitForTimeout(1_000);
