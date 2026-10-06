@@ -62,6 +62,8 @@ export interface LedgerEntry {
   relatedSquaresGameId?: string;
   stripePaymentIntentId?: string;
   paymentMethodId?: string;
+  /** The Venmo handle a withdrawal is sent to, shown to the admin who approves it. */
+  venmoUsername?: string;
   notes?: string;
   processedBy?: string;
   failureReason?: string;
@@ -266,6 +268,7 @@ function transactionItem(
     relatedSquaresGameId: entry.relatedSquaresGameId,
     stripePaymentIntentId: entry.stripePaymentIntentId,
     paymentMethodId: entry.paymentMethodId,
+    venmoUsername: entry.venmoUsername,
     notes: entry.notes,
     processedBy: entry.processedBy,
     failureReason: entry.failureReason,

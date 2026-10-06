@@ -31,6 +31,9 @@
  *      the grid with server-drawn numbers; who may cancel, and every buyer refunded
  *  11. scheduled-squares-checker, overtime: periods 1-3 pay as they come, the final share
  *      waits for the end and pays once on the overtime score; payouts total the pot
+ *  12. money (requestWithdrawal, adminDecideTransaction): the amount is reserved at request
+ *      and once per request; only admins decide; approval completes, rejection refunds;
+ *      older unreserved withdrawals are taken on approval; deposit fees are kept
  *
  * The Lambdas act on ALL sandbox data when invoked, exactly as their schedules do.
  *
@@ -657,6 +660,64 @@ try {
     check('the final share goes to the overtime score, once, and nothing pays overtime itself', final?.userId === overtimeWinner && final.amount === 18 && done.length === 4 && same(await balance(regulationSquare), 0), JSON.stringify(done));
     check('everything paid adds up to the pot, not more', same(grossTotal, 40) && same((await balance(quarters)) + (await balance(overtimeWinner)), 40 * 0.97), `gross ${grossTotal}, credited ${(await balance(quarters)) + (await balance(overtimeWinner))}`);
     check('with all four paid the game resolves', (await get('squaresGame', ot, 'status')).status === 'RESOLVED');
+
+    // 12. Withdrawals (requestWithdrawal) and admin decisions (adminDecideTransaction) ------
+    const wal = await user('wal');
+    await credit(wal, 100);
+    const method = await create('paymentMethod', {
+      userId: wal, type: 'VENMO', venmoUsername: 'wal-venmo', displayName: 'Wal Venmo',
+      isVerified: false, isActive: true, isDefault: true,
+    });
+    const otherMethod = await create('paymentMethod', {
+      userId: alice, type: 'VENMO', venmoUsername: 'alice-venmo', displayName: 'Alice Venmo', isVerified: true, isActive: true, isDefault: true,
+    });
+    const asAdmin = (field, args) => asUser(`${run}-admin`, field, args, ['admins']);
+    const withdraw = (requestId, amount, paymentMethodId = method) => {
+      ledgerIds.push(`withdrawal#${requestId}`);
+      return asUser(wal, 'requestWithdrawal', { requestId, amount, paymentMethodId });
+    };
+    const trustRows = async (transactionId) => {
+      const r = await gql('query ($f: ModelTrustScoreHistoryFilterInput) { listTrustScoreHistories(filter: $f, limit: 1000) { items { id } } }', { f: { relatedTransactionId: { eq: transactionId } } });
+      for (const h of r.listTrustScoreHistories.items) created.push(['trustScoreHistory', h.id]);
+    };
+
+    const w1 = randomUUID();
+    const requested = await withdraw(w1, 50);
+    const w1row = await get('transaction', `withdrawal#${w1}`, 'status amount platformFee actualAmount venmoUsername');
+    check('a withdrawal request takes the amount now, with the fee recorded (unverified account allowed)', requested.status === 'requested' && same(requested.balance, 50) && same(await balance(wal), 50) && w1row?.status === 'PENDING' && w1row.amount === 50 && w1row.platformFee === 1 && w1row.actualAmount === 49 && w1row.venmoUsername === 'wal-venmo', `${JSON.stringify(requested)} ${JSON.stringify(w1row)}`);
+    const repeated = await withdraw(w1, 50);
+    check('repeating the same request takes nothing more', repeated.status === 'requested' && same(await balance(wal), 50), JSON.stringify(repeated));
+    const tooMuch = await withdraw(randomUUID(), 60);
+    check('what a pending request reserved cannot be withdrawn again', tooMuch.reason === 'INSUFFICIENT_FUNDS' && same(await balance(wal), 50), JSON.stringify(tooMuch));
+    const notMine = await withdraw(randomUUID(), 10, otherMethod);
+    check('only the user\'s own Venmo account can receive it', notMine.reason === 'NO_METHOD', JSON.stringify(notMine));
+
+    const byUser = await asUser(wal, 'adminDecideTransaction', { transactionId: `withdrawal#${w1}`, approve: true });
+    check('an account outside the admins group cannot decide', byUser.reason === 'NOT_ADMIN', JSON.stringify(byUser));
+    const approved = await asAdmin('adminDecideTransaction', { transactionId: `withdrawal#${w1}`, approve: true });
+    await trustRows(`withdrawal#${w1}`);
+    check('approving completes it without taking the money again', approved.status === 'decided' && approved.outcome === 'COMPLETED' && same(await balance(wal), 50) && (await get('transaction', `withdrawal#${w1}`, 'status')).status === 'COMPLETED', JSON.stringify(approved));
+    const decidedAgain = await asAdmin('adminDecideTransaction', { transactionId: `withdrawal#${w1}`, approve: false, reason: 'late' });
+    check('a decided withdrawal cannot be decided again', decidedAgain.reason === 'NOT_PENDING' && same(await balance(wal), 50), JSON.stringify(decidedAgain));
+
+    const w2 = randomUUID();
+    await withdraw(w2, 20);
+    const rejected = await asAdmin('adminDecideTransaction', { transactionId: `withdrawal#${w2}`, approve: false, reason: 'Handle not found' });
+    await trustRows(`withdrawal#${w2}`);
+    check('rejecting gives the money back', rejected.outcome === 'FAILED' && same(await balance(wal), 50) && (await get('transaction', `withdrawal#${w2}`, 'status failureReason')).failureReason === 'Handle not found', JSON.stringify(rejected));
+
+    // Requested by an older app version: nothing was taken then, so approval takes it
+    const legacy = await create('transaction', { userId: wal, type: 'WITHDRAWAL', status: 'PENDING', amount: 10, balanceBefore: 50, balanceAfter: 40, createdAt: new Date().toISOString() });
+    const legacyApproved = await asAdmin('adminDecideTransaction', { transactionId: legacy, approve: true });
+    await trustRows(legacy);
+    check('an older, unreserved withdrawal is taken on approval', legacyApproved.outcome === 'COMPLETED' && same(await balance(wal), 40), JSON.stringify(legacyApproved));
+
+    // A card deposit Stripe never confirmed, approved by hand: credited, its fee kept
+    const deposit = await create('transaction', { userId: wal, type: 'DEPOSIT', status: 'PENDING', amount: 25, platformFee: 0.5, balanceBefore: 40, balanceAfter: 65, createdAt: new Date().toISOString() });
+    const depositApproved = await asAdmin('adminDecideTransaction', { transactionId: deposit, approve: true });
+    await trustRows(deposit);
+    const depositRow = await get('transaction', deposit, 'status platformFee actualAmount');
+    check('approving a deposit credits it and keeps its recorded fee', depositApproved.outcome === 'COMPLETED' && same(await balance(wal), 65) && depositRow.status === 'COMPLETED' && depositRow.platformFee === 0.5, JSON.stringify(depositRow));
     for (const h of (await gql('query ($f: ModelTrustScoreHistoryFilterInput) { listTrustScoreHistories(filter: $f, limit: 1000) { items { id } } }', { f: { relatedBetId: { eq: a.id } } })).listTrustScoreHistories.items) {
       created.push(['trustScoreHistory', h.id]);
     }

@@ -25,6 +25,8 @@ import { ModalHeader } from '../components/ui/ModalHeader';
 import { useAuth } from '../contexts/AuthContext';
 import { formatCurrency } from '../utils/formatting';
 import { TransactionService } from '../services/transactionService';
+import { adminDecideTransaction } from '../services/walletService';
+import { decideProblem } from '../services/walletLogic';
 import type { Transaction } from '../services/transactionService';
 import { SquaresGameService } from '../services/squaresGameService';
 import { generateClient } from 'aws-amplify/data';
@@ -235,17 +237,19 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
       setProcessingId(approvalTransaction.id);
 
       console.log('[AdminDashboard] Approving transaction:', approvalTransaction.id, 'with actual amount:', actualAmount);
-      const success = await TransactionService.updateTransactionStatus(
-        approvalTransaction.id,
-        'COMPLETED',
-        undefined,
-        user.userId,
-        actualAmount // Pass the actual amount received
-      );
+      // The server checks this account is in the admins group, and moves the money and
+      // the status together while the row is still pending. The amount received only
+      // applies to a deposit.
+      const result = await adminDecideTransaction({
+        transactionId: approvalTransaction.id,
+        approve: true,
+        ...(approvalTransaction.type === 'DEPOSIT' ? { actualAmount } : {}),
+      });
+      const problem = decideProblem(result);
 
-      console.log('[AdminDashboard] Approval result:', success);
+      console.log('[AdminDashboard] Approval result:', result);
 
-      if (success) {
+      if (!problem) {
         const feeAmount = approvalTransaction.amount - actualAmount;
         const feeLabel = approvalTransaction.stripePaymentIntentId ? 'shortfall' : 'Venmo fee';
         const message = feeAmount > 0.01
@@ -255,7 +259,7 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
         console.log('[AdminDashboard] Reloading transactions after approval...');
         await loadPendingTransactions();
       } else {
-        showAlert('Error', 'Failed to approve transaction');
+        showAlert('Error', problem);
       }
     } catch (error) {
       console.error('[AdminDashboard] Error approving transaction:', error);
@@ -287,21 +291,21 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
       setRejectModalVisible(false);
       setProcessingId(rejectTransaction.id);
 
-      const success = await TransactionService.updateTransactionStatus(
-        rejectTransaction.id,
-        'FAILED',
-        rejectReason.trim(),
-        user.userId
-      );
+      const result = await adminDecideTransaction({
+        transactionId: rejectTransaction.id,
+        approve: false,
+        reason: rejectReason.trim(),
+      });
+      const problem = decideProblem(result);
 
-      console.log('[AdminDashboard] Rejection result:', success);
+      console.log('[AdminDashboard] Rejection result:', result);
 
-      if (success) {
+      if (!problem) {
         showAlert('Success', 'Transaction rejected successfully');
         console.log('[AdminDashboard] Reloading transactions after rejection...');
         await loadPendingTransactions();
       } else {
-        showAlert('Error', 'Failed to reject transaction');
+        showAlert('Error', problem);
       }
     } catch (error) {
       console.error('[AdminDashboard] Error rejecting transaction:', error);
@@ -392,6 +396,7 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
 
           <View style={styles.transactionActions}>
             <TouchableOpacity
+              testID={`admin-approve-${transaction.id}`}
               style={[styles.actionButton, styles.approveButton]}
               onPress={() => handleApprove(transaction)}
               disabled={isProcessing}
@@ -405,6 +410,7 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
             </TouchableOpacity>
 
             <TouchableOpacity
+              testID={`admin-reject-${transaction.id}`}
               style={[styles.actionButton, styles.rejectButton]}
               onPress={() => handleReject(transaction)}
               disabled={isProcessing}
@@ -767,6 +773,7 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
                 <View style={styles.amountInputContainer}>
                   <Text style={styles.currencySymbol}>$</Text>
                   <TextInput
+                    testID="admin-approval-amount"
                     style={styles.amountInput}
                     placeholder="0.00"
                     placeholderTextColor={colors.textMuted}
@@ -785,6 +792,7 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
                   Enter Last 4 Digits to Verify
                 </Text>
                 <TextInput
+                  testID="admin-approval-code"
                   style={styles.verificationInput}
                   placeholder="Last 4 digits"
                   placeholderTextColor={colors.textMuted}
@@ -806,6 +814,7 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
                   </TouchableOpacity>
 
                   <TouchableOpacity
+                    testID="admin-approval-confirm"
                     style={[
                       styles.approvalModalConfirmButton,
                       (verificationCode.length !== 4 || !actualAmountReceived || parseFloat(actualAmountReceived) <= 0) && styles.approvalModalConfirmButtonDisabled
@@ -861,6 +870,7 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
 
                 <Text style={styles.rejectModalLabel}>Reason for Rejection</Text>
                 <TextInput
+                  testID="admin-reject-reason"
                   style={styles.rejectModalInput}
                   placeholder="Enter reason (e.g., Invalid transaction ID, Payment not received)"
                   placeholderTextColor={colors.textMuted}
@@ -886,6 +896,7 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ onCl
                       styles.rejectModalConfirmButton,
                       !rejectReason.trim() && styles.rejectModalConfirmButtonDisabled
                     ]}
+                    testID="admin-reject-confirm"
                     onPress={handleConfirmReject}
                     disabled={!rejectReason.trim()}
                     activeOpacity={0.7}

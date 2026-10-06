@@ -962,6 +962,35 @@ const schema = a.schema({
     .handler(a.handler.function(money))
     .authorization((allow) => [allow.authenticated()]),
 
+  // Request a withdrawal to one of the user's Venmo accounts: the amount leaves the
+  // balance now as a PENDING withdrawal, with the fee computed here (shared/withdrawLogic.ts).
+  // requestId is the app's (a UUID), so a repeated request reaches the same withdrawal.
+  requestWithdrawal: a
+    .mutation()
+    .arguments({
+      requestId: a.id().required(),
+      amount: a.float().required(),
+      paymentMethodId: a.id().required(),
+    })
+    .returns(a.json())
+    .handler(a.handler.function(money))
+    .authorization((allow) => [allow.authenticated()]),
+
+  // An admin (the Cognito admins group, checked by the money function) approves or
+  // rejects a pending deposit or withdrawal; the money and the status change are one
+  // ledger transaction. actualAmount is a lower amount actually received on a deposit.
+  adminDecideTransaction: a
+    .mutation()
+    .arguments({
+      transactionId: a.id().required(),
+      approve: a.boolean().required(),
+      reason: a.string(),
+      actualAmount: a.float(),
+    })
+    .returns(a.json())
+    .handler(a.handler.function(money))
+    .authorization((allow) => [allow.authenticated()]),
+
   // Buy squares as the signed-in user: checked on the server, and one purchase row per
   // square (a fixed id each, so a square sells once), the debit and the game's counts in
   // one ledger transaction (shared/squaresBuyLogic.ts). A purchase that fills the grid

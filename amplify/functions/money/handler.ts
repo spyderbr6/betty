@@ -32,6 +32,8 @@ import { checkResolve, planResolve, type ExistingLedgerRow, type ResolvePlan, ty
 import { checkAccept, planAccept, type AcceptParticipant, type AcceptResult } from '../../shared/acceptLogic';
 import { checkBuy, ownsAllRequested, planBuy, planLock, purchaseTransactionId, type BuyResult, type Square } from '../../shared/squaresBuyLogic';
 import { cancelSquaresGame, checkSquaresCancel, type SquaresCancelRefusal } from '../../shared/squaresMoney';
+import { checkWithdraw, planDecide, planWithdraw, type DecideRefusal, type WithdrawResult } from '../../shared/withdrawLogic';
+import { DEFAULT_TRUST_SCORE, MAX_TRUST_SCORE, MIN_TRUST_SCORE, TRUST_CHANGES } from '../../../src/config/trustScoreConfig';
 import { randomInt } from 'node:crypto';
 
 const { resourceConfig, libraryOptions } = await getAmplifyDataClientConfig(env);
@@ -61,6 +63,12 @@ export const handler = async (event: AmplifyResolverEvent, context: Context): Pr
     }
     case 'acceptBetResult':
       return acceptBetResult(requireUser(caller, fieldName), (event.arguments as { betId: string }).betId);
+    case 'requestWithdrawal':
+      return requestWithdrawal(requireUser(caller, fieldName), event.arguments as unknown as RequestWithdrawalArgs);
+    case 'adminDecideTransaction': {
+      requireUser(caller, fieldName);
+      return adminDecideTransaction(caller as Extract<Caller, { kind: 'user' }>, event.arguments as unknown as DecideArgs);
+    }
     case 'buySquares':
       return buySquares(requireUser(caller, fieldName), event.arguments as unknown as BuySquaresArgs);
     case 'cancelSquaresGame': {
@@ -596,6 +604,144 @@ async function notifyClosingEarly(
     } catch (error) {
       console.warn(`[Money] Early-close notification failed for ${participant.userId}:`, error);
     }
+  }
+}
+
+// --- requestWithdrawal (app users) and adminDecideTransaction (admins) ----------------
+
+interface RequestWithdrawalArgs {
+  requestId: string;
+  amount: number;
+  paymentMethodId: string;
+}
+
+/**
+ * Request a withdrawal: the amount leaves the balance now, as a PENDING withdrawal an
+ * admin then completes or rejects (withdrawLogic). The request id is the app's, so a
+ * repeated request reaches the same withdrawal.
+ */
+async function requestWithdrawal(userId: string, args: RequestWithdrawalArgs): Promise<WithdrawResult> {
+  const { data: method } = await client.models.PaymentMethod.get({ id: args.paymentMethodId });
+  const refusal = checkWithdraw({ requestId: args.requestId, amount: args.amount, method, userId });
+  if (refusal) return { status: 'refused', ...refusal };
+
+  const { data: me } = await client.models.User.get({ id: userId });
+  const plan = planWithdraw({ requestId: args.requestId, userId, amount: args.amount, isPro: isProActive(me), method });
+  const result = await applyLedger([plan.entry]);
+  switch (result.status) {
+    case 'applied':
+      await touchUsers([userId]);
+      return {
+        status: 'requested',
+        transactionId: plan.entry.transactionId,
+        amount: plan.entry.amount,
+        fee: plan.fee,
+        net: plan.net,
+        balance: result.balances.find((b) => b.userId === userId)?.after ?? 0,
+      };
+    case 'already_applied': {
+      // A repeat of this request: report the withdrawal it made
+      const { data: earlier } = await client.models.Transaction.get({ id: plan.entry.transactionId });
+      if (earlier?.userId !== userId) return { status: 'refused', reason: 'INVALID_REQUEST' };
+      const { data: now } = await client.models.User.get({ id: userId });
+      return {
+        status: 'requested',
+        transactionId: earlier.id,
+        amount: earlier.amount ?? plan.entry.amount,
+        fee: earlier.platformFee ?? plan.fee,
+        net: earlier.actualAmount ?? plan.net,
+        balance: now?.balance ?? 0,
+      };
+    }
+    case 'insufficient_funds':
+      return { status: 'refused', reason: 'INSUFFICIENT_FUNDS', balance: result.balance, required: result.required };
+    default:
+      throw new Error(`Withdrawal ${plan.entry.transactionId}: ${JSON.stringify(result)}`);
+  }
+}
+
+interface DecideArgs {
+  transactionId: string;
+  approve: boolean;
+  reason?: string | null;
+  actualAmount?: number | null;
+}
+
+type DecideResult =
+  | { status: 'decided'; outcome: 'COMPLETED' | 'FAILED'; userId: string; credited: number }
+  | { status: 'refused'; reason: DecideRefusal | 'NOT_ADMIN' };
+
+/**
+ * An admin approves or rejects a pending deposit or withdrawal (withdrawLogic.planDecide).
+ * Admin is the Cognito admins group, checked here; the app used to check a role field
+ * users could write on their own record. The money and the status change are one ledger
+ * transaction, completed only while the row is still PENDING, so a double tap or a
+ * decision racing the Stripe webhook cannot move money twice.
+ */
+async function adminDecideTransaction(caller: Extract<Caller, { kind: 'user' }>, args: DecideArgs): Promise<DecideResult> {
+  if (!isAdmin(caller)) {
+    console.warn('[Money] adminDecideTransaction refused for non-admin', caller.sub);
+    return { status: 'refused', reason: 'NOT_ADMIN' };
+  }
+  const { data: tx } = await client.models.Transaction.get({ id: args.transactionId });
+  const plan = planDecide({ tx, approve: args.approve, adminId: caller.sub, reason: args.reason, actualAmount: args.actualAmount });
+  if ('refused' in plan) return { status: 'refused', reason: plan.refused };
+
+  const result = await applyLedger([plan.entry]);
+  if (result.status === 'already_applied') return { status: 'refused', reason: 'NOT_PENDING' };
+  if (result.status === 'insufficient_funds') return { status: 'refused', reason: 'INSUFFICIENT_FUNDS' };
+  if (result.status !== 'applied') throw new Error(`Decide ${args.transactionId}: ${JSON.stringify(result)}`);
+
+  const userId = plan.entry.userId;
+  const amount = plan.entry.amount;
+  const outcome = plan.entry.status as 'COMPLETED' | 'FAILED';
+  await touchUsers([userId]);
+
+  // What the app's admin path told the user and did to their trust score, unchanged
+  if (tx.type === 'DEPOSIT') {
+    if (outcome === 'COMPLETED') {
+      const fee = amount - plan.entry.delta;
+      await notifyUser(userId, 'DEPOSIT_COMPLETED', 'Deposit Successful',
+        fee > 0.01
+          ? `Your deposit of $${plan.entry.delta.toFixed(2)} has been completed (fee: $${fee.toFixed(2)})`
+          : `Your deposit of $${plan.entry.delta.toFixed(2)} has been completed`);
+      await adjustTrust(userId, TRUST_CHANGES.SUCCESSFUL_DEPOSIT, `Successfully deposited $${amount.toFixed(2)}`, tx.id);
+    } else {
+      await notifyUser(userId, 'DEPOSIT_FAILED', 'Deposit Failed', plan.entry.failureReason ?? 'Transaction could not be completed');
+      await adjustTrust(userId, TRUST_CHANGES.FAILED_TRANSACTION, 'Failed deposit - fraud attempt detected', tx.id);
+    }
+  } else if (outcome === 'COMPLETED') {
+    await notifyUser(userId, 'WITHDRAWAL_COMPLETED', 'Withdrawal Complete', `Your withdrawal of $${amount.toFixed(2)} has been sent`);
+    await adjustTrust(userId, TRUST_CHANGES.SUCCESSFUL_WITHDRAWAL, `Successfully withdrew $${amount.toFixed(2)}`, tx.id);
+  } else {
+    const returned = plan.entry.delta > 0 ? ` The $${plan.entry.delta.toFixed(2)} has been returned to your balance.` : '';
+    await notifyUser(userId, 'WITHDRAWAL_FAILED', 'Withdrawal Failed', `${plan.entry.failureReason ?? 'Transaction could not be completed'}.${returned}`);
+    await adjustTrust(userId, TRUST_CHANGES.FAILED_TRANSACTION, 'Failed withdrawal - fraud attempt detected', tx.id);
+  }
+
+  return { status: 'decided', outcome, userId, credited: plan.entry.delta };
+}
+
+/** A trust score change and its history row (the amounts are src/config/trustScoreConfig). */
+async function adjustTrust(userId: string, change: number, reason: string, relatedTransactionId: string): Promise<void> {
+  try {
+    const { data: user } = await client.models.User.get({ id: userId });
+    const current = typeof user?.trustScore === 'number' ? user.trustScore : DEFAULT_TRUST_SCORE;
+    const newScore = Math.max(MIN_TRUST_SCORE, Math.min(MAX_TRUST_SCORE, current + change));
+    await client.models.User.update({ id: userId, trustScore: newScore });
+    await client.models.TrustScoreHistory.create({
+      userId, change, newScore, reason, relatedTransactionId, createdAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.warn(`[Money] Trust score change failed for ${userId}:`, error);
+  }
+}
+
+async function notifyUser(userId: string, type: Parameters<typeof notificationMeta>[0], title: string, message: string): Promise<void> {
+  try {
+    await client.models.Notification.create({ userId, type, ...notificationMeta(type), title, message, isRead: false, priority: 'HIGH' });
+  } catch (error) {
+    console.warn(`[Money] ${type} notification failed for ${userId}:`, error);
   }
 }
 

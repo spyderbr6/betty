@@ -14,5 +14,9 @@ export const auth = defineAuth({
       required: true,
     }
   },
-  groups: ['bettors', 'moderators'],
+  // admins: the people who may approve deposits and withdrawals, resolve disputes and
+  // release stuck squares games. Membership is checked by the money function
+  // (shared/callerAuth.ts); the User.role field is display only. Add someone with the
+  // Cognito console or `aws cognito-idp admin-add-user-to-group`.
+  groups: ['bettors', 'moderators', 'admins'],
 });
