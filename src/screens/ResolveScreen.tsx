@@ -315,61 +315,6 @@ export const ResolveScreen: React.FC = () => {
     }
   };
 
-  const updateUserStats = async (userId: string, isWinner: boolean, betAmount: number, payout: number) => {
-    try {
-      // Get current user data
-      const { data: userData } = await client.models.User.get({ id: userId });
-
-      if (userData) {
-        const currentBalance = userData.balance || 0;
-        const currentTotalBets = userData.totalBets || 0;
-        const currentTotalWinnings = userData.totalWinnings || 0;
-        const currentWinRate = userData.winRate || 0;
-
-        // Calculate new stats
-        const newTotalBets = currentTotalBets + 1;
-        let newBalance = currentBalance;
-        let newTotalWinnings = currentTotalWinnings;
-        let newWinRate = currentWinRate;
-
-        if (isWinner) {
-          // Winner balance is already updated by TransactionService.recordBetWinnings
-          // Just update stats here
-          newBalance = currentBalance; // Balance already updated by transaction
-          newTotalWinnings = currentTotalWinnings + (payout - betAmount); // Profit only
-
-          // Calculate new win rate (winners count / total bets)
-          const previousWins = Math.round((currentWinRate / 100) * currentTotalBets);
-          const newWins = previousWins + 1;
-          newWinRate = (newWins / newTotalBets) * 100;
-        } else {
-          // Loser loses their bet amount (already deducted when they joined)
-          // Balance doesn't change as they already paid when joining
-          newTotalWinnings = currentTotalWinnings - betAmount; // Record the loss
-
-          // Calculate new win rate (no new wins)
-          const previousWins = Math.round((currentWinRate / 100) * currentTotalBets);
-          newWinRate = (previousWins / newTotalBets) * 100;
-        }
-
-        // Update user record
-        await client.models.User.update({
-          id: userId,
-          balance: newBalance,
-          totalBets: newTotalBets,
-          totalWinnings: newTotalWinnings,
-          winRate: newWinRate,
-          updatedAt: new Date().toISOString()
-        });
-
-        console.log(`Updated user ${userId} stats: ${isWinner ? 'WIN' : 'LOSS'}, Balance: $${newBalance}, WinRate: ${newWinRate.toFixed(1)}%`);
-      }
-    } catch (error) {
-      console.error(`Error updating user ${userId} stats:`, error);
-      // Don't throw error here to avoid breaking bet resolution
-    }
-  };
-
   const handleBetPress = (bet: Bet) => {
     console.log('Pending bet pressed:', bet.title);
   };
