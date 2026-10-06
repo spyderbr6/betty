@@ -198,15 +198,10 @@ Kept current so work can resume in a new session with nothing else. Branch
 | 3d | `buySquares`, `cancelSquaresGame`; grid locked server-side | 1d8d827 |
 | fix | Squares final share pays once, on the final score incl. overtime | 73226ca |
 | 3e-1 | Cognito `admins` group, `requestWithdrawal` (reserves), `adminDecideTransaction` | 475094e |
+| 3e-2 | `adminResolveDispute` (upheld: winner cleared, pending payouts cancelled; paid bets refused) | (this commit) |
 
 ### Remaining
 
-- **3e-2 disputes**: `adminResolveDispute` (admins group). Upheld: cancel the bet's
-  PENDING `BET_WON` rows, clear `winningSide` (bet back to PENDING_RESOLUTION for the
-  creator), trust changes as `disputeService.resolveDispute` does today. Dismissed /
-  for creator: bet stays PENDING_RESOLUTION, payout proceeds. Client:
-  `AdminDisputeScreen` -> mutation. Filing a dispute is not money; it stays client-side
-  until step 5.
 - **3f `ensureMyUserRecord`**: server creates the caller's own User row with balance 0.
   The client's `ensureUserRecord` (`src/services/userRecordService.ts` +
   `userRecordLogic.ts`) has a duplicate-creation guard the owner said exists "for a
@@ -268,6 +263,9 @@ require a verified Venmo account (the admin checks the handle when approving).
   stack's nested `DescribeStackResources`; verify data through AppSync.
 
 ### Found and left for later (not money-security)
+
+- No e2e spec yet for the admin dispute screen (`AdminDisputeScreen`); the server side is
+  covered by unit tests and sandbox scenario 13.
 
 - A squares game LIVE whose event never finishes goes to PENDING_RESOLUTION after 2 days;
   with periods already paid it cannot be cancelled either (admin needs a way to settle

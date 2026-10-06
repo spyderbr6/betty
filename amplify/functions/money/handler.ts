@@ -34,6 +34,7 @@ import { checkBuy, ownsAllRequested, planBuy, planLock, purchaseTransactionId, t
 import { cancelSquaresGame, checkSquaresCancel, type SquaresCancelRefusal } from '../../shared/squaresMoney';
 import { checkWithdraw, planDecide, planWithdraw, type DecideRefusal, type WithdrawResult } from '../../shared/withdrawLogic';
 import { DEFAULT_TRUST_SCORE, MAX_TRUST_SCORE, MIN_TRUST_SCORE, TRUST_CHANGES } from '../../../src/config/trustScoreConfig';
+import { checkResolveDispute, planUphold, type DisputeOutcome, type ResolveDisputeResult } from '../../shared/disputeLogic';
 import { randomInt } from 'node:crypto';
 
 const { resourceConfig, libraryOptions } = await getAmplifyDataClientConfig(env);
@@ -68,6 +69,10 @@ export const handler = async (event: AmplifyResolverEvent, context: Context): Pr
     case 'adminDecideTransaction': {
       requireUser(caller, fieldName);
       return adminDecideTransaction(caller as Extract<Caller, { kind: 'user' }>, event.arguments as unknown as DecideArgs);
+    }
+    case 'adminResolveDispute': {
+      requireUser(caller, fieldName);
+      return adminResolveDispute(caller as Extract<Caller, { kind: 'user' }>, event.arguments as unknown as ResolveDisputeArgs);
     }
     case 'buySquares':
       return buySquares(requireUser(caller, fieldName), event.arguments as unknown as BuySquaresArgs);
@@ -720,6 +725,101 @@ async function adminDecideTransaction(caller: Extract<Caller, { kind: 'user' }>,
   }
 
   return { status: 'decided', outcome, userId, credited: plan.entry.delta };
+}
+
+// --- adminResolveDispute (admins) --------------------------------------------------------
+
+interface ResolveDisputeArgs {
+  disputeId: string;
+  outcome: string;
+  resolution?: string | null;
+  adminNotes?: string | null;
+}
+
+/**
+ * An admin decides a dispute (disputeLogic). Upheld: the winner is cleared and the bet's
+ * pending payouts cancelled in one ledger transaction, and the creator resolves again.
+ * Dismissed or found for the creator: the payout goes ahead. The dispute record, trust
+ * changes and notifications follow, as the app's admin path did them.
+ */
+async function adminResolveDispute(caller: Extract<Caller, { kind: 'user' }>, args: ResolveDisputeArgs): Promise<ResolveDisputeResult> {
+  if (!isAdmin(caller)) {
+    console.warn('[Money] adminResolveDispute refused for non-admin', caller.sub);
+    return { status: 'refused', reason: 'NOT_ADMIN' };
+  }
+  const { data: dispute } = await client.models.Dispute.get({ id: args.disputeId });
+  const { data: bet } = dispute?.betId ? await client.models.Bet.get({ id: dispute.betId }) : { data: null };
+  const refusal = checkResolveDispute({ dispute, bet, outcome: args.outcome });
+  if (refusal) return { status: 'refused', reason: refusal };
+  const outcome = args.outcome as DisputeOutcome;
+  const upheld = outcome === 'RESOLVED_FOR_FILER';
+
+  let payoutsCancelled = 0;
+  if (upheld) {
+    const updates = planUphold({ bet, existing: await listBetTransactions(bet.id) });
+    const result = await applyLedger([], updates);
+    if (result.status === 'state_changed' || result.status === 'already_applied') return { status: 'refused', reason: 'BUSY' };
+    if (result.status !== 'applied') throw new Error(`Uphold dispute ${dispute.id}: ${JSON.stringify(result)}`);
+    payoutsCancelled = updates.length - 1;
+    await touchBet(bet.id);
+  }
+
+  // The dispute's own record (not money): after the money, so a failure here leaves the
+  // dispute open, which keeps the payout processor from paying
+  await client.models.Dispute.update({
+    id: dispute.id,
+    status: outcome,
+    resolution: (args.resolution ?? '').trim().slice(0, 2000) || null,
+    resolvedBy: caller.sub,
+    adminNotes: (args.adminNotes ?? '').trim().slice(0, 2000) || null,
+    resolvedAt: new Date().toISOString(),
+  });
+
+  const creator = dispute.againstUserId;
+  const filer = dispute.filedBy;
+  const action = { actionType: 'view_bet', actionData: { betId: dispute.betId }, relatedBetId: dispute.betId };
+  if (upheld) {
+    if (creator) await adjustTrustFor(creator, TRUST_CHANGES.LOST_DISPUTE_CREATOR, 'Lost dispute - bet resolved unfairly', dispute);
+    if (filer) await adjustTrustFor(filer, TRUST_CHANGES.WON_DISPUTE_PARTICIPANT, 'Dispute upheld - you were right to challenge the resolution', dispute);
+    if (filer) await notifyAbout(filer, 'Dispute Resolved', 'Your dispute was upheld. The bet resolution will be corrected.', 'HIGH', action);
+    if (creator) await notifyAbout(creator, 'Dispute Resolved Against You', 'A dispute on your bet was upheld. Please resolve the bet correctly.', 'URGENT', action);
+  } else {
+    if (creator) await adjustTrustFor(creator, TRUST_CHANGES.DISPUTE_DISMISSED, 'Dispute dismissed - your resolution was fair', dispute);
+    if (filer) await adjustTrustFor(filer, TRUST_CHANGES.LOST_DISPUTE_PARTICIPANT, 'Filed false dispute - resolution was fair', dispute);
+    if (filer) await notifyAbout(filer, 'Dispute Dismissed', 'Your dispute was reviewed and dismissed. The original resolution stands.', 'MEDIUM', action);
+    if (creator) await notifyAbout(creator, 'Dispute Dismissed', 'The dispute on your bet was dismissed. Your resolution was correct.', 'MEDIUM', action);
+  }
+  return { status: 'resolved', outcome, payoutsCancelled };
+}
+
+async function adjustTrustFor(userId: string, change: number, reason: string, dispute: { id: string; betId?: string | null }): Promise<void> {
+  try {
+    const { data: user } = await client.models.User.get({ id: userId });
+    const current = typeof user?.trustScore === 'number' ? user.trustScore : DEFAULT_TRUST_SCORE;
+    const newScore = Math.max(MIN_TRUST_SCORE, Math.min(MAX_TRUST_SCORE, current + change));
+    await client.models.User.update({ id: userId, trustScore: newScore });
+    await client.models.TrustScoreHistory.create({
+      userId, change, newScore, reason, relatedBetId: dispute.betId, relatedDisputeId: dispute.id, createdAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.warn(`[Money] Trust score change failed for ${userId}:`, error);
+  }
+}
+
+async function notifyAbout(
+  userId: string,
+  title: string,
+  message: string,
+  priority: 'MEDIUM' | 'HIGH' | 'URGENT',
+  action: { actionType: string; actionData: Record<string, unknown>; relatedBetId?: string | null }
+): Promise<void> {
+  try {
+    await client.models.Notification.create({
+      userId, type: 'BET_DISPUTED', ...notificationMeta('BET_DISPUTED'), title, message, isRead: false, priority, ...action,
+    });
+  } catch (error) {
+    console.warn(`[Money] Dispute notification failed for ${userId}:`, error);
+  }
 }
 
 /** A trust score change and its history row (the amounts are src/config/trustScoreConfig). */

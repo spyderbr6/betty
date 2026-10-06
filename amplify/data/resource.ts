@@ -991,6 +991,21 @@ const schema = a.schema({
     .handler(a.handler.function(money))
     .authorization((allow) => [allow.authenticated()]),
 
+  // An admin (Cognito admins group) decides a dispute: upheld clears the winner and
+  // cancels the bet's pending payouts in one ledger transaction so the creator resolves
+  // again; dismissed / for the creator lets the payout go ahead (shared/disputeLogic.ts).
+  adminResolveDispute: a
+    .mutation()
+    .arguments({
+      disputeId: a.id().required(),
+      outcome: a.string().required(),
+      resolution: a.string(),
+      adminNotes: a.string(),
+    })
+    .returns(a.json())
+    .handler(a.handler.function(money))
+    .authorization((allow) => [allow.authenticated()]),
+
   // Buy squares as the signed-in user: checked on the server, and one purchase row per
   // square (a fixed id each, so a square sells once), the debit and the game's counts in
   // one ledger transaction (shared/squaresBuyLogic.ts). A purchase that fills the grid

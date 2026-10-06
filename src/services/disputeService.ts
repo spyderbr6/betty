@@ -7,7 +7,7 @@
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
 import { NotificationService } from './notificationService';
-import { TrustScoreService } from './trustScoreService';
+import { disputeRefusalMessage } from './disputeLogic';
 
 const client = generateClient<Schema>();
 
@@ -291,167 +291,27 @@ export class DisputeService {
     disputeId: string,
     status: DisputeStatus,
     resolution: string,
-    resolvedBy: string,
     adminNotes?: string
   ): Promise<boolean> {
+    // One server call: it checks this account is in the admins group, and for an upheld
+    // dispute clears the winner and cancels the bet's pending payouts together, so the
+    // creator resolves again (the original winners' payouts used to stay in place and be
+    // paid). It records the outcome, adjusts trust scores and notifies both sides.
+    // Throws with the server's reason when it refuses, for the screen to show.
+    let result: { status?: string; reason?: string } | null = null;
     try {
-      console.log('[Dispute] Resolving dispute:', disputeId, status);
-
-      // Validate admin role
-      const { data: admin } = await client.models.User.get({ id: resolvedBy });
-      if (!admin || (admin.role !== 'ADMIN' && admin.role !== 'SUPER_ADMIN')) {
-        console.error('[Dispute] Unauthorized: User is not an admin');
-        return false;
-      }
-
-      // Get dispute details
-      const { data: dispute } = await client.models.Dispute.get({ id: disputeId });
-      if (!dispute) {
-        console.error('[Dispute] Dispute not found');
-        return false;
-      }
-
-      // Update dispute
-      const { data: updatedDispute, errors } = await client.models.Dispute.update({
-        id: disputeId,
-        status,
+      const { data, errors } = await client.mutations.adminResolveDispute({
+        disputeId,
+        outcome: status,
         resolution,
-        resolvedBy,
         adminNotes,
-        resolvedAt: new Date().toISOString()
       });
-
-      if (errors || !updatedDispute) {
-        console.error('[Dispute] Error updating dispute:', errors);
-        return false;
-      }
-
-      // Get bet details
-      const { data: bet } = await client.models.Bet.get({ id: dispute.betId });
-      if (!bet) {
-        console.error('[Dispute] Bet not found');
-        return false;
-      }
-
-      // If resolved for filer, need to recalculate payouts
-      // This logic will be handled by TrustScoreService and transaction reversal
-      // For now, just update bet status back to PENDING_RESOLUTION for admin to manually fix
-
-      if (status === 'RESOLVED_FOR_FILER') {
-        // Dispute upheld - creator was wrong. Clearing the winner sends the bet back to
-        // the creator to resolve again: ResolveScreen offers Resolve only while
-        // winningSide is empty, and the payout Lambda will not pay without one (it also
-        // refuses to pay a result an upheld dispute overturned).
-        await client.models.Bet.update({
-          id: dispute.betId,
-          status: 'PENDING_RESOLUTION',
-          winningSide: null
-        });
-
-        // Apply trust score penalties and rewards
-        try {
-          // Creator loses trust for resolving bet unfairly (-2.0)
-          await TrustScoreService.penaltyForLostDisputeCreator(
-            dispute.againstUserId,
-            dispute.betId,
-            disputeId
-          );
-          console.log('[Dispute] Applied -2.0 penalty to creator for losing dispute');
-
-          // Filer gains trust for correctly challenging unfair resolution (+0.3)
-          await TrustScoreService.rewardForWonDisputeParticipant(
-            dispute.filedBy,
-            dispute.betId,
-            disputeId
-          );
-          console.log('[Dispute] Applied +0.3 reward to filer for winning dispute');
-        } catch (trustError) {
-          console.error('[Dispute] Error updating trust scores:', trustError);
-        }
-
-        // Send notification to filer
-        await NotificationService.createNotification({
-          userId: dispute.filedBy,
-          type: 'BET_DISPUTED',
-          title: 'Dispute Resolved',
-          message: `Your dispute was upheld. The bet resolution will be corrected.`,
-          priority: 'HIGH',
-          actionType: 'view_bet',
-          actionData: { betId: dispute.betId },
-          relatedBetId: dispute.betId
-        });
-
-        // Send notification to creator
-        await NotificationService.createNotification({
-          userId: dispute.againstUserId,
-          type: 'BET_DISPUTED',
-          title: 'Dispute Resolved Against You',
-          message: `A dispute on your bet was upheld. Please resolve the bet correctly.`,
-          priority: 'URGENT',
-          actionType: 'view_bet',
-          actionData: { betId: dispute.betId },
-          relatedBetId: dispute.betId
-        });
-
-      } else if (status === 'RESOLVED_FOR_CREATOR' || status === 'DISMISSED') {
-        // Dispute dismissed - creator was right, continue with payout
-        await client.models.Bet.update({
-          id: dispute.betId,
-          status: 'PENDING_RESOLUTION' // Will be processed by payout Lambda
-        });
-
-        // Apply trust score penalties and rewards
-        try {
-          // Creator gains trust for correct resolution (+0.2)
-          await TrustScoreService.rewardForDisputeDismissed(
-            dispute.againstUserId,
-            dispute.betId,
-            disputeId
-          );
-          console.log('[Dispute] Applied +0.2 reward to creator for dispute dismissed');
-
-          // Filer loses trust for filing false dispute (-0.4)
-          await TrustScoreService.penaltyForLostDisputeParticipant(
-            dispute.filedBy,
-            dispute.betId,
-            disputeId
-          );
-          console.log('[Dispute] Applied -0.4 penalty to filer for losing dispute');
-        } catch (trustError) {
-          console.error('[Dispute] Error updating trust scores:', trustError);
-        }
-
-        // Send notification to filer
-        await NotificationService.createNotification({
-          userId: dispute.filedBy,
-          type: 'BET_DISPUTED',
-          title: 'Dispute Dismissed',
-          message: `Your dispute was reviewed and dismissed. The original resolution stands.`,
-          priority: 'MEDIUM',
-          actionType: 'view_bet',
-          actionData: { betId: dispute.betId },
-          relatedBetId: dispute.betId
-        });
-
-        // Send notification to creator (vindication)
-        await NotificationService.createNotification({
-          userId: dispute.againstUserId,
-          type: 'BET_DISPUTED',
-          title: 'Dispute Dismissed',
-          message: `The dispute on your bet was dismissed. Your resolution was correct.`,
-          priority: 'MEDIUM',
-          actionType: 'view_bet',
-          actionData: { betId: dispute.betId },
-          relatedBetId: dispute.betId
-        });
-      }
-
-      console.log('[Dispute] Dispute resolved successfully');
-      return true;
-
+      if (errors?.length) console.error('[Dispute] adminResolveDispute failed:', errors);
+      else result = typeof data === 'string' ? JSON.parse(data) : (data as typeof result);
     } catch (error) {
-      console.error('[Dispute] Error resolving dispute:', error);
-      return false;
+      console.error('[Dispute] adminResolveDispute threw:', error);
     }
+    if (result?.status === 'resolved') return true;
+    throw new Error(disputeRefusalMessage(result?.reason));
   }
 }

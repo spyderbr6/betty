@@ -34,6 +34,9 @@
  *  12. money (requestWithdrawal, adminDecideTransaction): the amount is reserved at request
  *      and once per request; only admins decide; approval completes, rejection refunds;
  *      older unreserved withdrawals are taken on approval; deposit fees are kept
+ *  13. money (adminResolveDispute): admins only; upholding clears the winner and cancels
+ *      pending payouts so the creator resolves again; dismissing leaves the result; a
+ *      paid bet's dispute cannot be upheld
  *
  * The Lambdas act on ALL sandbox data when invoked, exactly as their schedules do.
  *
@@ -718,6 +721,41 @@ try {
     await trustRows(deposit);
     const depositRow = await get('transaction', deposit, 'status platformFee actualAmount');
     check('approving a deposit credits it and keeps its recorded fee', depositApproved.outcome === 'COMPLETED' && same(await balance(wal), 65) && depositRow.status === 'COMPLETED' && depositRow.platformFee === 0.5, JSON.stringify(depositRow));
+
+    // 13. Disputes (adminResolveDispute) ---------------------------------------------------
+    const disputeOn = (betId, filedBy, againstUserId) =>
+      create('dispute', { betId, filedBy, againstUserId, reason: 'INCORRECT_RESOLUTION', description: run, status: 'PENDING' });
+    const trustByDispute = async (disputeId) => {
+      const r = await gql('query ($f: ModelTrustScoreHistoryFilterInput) { listTrustScoreHistories(filter: $f, limit: 1000) { items { id } } }', { f: { relatedDisputeId: { eq: disputeId } } });
+      for (const h of r.listTrustScoreHistories.items) created.push(['trustScoreHistory', h.id]);
+    };
+
+    const u = await pair('uph');
+    await asUser(u.creator, 'resolveBet', { betId: u.id, winningSide: 'A' });
+    const d1 = await disputeOn(u.id, u.taker, u.creator);
+    const notAdmin = await asUser(u.taker, 'adminResolveDispute', { disputeId: d1, outcome: 'RESOLVED_FOR_FILER' });
+    check('only an admin can resolve a dispute', notAdmin.reason === 'NOT_ADMIN', JSON.stringify(notAdmin));
+
+    const upheld = await asAdmin('adminResolveDispute', { disputeId: d1, outcome: 'RESOLVED_FOR_FILER', resolution: 'Wrong winner' });
+    await trustByDispute(d1);
+    const ub = await get('bet', u.id, 'status winningSide');
+    const voided = await tx(`payout#${u.cPid}`);
+    const d1row = await get('dispute', d1, 'status resolvedBy');
+    check('upholding clears the winner and cancels the pending payout', upheld.status === 'resolved' && upheld.payoutsCancelled === 1 && ub.status === 'PENDING_RESOLUTION' && !ub.winningSide && voided.status === 'CANCELLED' && d1row.status === 'RESOLVED_FOR_FILER', `${JSON.stringify(upheld)} ${JSON.stringify(ub)} ${JSON.stringify(voided)}`);
+    const redo = await asUser(u.creator, 'resolveBet', { betId: u.id, winningSide: 'B' });
+    check('the creator can then resolve again, and the new winner is recorded', redo.status === 'resolved' && (await tx(`payout#${u.tPid}`))?.status === 'PENDING', JSON.stringify(redo));
+
+    const d2 = await disputeOn(u.id, u.creator, u.creator);
+    const dismissed = await asAdmin('adminResolveDispute', { disputeId: d2, outcome: 'DISMISSED' });
+    await trustByDispute(d2);
+    check('dismissing leaves the result standing', dismissed.status === 'resolved' && (await get('bet', u.id, 'winningSide')).winningSide === 'B' && (await tx(`payout#${u.tPid}`)).status === 'PENDING', JSON.stringify(dismissed));
+    const again2 = await asAdmin('adminResolveDispute', { disputeId: d2, outcome: 'RESOLVED_FOR_FILER' });
+    check('a resolved dispute cannot be resolved again', again2.reason === 'NOT_OPEN', JSON.stringify(again2));
+
+    // Scenario 8's bet was paid out: upholding a dispute on it would pay it twice
+    const d3 = await disputeOn(r.id, r.taker, r.creator);
+    const onPaid = await asAdmin('adminResolveDispute', { disputeId: d3, outcome: 'RESOLVED_FOR_FILER' });
+    check('a dispute against a bet already paid cannot be upheld here', onPaid.reason === 'ALREADY_PAID' && (await get('bet', r.id, 'status')).status === 'RESOLVED', JSON.stringify(onPaid));
     for (const h of (await gql('query ($f: ModelTrustScoreHistoryFilterInput) { listTrustScoreHistories(filter: $f, limit: 1000) { items { id } } }', { f: { relatedBetId: { eq: a.id } } })).listTrustScoreHistories.items) {
       created.push(['trustScoreHistory', h.id]);
     }
