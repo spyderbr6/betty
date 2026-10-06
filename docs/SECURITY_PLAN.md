@@ -1,6 +1,6 @@
 # Money and Authorization Security Plan
 
-Status (branch `money-security`): **steps 1 and 2 done; step 3 in progress** (3a joins, 3b bet creation, 3c resolution, 3d squares, 3e-1 withdrawals and admin approvals
+Status (branch `money-security`): **steps 1 and 2 done; step 3 in progress** (3a-3e-1 done; see §7 for progress, what is left and how to resume
 done). Written 2026-10-04 from a read of every write path; §1-§3 describe the code as it
 was then. Decisions in §6: admins are a Cognito `admins` group (the owner's account only);
 a minimum-version gate comes before locking the rules; Venmo deposits are deleted;
@@ -180,3 +180,98 @@ go-ahead at each stage.
 5. **The audit (step 6)**: run it against production read-only before or after the fix?
    Before tells you sooner whether anything has already been abused; it needs your
    production read credentials, and I will not touch production otherwise.
+
+## 7. Progress and how to resume
+
+Kept current so work can resume in a new session with nothing else. Branch
+`money-security`, pushed after each step. Last updated 2026-10-06.
+
+### Done (each sandbox-verified: unit tests, e2e, `scripts/sandbox-money-flows-check.mjs`)
+
+| Step | What | Commit |
+|---|---|---|
+| 1 | Atomic ledger (`amplify/shared/ledgerLogic.ts`, `amplify/functions/money/`) | cc665fd |
+| 2 | Stripe webhook, payout processor, both scheduled checkers on the ledger | 192e67a..8f456bb |
+| 3a | `joinBet` | 092abea |
+| 3b | `createBetWithStake` | fefa03f |
+| 3c | `resolveBet`, `acceptBetResult`; `Bet.resolvedAt` | 7d8e277 |
+| 3d | `buySquares`, `cancelSquaresGame`; grid locked server-side | 1d8d827 |
+| fix | Squares final share pays once, on the final score incl. overtime | 73226ca |
+| 3e-1 | Cognito `admins` group, `requestWithdrawal` (reserves), `adminDecideTransaction` | 475094e |
+
+### Remaining
+
+- **3e-2 disputes**: `adminResolveDispute` (admins group). Upheld: cancel the bet's
+  PENDING `BET_WON` rows, clear `winningSide` (bet back to PENDING_RESOLUTION for the
+  creator), trust changes as `disputeService.resolveDispute` does today. Dismissed /
+  for creator: bet stays PENDING_RESOLUTION, payout proceeds. Client:
+  `AdminDisputeScreen` -> mutation. Filing a dispute is not money; it stays client-side
+  until step 5.
+- **3f `ensureMyUserRecord`**: server creates the caller's own User row with balance 0.
+  The client's `ensureUserRecord` (`src/services/userRecordService.ts` +
+  `userRecordLogic.ts`) has a duplicate-creation guard the owner said exists "for a
+  reason" (early duplicate-record problems): read it and its tests first and keep the
+  same behaviour (get-then-create, same id = Cognito sub, same defaults).
+- **3g delete dead money code**: `TransactionService.createDeposit` (Venmo),
+  `recordBetPlacement`, `recordBetWinnings`, `recordBetCancellation`, `recordBetLoss`,
+  `recordSquaresPurchase`, `recordSquaresRefund`, `recordSquaresPayout`,
+  `createWithdrawal`, `updateTransactionStatus`, `createTransaction` if unused;
+  `squaresGameService.processPeriodScores` (+ its private helpers);
+  `ResolveScreen.updateUserStats`; `BetDataContext.joinBet` is already gone;
+  `bulkLoadingService.ts` (documented dead). Grep for callers before each deletion.
+- **Step 4**: ship an app build (owner runs EAS) + a minimum-version gate (server-side
+  minimum version the app checks on launch, asking old builds to update).
+- **Step 5**: lock the data rules (§4.3). Only after step 4 is enforced.
+- Step 6 audit: skipped (no real users yet; owner's decision).
+
+### Owner actions outstanding
+
+- Add your account to the Cognito `admins` group: sandbox pool `us-east-2_zkNdt4Suq`
+  now, production when this branch is released (Cognito console -> User pools -> Groups
+  -> admins -> Add user; then sign out and in). Until then admin approve/reject/cancel
+  are refused by the server. Do not release the branch without it.
+
+### Decisions taken (owner)
+
+Admins = Cognito `admins` group, the owner's account only. Minimum-version gate before
+locking rules. Venmo deposits deleted (3g). Withdrawals reserve the amount at request.
+No audit. Squares final share on the final score including overtime. Withdrawals do not
+require a verified Venmo account (the admin checks the handle when approving).
+
+### How the work is done (keep doing it this way)
+
+- Each flow: pure tested module in `amplify/shared/` (decision + plan), a case in
+  `amplify/functions/money/handler.ts`, a mutation in `amplify/data/resource.ts`
+  (`allow.authenticated()`, the handler checks the caller), a client service + pure
+  `*Logic.ts` with tests in `src/services/`, e2e spec, sandbox scenario.
+- Prove tests can fail: break each rule, see exactly its test fail, restore.
+- Deploy with `npx ampx sandbox --once` (never a watcher; never production
+  `d22il7q25cxkh7`). Never edit source while a deploy is building: it bundles whatever is
+  on disk (a break check once shipped to the sandbox this way).
+- Run `SANDBOX_STACK=amplify-sidebet-Desktop-sandbox-a3098e7c95 node scripts/sandbox-money-flows-check.mjs`
+  after each deploy; the app's custom mutations only exist for e2e after a deploy writes
+  them into `amplify_outputs.json`.
+
+### Gotchas learned
+
+- AppSync stores AWSJSON as a DynamoDB map: direct ledger writes must store JSON fields
+  as objects (text reads back double-encoded).
+- Direct DynamoDB writes fire no subscriptions: touch the row through AppSync
+  (`Model.update({ id })`), which fires `onUpdate`; BetDataContext upserts on onUpdate.
+- `classifyCancellation` treats any failed condition on the Transaction table as
+  `already_applied` (including state updates on that table).
+- Amplify generates `createBet` etc.: custom mutations need other names.
+- Windows shell: Git Bash `sed -i` turns CRLF files into LF (fine: autocrlf stores LF);
+  never pass backtick text through `node -e "..."` (bash runs it); PowerShell 5.1 breaks
+  commit messages with double quotes (use `git commit -F`).
+- The `amplify-dev` profile cannot list Lambdas or read DynamoDB: find functions via the
+  stack's nested `DescribeStackResources`; verify data through AppSync.
+
+### Found and left for later (not money-security)
+
+- A squares game LIVE whose event never finishes goes to PENDING_RESOLUTION after 2 days;
+  with periods already paid it cannot be cancelled either (admin needs a way to settle
+  it from the remaining scores).
+- Trust: rejecting any deposit or withdrawal applies the -3.0 "fraud attempt" penalty
+  (unchanged from the app's behaviour; a wrong Venmo handle is not fraud).
+- `AdminTestingScreen` creates bets and $1000 users directly (dev builds; step 5 locks it).
