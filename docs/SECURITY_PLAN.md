@@ -1,7 +1,6 @@
 # Money and Authorization Security Plan
 
-Status (branch `money-security`): **steps 1 and 2 done; step 3 in progress** (3a-3e-1 done; see §7 for progress, what is left and how to resume
-done). Written 2026-10-04 from a read of every write path; §1-§3 describe the code as it
+Status (branch `money-security`): **steps 1-3 done; steps 4-5 to do** (step 3 done; see §7 for progress, what is left and how to resume). Written 2026-10-04 from a read of every write path; §1-§3 describe the code as it
 was then. Decisions in §6: admins are a Cognito `admins` group (the owner's account only);
 a minimum-version gate comes before locking the rules; Venmo deposits are deleted;
 withdrawals reserve the amount when requested; no audit (no real users yet).
@@ -184,7 +183,7 @@ go-ahead at each stage.
 ## 7. Progress and how to resume
 
 Kept current so work can resume in a new session with nothing else. Branch
-`money-security`, pushed after each step. Last updated 2026-10-06.
+`money-security`, pushed after each step. Last updated 2026-10-06 (step 3 complete).
 
 ### Done (each sandbox-verified: unit tests, e2e, `scripts/sandbox-money-flows-check.mjs`)
 
@@ -198,33 +197,78 @@ Kept current so work can resume in a new session with nothing else. Branch
 | 3d | `buySquares`, `cancelSquaresGame`; grid locked server-side | 1d8d827 |
 | fix | Squares final share pays once, on the final score incl. overtime | 73226ca |
 | 3e-1 | Cognito `admins` group, `requestWithdrawal` (reserves), `adminDecideTransaction` | 475094e |
-| 3e-2 | `adminResolveDispute` (upheld: winner cleared, pending payouts cancelled; paid bets refused) | (this commit) |
+| 3e-2 | `adminResolveDispute` (upheld: winner cleared, pending payouts cancelled; paid bets refused) | 72794ba |
+| 3f | `ensureMyUserRecord` (record created server-side, balance 0, role USER) | 52676a0 |
+| 3g | Dead client money code deleted (942 lines) | 7fdf633 |
+| fix | Dismissing a dispute returns a DISPUTED bet to PENDING_RESOLUTION | (this commit) |
 
-### Remaining
+### Remaining: steps 4 and 5 (step 3 is complete)
 
-- **3f `ensureMyUserRecord`**: server creates the caller's own User row with balance 0.
-  The client's `ensureUserRecord` (`src/services/userRecordService.ts` +
-  `userRecordLogic.ts`) has a duplicate-creation guard the owner said exists "for a
-  reason" (early duplicate-record problems): read it and its tests first and keep the
-  same behaviour (get-then-create, same id = Cognito sub, same defaults).
-- **3g delete dead money code**: `TransactionService.createDeposit` (Venmo),
-  `recordBetPlacement`, `recordBetWinnings`, `recordBetCancellation`, `recordBetLoss`,
-  `recordSquaresPurchase`, `recordSquaresRefund`, `recordSquaresPayout`,
-  `createWithdrawal`, `updateTransactionStatus`, `createTransaction` if unused;
-  `squaresGameService.processPeriodScores` (+ its private helpers);
-  `ResolveScreen.updateUserStats`; `BetDataContext.joinBet` is already gone;
-  `bulkLoadingService.ts` (documented dead). Grep for callers before each deletion.
-- **Step 4**: ship an app build (owner runs EAS) + a minimum-version gate (server-side
-  minimum version the app checks on launch, asking old builds to update).
-- **Step 5**: lock the data rules (§4.3). Only after step 4 is enforced.
-- Step 6 audit: skipped (no real users yet; owner's decision).
+Every client money write now goes through the server; the old client paths are deleted
+(3g). What is left is making the rules enforce it, without breaking installed apps.
+
+**Step 4: ship the build and gate old versions.** Old installed builds still write money
+records directly; step 5 would break them, so they must be made to update first.
+1. Add a server-side minimum app version: e.g. an `AppConfig` model (one row,
+   `minimumVersion`, public read via `allow.guest().to(['read'])` or authenticated read;
+   written only by the owner in the console), or a `getAppConfig` query on a small Lambda.
+2. On launch (App.tsx, before sign-in content), compare `expo-constants`
+   `Constants.expoConfig.version` (app.json `version`) with the minimum; if older, show a
+   full-screen "Please update" with store links and nothing else. Web reloads to the
+   latest bundle, so web only needs the check to exist.
+3. Bump app.json `version` (and android `versionCode`), owner runs
+   `eas build -p android --profile production` (ASK FIRST; never run it yourself), owner
+   publishes it, then sets the minimum to that version.
+4. e2e: the gate shows for an old version and not for the current one.
+
+**Step 5: lock the data rules** (`amplify/data/resource.ts`), only once step 4's minimum
+is enforced. Deploy to the sandbox first and run the full e2e suite plus
+`scripts/sandbox-money-flows-check.mjs`; the Lambdas keep their access through the
+schema-level `allow.resource(...)` grants, which these model rules do not affect.
+- **User**: today `allow.owner()` + `allow.authenticated().to(['read','create','update'])`.
+  Target: authenticated read; owner update of profile fields only. Use
+  `allow.ownerDefinedIn('id')` (id = Cognito sub): rows created by ensureMyUserRecord
+  have no `owner` field (AppSync will not take it from IAM), so `allow.owner()` would
+  lock those users out of their own profile. Money/role/trust fields (`balance`, `role`,
+  `trustScore`, `totalBets`, `totalWinnings`, `winRate`, `subscription*`,
+  `stripe*Id`) get field-level rules: read for owner (and whoever needs them today:
+  check the friends/profile screens), no client write. Remove client `create`.
+  Remaining client User writes are profile only and must keep working: Onboarding
+  (photo, steps), SecuritySection, Settings, AccountScreen, ProfileContext repairs,
+  phoneVerificationService, utils/migrateDisplayNameLower. Check each writes only
+  profile fields.
+- **Transaction, SquaresPayout, TrustScoreHistory**: owner (userId) read; no client
+  writes. `trustScoreService` still has client writes (`applyChange`) but no remaining
+  callers outside itself: confirm, then delete its write paths.
+- **Participant, SquaresPurchase**: authenticated read; no client writes.
+- **Bet**: creator may create? No: creation is `createBetWithStake` now, so no client
+  create. Client updates left: `BetsScreen.handleEndBet` (ACTIVE -> PENDING_RESOLUTION,
+  "end early") and `disputeService.fileDispute` (-> DISPUTED). Move both to server
+  mutations (small: creator-only end; participant-only dispute filing) or allow a narrow
+  owner update of `status` only; money fields (`status` to RESOLVED, `winningSide`,
+  `totalPot`, counts, `disputeWindowEndsAt`, `resolvedAt`) server-only.
+  `backfillBetCounts.ts` (Bet.update) is a one-off migration: delete it.
+- **SquaresGame**: client creates games (`squaresGameService.createSquaresGame`, with
+  `payoutStructure` and `pricePerSquare`). Either keep owner create but validate on the
+  server (the checker should refuse a payoutStructure whose shares do not sum to 1 or
+  exceed it: today only the client checks) or move creation to a mutation. No client
+  updates of `status`, counts, numbers.
+- **Dispute**: participants create (filing); status changes admins-only (already server).
+- **PaymentMethod**: owner create/update stays (users manage their Venmo accounts);
+  `isVerified` is no longer used for anything.
+- **AdminTestingScreen** (dev builds) creates users, bets and transactions directly; it
+  will stop working once locked. Delete it or move what is needed to the sandbox scripts.
+- Step 6 (audit) is skipped by the owner's decision.
 
 ### Owner actions outstanding
 
 - Add your account to the Cognito `admins` group: sandbox pool `us-east-2_zkNdt4Suq`
   now, production when this branch is released (Cognito console -> User pools -> Groups
-  -> admins -> Add user; then sign out and in). Until then admin approve/reject/cancel
-  are refused by the server. Do not release the branch without it.
+  -> admins -> Add user; then sign out and in). Until then admin approve/reject/cancel/
+  dispute actions are refused by the server. Do not release the branch without it.
+- The branch is not merged. Merging deploys the backend to production (Amplify builds
+  `main`): the new mutations and the admins group. Old installed apps keep working until
+  step 5 (they still write directly, which step 5 stops).
 
 ### Decisions taken (owner)
 

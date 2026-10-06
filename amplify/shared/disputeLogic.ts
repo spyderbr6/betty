@@ -55,6 +55,16 @@ export function checkResolveDispute(params: {
 }
 
 /**
+ * Dismissing (or finding for the creator): filing a dispute set the bet to DISPUTED, which
+ * the payout processor skips, so the bet goes back to PENDING_RESOLUTION with its result
+ * and the payout goes ahead. Nothing to write if it was never marked DISPUTED.
+ */
+export function planDismiss(bet: DisputeBetRow | null | undefined): StateUpdate[] {
+  if (!bet || bet.status !== 'DISPUTED') return [];
+  return [{ table: 'Bet', id: bet.id, set: { status: 'PENDING_RESOLUTION' }, expect: { status: 'DISPUTED' } }];
+}
+
+/**
  * Upholding: the bet back to PENDING_RESOLUTION with no winner, so the creator resolves
  * again and the payout processor will not pay, and every PENDING winnings row cancelled,
  * all guarded on the bet being unchanged since it was read.

@@ -34,7 +34,7 @@ import { checkBuy, ownsAllRequested, planBuy, planLock, purchaseTransactionId, t
 import { cancelSquaresGame, checkSquaresCancel, type SquaresCancelRefusal } from '../../shared/squaresMoney';
 import { checkWithdraw, planDecide, planWithdraw, type DecideRefusal, type WithdrawResult } from '../../shared/withdrawLogic';
 import { DEFAULT_TRUST_SCORE, MAX_TRUST_SCORE, MIN_TRUST_SCORE, TRUST_CHANGES } from '../../../src/config/trustScoreConfig';
-import { checkResolveDispute, planUphold, type DisputeOutcome, type ResolveDisputeResult } from '../../shared/disputeLogic';
+import { checkResolveDispute, planDismiss, planUphold, type DisputeOutcome, type ResolveDisputeResult } from '../../shared/disputeLogic';
 import { newUserRecord, type EnsureUserRecordResult, type NewUserRecordArgs } from '../../shared/userRecordLogic';
 import { randomInt } from 'node:crypto';
 
@@ -792,6 +792,15 @@ async function adminResolveDispute(caller: Extract<Caller, { kind: 'user' }>, ar
     if (result.status !== 'applied') throw new Error(`Uphold dispute ${dispute.id}: ${JSON.stringify(result)}`);
     payoutsCancelled = updates.length - 1;
     await touchBet(bet.id);
+  } else {
+    // Filing set the bet to DISPUTED, which the payout processor skips: put it back
+    const updates = planDismiss(bet);
+    if (updates.length) {
+      const result = await applyLedger([], updates);
+      if (result.status === 'state_changed') return { status: 'refused', reason: 'BUSY' };
+      if (result.status !== 'applied') throw new Error(`Dismiss dispute ${dispute.id}: ${JSON.stringify(result)}`);
+      await touchBet(bet.id);
+    }
   }
 
   // The dispute's own record (not money): after the money, so a failure here leaves the

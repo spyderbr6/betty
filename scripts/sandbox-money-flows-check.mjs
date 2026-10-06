@@ -748,9 +748,10 @@ try {
     check('the creator can then resolve again, and the new winner is recorded', redo.status === 'resolved' && (await tx(`payout#${u.tPid}`))?.status === 'PENDING', JSON.stringify(redo));
 
     const d2 = await disputeOn(u.id, u.creator, u.creator);
+    await setBet(u.id, { status: 'DISPUTED' }); // what filing a dispute does in the app
     const dismissed = await asAdmin('adminResolveDispute', { disputeId: d2, outcome: 'DISMISSED' });
     await trustByDispute(d2);
-    check('dismissing leaves the result standing', dismissed.status === 'resolved' && (await get('bet', u.id, 'winningSide')).winningSide === 'B' && (await tx(`payout#${u.tPid}`)).status === 'PENDING', JSON.stringify(dismissed));
+    check('dismissing leaves the result standing and returns the bet to await its payout', dismissed.status === 'resolved' && (await get('bet', u.id, 'status')).status === 'PENDING_RESOLUTION' && (await get('bet', u.id, 'winningSide')).winningSide === 'B' && (await tx(`payout#${u.tPid}`)).status === 'PENDING', JSON.stringify(dismissed));
     const again2 = await asAdmin('adminResolveDispute', { disputeId: d2, outcome: 'RESOLVED_FOR_FILER' });
     check('a resolved dispute cannot be resolved again', again2.reason === 'NOT_OPEN', JSON.stringify(again2));
 

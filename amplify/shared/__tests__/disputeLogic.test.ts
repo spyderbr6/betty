@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkResolveDispute, planUphold } from '../disputeLogic';
+import { checkResolveDispute, planDismiss, planUphold } from '../disputeLogic';
 
 const dispute = (over: Record<string, unknown> = {}) => ({ id: 'd1', betId: 'b1', status: 'PENDING', filedBy: 'filer', againstUserId: 'creator', ...over });
 const bet = (over: Record<string, unknown> = {}) => ({ id: 'b1', status: 'PENDING_RESOLUTION', updatedAt: '2026-10-05T12:00:00.000Z', ...over });
@@ -22,6 +22,19 @@ describe('checkResolveDispute', () => {
     expect(checkResolveDispute({ dispute: dispute(), bet: bet({ status: 'RESOLVED' }), outcome: 'RESOLVED_FOR_FILER' })).toBe('ALREADY_PAID');
     // Dismissing on a paid bet changes no money: allowed
     expect(checkResolveDispute({ dispute: dispute(), bet: bet({ status: 'RESOLVED' }), outcome: 'DISMISSED' })).toBeNull();
+  });
+});
+
+describe('planDismiss', () => {
+  it('returns a DISPUTED bet to PENDING_RESOLUTION so its payout goes ahead', () => {
+    expect(planDismiss(bet({ status: 'DISPUTED' }))).toEqual([
+      { table: 'Bet', id: 'b1', set: { status: 'PENDING_RESOLUTION' }, expect: { status: 'DISPUTED' } },
+    ]);
+  });
+
+  it('writes nothing for a bet that was never marked DISPUTED', () => {
+    expect(planDismiss(bet())).toEqual([]);
+    expect(planDismiss(bet({ status: 'RESOLVED' }))).toEqual([]);
   });
 });
 
