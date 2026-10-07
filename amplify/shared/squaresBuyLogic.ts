@@ -15,6 +15,7 @@
  */
 
 import { roundMoney, toCents, type LedgerEntry, type StateUpdate } from './ledgerLogic';
+import { isValidPayoutStructure } from './squaresMoney';
 
 export type BuyRefusal =
   | 'NOT_FOUND'
@@ -36,6 +37,7 @@ export interface BuyGameRow {
   status?: string | null;
   pricePerSquare?: number | null;
   numbersAssigned?: boolean | null;
+  payoutStructure?: unknown;
 }
 
 export interface Square {
@@ -72,6 +74,8 @@ export function checkBuy(params: {
   if (!game) return { reason: 'NOT_FOUND' };
   if ((game.status !== 'ACTIVE' && game.status !== 'SETUP') || game.numbersAssigned === true) return { reason: 'NOT_OPEN' };
   if (!(typeof game.pricePerSquare === 'number' && game.pricePerSquare > 0)) return { reason: 'NOT_OPEN' };
+  // A game that could not pay out what it takes in takes nothing (the creator wrote it)
+  if (!isValidPayoutStructure(game.payoutStructure)) return { reason: 'NOT_OPEN' };
 
   if (!Array.isArray(squares) || squares.length === 0) return { reason: 'INVALID_SQUARES' };
   if (squares.length > MAX_SQUARES_PER_PURCHASE) return { reason: 'TOO_MANY' };

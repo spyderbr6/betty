@@ -200,9 +200,22 @@ Kept current so work can resume in a new session with nothing else. Branch
 | 3e-2 | `adminResolveDispute` (upheld: winner cleared, pending payouts cancelled; paid bets refused) | 72794ba |
 | 3f | `ensureMyUserRecord` (record created server-side, balance 0, role USER) | 52676a0 |
 | 3g | Dead client money code deleted (942 lines) | 7fdf633 |
-| fix | Dismissing a dispute returns a DISPUTED bet to PENDING_RESOLUTION | (this commit) |
+| fix | Dismissing a dispute returns a DISPUTED bet to PENDING_RESOLUTION | 988a636 |
+| 4 | Minimum-version gate: `AppConfig` 'global' (guest/identity-pool read), `UpdateRequired` screen; app version 1.1.0 | 618c329 |
+| 5 | Data rules locked; `endBetEarly`, `fileDispute` mutations; squares payout structure checked on buy and payout; AdminTestingScreen, trustScoreService, backfill and migration code deleted | (this commit) |
 
-### Remaining: steps 4 and 5 (step 3 is complete)
+Step 5 verified on the sandbox: as a signed-in user, writing `balance`/`role`, creating
+User/Transaction/Participant rows and updating a Bet are refused; editing the display name,
+reading own transactions, ending one's own bet early and filing a dispute work. Gate shown
+signed out and signed in at a high minimum. Unit 368, e2e 110, flows check 81, all passing.
+
+**Release order (owner):** merge step 4 first (the gate is harmless without a minimum), run
+the EAS build (1.1.0), publish it, then create AppConfig 'global' in the production
+DynamoDB console (`minimumVersion` "1.1.0", `updateUrl` the download link). Only then merge
+step 5: builds older than 1.1.0 write directly and stop working once the rules are locked.
+Builds installed before 1.1.0 have no gate at all; they just start failing.
+
+### Steps 4 and 5 as planned (kept for reasoning; done above)
 
 Every client money write now goes through the server; the old client paths are deleted
 (3g). What is left is making the rules enforce it, without breaking installed apps.
@@ -266,9 +279,10 @@ schema-level `allow.resource(...)` grants, which these model rules do not affect
   now, production when this branch is released (Cognito console -> User pools -> Groups
   -> admins -> Add user; then sign out and in). Until then admin approve/reject/cancel/
   dispute actions are refused by the server. Do not release the branch without it.
-- The branch is not merged. Merging deploys the backend to production (Amplify builds
-  `main`): the new mutations and the admins group. Old installed apps keep working until
-  step 5 (they still write directly, which step 5 stops).
+- Step 3 is in production (merged 2026-10-06). Steps 4 and 5: follow the release order
+  above. Two production accounts had float-drift balances from the old app (e.g.
+  829.6100000000005), which make every ledger write fail ("Ledger write did not settle");
+  the owner fixes those by hand. Only the ledger writes balances now, always in cents.
 
 ### Decisions taken (owner)
 

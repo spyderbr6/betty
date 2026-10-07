@@ -36,6 +36,7 @@ import { checkWithdraw, planDecide, planWithdraw, type DecideRefusal, type Withd
 import { DEFAULT_TRUST_SCORE, MAX_TRUST_SCORE, MIN_TRUST_SCORE, TRUST_CHANGES } from '../../../src/config/trustScoreConfig';
 import { checkResolveDispute, planDismiss, planUphold, type DisputeOutcome, type ResolveDisputeResult } from '../../shared/disputeLogic';
 import { newUserRecord, type EnsureUserRecordResult, type NewUserRecordArgs } from '../../shared/userRecordLogic';
+import { checkEndEarly, checkFileDispute, planDisputeBet, planEndEarly, type EndEarlyResult, type FileDisputeResult } from '../../shared/betStatusLogic';
 import { randomInt } from 'node:crypto';
 
 const { resourceConfig, libraryOptions } = await getAmplifyDataClientConfig(env);
@@ -80,6 +81,10 @@ export const handler = async (event: AmplifyResolverEvent, context: Context): Pr
       requireUser(caller, fieldName);
       return adminResolveDispute(caller as Extract<Caller, { kind: 'user' }>, event.arguments as unknown as ResolveDisputeArgs);
     }
+    case 'endBetEarly':
+      return endBetEarly(requireUser(caller, fieldName), (event.arguments as { betId: string }).betId);
+    case 'fileDispute':
+      return fileDispute(requireUser(caller, fieldName), event.arguments as unknown as FileDisputeArgs);
     case 'buySquares':
       return buySquares(requireUser(caller, fieldName), event.arguments as unknown as BuySquaresArgs);
     case 'cancelSquaresGame': {
@@ -829,6 +834,71 @@ async function adminResolveDispute(caller: Extract<Caller, { kind: 'user' }>, ar
     if (creator) await notifyAbout(creator, 'Dispute Dismissed', 'The dispute on your bet was dismissed. Your resolution was correct.', 'MEDIUM', action);
   }
   return { status: 'resolved', outcome, payoutsCancelled };
+}
+
+// --- endBetEarly, fileDispute (bet status changes the app used to write) ------------
+
+/** The creator stops a bet taking joins before its deadline, so they can resolve it. */
+async function endBetEarly(userId: string, betId: string): Promise<EndEarlyResult> {
+  const { data: bet } = await client.models.Bet.get({ id: betId });
+  const refusal = checkEndEarly(bet, userId);
+  if (refusal) return { status: 'refused', reason: refusal };
+  const result = await applyLedger([], planEndEarly(betId));
+  if (result.status === 'state_changed') return { status: 'refused', reason: 'NOT_ACTIVE' };
+  if (result.status !== 'applied') throw new Error(`End bet ${betId}: ${JSON.stringify(result)}`);
+  await touchBet(betId);
+  return { status: 'ended' };
+}
+
+interface FileDisputeArgs {
+  betId: string;
+  reason: string;
+  description: string;
+  evidenceUrls?: (string | null)[] | null;
+}
+
+/**
+ * A participant disputes the result before it is paid. The bet becomes DISPUTED (the
+ * payout processor skips it) and the dispute goes to the admins. The dispute row is
+ * written first and removed again if the bet moved on meanwhile.
+ */
+async function fileDispute(userId: string, args: FileDisputeArgs): Promise<FileDisputeResult> {
+  const { data: bet } = await client.models.Bet.get({ id: args.betId });
+  const refusal = checkFileDispute({
+    bet,
+    userId,
+    reason: args.reason,
+    description: args.description,
+    disputes: bet ? await listDisputes(bet.id) : [],
+    now: new Date().toISOString(),
+  });
+  if (refusal) return { status: 'refused', reason: refusal };
+
+  const evidenceUrls = (args.evidenceUrls ?? []).filter((u): u is string => typeof u === 'string').slice(0, 10);
+  const { data: dispute, errors } = await client.models.Dispute.create({
+    betId: bet.id,
+    filedBy: userId,
+    againstUserId: bet.creatorId,
+    reason: args.reason,
+    description: args.description.trim(),
+    status: 'PENDING',
+    evidenceUrls,
+  });
+  if (!dispute) throw new Error(`File dispute on ${bet.id}: ${JSON.stringify(errors)}`);
+
+  const result = await applyLedger([], planDisputeBet(bet));
+  if (result.status !== 'applied') {
+    await client.models.Dispute.delete({ id: dispute.id });
+    if (result.status === 'state_changed') return { status: 'refused', reason: 'NOT_RESOLVED' };
+    throw new Error(`File dispute on ${bet.id}: ${JSON.stringify(result)}`);
+  }
+  await touchBet(bet.id);
+  if (bet.creatorId) {
+    await notifyAbout(bet.creatorId, 'Bet Disputed', 'A participant has filed a dispute on your bet', 'HIGH', {
+      actionType: 'view_bet', actionData: { betId: bet.id }, relatedBetId: bet.id,
+    });
+  }
+  return { status: 'filed', disputeId: dispute.id };
 }
 
 async function adjustTrustFor(userId: string, change: number, reason: string, dispute: { id: string; betId?: string | null }): Promise<void> {

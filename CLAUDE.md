@@ -502,11 +502,16 @@ the one place a balance or money record is written: each movement is a single Dy
 transaction (compare-and-swap on the balance, a fixed id per movement so retries cannot
 double-pay, never below zero) built by `amplify/shared/ledgerLogic.ts`. The scheduled
 Lambdas and the Stripe webhook reach it through `amplify/shared/moneyClient.ts`; the app
-reaches it through user-facing mutations (`joinBet`, `resolveBet`, `acceptBetResult`, `buySquares`, `cancelSquaresGame`, and `createBetWithStake` for a new
-bet with its creator's stake, so far). The plan, what is done and
-what is left (the app still writes some money records directly until step 3 finishes) is
-in [docs/SECURITY_PLAN.md](./docs/SECURITY_PLAN.md). Do not add a new balance write
-anywhere else. Sandbox checks: `scripts/sandbox-money-check.mjs` and
+reaches it through user-facing mutations (`joinBet`, `createBetWithStake`, `resolveBet`,
+`acceptBetResult`, `endBetEarly`, `fileDispute`, `buySquares`, `cancelSquaresGame`,
+`requestWithdrawal`, `ensureMyUserRecord`, and the admin ones). **The data rules enforce
+it** (step 5): the app cannot create or update Bet, Participant, Transaction, Dispute or the
+squares purchase/payout rows, and on User it writes only its own profile fields (balance,
+role, trust, stats, subscription and Stripe fields are read-only to every user). Lambdas
+write through IAM. Builds older than `AppConfig` 'global'.minimumVersion see only an update
+screen (`src/components/UpdateRequired.tsx`). The plan and its history are in
+[docs/SECURITY_PLAN.md](./docs/SECURITY_PLAN.md). Do not add a new balance write anywhere
+else, and do not loosen a model's rules to make a client write work: add a mutation. Sandbox checks: `scripts/sandbox-money-check.mjs` and
 `scripts/sandbox-money-flows-check.mjs` (sandbox only; they refuse other endpoints).
 
 ### Transaction Service

@@ -54,8 +54,31 @@ export function refundsByUser(purchases: PurchaseRow[]): Array<{ userId: string;
  * period 4's share, as they decide the final score. 0 when no share is defined, which the
  * caller treats as "do not pay".
  */
+/**
+ * A game's payout structure as its creator wrote it (security plan step 5: games are
+ * created on the creator's phone): four shares, each from 0 to 1, adding up to the whole
+ * pot. Anything else would pay out more (or less) than the buyers put in. Accepts the
+ * stored AWSJSON as an object or as JSON text, possibly encoded twice.
+ */
+export function isValidPayoutStructure(value: unknown): boolean {
+  let structure = value;
+  for (let i = 0; i < 3 && typeof structure === 'string'; i++) {
+    try {
+      structure = JSON.parse(structure);
+    } catch {
+      return false;
+    }
+  }
+  if (!structure || typeof structure !== 'object') return false;
+  const s = structure as Record<string, unknown>;
+  const shares = [s.period1, s.period2, s.period3, s.period4];
+  if (!shares.every((v) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1)) return false;
+  const total = (shares as number[]).reduce((sum, v) => sum + v, 0);
+  return Math.abs(total - 1) <= 0.001;
+}
+
 export function calculatePayout(period: number, pot: number, payoutStructure: Record<string, unknown> | null | undefined): number {
-  if (!payoutStructure) return 0;
+  if (!payoutStructure || !isValidPayoutStructure(payoutStructure)) return 0;
   const shares = [
     payoutStructure.period1,
     payoutStructure.period2,

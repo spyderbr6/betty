@@ -1,7 +1,7 @@
 /**
- * Trust score amounts and limits: one source for the app (trustScoreService) and the
- * server (the money function adjusts trust when an admin decides a deposit or
- * withdrawal). No imports, so the backend build can use it.
+ * Trust score amounts and limits, used by the server (the money function adjusts trust
+ * when an admin decides a deposit, a withdrawal or a dispute). Only the server writes
+ * trust scores (security plan step 5). No imports, so the backend build can use it.
  */
 
 // Trust score constants

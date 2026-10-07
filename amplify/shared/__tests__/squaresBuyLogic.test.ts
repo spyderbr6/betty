@@ -18,6 +18,7 @@ const game = (over: Record<string, unknown> = {}) => ({
   status: 'ACTIVE',
   pricePerSquare: 5,
   numbersAssigned: false,
+  payoutStructure: JSON.stringify({ period1: 0.15, period2: 0.25, period3: 0.15, period4: 0.45 }),
   ...over,
 });
 const sq = (row: number, col: number) => ({ row, col });
@@ -36,6 +37,14 @@ describe('checkBuy', () => {
     expect(check({ game: game({ status: 'LOCKED' }) })).toEqual({ reason: 'NOT_OPEN' });
     expect(check({ game: game({ numbersAssigned: true }) })).toEqual({ reason: 'NOT_OPEN' });
     expect(check({ game: game({ pricePerSquare: 0 }) })).toEqual({ reason: 'NOT_OPEN' });
+  });
+
+  it('refuses a game whose payout shares are not the whole pot', () => {
+    expect(check({ game: game({ payoutStructure: { period1: 0.5, period2: 0.5, period3: 0.5, period4: 0.5 } }) })).toEqual({ reason: 'NOT_OPEN' });
+    expect(check({ game: game({ payoutStructure: { period1: 0.1, period2: 0.1, period3: 0.1, period4: 0.1 } }) })).toEqual({ reason: 'NOT_OPEN' });
+    expect(check({ game: game({ payoutStructure: { period1: -1, period2: 1, period3: 0.5, period4: 0.5 } }) })).toEqual({ reason: 'NOT_OPEN' });
+    expect(check({ game: game({ payoutStructure: null }) })).toEqual({ reason: 'NOT_OPEN' });
+    expect(check({ game: game({ payoutStructure: { period1: 0.25, period2: 0.25, period3: 0.25, period4: 0.25 } }) })).toBeNull();
   });
 
   it('refuses squares off the grid, repeated, or none at all', () => {

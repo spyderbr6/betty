@@ -28,6 +28,8 @@ import { Bet } from '../types/betting';
 import { BetsStackParamList } from '../types/navigation';
 import { useAuth } from '../contexts/AuthContext';
 import { useBetData } from '../contexts/BetDataContext';
+import { endBetEarly } from '../services/betStatusService';
+import { endEarlyProblem } from '../services/betStatusLogic';
 import { showAlert } from '../components/ui/CustomAlert';
 
 type BetsScreenNavigationProp = StackNavigationProp<BetsStackParamList, 'BetsList'>;
@@ -75,11 +77,12 @@ export const BetsScreen: React.FC = () => {
 
   const handleEndBet = async (bet: Bet) => {
     try {
-      await client.models.Bet.update({
-        id: bet.id,
-        status: 'PENDING_RESOLUTION',
-        updatedAt: new Date().toISOString(),
-      });
+      // The server checks the caller created the bet and that it is still ACTIVE
+      const problem = endEarlyProblem(await endBetEarly(bet.id));
+      if (problem) {
+        showAlert('Error', problem);
+        return;
+      }
       showAlert('Bet Ended', 'Your bet has been moved to pending resolution. You can now declare the winner.');
     } catch (error) {
       console.error('Error ending bet:', error);

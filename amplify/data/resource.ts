@@ -30,6 +30,12 @@ const schema = a.schema({
       allow.authenticated('identityPool').to(['read']),
     ]),
 
+  // Named so the User fields can carry field-level rules (inline enums cannot); the
+  // names match what Amplify generated for the inline enums, so the API is unchanged.
+  UserRole: a.enum(['USER', 'ADMIN', 'SUPER_ADMIN']),
+  UserSubscriptionTier: a.enum(['FREE', 'PRO']),
+  UserSubscriptionStatus: a.enum(['ACTIVE', 'CANCELLED', 'PAST_DUE', 'TRIALING', 'INCOMPLETE']),
+
   User: a
     .model({
       id: a.id(),
@@ -44,12 +50,14 @@ const schema = a.schema({
       phoneNumberVerifiedAt: a.datetime(),
       allowPhoneDiscovery: a.boolean().default(false), // Opt-in for friend discovery by phone
       isPublic: a.boolean().default(true), // Account privacy: true = discoverable in search, false = private
-      role: a.enum(['USER', 'ADMIN', 'SUPER_ADMIN']), // User role for access control
-      balance: a.float().default(0),
-      trustScore: a.float().default(5.0),
-      totalBets: a.integer().default(0),
-      totalWinnings: a.float().default(0),
-      winRate: a.float().default(0),
+      // Money, standing and subscription fields: written only by the server (Lambdas via IAM).
+      // Signed-in users read them, and write none of them (security plan step 5).
+      role: a.ref('UserRole').authorization((allow) => [allow.authenticated().to(['read'])]), // display only: admins are the Cognito group
+      balance: a.float().default(0).authorization((allow) => [allow.authenticated().to(['read'])]),
+      trustScore: a.float().default(5.0).authorization((allow) => [allow.authenticated().to(['read'])]),
+      totalBets: a.integer().default(0).authorization((allow) => [allow.authenticated().to(['read'])]),
+      totalWinnings: a.float().default(0).authorization((allow) => [allow.authenticated().to(['read'])]),
+      winRate: a.float().default(0).authorization((allow) => [allow.authenticated().to(['read'])]),
       // Onboarding tracking
       onboardingCompleted: a.boolean().default(false), // Whether user has completed onboarding
       onboardingStep: a.integer().default(0), // Current step in onboarding (0 = not started, 1-3 = in progress, 4 = completed)
@@ -61,15 +69,15 @@ const schema = a.schema({
       privacyPolicyAcceptedAt: a.datetime(), // When Privacy Policy was accepted
       privacyPolicyVersion: a.string(), // Version of Privacy Policy accepted (e.g., "1.0")
       // Subscription fields
-      subscriptionTier: a.enum(['FREE', 'PRO']),
+      subscriptionTier: a.ref('UserSubscriptionTier').authorization((allow) => [allow.authenticated().to(['read'])]),
       // INCOMPLETE is the state every new subscription passes through: subscriptions are
       // created with payment_behavior 'default_incomplete', so Stripe emits
       // customer.subscription.created with status `incomplete` before the first payment
       // is confirmed. Without it in this enum that very first event fails to write.
-      subscriptionStatus: a.enum(['ACTIVE', 'CANCELLED', 'PAST_DUE', 'TRIALING', 'INCOMPLETE']),
-      subscriptionCurrentPeriodEnd: a.datetime(),
-      stripeCustomerId: a.string(),
-      stripeSubscriptionId: a.string(),
+      subscriptionStatus: a.ref('UserSubscriptionStatus').authorization((allow) => [allow.authenticated().to(['read'])]),
+      subscriptionCurrentPeriodEnd: a.datetime().authorization((allow) => [allow.authenticated().to(['read'])]),
+      stripeCustomerId: a.string().authorization((allow) => [allow.authenticated().to(['read'])]),
+      stripeSubscriptionId: a.string().authorization((allow) => [allow.authenticated().to(['read'])]),
       createdAt: a.datetime(),
       updatedAt: a.datetime(),
       // Relations
@@ -102,8 +110,10 @@ const schema = a.schema({
         .queryField('usersByStripeCustomerId')
     ])
     .authorization((allow) => [
-      allow.owner().to(['create', 'read', 'update', 'delete']),
-      allow.authenticated().to(['read', 'create', 'update']) // Allow authenticated users to update any user (for balance changes, stats, etc.)
+      // id is the Cognito sub. Not allow.owner(): records created by ensureMyUserRecord
+      // have no owner field. No create: the server creates the record at sign-in.
+      allow.ownerDefinedIn('id').identityClaim('sub').to(['read', 'update']),
+      allow.authenticated().to(['read']),
     ]),
 
   // Notification/Event Log for efficient querying
@@ -288,8 +298,10 @@ const schema = a.schema({
         .queryField('betsByCreator')
     ])
     .authorization((allow) => [
-      allow.owner().to(['create', 'read', 'update', 'delete']),
-      allow.authenticated().to(['read', 'create', 'update']) // Allow any authenticated user to create bets, read all bets, and update (for total pot changes)
+      // Written only by the server (money function and Lambdas, via IAM): security plan step 5.
+      // Created by createBetWithStake; status changes by joinBet, endBetEarly, resolveBet,
+      // fileDispute and the scheduled Lambdas.
+      allow.authenticated().to(['read']),
     ]),
 
   Participant: a
@@ -322,8 +334,8 @@ const schema = a.schema({
         .queryField('participantsByUser')
     ])
     .authorization((allow) => [
-      allow.owner(),
-      allow.authenticated().to(['read', 'create', 'update'])
+      // Written only by the server (money function and Lambdas, via IAM): security plan step 5.
+      allow.authenticated().to(['read']),
     ]),
 
   Evidence: a
@@ -375,8 +387,9 @@ const schema = a.schema({
         .queryField('disputesByBet'),
     ])
     .authorization((allow) => [
-      allow.owner().to(['create', 'read']),
-      allow.authenticated().to(['read', 'create', 'update']) // Admins can update to resolve
+      // Written only by the server (money function and Lambdas, via IAM): security plan step 5.
+      // Filed through fileDispute, decided through adminResolveDispute.
+      allow.authenticated().to(['read']),
     ]),
 
   // Trust score change history for transparency and auditing
@@ -393,8 +406,8 @@ const schema = a.schema({
       createdAt: a.datetime(),
     })
     .authorization((allow) => [
-      allow.owner().to(['read']),
-      allow.authenticated().to(['read', 'create']) // System can create entries
+      // Written only by the server (money function and Lambdas, via IAM): security plan step 5.
+      allow.ownerDefinedIn('userId').identityClaim('sub').to(['read']),
     ]),
 
   // For tracking user statistics and leaderboards
@@ -591,10 +604,10 @@ const schema = a.schema({
         .queryField('transactionsByBet')
     ])
     .authorization((allow) => [
-      allow.owner().to(['create', 'read']), // Users can create their own transactions and read them
-      allow.authenticated().to(['read', 'create', 'update']), // All authenticated users can read/create/update transactions
-      // NOTE: Admin-only update permissions enforced in app logic by checking user.role
-      // TransactionService validates admin role before allowing status updates on PENDING transactions
+      // Written only by the server (money function and Lambdas, via IAM): security plan step 5.
+      // Users read their own history; admins read all (the pending list on the dashboard).
+      allow.ownerDefinedIn('userId').identityClaim('sub').to(['read']),
+      allow.groups(['admins']).to(['read']),
     ]),
 
   // Live Event Models
@@ -718,8 +731,10 @@ const schema = a.schema({
       index('creatorId').sortKeys(['createdAt']).queryField('squaresGamesByCreator'),
     ])
     .authorization((allow) => [
-      allow.owner().to(['create', 'read', 'update', 'delete']),
-      allow.authenticated().to(['read', 'create', 'update'])
+      // The creator creates the game (its payout structure is checked by the server when
+      // paying); status, counts, numbers and scores are the server's.
+      allow.owner().to(['create', 'read']),
+      allow.authenticated().to(['read']),
     ]),
 
   SquaresPurchase: a
@@ -747,8 +762,8 @@ const schema = a.schema({
       index('userId').sortKeys(['purchasedAt']).queryField('purchasesByBuyer'),
     ])
     .authorization((allow) => [
-      allow.owner().to(['create', 'read', 'update', 'delete']),
-      allow.authenticated().to(['read', 'create', 'update'])
+      // Written only by the server (money function and Lambdas, via IAM): security plan step 5.
+      allow.authenticated().to(['read']),
     ]),
 
   SquaresPayout: a
@@ -782,8 +797,8 @@ const schema = a.schema({
       index('userId').sortKeys(['createdAt']).queryField('payoutsByUser'),
     ])
     .authorization((allow) => [
-      allow.owner().to(['create', 'read']),
-      allow.authenticated().to(['read', 'create', 'update'])
+      // Written only by the server (money function and Lambdas, via IAM): security plan step 5.
+      allow.authenticated().to(['read']),
     ]),
 
   SquaresInvitation: a
@@ -1090,6 +1105,29 @@ const schema = a.schema({
       deadlineMinutes: a.integer().required(),
       isPrivate: a.boolean(),
       eventId: a.id(),
+    })
+    .returns(a.json())
+    .handler(a.handler.function(money))
+    .authorization((allow) => [allow.authenticated()]),
+
+  // The creator stops an ACTIVE bet taking joins so they can resolve it
+  // (shared/betStatusLogic.ts). The app can no longer update bets itself.
+  endBetEarly: a
+    .mutation()
+    .arguments({ betId: a.id().required() })
+    .returns(a.json())
+    .handler(a.handler.function(money))
+    .authorization((allow) => [allow.authenticated()]),
+
+  // A participant disputes a result before it is paid: the dispute is recorded and the
+  // bet becomes DISPUTED, which holds its payout (shared/betStatusLogic.ts).
+  fileDispute: a
+    .mutation()
+    .arguments({
+      betId: a.id().required(),
+      reason: a.string().required(),
+      description: a.string().required(),
+      evidenceUrls: a.string().array(),
     })
     .returns(a.json())
     .handler(a.handler.function(money))

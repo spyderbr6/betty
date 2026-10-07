@@ -51,6 +51,8 @@ async function updateExpiredBets(): Promise<{ updated: number; cancelled: number
     let nextToken: string | null | undefined;
     do {
       const page = await client.models.Bet.betsByStatus({ status: 'ACTIVE' }, { nextToken });
+      // A failed read must not look like "nothing expired": stakes would sit unrefunded
+      if (page.errors?.length) throw new Error(`betsByStatus failed: ${JSON.stringify(page.errors)}`);
       activeBets.push(...(page.data ?? []));
       nextToken = page.nextToken;
     } while (nextToken);

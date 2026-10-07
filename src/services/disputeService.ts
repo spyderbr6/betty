@@ -6,7 +6,8 @@
 
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
-import { NotificationService } from './notificationService';
+import { fileDispute as fileDisputeOnServer } from './betStatusService';
+import { fileDisputeProblem } from './betStatusLogic';
 import { disputeRefusalMessage } from './disputeLogic';
 
 const client = generateClient<Schema>();
@@ -53,7 +54,6 @@ export class DisputeService {
   // Dispute filing restrictions
   private static readonly DISPUTE_COOLDOWN_HOURS = 24;
   private static readonly MAX_PENDING_DISPUTES = 3;
-  private static readonly DISPUTE_WINDOW_DAYS = 7;
 
   /**
    * Check if user can file a dispute
@@ -107,124 +107,29 @@ export class DisputeService {
   }
 
   /**
-   * Check if a bet can be disputed
-   * Must be RESOLVED or PENDING_RESOLUTION and within dispute window
+   * File a dispute. The server's fileDispute checks the caller is a participant (not the
+   * creator), that the result has not been paid and its window is open, and that no other
+   * dispute is open; then records it, holds the payout and notifies the creator. Throws
+   * with a message for the user when it is not filed.
    */
-  static async canDisputeBet(betId: string): Promise<{ allowed: boolean; reason?: string }> {
-    try {
-      const { data: bet } = await client.models.Bet.get({ id: betId });
-
-      if (!bet) {
-        return { allowed: false, reason: 'Bet not found' };
-      }
-
-      // Check bet status
-      if (bet.status !== 'RESOLVED' && bet.status !== 'PENDING_RESOLUTION') {
-        return { allowed: false, reason: 'Only resolved bets can be disputed' };
-      }
-
-      // Check if bet was resolved (has a winningSide)
-      if (!bet.winningSide) {
-        return { allowed: false, reason: 'Bet has not been resolved yet' };
-      }
-
-      // Check dispute window (7 days from resolution)
-      if (bet.updatedAt) {
-        const resolutionDate = new Date(bet.updatedAt);
-        const disputeWindowEnds = new Date(resolutionDate);
-        disputeWindowEnds.setDate(disputeWindowEnds.getDate() + this.DISPUTE_WINDOW_DAYS);
-
-        if (new Date() > disputeWindowEnds) {
-          return { allowed: false, reason: `Dispute window expired. You had ${this.DISPUTE_WINDOW_DAYS} days to file.` };
-        }
-      }
-
-      // Check if dispute already exists for this bet
-      const { data: existingDisputes } = await client.models.Dispute.list({
-        filter: {
-          and: [
-            { betId: { eq: betId } },
-            { status: { eq: 'PENDING' } }
-          ]
-        }
-      });
-
-      if (existingDisputes && existingDisputes.length > 0) {
-        return { allowed: false, reason: 'A dispute is already pending for this bet' };
-      }
-
-      return { allowed: true };
-
-    } catch (error) {
-      console.error('[Dispute] Error checking bet eligibility:', error);
-      return { allowed: false, reason: 'An error occurred. Please try again.' };
+  static async fileDispute(params: FileDisputeParams): Promise<string> {
+    // The per-user limits are courtesy checks here, not rules the server enforces
+    const userCheck = await this.canFileDispute(params.filedBy);
+    if (!userCheck.allowed) {
+      throw new Error(userCheck.reason);
     }
-  }
 
-  /**
-   * File a new dispute
-   */
-  static async fileDispute(params: FileDisputeParams): Promise<Dispute | null> {
-    try {
-      console.log('[Dispute] Filing dispute:', params);
-
-      // Check if user can file dispute
-      const userCheck = await this.canFileDispute(params.filedBy);
-      if (!userCheck.allowed) {
-        throw new Error(userCheck.reason);
-      }
-
-      // Check if bet can be disputed
-      const betCheck = await this.canDisputeBet(params.betId);
-      if (!betCheck.allowed) {
-        throw new Error(betCheck.reason);
-      }
-
-      // Create dispute
-      const { data: dispute, errors } = await client.models.Dispute.create({
-        betId: params.betId,
-        filedBy: params.filedBy,
-        againstUserId: params.againstUserId,
-        reason: params.reason,
-        description: params.description,
-        status: 'PENDING',
-        evidenceUrls: params.evidenceUrls || [],
-        createdAt: new Date().toISOString()
-      });
-
-      if (errors || !dispute) {
-        console.error('[Dispute] Error creating dispute:', errors);
-        return null;
-      }
-
-      // Update bet status to DISPUTED
-      await client.models.Bet.update({
-        id: params.betId,
-        status: 'DISPUTED'
-      });
-
-      // Send notification to bet creator
-      await NotificationService.createNotification({
-        userId: params.againstUserId,
-        type: 'BET_DISPUTED',
-        title: 'Bet Disputed',
-        message: `A participant has filed a dispute on your bet`,
-        priority: 'HIGH',
-        actionType: 'view_bet',
-        actionData: { betId: params.betId },
-        relatedBetId: params.betId,
-        relatedUserId: params.filedBy
-      });
-
-      // Notify admins (TODO: implement admin notification system)
-      console.log('[Dispute] Dispute filed successfully:', dispute.id);
-
-      return dispute as Dispute;
-
-    } catch (error) {
-      console.error('[Dispute] Error filing dispute:', error);
-      throw error;
+    const result = await fileDisputeOnServer({
+      betId: params.betId,
+      reason: params.reason,
+      description: params.description,
+      evidenceUrls: params.evidenceUrls ?? [],
+    });
+    const problem = fileDisputeProblem(result);
+    if (problem || result?.status !== 'filed') {
+      throw new Error(problem ?? 'Failed to file dispute. Please try again.');
     }
+    return result.disputeId;
   }
 
   /**
