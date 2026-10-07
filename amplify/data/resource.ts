@@ -16,6 +16,20 @@ This schema defines the core data models for the SideBet peer-to-peer betting
 platform, including users, bets, participants, and evidence submission.
 =========================================================================*/
 const schema = a.schema({
+  // One row (id 'global'), written by the owner in the DynamoDB console. Installed apps
+  // older than minimumVersion show only an "update the app" screen
+  // (src/components/UpdateRequired.tsx). Readable before sign-in: the check runs at launch.
+  AppConfig: a
+    .model({
+      minimumVersion: a.string().required(), // e.g. "1.1.0"
+      updateUrl: a.string(), // where to get the new build
+      updateMessage: a.string(),
+    })
+    .authorization((allow) => [
+      allow.guest().to(['read']),
+      allow.authenticated('identityPool').to(['read']),
+    ]),
+
   User: a
     .model({
       id: a.id(),

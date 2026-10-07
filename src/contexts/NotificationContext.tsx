@@ -160,13 +160,12 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       }
     };
 
-    // Subscribe to new notifications (onCreate)
-    const createSubscription = client.models.Notification.onCreate({
-      filter: {
-        userId: { eq: user.userId }
-      }
-    }).subscribe({
+    // No userId filter here: AppSync adds its own for the owner rules and rejects a
+    // second one on the same field. Those rules also deliver notifications this user
+    // sent to others (the creator rule), so keep only the ones addressed to them.
+    const createSubscription = client.models.Notification.onCreate().subscribe({
       next: (notification) => {
+        if (notification.userId !== user.userId) return;
         console.log('[NotificationContext] New notification received:', notification);
         handleNewNotification(notification);
       },
@@ -178,12 +177,9 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     });
 
     // Subscribe to notification updates (onUpdate) - for when notifications are marked as read
-    const updateSubscription = client.models.Notification.onUpdate({
-      filter: {
-        userId: { eq: user.userId }
-      }
-    }).subscribe({
+    const updateSubscription = client.models.Notification.onUpdate().subscribe({
       next: (notification) => {
+        if (notification.userId !== user.userId) return;
         console.log('[NotificationContext] Notification updated:', notification);
         // If notification was marked as read, decrement count
         if (notification.isRead) {

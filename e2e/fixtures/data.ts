@@ -112,6 +112,8 @@ export const baseHandlers = (
   over: Record<string, (variables: Record<string, unknown>) => unknown> = {},
   me: Record<string, unknown> = {}
 ) => ({
+  // No minimum version set: the update gate stays out of the way (update-gate.spec.ts)
+  getAppConfig: one(null),
   getUser: (variables: Record<string, unknown>) =>
     variables.id === OTHER_USER.id ? OTHER_USER : profile(me),
   listUsers: list(),

@@ -39,6 +39,7 @@ import { toastConfig } from './src/components/ui/ToastConfig';
 import { CustomAlertController } from './src/components/ui/CustomAlert';
 import { registerServiceWorker } from './src/utils/webPushUtils';
 import { startWebPushBridge } from './src/services/webPushBridge';
+import { UpdateRequired, useRequiredUpdate } from './src/components/UpdateRequired';
 
 type AuthScreen = 'login' | 'signup' | 'forgotPassword';
 
@@ -91,6 +92,9 @@ function MainApp() {
 }
 
 export default function App() {
+  // Builds older than AppConfig.minimumVersion see only the update screen (security plan step 4)
+  const requiredUpdate = useRequiredUpdate();
+
   // Register service worker on app startup (web only)
   useEffect(() => {
     if (Platform.OS === 'web') {
@@ -114,6 +118,9 @@ export default function App() {
       merchantIdentifier="merchant.com.sidebet.app"
     >
       <SafeAreaProvider>
+        {requiredUpdate ? (
+          <UpdateRequired {...requiredUpdate} />
+        ) : (
         <AuthProvider>
           <ProfileProvider>
           <NotificationProvider>
@@ -130,6 +137,7 @@ export default function App() {
           </NotificationProvider>
           </ProfileProvider>
         </AuthProvider>
+        )}
       </SafeAreaProvider>
     </StripeProvider>
   );
