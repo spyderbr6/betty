@@ -5,6 +5,7 @@ import { Amplify } from 'aws-amplify';
 import { getAmplifyDataClientConfig } from '@aws-amplify/backend/function/runtime';
 // @ts-ignore - Generated at build time by Amplify
 import { env } from '$amplify/env/event-fetcher';
+import { espnDatesInRange } from './espnDates';
 
 const { resourceConfig, libraryOptions } = await getAmplifyDataClientConfig(env);
 Amplify.configure(resourceConfig, libraryOptions);
@@ -112,31 +113,37 @@ function calculateCumulativeScores(incrementalScores: number[]): number[] {
 }
 
 /**
- * Fetch events from ESPN API using date range
+ * Fetch events from ESPN API for a date range, one request per day (ESPN refuses ranges)
  * @param league - League name (NBA, NFL)
  * @param startDate - Start date in YYYY-MM-DD format
  * @param endDate - End date in YYYY-MM-DD format
  */
 async function fetchEventsFromAPI(league: string, startDate: string, endDate: string): Promise<ESPNEvent[]> {
-  try {
-    const leagueEndpoint = LEAGUE_ENDPOINTS[league];
-    if (!leagueEndpoint) {
-      console.error(`❌ Unknown league: ${league}`);
-      return [];
+  const leagueEndpoint = LEAGUE_ENDPOINTS[league];
+  if (!leagueEndpoint) {
+    console.error(`❌ Unknown league: ${league}`);
+    return [];
+  }
+
+  console.log(`🔍 Fetching events for ${league} from ${startDate} to ${endDate}`);
+
+  // A late game can be listed on two days; keep one copy per ESPN event id
+  const byId = new Map<string, ESPNEvent>();
+  for (const day of espnDatesInRange(startDate, endDate)) {
+    for (const event of await fetchEventsForDay(league, leagueEndpoint, day)) {
+      byId.set(event.id, event);
     }
+  }
+  return Array.from(byId.values());
+}
 
-    // Format dates as YYYYMMDD for ESPN API
-    const formattedStartDate = startDate.replace(/-/g, '');
-    const formattedEndDate = endDate.replace(/-/g, '');
+/**
+ * Fetch one day's events (day in YYYYMMDD format)
+ */
+async function fetchEventsForDay(league: string, leagueEndpoint: string, day: string): Promise<ESPNEvent[]> {
+  try {
+    const url = `${ESPN_API_BASE}/${leagueEndpoint}/scoreboard?dates=${day}`;
 
-    // Use date range format: YYYYMMDD-YYYYMMDD
-    const dateRange = formattedStartDate === formattedEndDate
-      ? formattedStartDate
-      : `${formattedStartDate}-${formattedEndDate}`;
-
-    const url = `${ESPN_API_BASE}/${leagueEndpoint}/scoreboard?dates=${dateRange}`;
-
-    console.log(`🔍 Fetching events for ${league} from ${startDate} to ${endDate}`);
     console.log(`🌐 Full URL: ${url}`);
 
     const response = await fetch(url);
@@ -153,11 +160,11 @@ async function fetchEventsFromAPI(league: string, startDate: string, endDate: st
     const data: ESPNResponse = await response.json();
 
     if (!data.events || data.events.length === 0) {
-      console.log(`⚠️  No events found for ${league} in date range ${startDate} to ${endDate} (ESPN returned empty - normal if no games)`);
+      console.log(`⚠️  No events found for ${league} on ${day} (ESPN returned empty - normal if no games)`);
       return [];
     }
 
-    console.log(`✅ Found ${data.events.length} ${league} events in date range`);
+    console.log(`✅ Found ${data.events.length} ${league} events on ${day}`);
 
     // Log first event for verification
     if (data.events.length > 0) {
@@ -174,7 +181,7 @@ async function fetchEventsFromAPI(league: string, startDate: string, endDate: st
 
     return data.events;
   } catch (error) {
-    console.error(`❌ Error fetching events for ${league}:`, error);
+    console.error(`❌ Error fetching events for ${league} on ${day}:`, error);
     console.error(`❌ Error details:`, error instanceof Error ? error.message : String(error));
     return [];
   }
