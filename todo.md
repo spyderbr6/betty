@@ -103,12 +103,36 @@ Checked 2026-10-04. Every other type in `amplify/shared/notificationCatalog.ts` 
       (declining does).
 - [ ] `SYSTEM_ANNOUNCEMENT`: there's no way to send an announcement (an admin tool would write the rows).
 
-### Not covered by the notifications work: old sports events are never cleaned up
+---
+
+## 🏈 SPORTS EVENTS (ESPN)
+
+**Fixed 2026-10:** ESPN's scoreboard stopped accepting date ranges on 2026-09-15 and the
+fetcher failed silently for four weeks. It now asks one day at a time (#241), writes a game
+only when ESPN reports a change (#242), and fails the Lambda run when a league gets nothing
+back or a write fails, so an outage shows on its error metric. The app follows the checked-in
+game through a subscription (no polling) and reads only games from 4 hours ago on, every
+page, cached 15 minutes (#242). If events stop again: read the event-fetcher's CloudWatch
+logs, and curl ESPN directly, before suspecting indexes.
+
+- [ ] **CloudWatch alarm** on the event-fetcher's Errors metric, emailing the owner. The
+      run now fails loudly, but nothing watches the metric yet.
+- [ ] **On-device check** of the checked-in game banner following the score (#242 was
+      verified on the sandbox with IAM credentials, not in a signed-in app).
+- [ ] **Production backlog:** games that ended during the outage stay `isActive = 1` (the
+      fetcher only revisits yesterday to tomorrow). Harmless since #242; to clear them, run
+      the fetcher once from the Lambda console with
+      `{"startDate": "2026-09-15", "endDate": "<today>"}`.
+- [ ] **`fetchEventsManually`** (`amplify/data/resource.ts`) lets any signed-in user run the
+      fetcher. Unused by the app: restrict it to admins or remove it.
+- [ ] **Faster scores** (owner chose 15 minutes for now): a shorter schedule while games are
+      live. The app needs no change; it reacts to writes.
+
+### Old sports events are never cleaned up
 
 `LiveEvent` (ESPN games from `event-fetcher`) and `EventCheckIn` grow forever. The
 fetcher only marks finished games `isActive = 0` and deletes duplicates; nothing removes
-old games. Not part of notification retention (that covers the `Notification` log and
-device registrations only).
+old games. Since #242 this is storage only: the app's query no longer reads old rows.
 
 - [ ] Daily cleanup of games finished more than ~30 days ago, found by Query on
       `activeEventsByTime` with `isActive = 0` (never a Scan), deleting their check-ins too.
@@ -117,12 +141,24 @@ device registrations only).
       `squaresGamesByEvent` already exists.
 - [ ] Confirm bet and squares history screens render when their event is gone.
 
-### Security issue found during the notifications work (outside its scope)
+---
 
-- [ ] **Any signed-in user can update any `User` record, including `balance`.** The rule is
-      `allow.authenticated().to(['read', 'create', 'update'])`, commented "for balance
-      changes, stats, etc." in `amplify/data/resource.ts`. Balance and stats changes should
-      move to Lambdas (IAM) and the client rule narrowed to owner-only profile fields.
+## 🔒 MONEY SECURITY — ✅ COMPLETE (2026-10)
+
+Balances and money records change only on the server (the `money` Lambda's ledger); the
+data rules stop the app writing them; admins are the Cognito `admins` group; builds older
+than AppConfig `minimumVersion` see only an update screen. Plan and history:
+[docs/SECURITY_PLAN.md](./docs/SECURITY_PLAN.md). Left for later (its §7):
+
+- [ ] **Stuck squares game:** a LIVE game whose event never finishes goes to
+      PENDING_RESOLUTION after 2 days; with periods already paid it cannot be cancelled
+      either. An admin needs a way to settle it from the remaining scores.
+- [ ] **Trust penalty:** rejecting any deposit or withdrawal applies the -3.0 "fraud
+      attempt" penalty; a wrong Venmo handle is not fraud.
+- [ ] **E2E spec** for the admin dispute screen (`AdminDisputeScreen`).
+- [ ] **Minimum-version check for group members:** it reads AppConfig through the identity
+      pool, where Cognito group members get their group's IAM role, so for the owner it
+      cannot read the config and lets the app through (it fails open).
 
 ### Already fixed (do not re-investigate)
 
@@ -136,11 +172,11 @@ device registrations only).
 
 ## 🔄 IMMEDIATE NEXT STEPS (Current Development Cycle)
 
-### **Priority 1: Critical Bug Fixes & UI Polish** ✅ COMPLETED
-- [ ] the signout button on settings page i want to replace the system prompt with a prompt that we create. "Are you sure?", this will help me test on the web and apps.
-- [ ] i need to capture phone numbers for sms verification and finding friends. 
+### **Priority 1: Critical Bug Fixes & UI Polish**
+- [x] the signout button on settings page i want to replace the system prompt with a prompt that we create. "Are you sure?", this will help me test on the web and apps. (in-app confirmation on the Account screen)
+- [x] i need to capture phone numbers for sms verification and finding friends. (sign-up, verification, add friend by phone)
 - [ ] lets remove the stats from the my bets page and the profile's main page. those are needless.
-- [ ] payment methods, its unclear how they get verified. there doesnt appear to be a way to do it. should it just be when the first payment is authorized?
+- [x] payment methods, its unclear how they get verified. there doesnt appear to be a way to do it. should it just be when the first payment is authorized? (decided 2026-10-05: no verification; the admin checks the Venmo handle when approving a withdrawal)
 - [ ] i feel like the resolved bets should be loaded in separately or we should remove them from my bets completely. 
 
 
@@ -163,9 +199,7 @@ device registrations only).
   - Direct support contact method
 
 ### **Priority 3: Feature Completion**
-- [ ] Remove or implement private bet functionality
-  - Currently toggle exists but does nothing
-  - Either wire up private bet logic or remove the option
+- [x] Private bets: hidden from the Join feed, and the server's `joinBet` refuses anyone not invited
 - [x] In-app toast notifications with expo-notifications **✅ COMPLETED**
   - [x] Smart batching (3+ same type → single batch toast)
   - [x] Rate limiting (max 1 toast per 3 seconds)
@@ -183,14 +217,10 @@ device registrations only).
 ## 🚀 MEDIUM-TERM ROADMAP (Next Major Features)
 
 ### **Enhanced User Experience**
-- [ ] **Balance Management System**
-  - Add funds functionality
-  - Withdraw funds functionality
-  - Transaction history with filtering
-  - Balance audit trail
+- [x] **Balance Management System**: Stripe card deposits, Venmo withdrawals approved by an admin, unified history, and every movement recorded by the server's ledger
 - [ ] **Advanced Trust System**
   - Reputation tracking based on bet resolution
-  - Dispute resolution workflow
+  - [x] Dispute resolution workflow (participants file within the 48-hour window; an admin upholds or dismisses)
   - Trust score calculation improvements
 - [ ] **Bet Discovery Improvements**
   - Category-based filtering
@@ -224,16 +254,13 @@ device registrations only).
 ## 🏗️ TECHNICAL DEBT & IMPROVEMENTS
 
 ### **Code Quality**
-- [ ] **TypeScript Type Errors**: Fix TypeScript compilation errors (HIGH PRIORITY)
-  - Missing type definitions for React, React Native, AWS Amplify modules
-  - Implicit 'any' type errors in function parameters throughout codebase
-  - Missing @types/node for process.env usage in Lambda functions
-  - Missing expo TypeScript base config (tsconfig.json references 'expo/tsconfig.base')
-  - May require: npm install --save-dev @types/react @types/react-native @types/node
-  - Note: These are pre-existing errors, not related to new 2FA/password implementation
+- [ ] **TypeScript Type Errors**: `npm run typecheck` (app) reports 30 errors as of 2026-10-11,
+  mostly "union type too complex" (TS2590) on Amplify model calls, plus `@env` and a
+  Web Push `Uint8Array` type. `npm run typecheck:backend` is clean (Amplify fails the
+  deploy otherwise).
 - [ ] **TypeScript Strict Mode**: Enable strict compilation settings
 - [ ] **Error Boundaries**: Implement React error boundaries for crash recovery
-- [ ] **Unit Testing**: Add test coverage for core betting functionality
+- [x] **Unit Testing**: Vitest over Lambda logic and pure app helpers (`npm run test:unit`), plus the Playwright e2e suite
 - [ ] **ESLint Configuration**: Complete linting setup
 - [ ] **Code Documentation**: Add JSDoc comments to services and utilities
 
@@ -489,6 +516,13 @@ src/
 
 ## 📈 RECENT MILESTONES
 
+- ✅ **Sports events restored** (2026-10-11)
+  - ESPN stopped accepting date ranges on 2026-09-15; the fetcher now asks one day at a time.
+  - Writes only real changes and fails loudly; the app follows the checked-in game by subscription.
+- ✅ **Money security** (2026-10)
+  - Server-side ledger for every balance change; app money flows moved to server mutations.
+  - Data rules locked to the server; admins are the Cognito `admins` group; minimum-version gate.
+  - Details: docs/SECURITY_PLAN.md.
 - ✅ **Notifications overhaul** (2026-10)
   - One server-side dispatcher pushes every notification (including backend-raised ones) according to the recipient's preferences.
   - Per-category alerts and feed visibility, with money, results, refunds and disputes always in the feed.
@@ -542,4 +576,4 @@ src/
 
 ---
 
-*Last Updated: notifications overhaul Phases 0–5 (2026-10-04)*
+*Last Updated: money security, sports events fix (2026-10-11)*
