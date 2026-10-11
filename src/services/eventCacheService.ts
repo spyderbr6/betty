@@ -1,13 +1,20 @@
 /**
  * Event Cache Service
  *
- * Centralized event caching with 24-hour TTL.
- * Fetches all events once and filters client-side based on scheduledTime.
+ * Centralized event caching, reused for 15 minutes (the event-fetcher's cadence).
+ * Fetches current events once and filters client-side based on scheduledTime.
  */
 
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
 import type { LiveEventData } from './eventService';
+import {
+  EVENT_CACHE_TTL_MS,
+  LIVE_LOOKBACK_MS,
+  MAX_EVENT_PAGES,
+  eventWindowStart,
+  toLiveEventData,
+} from './liveEventLogic';
 
 const client = generateClient<Schema>();
 
@@ -17,7 +24,6 @@ interface EventCache {
 }
 
 let eventCache: EventCache | null = null;
-const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
 
 /**
  * Determine if an event is "live" based on its scheduled time
@@ -26,7 +32,7 @@ const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
 export function isEventLive(event: LiveEventData): boolean {
   const now = new Date();
   const scheduledTime = new Date(event.scheduledTime);
-  const fourHoursAgo = new Date(now.getTime() - 4 * 60 * 60 * 1000);
+  const fourHoursAgo = new Date(now.getTime() - LIVE_LOOKBACK_MS);
   const ninetyMinutesFromNow = new Date(now.getTime() + 90 * 60 * 1000);
 
   // Event is live if:
@@ -75,61 +81,40 @@ export function isEventUpcomingForSquares(event: LiveEventData): boolean {
  * Fetch all events from database
  * This is the only place that actually queries DynamoDB for events
  *
- * Uses the isActive GSI for efficient single-query retrieval:
- * - isActive=1 returns all UPCOMING/LIVE/HALFTIME events (managed by Lambda)
- * - Results are sorted by scheduledTime via the GSI
- * - No scan+filter needed - direct GSI query
+ * Uses the isActive GSI (isActive=1: UPCOMING/LIVE/HALFTIME, managed by the Lambda),
+ * limited by its scheduledTime sort key to games that can still be live or are to come.
+ * Rows the fetcher never closed (it only revisits yesterday to tomorrow) stay active
+ * forever; without the time limit they sort first and could fill the page.
  */
 async function fetchAllEvents(): Promise<LiveEventData[]> {
   try {
-    console.log('[EventCache] Fetching active events from database via isActive GSI');
+    const since = eventWindowStart(Date.now());
+    console.log(`[EventCache] Fetching active events scheduled since ${since}`);
 
-    // Query for all active events (UPCOMING/LIVE/HALFTIME) using efficient GSI
-    // The event-fetcher Lambda manages isActive lifecycle:
-    //   - Sets isActive=1 for UPCOMING/LIVE/HALFTIME
-    //   - Sets isActive=0 for FINISHED/CANCELLED/POSTPONED
-    const { data: events, errors } = await client.models.LiveEvent.activeEventsByTime({
-      isActive: 1
-    }, {
-      limit: 500, // High limit to get all active events
-      sortDirection: 'ASC' // Soonest first
-    });
+    const mappedEvents: LiveEventData[] = [];
+    let nextToken: string | null | undefined;
+    let pages = 0;
+    do {
+      const { data: events, errors, nextToken: next } = await client.models.LiveEvent.activeEventsByTime({
+        isActive: 1,
+        scheduledTime: { ge: since },
+      }, {
+        limit: 500,
+        sortDirection: 'ASC', // Soonest first
+        nextToken,
+      });
 
-    if (errors || !events) {
-      console.error('[EventCache] Error fetching events:', errors);
-      return [];
-    }
+      if (errors || !events) {
+        console.error('[EventCache] Error fetching events:', errors);
+        return [];
+      }
 
-    console.log(`[EventCache] Fetched ${events.length} active events from database via GSI`);
+      mappedEvents.push(...events.map(toLiveEventData));
+      nextToken = next;
+      pages++;
+    } while (nextToken && pages < MAX_EVENT_PAGES);
 
-    // Map to LiveEventData format
-    const mappedEvents: LiveEventData[] = events.map(event => ({
-      id: event.id!,
-      externalId: event.externalId,
-      sport: event.sport || 'OTHER',
-      league: event.league || '',
-      homeTeam: event.homeTeam,
-      awayTeam: event.awayTeam,
-      homeTeamCode: event.homeTeamCode ?? undefined,
-      awayTeamCode: event.awayTeamCode ?? undefined,
-      venue: event.venue ?? undefined,
-      city: event.city ?? undefined,
-      country: event.country ?? undefined,
-      homeScore: event.homeScore || 0,
-      awayScore: event.awayScore || 0,
-      status: event.status || 'UPCOMING',
-      quarter: event.quarter ?? undefined,
-      timeLeft: event.timeLeft ?? undefined,
-      scheduledTime: event.scheduledTime,
-      startTime: event.startTime ?? undefined,
-      endTime: event.endTime ?? undefined,
-      season: event.season ?? undefined,
-      round: event.round ?? undefined,
-      checkInCount: event.checkInCount || 0,
-      betCount: event.betCount || 0,
-      createdAt: event.createdAt ?? undefined,
-      updatedAt: event.updatedAt ?? undefined
-    }));
+    console.log(`[EventCache] Fetched ${mappedEvents.length} active events from database via GSI`);
 
     // Deduplicate by ID (database may have duplicates)
     const uniqueEvents = new Map<string, LiveEventData>();
@@ -158,7 +143,7 @@ export async function getCachedEvents(forceRefresh: boolean = false): Promise<Li
   const now = Date.now();
 
   // Check if cache is valid
-  if (!forceRefresh && eventCache && (now - eventCache.timestamp) < CACHE_TTL) {
+  if (!forceRefresh && eventCache && (now - eventCache.timestamp) < EVENT_CACHE_TTL_MS) {
     console.log('[EventCache] Returning cached events');
     return eventCache.events;
   }

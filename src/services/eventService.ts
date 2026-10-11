@@ -6,6 +6,7 @@
 
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
+import { toLiveEventData } from './liveEventLogic';
 
 const client = generateClient<Schema>();
 
@@ -110,35 +111,7 @@ export async function getUserCheckedInEvent(userId: string): Promise<{
         isActive: checkIn.isActive || true,
         location: checkIn.location as any
       },
-      event: {
-        id: event.id!,
-        externalId: event.externalId,
-        sport: event.sport || 'OTHER',
-        league: event.league || '',
-        homeTeam: event.homeTeam,
-        awayTeam: event.awayTeam,
-        homeTeamShortName: event.homeTeamShortName ?? undefined,
-        awayTeamShortName: event.awayTeamShortName ?? undefined,
-        homeTeamCode: event.homeTeamCode ?? undefined,
-        awayTeamCode: event.awayTeamCode ?? undefined,
-        venue: event.venue ?? undefined,
-        city: event.city ?? undefined,
-        country: event.country ?? undefined,
-        homeScore: event.homeScore || 0,
-        awayScore: event.awayScore || 0,
-        status: event.status || 'UPCOMING',
-        quarter: event.quarter ?? undefined,
-        timeLeft: event.timeLeft ?? undefined,
-        scheduledTime: event.scheduledTime,
-        startTime: event.startTime ?? undefined,
-        endTime: event.endTime ?? undefined,
-        season: event.season ?? undefined,
-        round: event.round ?? undefined,
-        checkInCount: event.checkInCount || 0,
-        betCount: event.betCount || 0,
-        createdAt: event.createdAt ?? undefined,
-        updatedAt: event.updatedAt ?? undefined
-      }
+      event: toLiveEventData(event)
     };
 
   } catch (error) {
