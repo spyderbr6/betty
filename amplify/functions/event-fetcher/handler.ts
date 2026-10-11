@@ -6,6 +6,7 @@ import { getAmplifyDataClientConfig } from '@aws-amplify/backend/function/runtim
 // @ts-ignore - Generated at build time by Amplify
 import { env } from '$amplify/env/event-fetcher';
 import { espnDatesInRange } from './espnDates';
+import { changedEventFields } from './eventChangeLogic';
 
 const { resourceConfig, libraryOptions } = await getAmplifyDataClientConfig(env);
 Amplify.configure(resourceConfig, libraryOptions);
@@ -345,38 +346,45 @@ async function upsertEvent(event: ESPNEvent, league: string): Promise<void> {
     if (existingEvents && existingEvents.length > 0) {
       // Update the first existing event
       const existingEvent = existingEvents[0];
-      try {
-        // Debug: Log what we're trying to update (only when period scores exist)
-        if (eventData.homePeriodScores || eventData.awayPeriodScores) {
-          console.log(`🔍 DEBUG - Event ${event.id} period scores (stringified for a.json()):`, {
-            homePeriodScores: eventData.homePeriodScores,
-            awayPeriodScores: eventData.awayPeriodScores,
-            homeType: typeof eventData.homePeriodScores,
-            awayType: typeof eventData.awayPeriodScores,
-          });
-        }
-
-        const updateResult = await client.models.LiveEvent.update({
-          id: existingEvent.id,
-          ...eventData,
-        });
-        if (updateResult.errors) {
-          console.error(`❌ Error updating event ${event.id}:`, updateResult.errors);
-          console.error(`❌ Update error details:`, JSON.stringify(updateResult.errors, null, 2));
-          console.error(`❌ Attempted update data:`, JSON.stringify(eventData, null, 2));
-        } else {
-          console.log(`✅ Updated: ${awayCompetitor.team.abbreviation} @ ${homeCompetitor.team.abbreviation} (id: ${existingEvent.id}, status: ${status}, scores: ${eventData.awayScore}-${eventData.homeScore})`);
-          // Log period scores if available (cumulative totals for squares matching)
-          if (eventData.homePeriodScores && eventData.awayPeriodScores) {
-            // Parse JSON strings for logging
-            const homeScoresArray = JSON.parse(eventData.homePeriodScores);
-            const awayScoresArray = JSON.parse(eventData.awayPeriodScores);
-            console.log(`   📊 Cumulative period scores - Away: [${awayScoresArray.join(', ')}], Home: [${homeScoresArray.join(', ')}]`);
+      const changed = changedEventFields(existingEvent, eventData);
+      if (changed.length === 0) {
+        // Nothing new from ESPN: no write, so app subscriptions fire only on real changes
+        console.log(`⏭️  Unchanged: ${awayCompetitor.team.abbreviation} @ ${homeCompetitor.team.abbreviation} (id: ${existingEvent.id})`);
+      } else {
+        try {
+          console.log(`✏️  Changed for ${event.id}: ${changed.join(', ')}`);
+          // Debug: Log what we're trying to update (only when period scores exist)
+          if (eventData.homePeriodScores || eventData.awayPeriodScores) {
+            console.log(`🔍 DEBUG - Event ${event.id} period scores (stringified for a.json()):`, {
+              homePeriodScores: eventData.homePeriodScores,
+              awayPeriodScores: eventData.awayPeriodScores,
+              homeType: typeof eventData.homePeriodScores,
+              awayType: typeof eventData.awayPeriodScores,
+            });
           }
+
+          const updateResult = await client.models.LiveEvent.update({
+            id: existingEvent.id,
+            ...eventData,
+          });
+          if (updateResult.errors) {
+            console.error(`❌ Error updating event ${event.id}:`, updateResult.errors);
+            console.error(`❌ Update error details:`, JSON.stringify(updateResult.errors, null, 2));
+            console.error(`❌ Attempted update data:`, JSON.stringify(eventData, null, 2));
+          } else {
+            console.log(`✅ Updated: ${awayCompetitor.team.abbreviation} @ ${homeCompetitor.team.abbreviation} (id: ${existingEvent.id}, status: ${status}, scores: ${eventData.awayScore}-${eventData.homeScore})`);
+            // Log period scores if available (cumulative totals for squares matching)
+            if (eventData.homePeriodScores && eventData.awayPeriodScores) {
+              // Parse JSON strings for logging
+              const homeScoresArray = JSON.parse(eventData.homePeriodScores);
+              const awayScoresArray = JSON.parse(eventData.awayPeriodScores);
+              console.log(`   📊 Cumulative period scores - Away: [${awayScoresArray.join(', ')}], Home: [${homeScoresArray.join(', ')}]`);
+            }
+          }
+        } catch (updateError) {
+          console.error(`❌ Exception updating event ${event.id}:`, updateError);
+          console.error(`❌ Exception details:`, updateError instanceof Error ? updateError.message : String(updateError));
         }
-      } catch (updateError) {
-        console.error(`❌ Exception updating event ${event.id}:`, updateError);
-        console.error(`❌ Exception details:`, updateError instanceof Error ? updateError.message : String(updateError));
       }
 
       // If there are duplicates, delete them

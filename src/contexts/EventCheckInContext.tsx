@@ -4,10 +4,12 @@
  */
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { AppState } from 'react-native';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
 import { getUserCheckedInEvent, checkOutOfEvent } from '../services/eventService';
 import { getLiveEventsFromCache } from '../services/eventCacheService';
+import { isEventOver, toLiveEventData, type LiveEventRecord } from '../services/liveEventLogic';
 import type { LiveEvent } from '../types/events';
 import { useAuth } from './AuthContext';
 import { showAlert } from '../components/ui/CustomAlert';
@@ -98,49 +100,71 @@ export const EventCheckInProvider: React.FC<EventCheckInProviderProps> = ({ chil
     };
   }, [user?.userId]);
 
-  // Monitor checked-in event for completion and auto-checkout
+  // Live updates for the checked-in game: one subscription to that game's row, which the
+  // event-fetcher writes only when ESPN reports a change (score, clock or status). The
+  // banner follows the score, and the user is checked out when the game ends. A phone in
+  // the background drops the socket, so the game is also re-read when the app comes back.
+  const checkedInEventId = checkedInEvent?.id;
   useEffect(() => {
-    if (!user?.userId || !checkedInEvent) return;
+    if (!user?.userId || !checkedInEventId) return;
+    const userId = user.userId;
+    let active = true;
+    let checkingOut = false;
 
-    console.log('[EventCheckIn] Monitoring event for completion:', checkedInEvent.id);
+    console.log('[EventCheckIn] Following checked-in event:', checkedInEventId);
 
-    const checkEventCompletion = async () => {
+    const applyEvent = async (record: LiveEventRecord | null | undefined) => {
+      if (!active || !record || record.id !== checkedInEventId) return;
+
+      if (!isEventOver(record.status)) {
+        setCheckedInEvent(toLiveEventData(record));
+        return;
+      }
+
+      if (checkingOut) return;
+      checkingOut = true;
       try {
-        const { data: event } = await client.models.LiveEvent.get({ id: checkedInEvent.id });
-
-        if (event && (event.status === 'FINISHED' || event.status === 'CANCELLED')) {
-          console.log('[EventCheckIn] Event has ended, performing auto-checkout');
-
-          // Get the user's check-in record
-          const result = await getUserCheckedInEvent(user.userId);
-          if (result) {
-            // Actually check out (update database)
-            await checkOutOfEvent(user.userId, result.checkIn.id);
-            console.log('[EventCheckIn] Auto-checkout successful');
-          }
-
-          // Clear local state
-          setCheckedInEvent(null);
-
-          // Optional: Show notification
-          // showAlert('Event Ended', 'You have been automatically checked out.');
+        console.log('[EventCheckIn] Event has ended, performing auto-checkout');
+        const result = await getUserCheckedInEvent(userId);
+        if (result) {
+          await checkOutOfEvent(userId, result.checkIn.id);
+          console.log('[EventCheckIn] Auto-checkout successful');
         }
+        if (active) setCheckedInEvent(null);
       } catch (error) {
+        checkingOut = false;
         console.error('[EventCheckIn] Error during auto-checkout:', error);
       }
     };
 
-    // Check immediately
-    checkEventCompletion();
+    const reread = () => {
+      client.models.LiveEvent.get({ id: checkedInEventId })
+        .then(({ data }) => applyEvent(data))
+        .catch((error: unknown) => console.error('[EventCheckIn] Error re-reading event:', error));
+    };
 
-    // Check every 2 minutes (less aggressive than before)
-    const interval = setInterval(checkEventCompletion, 120000);
+    // The game may have changed, or ended, before the subscription opened
+    reread();
+
+    const subscription = client.models.LiveEvent.onUpdate({
+      filter: { id: { eq: checkedInEventId } },
+    }).subscribe({
+      next: (record) => {
+        applyEvent(record);
+      },
+      error: (error: unknown) => console.error('[EventCheckIn] LiveEvent onUpdate error:', error),
+    });
+
+    const appState = AppState.addEventListener('change', (state) => {
+      if (state === 'active') reread();
+    });
 
     return () => {
-      console.log('[EventCheckIn] Cleaning up event completion monitor');
-      clearInterval(interval);
+      active = false;
+      subscription.unsubscribe();
+      appState.remove();
     };
-  }, [checkedInEvent, user?.userId]);
+  }, [checkedInEventId, user?.userId]);
 
   const fetchCheckedInEvent = async () => {
     if (!user?.userId) return;
