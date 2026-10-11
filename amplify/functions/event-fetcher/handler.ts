@@ -7,6 +7,7 @@ import { getAmplifyDataClientConfig } from '@aws-amplify/backend/function/runtim
 import { env } from '$amplify/env/event-fetcher';
 import { espnDatesInRange } from './espnDates';
 import { changedEventFields } from './eventChangeLogic';
+import { fetcherRunError, type LeagueRequests } from './runOutcome';
 
 const { resourceConfig, libraryOptions } = await getAmplifyDataClientConfig(env);
 Amplify.configure(resourceConfig, libraryOptions);
@@ -119,29 +120,41 @@ function calculateCumulativeScores(incrementalScores: number[]): number[] {
  * @param startDate - Start date in YYYY-MM-DD format
  * @param endDate - End date in YYYY-MM-DD format
  */
-async function fetchEventsFromAPI(league: string, startDate: string, endDate: string): Promise<ESPNEvent[]> {
+async function fetchEventsFromAPI(
+  league: string,
+  startDate: string,
+  endDate: string
+): Promise<{ events: ESPNEvent[]; requests: LeagueRequests }> {
   const leagueEndpoint = LEAGUE_ENDPOINTS[league];
   if (!leagueEndpoint) {
     console.error(`❌ Unknown league: ${league}`);
-    return [];
+    return { events: [], requests: { league, requests: 1, failed: 1 } };
   }
 
   console.log(`🔍 Fetching events for ${league} from ${startDate} to ${endDate}`);
 
   // A late game can be listed on two days; keep one copy per ESPN event id
   const byId = new Map<string, ESPNEvent>();
+  const requests: LeagueRequests = { league, requests: 0, failed: 0 };
   for (const day of espnDatesInRange(startDate, endDate)) {
-    for (const event of await fetchEventsForDay(league, leagueEndpoint, day)) {
+    requests.requests++;
+    const dayEvents = await fetchEventsForDay(league, leagueEndpoint, day);
+    if (dayEvents === null) {
+      requests.failed++;
+      continue;
+    }
+    for (const event of dayEvents) {
       byId.set(event.id, event);
     }
   }
-  return Array.from(byId.values());
+  return { events: Array.from(byId.values()), requests };
 }
 
 /**
- * Fetch one day's events (day in YYYYMMDD format)
+ * Fetch one day's events (day in YYYYMMDD format). Null when the request failed, as
+ * opposed to an empty list for a day without games.
  */
-async function fetchEventsForDay(league: string, leagueEndpoint: string, day: string): Promise<ESPNEvent[]> {
+async function fetchEventsForDay(league: string, leagueEndpoint: string, day: string): Promise<ESPNEvent[] | null> {
   try {
     const url = `${ESPN_API_BASE}/${leagueEndpoint}/scoreboard?dates=${day}`;
 
@@ -155,7 +168,7 @@ async function fetchEventsForDay(league: string, leagueEndpoint: string, day: st
       console.error(`❌ HTTP error! status: ${response.status}`);
       const errorText = await response.text();
       console.error(`❌ Error body: ${errorText}`);
-      return [];
+      return null;
     }
 
     const data: ESPNResponse = await response.json();
@@ -184,7 +197,7 @@ async function fetchEventsForDay(league: string, leagueEndpoint: string, day: st
   } catch (error) {
     console.error(`❌ Error fetching events for ${league} on ${day}:`, error);
     console.error(`❌ Error details:`, error instanceof Error ? error.message : String(error));
-    return [];
+    return null;
   }
 }
 
@@ -247,15 +260,16 @@ function mapLeagueToSportType(league: string): 'NBA' | 'NFL' | 'MLB' | 'NHL' | '
 }
 
 /**
- * Create or update event in database
+ * Create or update event in database. False when a database read or write failed; an
+ * ESPN event too malformed to store is skipped, not a failure.
  */
-async function upsertEvent(event: ESPNEvent, league: string): Promise<void> {
+async function upsertEvent(event: ESPNEvent, league: string): Promise<boolean> {
   try {
     // Get the first competition (ESPN events can have multiple, but usually just 1)
     const competition = event.competitions[0];
     if (!competition) {
       console.error(`No competition data for event ${event.id}`);
-      return;
+      return true;
     }
 
     // Find home and away teams from competitors
@@ -264,7 +278,7 @@ async function upsertEvent(event: ESPNEvent, league: string): Promise<void> {
 
     if (!homeCompetitor || !awayCompetitor) {
       console.error(`Missing home/away competitors for event ${event.id}`);
-      return;
+      return true;
     }
 
     // Check if event already exists using the externalId GSI
@@ -276,10 +290,11 @@ async function upsertEvent(event: ESPNEvent, league: string): Promise<void> {
     if (queryErrors) {
       console.error(`❌ Error querying for existing event ${event.id}:`, queryErrors);
       console.error(`❌ Error details:`, JSON.stringify(queryErrors, null, 2));
-      return;
+      return false;
     }
 
     const status = parseEventStatus(competition.status);
+    let written = true;
 
     // Determine if event is active (UPCOMING/LIVE/HALFTIME) or inactive (FINISHED/POSTPONED/CANCELLED)
     // This enables efficient single-query retrieval of all relevant events via isActive GSI
@@ -371,6 +386,7 @@ async function upsertEvent(event: ESPNEvent, league: string): Promise<void> {
             console.error(`❌ Error updating event ${event.id}:`, updateResult.errors);
             console.error(`❌ Update error details:`, JSON.stringify(updateResult.errors, null, 2));
             console.error(`❌ Attempted update data:`, JSON.stringify(eventData, null, 2));
+            written = false;
           } else {
             console.log(`✅ Updated: ${awayCompetitor.team.abbreviation} @ ${homeCompetitor.team.abbreviation} (id: ${existingEvent.id}, status: ${status}, scores: ${eventData.awayScore}-${eventData.homeScore})`);
             // Log period scores if available (cumulative totals for squares matching)
@@ -384,6 +400,7 @@ async function upsertEvent(event: ESPNEvent, league: string): Promise<void> {
         } catch (updateError) {
           console.error(`❌ Exception updating event ${event.id}:`, updateError);
           console.error(`❌ Exception details:`, updateError instanceof Error ? updateError.message : String(updateError));
+          written = false;
         }
       }
 
@@ -406,15 +423,19 @@ async function upsertEvent(event: ESPNEvent, league: string): Promise<void> {
         const result = await client.models.LiveEvent.create(eventData);
         if (result.errors) {
           console.error(`❌ Error creating event ${event.id}:`, result.errors);
+          written = false;
         } else {
           console.log(`✅ Created: ${awayCompetitor.team.abbreviation} @ ${homeCompetitor.team.abbreviation} (id: ${result.data?.id})`);
         }
       } catch (createError) {
         console.error(`❌ Exception creating event ${event.id}:`, createError);
+        written = false;
       }
     }
+    return written;
   } catch (error) {
     console.error(`❌ Error upserting event ${event.id}:`, error);
+    return false;
   }
 }
 
@@ -492,26 +513,35 @@ export const handler: EventBridgeHandler<"Scheduled Event", null, boolean> = asy
 
     const leagues = ['NBA', 'NFL'];
     let totalEventsProcessed = 0;
-    let totalApiCalls = 0;
+    let failedWrites = 0;
+    const requests: LeagueRequests[] = [];
 
-    // Fetch events for each league (2 API calls total)
+    // One ESPN request per league per day of the range
     for (const league of leagues) {
-      totalApiCalls++;
-      const events = await fetchEventsFromAPI(league, startDate, endDate);
+      const { events, requests: leagueRequests } = await fetchEventsFromAPI(league, startDate, endDate);
+      requests.push(leagueRequests);
 
-      console.log(`📊 ${league}: Found ${events.length} events in date range`);
+      console.log(`📊 ${league}: Found ${events.length} events in date range (${leagueRequests.failed} of ${leagueRequests.requests} requests failed)`);
 
       for (const eventData of events) {
-        await upsertEvent(eventData, league);
+        if (!(await upsertEvent(eventData, league))) failedWrites++;
         totalEventsProcessed++;
       }
     }
 
-    console.log(`✅ Event Fetcher completed (${mode}). Made ${totalApiCalls} API calls, processed ${totalEventsProcessed} events.`);
+    const totalApiCalls = requests.reduce((sum, r) => sum + r.requests, 0);
+    console.log(`Event Fetcher finished (${mode}). Made ${totalApiCalls} API calls, processed ${totalEventsProcessed} events, ${failedWrites} failed writes.`);
+
+    // Fail loudly: a run that got nothing from a league, or could not write, is an error
+    // on the Lambda's metrics rather than a quiet success
+    const runError = fetcherRunError(requests, failedWrites);
+    if (runError) throw new Error(runError);
+
+    console.log(`✅ Event Fetcher completed (${mode}).`);
     return true;
 
   } catch (error) {
     console.error('Event Fetcher failed:', error);
-    return false;
+    throw error;
   }
 };
