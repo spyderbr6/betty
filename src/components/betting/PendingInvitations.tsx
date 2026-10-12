@@ -25,6 +25,7 @@ import { useBetData } from '../../contexts/BetDataContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { BetInvitation, SquaresInvitation } from '../../types/betting';
 import { colors, typography, spacing, textStyles } from '../../styles';
+import { optionName } from '../../../amplify/shared/betOptions';
 
 interface PendingInvitationsProps {
   /** The host screen decides where a squares game opens. */
@@ -65,9 +66,7 @@ export const PendingInvitations: React.FC<PendingInvitationsProps> = ({
       mark(invitation.id, true);
       const success = await contextAcceptInvitation(invitation, selectedSide);
       if (success) {
-        const odds = invitation.bet.odds || { sideAName: 'Side A', sideBName: 'Side B' };
-        const sideName =
-          selectedSide === 'A' ? odds.sideAName || 'Side A' : odds.sideBName || 'Side B';
+        const sideName = optionName(invitation.bet.odds, selectedSide);
         onToast?.(
           `Joined "${invitation.bet.title}" on ${sideName}! $${betAmount.toFixed(2)} deducted.`
         );

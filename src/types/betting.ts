@@ -40,6 +40,13 @@ export interface Bet {
   // Denormalized participant data for efficient list rendering
   sideACount: number;
   sideBCount: number;
+  // A pool's further options ('C' to 'F'); read through optionCount (amplify/shared/betOptions)
+  sideCCount?: number;
+  sideDCount?: number;
+  sideECount?: number;
+  sideFCount?: number;
+  /** 2 on a head-to-head bet: the creator and one opponent. */
+  maxParticipants?: number;
   participantUserIds: string[];
   createdAt: string;
   updatedAt: string;
@@ -52,7 +59,7 @@ export interface Participant {
   betId: string;
   userId: string;
   user?: User;
-  side: string; // 'A', 'B', or custom side name
+  side: string; // The option's key: 'A' or 'B', up to 'F' in a pool
   amount: number;
   status: ParticipantStatus;
   payout: number;
@@ -106,6 +113,8 @@ export type StatsPeriod = 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'ALL_TIME';
 export interface BetOdds {
   sideAName: string; // Side A name (e.g., "Home", "Yes", "Lakers")
   sideBName: string; // Side B name (e.g., "Away", "No", "Warriors")
+  /** A pool's three to six option names, in order; the first two repeat the side names. */
+  options?: string[];
 }
 
 export interface BetSide {

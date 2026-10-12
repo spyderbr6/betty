@@ -22,6 +22,7 @@ import { BetCard } from '../components/betting/BetCard';
 import { SquaresGameCard } from '../components/betting/SquaresGameCard';
 import { BetInviteModal } from '../components/ui/BetInviteModal';
 import { Bet } from '../types/betting';
+import { betOptions, participantCount } from '../../amplify/shared/betOptions';
 import { useAuth } from '../contexts/AuthContext';
 import { useBetData } from '../contexts/BetDataContext';
 import { useEventCheckIn } from '../hooks/useEventCheckIn';
@@ -175,7 +176,7 @@ export const LiveEventsScreen: React.FC = () => {
 
     const items: FeedItem[] = [
       ...liveBets
-        .filter(bet => matches(bet.title, bet.description, bet.odds.sideAName, bet.odds.sideBName))
+        .filter(bet => matches(bet.title, bet.description, ...betOptions(bet.odds).map(option => option.name)))
         .map(bet => ({
           kind: 'bet' as const,
           id: bet.id,
@@ -392,7 +393,7 @@ export const LiveEventsScreen: React.FC = () => {
               <Text style={styles.statLabel}>TOTAL AVAILABLE POT</Text>
             </View>
             <View style={styles.statCard}>
-              <Text style={styles.statValue}>{liveBets.reduce((sum, bet) => sum + (bet.sideACount || 0) + (bet.sideBCount || 0), 0)}</Text>
+              <Text style={styles.statValue}>{liveBets.reduce((sum, bet) => sum + participantCount(bet), 0)}</Text>
               <Text style={styles.statLabel}>ACTIVE BETTORS</Text>
             </View>
             <View style={styles.statCard}>

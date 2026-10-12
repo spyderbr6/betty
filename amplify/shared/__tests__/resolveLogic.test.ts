@@ -34,6 +34,12 @@ describe('checkResolve', () => {
   it('refuses a side that is not A or B', () => {
     expect(checkResolve(bet(), 'u-a', 'C')).toBe('INVALID_SIDE');
   });
+
+  it('accepts any of a pool\'s options as the winner, and nothing past them', () => {
+    const pool = bet({ odds: { options: ['Chiefs', 'Bills', 'Eagles'] } });
+    expect(checkResolve(pool, 'u-a', 'C')).toBeNull();
+    expect(checkResolve(pool, 'u-a', 'D')).toBe('INVALID_SIDE');
+  });
 });
 
 describe('planResolve', () => {
@@ -80,6 +86,21 @@ describe('planResolve', () => {
       actualAmount: 30 - fee,
     });
     expect(entries.every((e) => e.delta === 0)).toBe(true);
+  });
+
+  it('resolves a pool to one option: its backers win, every other option loses', () => {
+    const pool = plan({
+      winningSide: 'C',
+      sideNames: { A: 'Chiefs', B: 'Bills', C: 'Eagles' },
+      participants: [p('a', 'A', 10), p('b', 'B', 10), p('c', 'C', 10)],
+    });
+    expect(pool.stateUpdates[0].set).toMatchObject({ winningSide: 'C', resolutionReason: 'Resolved by creator. Winner: Eagles' });
+    expect(pool.entries.map((e) => [e.transactionId, e.type, e.amount])).toEqual([
+      ['loss#a', 'BET_LOST', 0],
+      ['loss#b', 'BET_LOST', 0],
+      ['payout#c', 'BET_WON', 30],
+    ]);
+    expect(pool.outcomes.filter((o) => o.won).map((o) => o.userId)).toEqual(['u-c']);
   });
 
   it('waives the fee for a Pro winner (who is Pro is looked up on the server)', () => {

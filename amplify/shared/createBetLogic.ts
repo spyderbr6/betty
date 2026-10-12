@@ -11,6 +11,14 @@
  * the plan.
  */
 
+import {
+  HEAD_TO_HEAD_PARTICIPANTS,
+  MAX_OPTIONS,
+  MIN_POOL_OPTIONS,
+  OPTION_KEYS,
+  countField,
+  type OptionKey,
+} from './betOptions';
 import type { LedgerEntry, StateUpdate } from './ledgerLogic';
 import { participantIdFor, stakeTransactionId } from './joinLogic';
 
@@ -38,6 +46,13 @@ export interface CreateBetArgs {
   deadlineMinutes: number;
   isPrivate?: boolean | null;
   eventId?: string | null;
+  /**
+   * A pool: three to six option names, in order. The first two are also the bet's
+   * sideAName and sideBName, whatever those arguments hold.
+   */
+  options?: string[] | null;
+  /** Head-to-head: 2, the creator and one opponent. No other cap is offered. */
+  maxParticipants?: number | null;
 }
 
 export type CreateBetResult =
@@ -68,9 +83,21 @@ export function invalidField(args: CreateBetArgs): string | null {
   ) {
     return 'amount';
   }
-  if (args.side !== 'A' && args.side !== 'B') return 'side';
   if (!text(args.sideAName, LIMITS.sideName)) return 'sideAName';
   if (!text(args.sideBName, LIMITS.sideName)) return 'sideBName';
+  const pool = args.options !== undefined && args.options !== null;
+  if (pool) {
+    const options = args.options;
+    if (!Array.isArray(options) || options.length < MIN_POOL_OPTIONS || options.length > MAX_OPTIONS) return 'options';
+    const names = options.map((name) => text(name, LIMITS.sideName)?.toLowerCase());
+    // Two options with one name could not be told apart when joining or resolving
+    if (names.some((name) => !name) || new Set(names).size !== names.length) return 'options';
+  }
+  const sides = pool ? (args.options as string[]).length : 2;
+  if (!(OPTION_KEYS.slice(0, sides) as readonly string[]).includes(args.side)) return 'side';
+  if (args.maxParticipants !== undefined && args.maxParticipants !== null) {
+    if (args.maxParticipants !== HEAD_TO_HEAD_PARTICIPANTS || pool) return 'maxParticipants';
+  }
   if (
     !Number.isInteger(args.deadlineMinutes) ||
     args.deadlineMinutes < 1 ||
@@ -95,10 +122,11 @@ export function planCreateBet(params: {
 }): { participantId: string; entries: LedgerEntry[]; stateUpdates: StateUpdate[] } {
   const { args, userId, creatorName, now } = params;
   const amount = Math.round(args.amount * 100) / 100;
-  const side = args.side as 'A' | 'B';
+  const side = args.side as OptionKey;
   const title = args.title.trim();
-  const sideAName = args.sideAName.trim();
-  const sideBName = args.sideBName.trim();
+  const options = args.options ? args.options.map((name) => name.trim()) : null;
+  const names = options ?? [args.sideAName.trim(), args.sideBName.trim()];
+  const keys = OPTION_KEYS.slice(0, names.length);
   const participantId = participantIdFor(args.betId, userId);
 
   const bet: Record<string, unknown> = {
@@ -112,15 +140,19 @@ export function planCreateBet(params: {
     betAmount: amount,
     // An object, not JSON text: AppSync stores AWSJSON as a map, and text read back
     // through it arrives encoded twice
-    odds: { sideAName, sideBName },
+    odds: options
+      ? { sideAName: names[0], sideBName: names[1], options }
+      : { sideAName: names[0], sideBName: names[1] },
     deadline: new Date(new Date(now).getTime() + args.deadlineMinutes * 60_000).toISOString(),
     isPrivate: args.isPrivate === true,
     isTestBet: false,
-    sideACount: side === 'A' ? 1 : 0,
-    sideBCount: side === 'B' ? 1 : 0,
     participantUserIds: [userId],
   };
+  // One count per option, all present from the start: a head-to-head join is guarded on
+  // the open side's count being 0
+  for (const key of keys) bet[countField(key)] = key === side ? 1 : 0;
   if (args.eventId) bet.eventId = args.eventId;
+  if (args.maxParticipants) bet.maxParticipants = args.maxParticipants;
 
   return {
     participantId,
@@ -135,7 +167,7 @@ export function planCreateBet(params: {
         mode: 'create',
         relatedBetId: args.betId,
         relatedParticipantId: participantId,
-        notes: `${title} - You bet on ${side === 'A' ? sideAName : sideBName}`,
+        notes: `${title} - You bet on ${names[keys.indexOf(side)]}`,
       },
     ],
     stateUpdates: [

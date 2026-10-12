@@ -127,6 +127,13 @@ logs, and curl ESPN directly, before suspecting indexes.
       fetcher. Unused by the app: restrict it to admins or remove it.
 - [ ] **Faster scores** (owner chose 15 minutes for now): a shorter schedule while games are
       live. The app needs no change; it reacts to writes.
+- [ ] **Opportunity: bets settled from the final score** (noted 2026-10-11, not started).
+      Winner, spread and total-points bets on a `LiveEvent` need only the final score, so
+      the 15-minute feed is enough, as it is for squares. Needs: joining locked at kickoff
+      (deadline = the event's start), a fallback to the creator or an admin when no final
+      score arrives, and a decision on whether the 48-hour dispute window still applies.
+      In-game bets ("who scores next") are different: they need a much faster feed to
+      settle and to stop late joins, so they stay creator-resolved until then.
 
 ### Old sports events are never cleaned up
 
@@ -235,7 +242,21 @@ than AppConfig `minimumVersion` see only an update screen. Plan and history:
 - [ ] **Bet Templates**
   - Popular bet types
   - Custom user templates
-  - generally simplify the options. 
+  - generally simplify the options. The create screen now has eight templates in one
+    scrolling row (pool and head-to-head added 2026-10-11); it needs a rethink.
+- [ ] **New bet types** (branch `feat/bet-types`, 2026-10-11): pools (3 to 6 options) and
+      head-to-head (creator and one opponent). Before release:
+  - [x] Deployed to the sandbox; `scripts/sandbox-money-flows-check.mjs` scenario 15
+        creates, joins, resolves and pays a pool and races two opponents into a
+        head-to-head bet on the real Lambdas.
+  - [ ] Create, join, resolve and settle one of each in the running app, signed in. The
+        browser tests mock the server, and the sandbox check skips AppSync's sign-in.
+  - [ ] Raise AppConfig `minimumVersion` with the release: an older build shows a pool as
+        a two-sided bet with its first two options.
+  - [ ] Check the pool card and the create form on a phone (web layout only so far).
+- [ ] **Closest guess wins** (planned after pools): each person enters a number, the
+      creator enters the result, nearest takes the pot. Needs a numeric entry per
+      participant and a tie rule.
 - [ ] **Activity Feed**
   - Friend betting activity. either a separate live bet screen section or prioritized in the list.
   - Trending topics

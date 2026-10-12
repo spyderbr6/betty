@@ -8,12 +8,13 @@
 
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
+import type { OptionKey } from '../../amplify/shared/betOptions';
 import { parseJoinResult, type JoinResult } from './joinBetLogic';
 
 const client = generateClient<Schema>();
 
 /** Null when the call itself failed (network, server error); the caller says so. */
-export async function joinBet(betId: string, side: 'A' | 'B', amount: number): Promise<JoinResult | null> {
+export async function joinBet(betId: string, side: OptionKey, amount: number): Promise<JoinResult | null> {
   try {
     const { data, errors } = await client.mutations.joinBet({ betId, side, amount });
     if (errors?.length) {

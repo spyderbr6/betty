@@ -11,6 +11,7 @@
  * Pure, so it is unit tested; the money function reads the rows and applies the plan.
  */
 
+import { countField, isBetOption, isHeadToHead, type BetOddsShape, type OptionKey } from './betOptions';
 import type { LedgerEntry, StateUpdate } from './ledgerLogic';
 
 export type JoinRefusal =
@@ -22,6 +23,8 @@ export type JoinRefusal =
   | 'AMOUNT_CHANGED'
   | 'ALREADY_JOINED'
   | 'NOT_INVITED'
+  | 'FULL'
+  | 'SIDE_TAKEN'
   | 'INSUFFICIENT_FUNDS'
   | 'BUSY';
 
@@ -36,6 +39,10 @@ export interface JoinBetRow {
   betAmount?: number | null;
   isPrivate?: boolean | null;
   title?: string | null;
+  /** Names the bet's options (the `odds` JSON, parsed); a side outside them is refused. */
+  odds?: BetOddsShape | null;
+  /** 2 on a head-to-head bet: one opponent, on the side the creator did not take. */
+  maxParticipants?: number | null;
 }
 
 export interface JoinRequest {
@@ -49,6 +56,8 @@ export interface JoinRequest {
   alreadyJoined: boolean;
   /** The caller holds a pending or accepted invitation to this bet. */
   invited: boolean;
+  /** The side of every participant already on the bet. */
+  takenSides: string[];
 }
 
 /** One participant row per user per bet: the id makes a second join impossible. */
@@ -57,27 +66,33 @@ export const stakeTransactionId = (participantId: string) => `stake#${participan
 
 /** Why this join cannot happen, or null when it can. Checked in this order. */
 export function checkJoin(request: JoinRequest): JoinRefusal | null {
-  const { bet, side, amount, now, alreadyJoined, invited } = request;
+  const { bet, side, amount, now, alreadyJoined, invited, takenSides } = request;
   if (!bet) return 'NOT_FOUND';
   if (bet.status !== 'ACTIVE') return 'NOT_OPEN';
   if (!bet.deadline || bet.deadline <= now) return 'EXPIRED';
-  if (side !== 'A' && side !== 'B') return 'INVALID_SIDE';
+  if (!isBetOption(bet.odds, side)) return 'INVALID_SIDE';
   if (!bet.betAmount || !(bet.betAmount > 0)) return 'NO_STAKE';
   if (Math.round(bet.betAmount * 100) !== Math.round(amount * 100)) return 'AMOUNT_CHANGED';
   if (alreadyJoined) return 'ALREADY_JOINED';
   if (bet.isPrivate && !invited) return 'NOT_INVITED';
+  if (isHeadToHead(bet)) {
+    if (takenSides.length >= 2) return 'FULL';
+    if (takenSides.includes(side)) return 'SIDE_TAKEN';
+  }
   return null;
 }
 
 /**
  * The single write for a join: the participant row (created only if its id is free), the
  * stake debit, and the bet's counts, pot and participant list, all guarded on the bet
- * still being ACTIVE with its deadline ahead. Assumes checkJoin passed.
+ * still being ACTIVE with its deadline ahead. On a head-to-head bet it is also guarded on
+ * nobody holding the side yet, so two opponents joining at once cannot both get in.
+ * Assumes checkJoin passed.
  */
 export function planJoin(params: {
   bet: JoinBetRow & { betAmount: number };
   userId: string;
-  side: 'A' | 'B';
+  side: OptionKey;
   sideName: string;
   now: string;
 }): { participantId: string; entries: LedgerEntry[]; stateUpdates: StateUpdate[] } {
@@ -122,9 +137,9 @@ export function planJoin(params: {
         table: 'Bet',
         id: bet.id,
         set: {},
-        add: { totalPot: amount, [side === 'A' ? 'sideACount' : 'sideBCount']: 1 },
+        add: { totalPot: amount, [countField(side)]: 1 },
         append: { participantUserIds: [userId] },
-        expect: { status: 'ACTIVE' },
+        expect: isHeadToHead(bet) ? { status: 'ACTIVE', [countField(side)]: 0 } : { status: 'ACTIVE' },
         expectAfter: { deadline: now },
       },
     ],

@@ -106,3 +106,35 @@ test('a resolution that fails outright says so', async ({ page }) => {
   await expect(page.getByTestId('alert-title')).toHaveText('Error', { timeout: 15_000 });
   for (const write of CLIENT_WRITES) expect(calls).not.toContain(write);
 });
+
+test('a pool offers every option as the winner and sends the one chosen', async ({ page }) => {
+  await signInAs(page);
+  const sent: Record<string, unknown>[] = [];
+  const pool = () => ({
+    ...pendingBet(),
+    odds: JSON.stringify({ sideAName: 'Chiefs', sideBName: 'Bills', options: ['Chiefs', 'Bills', 'Eagles'] }),
+    sideCCount: 1,
+    totalPot: 75,
+  });
+  await mockAppSync(page, {
+    ...handlers((variables) => {
+      sent.push(variables);
+      return JSON.stringify({ status: 'resolved', winningSide: 'C', disputeWindowEndsAt: new Date().toISOString(), winners: 1, refundedNoWinners: false });
+    }),
+    betsByCreator: (variables) =>
+      variables.creatorId === TEST_USER.userId ? { items: [pool()], nextToken: null } : { items: [], nextToken: null },
+  });
+
+  await openResolveTab(page);
+  await expect(page.getByTestId(`resolve-side-A-${BET_ID}`)).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId(`resolve-side-B-${BET_ID}`)).toBeVisible();
+  await expect(page.getByTestId(`resolve-side-C-${BET_ID}`)).toContainText('Eagles');
+
+  await page.getByTestId(`resolve-side-C-${BET_ID}`).dispatchEvent('click');
+  await expect(page.getByTestId(`resolve-confirm-${BET_ID}`)).toContainText('Eagles Wins');
+  await page.getByTestId(`resolve-confirm-${BET_ID}`).dispatchEvent('click');
+
+  await expect(page.getByTestId('alert-title')).toHaveText('Bet Resolved', { timeout: 15_000 });
+  await expect(page.getByTestId('alert-message')).toContainText('Winner: Eagles');
+  expect(sent).toEqual([{ betId: BET_ID, winningSide: 'C' }]);
+});

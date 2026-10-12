@@ -15,6 +15,7 @@
  * Pure, so it is unit tested; the money function reads the rows and applies the plan.
  */
 
+import { isBetOption, type BetOddsShape } from './betOptions';
 import type { LedgerEntry, StateUpdate } from './ledgerLogic';
 import {
   DISPUTE_WINDOW_MS,
@@ -27,7 +28,7 @@ import {
 export type ResolveRefusal = 'NOT_FOUND' | 'NOT_CREATOR' | 'NOT_RESOLVABLE' | 'INVALID_SIDE' | 'BUSY';
 
 export type ResolveResult =
-  | { status: 'resolved'; winningSide: 'A' | 'B'; disputeWindowEndsAt: string; winners: number; refundedNoWinners: boolean }
+  | { status: 'resolved'; winningSide: string; disputeWindowEndsAt: string; winners: number; refundedNoWinners: boolean }
   | { status: 'refused'; reason: ResolveRefusal };
 
 export interface ResolveBetRow {
@@ -37,6 +38,8 @@ export interface ResolveBetRow {
   winningSide?: string | null;
   updatedAt?: string | null;
   title?: string | null;
+  /** Names the bet's options (the `odds` JSON, parsed); the winner must be one of them. */
+  odds?: BetOddsShape | null;
 }
 
 /** Why the caller cannot resolve this bet now, or null when they can. */
@@ -47,7 +50,7 @@ export function checkResolve(bet: ResolveBetRow | null | undefined, userId: stri
   // early, or sent back by an upheld dispute). Never on one that already has a winner.
   const awaiting = bet.status === 'PENDING_RESOLUTION' && !bet.winningSide;
   if (bet.status !== 'ACTIVE' && !awaiting) return 'NOT_RESOLVABLE';
-  if (winningSide !== 'A' && winningSide !== 'B') return 'INVALID_SIDE';
+  if (!isBetOption(bet.odds, winningSide)) return 'INVALID_SIDE';
   return null;
 }
 
@@ -70,8 +73,8 @@ export interface ResolvePlan {
 
 export function planResolve(params: {
   bet: ResolveBetRow & { creatorId: string };
-  winningSide: 'A' | 'B';
-  sideNames: { A?: string; B?: string };
+  winningSide: string;
+  sideNames: Record<string, string | undefined>;
   participants: SettlementParticipant[];
   proUserIds: Set<string>;
   /** Rows already recorded against this bet (a re-resolution after an upheld dispute). */

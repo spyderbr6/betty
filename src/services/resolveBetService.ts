@@ -6,12 +6,13 @@
 
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
+import type { OptionKey } from '../../amplify/shared/betOptions';
 import { parseResolveResult, type ResolveResult } from './resolveBetLogic';
 
 const client = generateClient<Schema>();
 
 /** Null when the call itself failed (network, server error); the caller says so. */
-export async function resolveBet(betId: string, winningSide: 'A' | 'B'): Promise<ResolveResult | null> {
+export async function resolveBet(betId: string, winningSide: OptionKey): Promise<ResolveResult | null> {
   try {
     const { data, errors } = await client.mutations.resolveBet({ betId, winningSide });
     if (errors?.length) {

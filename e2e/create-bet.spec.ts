@@ -215,3 +215,95 @@ test('after a refusal the next attempt is a new bet id', async ({ page }) => {
   // A refusal wrote nothing, so reusing its id would gain nothing
   expect(sent[1].betId).not.toBe(sent[0].betId);
 });
+
+/** Answers every create with success and records what was sent. */
+const recordCreates = async (page: Page) => {
+  const sent: Record<string, unknown>[] = [];
+  await mockAppSync(page, {
+    ...baseHandlers({}, { balance: 250 }),
+    createBetWithStake: (variables) => {
+      sent.push(variables);
+      return answer({ status: 'created', betId: variables.betId, balance: 249 });
+    },
+  });
+  return sent;
+};
+
+test('a pool sends its options and the one the creator backs', async ({ page }) => {
+  await signInAs(page);
+  const sent = await recordCreates(page);
+  await openCreateTab(page);
+
+  await page.getByTestId('create-template-pool').dispatchEvent('click');
+  await fillBasics(page);
+  await page.getByTestId('create-option-a-name').fill('Chiefs');
+  await page.getByTestId('create-option-b-name').fill('Bills');
+  await page.getByTestId('create-option-c-name').fill('Eagles');
+  // Nothing backed yet: the button stays off, as it does for a two-sided bet
+  await expect(page.getByTestId('create-submit')).toHaveAttribute('aria-disabled', 'true');
+  await page.getByTestId('create-option-c').dispatchEvent('click');
+  await submit(page);
+
+  await expect.poll(() => sent.length, { timeout: 15_000 }).toBe(1);
+  expect(sent[0]).toMatchObject({
+    side: 'C',
+    sideAName: 'Chiefs',
+    sideBName: 'Bills',
+    options: ['Chiefs', 'Bills', 'Eagles'],
+  });
+  expect(sent[0]).not.toHaveProperty('maxParticipants');
+});
+
+test('a pool takes a fourth option, and removing one keeps the pick on its option', async ({ page }) => {
+  await signInAs(page);
+  const sent = await recordCreates(page);
+  await openCreateTab(page);
+
+  await page.getByTestId('create-template-pool').dispatchEvent('click');
+  await fillBasics(page);
+  // Three rows cannot lose one; a fourth can be added and then any removed
+  await expect(page.getByTestId('create-option-a-remove')).toBeHidden();
+  await page.getByTestId('create-option-add').dispatchEvent('click');
+  for (const [key, name] of [['a', 'Chiefs'], ['b', 'Bills'], ['c', 'Eagles'], ['d', 'Lions']]) {
+    await page.getByTestId(`create-option-${key}-name`).fill(name);
+  }
+  await page.getByTestId('create-option-d').dispatchEvent('click');
+  await page.getByTestId('create-option-b-remove').dispatchEvent('click');
+  await submit(page);
+
+  await expect.poll(() => sent.length, { timeout: 15_000 }).toBe(1);
+  // Lions was D and is now C: the pick followed it
+  expect(sent[0]).toMatchObject({ side: 'C', options: ['Chiefs', 'Eagles', 'Lions'] });
+});
+
+test('a pool refuses two options with one name before asking the server', async ({ page }) => {
+  await signInAs(page);
+  const { calls } = await mockAppSync(page, baseHandlers());
+  await openCreateTab(page);
+
+  await page.getByTestId('create-template-pool').dispatchEvent('click');
+  await fillBasics(page);
+  await page.getByTestId('create-option-a-name').fill('Chiefs');
+  await page.getByTestId('create-option-b-name').fill('Bills');
+  await page.getByTestId('create-option-c-name').fill('chiefs');
+  await page.getByTestId('create-option-a').dispatchEvent('click');
+  await submit(page);
+
+  await expect(page.getByTestId('alert-title')).toHaveText('Duplicate Option');
+  expect(calls).not.toContain('createBetWithStake');
+});
+
+test('a head-to-head bet is capped at two people', async ({ page }) => {
+  await signInAs(page);
+  const sent = await recordCreates(page);
+  await openCreateTab(page);
+
+  await page.getByTestId('create-template-head-to-head').dispatchEvent('click');
+  await fillBasics(page);
+  await page.getByTestId('create-side-b').dispatchEvent('click');
+  await submit(page);
+
+  await expect.poll(() => sent.length, { timeout: 15_000 }).toBe(1);
+  expect(sent[0]).toMatchObject({ side: 'B', maxParticipants: 2 });
+  expect(sent[0]).not.toHaveProperty('options');
+});

@@ -22,6 +22,15 @@ import { joinMessage } from '../../services/joinBetLogic';
 import { BetAcceptanceService } from '../../services/betAcceptanceService';
 import { FileDisputeModal } from '../ui/FileDisputeModal';
 import { showAlert } from '../ui/CustomAlert';
+import {
+  HEAD_TO_HEAD_PARTICIPANTS,
+  betOptions,
+  isHeadToHead,
+  optionCount,
+  optionName,
+  participantCount as countParticipants,
+  type OptionKey,
+} from '../../../amplify/shared/betOptions';
 
 export interface BetCardProps {
   bet: Bet;
@@ -91,10 +100,10 @@ export const BetCard: React.FC<BetCardProps> = ({
   const { user } = useAuth();
   const { myParticipation } = useBetData();
   const [isJoining, setIsJoining] = useState(false);
-  const [selectedSide, setSelectedSide] = useState<'A' | 'B' | null>(null);
+  const [selectedSide, setSelectedSide] = useState<OptionKey | null>(null);
   // Derive user participation from denormalized participantUserIds on the bet
   const hasJoined = user ? (bet.participantUserIds || []).includes(user.userId) : false;
-  const [joinedSide, setJoinedSide] = useState<'A' | 'B' | null>(null);
+  const [joinedSide, setJoinedSide] = useState<OptionKey | null>(null);
   const [joinedAmount, setJoinedAmount] = useState(0);
 
   // Which side the viewer took comes from BetDataContext, which loads every
@@ -105,7 +114,7 @@ export const BetCard: React.FC<BetCardProps> = ({
   // Local state is still kept because joining updates it optimistically before
   // the context reloads; it wins while set, and the context is the fallback.
   const contextParticipation = myParticipation.get(bet.id);
-  const effectiveSide = joinedSide ?? ((contextParticipation?.side as 'A' | 'B' | undefined) ?? null);
+  const effectiveSide = joinedSide ?? ((contextParticipation?.side as OptionKey | undefined) ?? null);
   const effectiveAmount = joinedSide !== null ? joinedAmount : contextParticipation?.amount ?? 0;
 
   const userParticipation = {
@@ -204,12 +213,12 @@ export const BetCard: React.FC<BetCardProps> = ({
     }
   };
 
-  const handleJoinBet = async (side: 'A' | 'B') => {
+  const handleJoinBet = async (side: OptionKey) => {
     // Prevent join if already joining or already joined
     if (isJoining || userParticipation.hasJoined) return;
 
     const betAmount = bet.betAmount || 10;
-    const sideName = side === 'A' ? (bet.odds.sideAName || 'Side A') : (bet.odds.sideBName || 'Side B');
+    const sideName = optionName(bet.odds, side);
 
     showAlert(
       'Join Bet',
@@ -221,7 +230,7 @@ export const BetCard: React.FC<BetCardProps> = ({
     );
   };
 
-  const confirmJoinBet = async (side: 'A' | 'B', amount: number) => {
+  const confirmJoinBet = async (side: OptionKey, amount: number) => {
     setIsJoining(true);
     setSelectedSide(side);
 
@@ -310,10 +319,11 @@ export const BetCard: React.FC<BetCardProps> = ({
     }
   };
 
-  // Use denormalized counts from bet record
-  const sideACount = bet.sideACount || 0;
-  const sideBCount = bet.sideBCount || 0;
-  const participantCount = sideACount + sideBCount;
+  // The bet's options and their denormalized counts from the bet record
+  const options = betOptions(bet.odds);
+  const pool = options.length > 2;
+  const headToHead = isHeadToHead(bet);
+  const participantCount = countParticipants(bet);
   const totalPot = bet.totalPot || 0;
   const statusColor = getStatusColor(bet.status);
   const statusText = getStatusText(bet.status);
@@ -324,7 +334,8 @@ export const BetCard: React.FC<BetCardProps> = ({
 
   // Check if bet is active
   const isActive = bet.status === 'ACTIVE';
-  const canJoin = isActive && !userParticipation.hasJoined;
+  const isFull = headToHead && participantCount >= HEAD_TO_HEAD_PARTICIPANTS;
+  const canJoin = isActive && !userParticipation.hasJoined && !isFull;
 
   return (
     <TouchableOpacity
@@ -380,6 +391,12 @@ export const BetCard: React.FC<BetCardProps> = ({
           <Ionicons name="people-outline" size={14} color={colors.textMuted} />
           <Text style={styles.metadataText}>{participantCount} player{participantCount !== 1 ? 's' : ''}</Text>
         </View>
+        {headToHead && (
+          <View style={styles.metadataItem} testID={`bet-card-${bet.id}-head-to-head`}>
+            <Ionicons name="flash-outline" size={14} color={colors.textMuted} />
+            <Text style={styles.metadataText}>{isFull ? '1 v 1 • Full' : '1 v 1'}</Text>
+          </View>
+        )}
         <View style={styles.metadataItem}>
           <Ionicons name="person-outline" size={14} color={colors.textMuted} />
           <Text style={styles.metadataText} numberOfLines={1}>
@@ -388,116 +405,83 @@ export const BetCard: React.FC<BetCardProps> = ({
         </View>
       </View>
 
-      {/* Sides Display - Horizontal */}
-      <View style={styles.sidesContainer}>
-        {/* Side A */}
-        <View
-          style={[
-            styles.sideBox,
-            userParticipation.hasJoined && userParticipation.side === 'A' && styles.sideBoxSelected,
-            isJoining && selectedSide === 'A' && styles.sideBoxLoading,
-          ]}
-        >
-          {isJoining && selectedSide === 'A' ? (
-            <ActivityIndicator size="small" color={colors.primary} />
-          ) : (
-            <>
-              <Text style={styles.sideName} numberOfLines={1}>
-                {bet.odds.sideAName || 'Side A'}
-              </Text>
-              <View style={styles.sideInfo}>
-                {userParticipation.hasJoined && userParticipation.side === 'A' ? (
-                  <View style={styles.sideParticipantsJoined}>
-                    <Text style={styles.sideInfoText}>You • ${userParticipation.amount} • </Text>
-                    <Ionicons name="people" size={12} color={colors.primary} />
-                    <Text style={styles.sideInfoText}>{sideACount}</Text>
+      {/* Options: two sides face each other; a pool's options wrap two to a row */}
+      <View style={pool ? styles.poolContainer : styles.sidesContainer}>
+        {options.map((option, index) => {
+          const isMine = userParticipation.hasJoined && userParticipation.side === option.key;
+          const isLoading = isJoining && selectedSide === option.key;
+          const count = optionCount(bet, option.key);
+          // Head-to-head: the one opponent takes the side the creator left open
+          const canJoinOption = canJoin && !(headToHead && count > 0);
+          const box = (
+            <View
+              style={[
+                styles.sideBox,
+                isMine && styles.sideBoxSelected,
+                isLoading && styles.sideBoxLoading,
+              ]}
+            >
+              {isLoading ? (
+                <ActivityIndicator size="small" color={colors.primary} />
+              ) : (
+                <>
+                  <Text style={styles.sideName} numberOfLines={1}>
+                    {option.name}
+                  </Text>
+                  <View style={styles.sideInfo}>
+                    {isMine ? (
+                      <View style={styles.sideParticipantsJoined}>
+                        <Text style={styles.sideInfoText}>You • ${userParticipation.amount} • </Text>
+                        <Ionicons name="people" size={12} color={colors.primary} />
+                        <Text style={styles.sideInfoText}>{count}</Text>
+                      </View>
+                    ) : (
+                      <View style={styles.sideParticipants}>
+                        <Ionicons name="people" size={12} color={colors.textSecondary} />
+                        <Text style={styles.sideCount}>{count}</Text>
+                      </View>
+                    )}
                   </View>
-                ) : (
-                  <View style={styles.sideParticipants}>
-                    <Ionicons name="people" size={12} color={colors.textSecondary} />
-                    <Text style={styles.sideCount}>{sideACount}</Text>
-                  </View>
-                )}
-              </View>
-              {/* Join button for Side A */}
-              {canJoin && (
-                <TouchableOpacity
-                  testID="join-side-a"
-                  style={styles.sideJoinButton}
-                  onPress={() => handleJoinBet('A')}
-                  activeOpacity={0.7}
-                  disabled={isJoining}
-                >
-                  <Text style={styles.sideJoinButtonText}>Join ${bet.betAmount || 10}</Text>
-                </TouchableOpacity>
+                  {canJoinOption && (
+                    <TouchableOpacity
+                      testID={`join-side-${option.key.toLowerCase()}`}
+                      style={styles.sideJoinButton}
+                      onPress={() => handleJoinBet(option.key)}
+                      activeOpacity={0.7}
+                      disabled={isJoining}
+                    >
+                      <Text style={styles.sideJoinButtonText}>Join ${bet.betAmount || 10}</Text>
+                    </TouchableOpacity>
+                  )}
+                  {isMine && (
+                    <View style={styles.joinedIndicator}>
+                      <Ionicons name="checkmark-circle" size={14} color={colors.primary} />
+                      <Text style={styles.joinedIndicatorText}>JOINED</Text>
+                    </View>
+                  )}
+                </>
               )}
-              {/* Joined indicator */}
-              {userParticipation.hasJoined && userParticipation.side === 'A' && (
-                <View style={styles.joinedIndicator}>
-                  <Ionicons name="checkmark-circle" size={14} color={colors.primary} />
-                  <Text style={styles.joinedIndicatorText}>JOINED</Text>
+            </View>
+          );
+
+          if (pool) {
+            return (
+              <View key={option.key} style={styles.poolCell}>
+                {box}
+              </View>
+            );
+          }
+          return (
+            <React.Fragment key={option.key}>
+              {index > 0 && (
+                <View style={styles.vsDivider}>
+                  <Text style={styles.vsText}>vs</Text>
                 </View>
               )}
-            </>
-          )}
-        </View>
-
-        {/* VS Divider */}
-        <View style={styles.vsDivider}>
-          <Text style={styles.vsText}>vs</Text>
-        </View>
-
-        {/* Side B */}
-        <View
-          style={[
-            styles.sideBox,
-            userParticipation.hasJoined && userParticipation.side === 'B' && styles.sideBoxSelected,
-            isJoining && selectedSide === 'B' && styles.sideBoxLoading,
-          ]}
-        >
-          {isJoining && selectedSide === 'B' ? (
-            <ActivityIndicator size="small" color={colors.primary} />
-          ) : (
-            <>
-              <Text style={styles.sideName} numberOfLines={1}>
-                {bet.odds.sideBName || 'Side B'}
-              </Text>
-              <View style={styles.sideInfo}>
-                {userParticipation.hasJoined && userParticipation.side === 'B' ? (
-                  <View style={styles.sideParticipantsJoined}>
-                    <Text style={styles.sideInfoText}>You • ${userParticipation.amount} • </Text>
-                    <Ionicons name="people" size={12} color={colors.primary} />
-                    <Text style={styles.sideInfoText}>{sideBCount}</Text>
-                  </View>
-                ) : (
-                  <View style={styles.sideParticipants}>
-                    <Ionicons name="people" size={12} color={colors.textSecondary} />
-                    <Text style={styles.sideCount}>{sideBCount}</Text>
-                  </View>
-                )}
-              </View>
-              {/* Join button for Side B */}
-              {canJoin && (
-                <TouchableOpacity
-                  testID="join-side-b"
-                  style={styles.sideJoinButton}
-                  onPress={() => handleJoinBet('B')}
-                  activeOpacity={0.7}
-                  disabled={isJoining}
-                >
-                  <Text style={styles.sideJoinButtonText}>Join ${bet.betAmount || 10}</Text>
-                </TouchableOpacity>
-              )}
-              {/* Joined indicator */}
-              {userParticipation.hasJoined && userParticipation.side === 'B' && (
-                <View style={styles.joinedIndicator}>
-                  <Ionicons name="checkmark-circle" size={14} color={colors.primary} />
-                  <Text style={styles.joinedIndicatorText}>JOINED</Text>
-                </View>
-              )}
-            </>
-          )}
-        </View>
+              {box}
+            </React.Fragment>
+          );
+        })}
       </View>
 
       {/* PENDING_RESOLUTION: Two states based on winningSide */}
@@ -535,8 +519,8 @@ export const BetCard: React.FC<BetCardProps> = ({
                     userParticipation.side === bet.winningSide ? styles.resultTextWin : styles.resultTextLose
                   ]}>
                     {userParticipation.side === bet.winningSide
-                      ? `You Won - ${bet.winningSide === 'A' ? bet.odds.sideAName : bet.odds.sideBName}`
-                      : `You Lost - ${bet.winningSide === 'A' ? bet.odds.sideAName : bet.odds.sideBName} Won`
+                      ? `You Won - ${optionName(bet.odds, bet.winningSide)}`
+                      : `You Lost - ${optionName(bet.odds, bet.winningSide)} Won`
                     }
                   </Text>
                 </View>
@@ -768,6 +752,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'stretch',
     marginBottom: spacing.sm,
+  },
+  // A pool: options wrap two to a row (margins, not gap)
+  poolContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'stretch',
+    marginHorizontal: -spacing.xs / 2,
+    marginBottom: spacing.sm - spacing.xs,
+  },
+  poolCell: {
+    width: '50%',
+    flexDirection: 'row',
+    paddingHorizontal: spacing.xs / 2,
+    marginBottom: spacing.xs,
   },
   sideBox: {
     flex: 1,

@@ -12,8 +12,10 @@ const request = (over: Partial<JoinRequest> = {}, bet: Partial<NonNullable<JoinR
   now: NOW,
   alreadyJoined: false,
   invited: false,
+  takenSides: ['A'],
   ...over,
 });
+const POOL = { sideAName: 'Chiefs', sideBName: 'Bills', options: ['Chiefs', 'Bills', 'Eagles'] };
 
 describe('checkJoin', () => {
   it('allows an open public bet before its deadline', () => {
@@ -29,6 +31,21 @@ describe('checkJoin', () => {
 
   it('refuses a side that is not A or B', () => {
     expect(checkJoin(request({ side: 'C' }))).toBe('INVALID_SIDE');
+  });
+
+  it('accepts any of a pool\'s options, and nothing past them', () => {
+    expect(checkJoin(request({ side: 'C' }, { odds: POOL }))).toBeNull();
+    expect(checkJoin(request({ side: 'A' }, { odds: POOL }))).toBeNull();
+    expect(checkJoin(request({ side: 'D' }, { odds: POOL }))).toBe('INVALID_SIDE');
+  });
+
+  it('lets one opponent into a head-to-head bet, on the open side', () => {
+    const duel = { maxParticipants: 2 };
+    expect(checkJoin(request({ side: 'B' }, duel))).toBeNull();
+    expect(checkJoin(request({ side: 'A' }, duel))).toBe('SIDE_TAKEN');
+    expect(checkJoin(request({ side: 'B', takenSides: ['A', 'B'] }, duel))).toBe('FULL');
+    // No cap: any number may share a side
+    expect(checkJoin(request({ side: 'A', takenSides: ['A', 'A', 'B'] }))).toBeNull();
   });
 
   it('charges the bet\'s stake only, and refuses if the app showed another', () => {
@@ -91,5 +108,31 @@ describe('planJoin', () => {
       expectAfter: { deadline: NOW },
     });
     expect(bet?.add).not.toHaveProperty('sideACount');
+  });
+
+  it('counts a pool join on the option picked', () => {
+    const pool = planJoin({
+      bet: { id: 'bet-1', status: 'ACTIVE', deadline: LATER, betAmount: 25, title: 'Winner', odds: POOL },
+      userId: 'u-1',
+      side: 'C',
+      sideName: 'Eagles',
+      now: NOW,
+    });
+    expect(pool.stateUpdates.find((u) => u.table === 'Bet')).toMatchObject({
+      add: { totalPot: 25, sideCCount: 1 },
+      expect: { status: 'ACTIVE' },
+    });
+    expect(pool.stateUpdates.find((u) => u.table === 'Participant')?.set.side).toBe('C');
+  });
+
+  it('lets a head-to-head join through only while nobody holds the side', () => {
+    const duel = planJoin({
+      bet: { id: 'bet-1', status: 'ACTIVE', deadline: LATER, betAmount: 25, title: 'Golf', maxParticipants: 2 },
+      userId: 'u-1',
+      side: 'B',
+      sideName: 'Sam',
+      now: NOW,
+    });
+    expect(duel.stateUpdates.find((u) => u.table === 'Bet')?.expect).toEqual({ status: 'ACTIVE', sideBCount: 0 });
   });
 });
