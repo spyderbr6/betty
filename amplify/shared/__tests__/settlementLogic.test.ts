@@ -14,6 +14,27 @@ describe('planSettlement', () => {
     expect(plan.payouts.reduce((s, x) => s + x.gross, 0)).toBe(80);
   });
 
+  it('pays a pool to whoever picked the winning option, out of every other option\'s stakes', () => {
+    const pool = { ...base, winningSide: 'C', sideNames: { A: 'Chiefs', B: 'Bills', C: 'Eagles', D: 'Lions' } };
+    const plan = planSettlement({
+      ...pool,
+      participants: [p('1', 'A', 10), p('2', 'B', 10), p('3', 'C', 10), p('4', 'C', 10), p('5', 'D', 10)],
+    });
+    expect(plan.payouts.map((x) => [x.participantId, x.gross])).toEqual([['3', 25], ['4', 25]]);
+    expect(plan.entries[0].notes).toBe('Chiefs cover - Eagles won');
+  });
+
+  it('returns every stake when nobody picked the pool\'s winning option', () => {
+    const plan = planSettlement({
+      ...base,
+      winningSide: 'C',
+      sideNames: { A: 'Chiefs', B: 'Bills', C: 'Eagles' },
+      participants: [p('1', 'A', 10), p('2', 'B', 10)],
+    });
+    expect(plan.refundedNoWinners).toBe(true);
+    expect(plan.entries.map((e) => [e.type, e.delta])).toEqual([['BET_CANCELLED', 10], ['BET_CANCELLED', 10]]);
+  });
+
   it('takes the fee from free members and waives it for Pro', () => {
     const plan = planSettlement({
       ...base,

@@ -13,6 +13,8 @@ export type JoinRefusal =
   | 'AMOUNT_CHANGED'
   | 'ALREADY_JOINED'
   | 'NOT_INVITED'
+  | 'FULL'
+  | 'SIDE_TAKEN'
   | 'INSUFFICIENT_FUNDS'
   | 'BUSY';
 
@@ -64,6 +66,10 @@ export function joinMessage(result: JoinResult | null, amount: number): JoinMess
       return { title: 'Bet Closed', message: 'This bet has passed its deadline and can no longer be joined.' };
     case 'NOT_INVITED':
       return { title: 'Invitation Required', message: 'This is a private bet. You need an invitation to join it.' };
+    case 'FULL':
+      return { title: 'Bet Full', message: 'This is a head-to-head bet and someone has already taken the other side.' };
+    case 'SIDE_TAKEN':
+      return { title: 'Side Taken', message: 'This is a head-to-head bet. That side is taken, so you can only join the other one.' };
     case 'AMOUNT_CHANGED':
       return { title: 'Stake Changed', message: 'The stake for this bet has changed. Refresh and try again.' };
     default:

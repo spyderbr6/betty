@@ -6,7 +6,7 @@
 export type ResolveRefusal = 'NOT_FOUND' | 'NOT_CREATOR' | 'NOT_RESOLVABLE' | 'INVALID_SIDE' | 'BUSY';
 
 export type ResolveResult =
-  | { status: 'resolved'; winningSide: 'A' | 'B'; disputeWindowEndsAt: string; winners: number; refundedNoWinners: boolean }
+  | { status: 'resolved'; winningSide: string; disputeWindowEndsAt: string; winners: number; refundedNoWinners: boolean }
   | { status: 'refused'; reason: ResolveRefusal };
 
 /** The mutation returns AWSJSON: an object, or JSON text (sometimes encoded twice). */

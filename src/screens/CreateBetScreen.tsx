@@ -26,6 +26,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { NotificationService } from '../services/notificationService';
 import { createBetWithStake } from '../services/createBetService';
 import { createBetProblem, newBetId } from '../services/createBetLogic';
+import {
+  HEAD_TO_HEAD_PARTICIPANTS,
+  MAX_OPTIONS,
+  MIN_POOL_OPTIONS,
+  OPTION_KEYS,
+  type OptionKey,
+} from '../../amplify/shared/betOptions';
 import { getProfilePictureUrl } from '../services/imageUploadService';
 import { useEventCheckIn } from '../hooks/useEventCheckIn';
 import { showAlert } from '../components/ui/CustomAlert';
@@ -55,6 +62,8 @@ interface BetTemplate {
 // Initialize GraphQL client
 const client = generateClient<Schema>();
 
+const emptyPoolOptions = () => Array.from({ length: MIN_POOL_OPTIONS }, () => '');
+
 export const CreateBetScreen: React.FC = () => {
   const { user } = useAuth();
   const insets = useSafeAreaInsets();
@@ -72,7 +81,9 @@ export const CreateBetScreen: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState('CUSTOM'); // Default to CUSTOM, set by templates
   const [sideAName, setSideAName] = useState('Yes');
   const [sideBName, setSideBName] = useState('No');
-  const [selectedSide, setSelectedSide] = useState<'A' | 'B' | null>(null);
+  const [selectedSide, setSelectedSide] = useState<OptionKey | null>(null);
+  // A pool's option names, in order (keys A onwards)
+  const [poolOptions, setPoolOptions] = useState<string[]>(emptyPoolOptions);
   const [isCreating, setIsCreating] = useState(false);
 
   // Track if fields have been manually edited (for clear-on-focus behavior)
@@ -234,6 +245,28 @@ export const CreateBetScreen: React.FC = () => {
       lockedSideB: 'No',
     },
     {
+      id: 'head-to-head',
+      displayName: 'Head-to-Head',
+      category: 'CUSTOM',
+      icon: '🤝',
+      // You against one friend: the bet closes to everyone else once they join
+      titlePlaceholder: 'e.g., Saturday golf round',
+      descriptionPlaceholder: 'What are the two of you betting on?',
+      sideAPlaceholder: 'I win',
+      sideBPlaceholder: 'They win',
+    },
+    {
+      id: 'pool',
+      displayName: 'Pool',
+      category: 'CUSTOM',
+      icon: '🏆',
+      // Three to six options; whoever picked the winner splits the pot
+      titlePlaceholder: 'e.g., Who wins the Super Bowl?',
+      descriptionPlaceholder: 'Describe what decides the winner',
+      sideAPlaceholder: '',
+      sideBPlaceholder: '',
+    },
+    {
       id: 'custom',
       displayName: 'Custom Bet',
       category: 'CUSTOM',
@@ -279,6 +312,10 @@ export const CreateBetScreen: React.FC = () => {
   const handleTemplateSelect = (template: BetTemplate) => {
     setSelectedTemplate(template.id);
     setSelectedCategory(template.category);
+    // A pick of a pool's third option or later is not a side of any other bet type
+    if (template.id !== 'pool') setSelectedSide(prev => (prev === 'A' || prev === 'B' ? prev : null));
+    // Head-to-head has one opponent
+    if (template.id === 'head-to-head') setSelectedFriends(prev => new Set(Array.from(prev).slice(0, 1)));
 
     // Set default values (if provided), otherwise empty for placeholders
     setBetTitle(template.defaultTitle || '');
@@ -348,8 +385,25 @@ export const CreateBetScreen: React.FC = () => {
       return;
     }
 
+    const isPoolBet = selectedTemplate === 'pool';
+    const isHeadToHeadBet = selectedTemplate === 'head-to-head';
+    const optionNames = poolOptions.map(name => name.trim());
+    if (isPoolBet) {
+      if (optionNames.some(name => !name)) {
+        showAlert('Missing Option', 'Please name every option, or remove the ones you do not need.');
+        return;
+      }
+      if (new Set(optionNames.map(name => name.toLowerCase())).size !== optionNames.length) {
+        showAlert('Duplicate Option', 'Each option needs a different name.');
+        return;
+      }
+    }
+
     if (!selectedSide) {
-      showAlert('Pick a Side', 'Please choose Side A or Side B to join your bet.');
+      showAlert(
+        isPoolBet ? 'Pick an Option' : 'Pick a Side',
+        isPoolBet ? 'Please choose the option you are backing.' : 'Please choose Side A or Side B to join your bet.'
+      );
       return;
     }
 
@@ -383,10 +437,12 @@ export const CreateBetScreen: React.FC = () => {
         category: selectedCategory,
         amount,
         side: selectedSide,
-        sideAName: sideAName.trim(),
-        sideBName: sideBName.trim(),
+        sideAName: isPoolBet ? optionNames[0] : sideAName.trim(),
+        sideBName: isPoolBet ? optionNames[1] : sideBName.trim(),
         deadlineMinutes,
         isPrivate,
+        ...(isPoolBet ? { options: optionNames } : {}),
+        ...(isHeadToHeadBet ? { maxParticipants: HEAD_TO_HEAD_PARTICIPANTS } : {}),
         // Tag the bet to whatever event the creator is currently checked into.
         // Bet.eventId has existed on the model all along but nothing ever wrote
         // it, so "bets at this game" matched nothing. Inferred rather than asked
@@ -420,7 +476,9 @@ export const CreateBetScreen: React.FC = () => {
                 fromUserId: user.userId,
                 toUserId: friendId,
                 status: 'PENDING',
-                invitedSide: '', // Empty string since they can choose their own side
+                // Empty when they can choose their own side; a head-to-head opponent
+                // gets the side the creator did not take
+                invitedSide: isHeadToHeadBet ? (selectedSide === 'A' ? 'B' : 'A') : '',
                 expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // 24 hours
               });
 
@@ -451,7 +509,9 @@ export const CreateBetScreen: React.FC = () => {
       scrollRef.current?.scrollTo({ y: 0, animated: true });
 
       // Show toast notification
-      const sideChosen = selectedSide === 'A' ? sideAName : sideBName;
+      const sideChosen = isPoolBet
+        ? optionNames[OPTION_KEYS.indexOf(selectedSide)]
+        : selectedSide === 'A' ? sideAName : sideBName;
       setToastMessage(`Bet "${betTitle}" created! You joined on "${sideChosen}"`);
       setShowToast(true);
 
@@ -573,6 +633,7 @@ export const CreateBetScreen: React.FC = () => {
     setDeadline('30');
     setIsPrivate(false);
     setSelectedSide(null);
+    setPoolOptions(emptyPoolOptions());
     setSelectedFriends(new Set()); // Clear selected friends
 
     // Re-apply the first template defaults (title, description, category, sides)
@@ -591,9 +652,30 @@ export const CreateBetScreen: React.FC = () => {
       if (newSet.has(friendId)) {
         newSet.delete(friendId);
       } else {
+        // Head-to-head has one opponent: picking another friend replaces the first
+        if (selectedTemplate === 'head-to-head') newSet.clear();
         newSet.add(friendId);
       }
       return newSet;
+    });
+  };
+
+  // Pool option editing. Removing an option shifts the later ones up a key, so the
+  // creator's pick moves with the option it was on (or clears if that one was removed).
+  const setPoolOptionName = (index: number, name: string) => {
+    setPoolOptions(prev => prev.map((existing, i) => (i === index ? name : existing)));
+  };
+  const addPoolOption = () => {
+    setPoolOptions(prev => (prev.length < MAX_OPTIONS ? [...prev, ''] : prev));
+  };
+  const removePoolOption = (index: number) => {
+    if (poolOptions.length <= MIN_POOL_OPTIONS) return;
+    setPoolOptions(prev => prev.filter((_, i) => i !== index));
+    setSelectedSide(prev => {
+      if (!prev) return prev;
+      const picked = OPTION_KEYS.indexOf(prev);
+      if (picked === index) return null;
+      return picked > index ? OPTION_KEYS[picked - 1] : prev;
     });
   };
 
@@ -625,6 +707,7 @@ export const CreateBetScreen: React.FC = () => {
             {betTemplates.map((template) => (
               <TouchableOpacity
                 key={template.id}
+                testID={`create-template-${template.id}`}
                 style={[
                   styles.templateCard,
                   selectedTemplate === template.id && styles.templateCardSelected
@@ -893,13 +976,75 @@ export const CreateBetScreen: React.FC = () => {
         </View>
 
 
-        {/* Betting Sides */}
+        {/* Betting Sides: a pool lists three to six options instead of two sides */}
+        {selectedTemplate === 'pool' ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>OPTIONS</Text>
+          <Text style={styles.sectionSubtitle}>
+            Name {MIN_POOL_OPTIONS} to {MAX_OPTIONS} options and tap the one you are backing. Whoever picks the winner splits the pot.
+          </Text>
+
+          {poolOptions.map((name, index) => {
+            const key = OPTION_KEYS[index];
+            const picked = selectedSide === key;
+            return (
+              <TouchableOpacity
+                key={key}
+                testID={`create-option-${key.toLowerCase()}`}
+                style={[styles.poolOptionRow, picked && styles.sideCardSelected]}
+                onPress={() => setSelectedSide(key)}
+                activeOpacity={0.9}
+              >
+                <Text style={[styles.poolOptionKey, picked && styles.sideLabelSelected]}>
+                  {picked ? '✓' : key}
+                </Text>
+                <TextInput
+                  testID={`create-option-${key.toLowerCase()}-name`}
+                  style={[styles.sideInput, styles.poolOptionInput, picked && styles.sideInputSelected]}
+                  placeholder={`Option ${index + 1}`}
+                  placeholderTextColor={colors.textMuted}
+                  value={name}
+                  onChangeText={(text) => setPoolOptionName(index, text)}
+                  maxLength={100}
+                />
+                {poolOptions.length > MIN_POOL_OPTIONS && (
+                  <TouchableOpacity
+                    testID={`create-option-${key.toLowerCase()}-remove`}
+                    style={styles.poolOptionRemove}
+                    onPress={() => removePoolOption(index)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.poolOptionRemoveText, picked && styles.sideLabelSelected]}>✕</Text>
+                  </TouchableOpacity>
+                )}
+              </TouchableOpacity>
+            );
+          })}
+
+          {poolOptions.length < MAX_OPTIONS && (
+            <TouchableOpacity
+              testID="create-option-add"
+              style={styles.poolOptionAdd}
+              onPress={addPoolOption}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.poolOptionAddText}>+ Add option</Text>
+            </TouchableOpacity>
+          )}
+
+          {!selectedSide && (
+            <Text style={styles.sideHint}>Tap an option to back it before creating the bet.</Text>
+          )}
+        </View>
+        ) : (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>BETTING SIDES</Text>
           <Text style={styles.sectionSubtitle}>
             {currentTemplate.lockSides
               ? `Sides are locked to "${currentTemplate.lockedSideA}" and "${currentTemplate.lockedSideB}" for this bet type`
-              : 'Customize the two sides and choose which one you want to join'}
+              : selectedTemplate === 'head-to-head'
+                ? 'Name the two sides and choose yours. One opponent can join, on the other side.'
+                : 'Customize the two sides and choose which one you want to join'}
           </Text>
 
           <View style={styles.sidesContainer}>
@@ -984,6 +1129,7 @@ export const CreateBetScreen: React.FC = () => {
             <Text style={styles.sideHint}>Tap a side to select it before creating the bet.</Text>
           )}
         </View>
+        )}
 
           </>
         )}
@@ -1013,8 +1159,12 @@ export const CreateBetScreen: React.FC = () => {
           selectedFriends={selectedFriends}
           onToggleFriend={toggleFriendSelection}
           maxDisplay={10}
-          label="INVITE FRIENDS"
-          sublabel={`Select friends to invite to this ${selectedTemplate === 'squares' ? 'game' : 'bet'}`}
+          label={selectedTemplate === 'head-to-head' ? 'CHALLENGE A FRIEND' : 'INVITE FRIENDS'}
+          sublabel={
+            selectedTemplate === 'head-to-head'
+              ? 'Pick the one friend you are betting against'
+              : `Select friends to invite to this ${selectedTemplate === 'squares' ? 'game' : 'bet'}`
+          }
         />
 
         {/* Create Button */}
@@ -1319,6 +1469,55 @@ const styles = StyleSheet.create({
     color: colors.warning,
     marginTop: spacing.xs,
     textAlign: 'center',
+  },
+
+  // Pool options
+  poolOptionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: spacing.radius.sm,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderWidth: 2,
+    borderColor: colors.border,
+    marginBottom: spacing.sm,
+  },
+  poolOptionKey: {
+    ...textStyles.label,
+    color: colors.textMuted,
+    width: spacing.lg,
+    textAlign: 'center',
+    fontWeight: typography.fontWeight.medium,
+    marginRight: spacing.sm,
+  },
+  poolOptionInput: {
+    flex: 1,
+    textAlign: 'left',
+    paddingHorizontal: spacing.sm,
+    marginBottom: 0,
+  },
+  poolOptionRemove: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    marginLeft: spacing.xs,
+  },
+  poolOptionRemoveText: {
+    ...textStyles.label,
+    color: colors.textSecondary,
+    fontWeight: typography.fontWeight.bold,
+  },
+  poolOptionAdd: {
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+    borderRadius: spacing.radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  poolOptionAddText: {
+    ...textStyles.button,
+    color: colors.primary,
+    fontSize: typography.fontSize.sm,
   },
 
   // Toast Banner

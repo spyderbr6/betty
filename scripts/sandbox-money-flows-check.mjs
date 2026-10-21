@@ -39,6 +39,9 @@
  *      paid bet's dispute cannot be upheld
  *  14. money (ensureMyUserRecord): the server creates the caller's own record with balance
  *      0 and role USER whatever is sent, and a second call changes nothing
+ *  15. money (pools, head-to-head): a pool is created, joined and resolved on any of its
+ *      options and no other, its winners split the pot and are paid; a head-to-head bet
+ *      takes one opponent on the open side, and two joining at once cannot both get in
  *
  * The Lambdas act on ALL sandbox data when invoked, exactly as their schedules do.
  *
@@ -768,6 +771,53 @@ try {
     check('a new user\'s record is created by the server, with balance 0 and role USER whatever is sent', made14.status === 'created' && rec?.balance === 0 && rec.role === 'USER' && rec.trustScore === 5 && rec.displayName === 'New Person' && rec.tosAccepted === true, `${JSON.stringify(made14)} ${JSON.stringify(rec)}`);
     const again14 = await asUser(newcomer, 'ensureMyUserRecord', { displayName: 'Someone Else' });
     check('a second call finds it and changes nothing', again14.status === 'exists' && (await get('user', newcomer, 'displayName')).displayName === 'New Person', JSON.stringify(again14));
+
+    // 15. Pools and head-to-head bets (shared/betOptions.ts) ---------------------------------
+    const funded = async (tag) => {
+      const id = await user(tag);
+      await credit(id, 5);
+      return id;
+    };
+    const [pc, pa, pw, px] = await Promise.all(['pool-creator', 'pool-a', 'pool-c', 'pool-x'].map(funded));
+    const poolId = randomUUID();
+    trackCreate(poolId, pc);
+    for (const u15 of [pa, pw, px]) trackJoin(poolId, u15);
+    for (const u15 of [pc, pa, pw]) ledgerIds.push(`payout#${poolId}#${u15}`, `loss#${poolId}#${u15}`);
+    const pool = await asUser(pc, 'createBetWithStake', form({ betId: poolId, amount: 5, side: 'C', options: ['Red', 'Blue', 'Green'] }));
+    const poolFields = 'status odds totalPot sideACount sideBCount sideCCount sideDCount maxParticipants winningSide';
+    const pb = await get('bet', poolId, poolFields);
+    check('a pool is created with its options and one count each', pool.status === 'created' && JSON.parse(pb.odds).options?.join() === 'Red,Blue,Green' && pb.sideACount === 0 && pb.sideBCount === 0 && pb.sideCCount === 1 && pb.sideDCount == null && pb.maxParticipants == null, `${JSON.stringify(pool)} ${JSON.stringify(pb)}`);
+    const joinA = await joinAs(pa, poolId, 'A', 5);
+    const joinC = await joinAs(pw, poolId, 'C', 5);
+    const joinD = await joinAs(px, poolId, 'D', 5);
+    const pb2 = await get('bet', poolId, poolFields);
+    check('a pool is joined on any of its options and no other', joinA.status === 'joined' && joinC.status === 'joined' && joinD.reason === 'INVALID_SIDE' && same(await balance(px), 5) && pb2.sideACount === 1 && pb2.sideCCount === 2 && pb2.totalPot === 15, `${JSON.stringify([joinA, joinC, joinD])} ${JSON.stringify(pb2)}`);
+    const wrongWinner = await asUser(pc, 'resolveBet', { betId: poolId, winningSide: 'D' });
+    const poolResolved = await asUser(pc, 'resolveBet', { betId: poolId, winningSide: 'C' });
+    const [winC, winW, lossA] = await Promise.all([tx(`payout#${poolId}#${pc}`), tx(`payout#${poolId}#${pw}`), tx(`loss#${poolId}#${pa}`)]);
+    check('a pool resolves to one of its options: its backers split the pot, the rest lose', wrongWinner.reason === 'INVALID_SIDE' && poolResolved.status === 'resolved' && poolResolved.winners === 2 && winC?.status === 'PENDING' && winW?.status === 'PENDING' && same(winC.amount + winW.amount, 15) && lossA?.status === 'COMPLETED', `${JSON.stringify([wrongWinner, poolResolved, winC, winW, lossA])}`);
+    await setBet(poolId, { disputeWindowEndsAt: hoursAgo(0.1) });
+    await invoke('payoutprocessor');
+    check('after the window both pool winners are paid, and the loser is not', (await get('bet', poolId, 'status')).status === 'RESOLVED' && same(await balance(pc), winC.actualAmount) && same(await balance(pw), winW.actualAmount) && same(await balance(pa), 0), `creator ${await balance(pc)}, winner ${await balance(pw)}, loser ${await balance(pa)}`);
+    for (const h of (await gql('query ($f: ModelTrustScoreHistoryFilterInput) { listTrustScoreHistories(filter: $f, limit: 1000) { items { id } } }', { f: { relatedBetId: { eq: poolId } } })).listTrustScoreHistories.items) {
+      created.push(['trustScoreHistory', h.id]);
+    }
+
+    const [hc, h1, h2, h3] = await Promise.all(['duel-creator', 'duel-1', 'duel-2', 'duel-3'].map(funded));
+    const duelId = randomUUID();
+    trackCreate(duelId, hc);
+    for (const u15 of [h1, h2, h3]) trackJoin(duelId, u15);
+    const duel = await asUser(hc, 'createBetWithStake', form({ betId: duelId, amount: 5, side: 'A', maxParticipants: 2 }));
+    const badCap = await asUser(h3, 'createBetWithStake', form({ betId: randomUUID(), amount: 5, maxParticipants: 3 }));
+    check('a head-to-head bet records its cap, and no other cap is accepted', duel.status === 'created' && (await get('bet', duelId, 'maxParticipants')).maxParticipants === 2 && badCap.reason === 'INVALID' && badCap.field === 'maxParticipants', `${JSON.stringify(duel)} ${JSON.stringify(badCap)}`);
+    const sameSide = await joinAs(h3, duelId, 'A', 5);
+    check('the opponent cannot take the creator\'s side', sameSide.reason === 'SIDE_TAKEN' && same(await balance(h3), 5), JSON.stringify(sameSide));
+    const duelRace = await Promise.all([joinAs(h1, duelId, 'B', 5), joinAs(h2, duelId, 'B', 5)]);
+    const db = await get('bet', duelId, 'sideACount sideBCount totalPot participantUserIds');
+    const racers = [await balance(h1), await balance(h2)];
+    check('two opponents joining at once: one gets in, the other is refused and keeps their stake', duelRace.filter((x) => x.status === 'joined').length === 1 && duelRace.filter((x) => x.status === 'refused').length === 1 && db.sideBCount === 1 && db.totalPot === 10 && db.participantUserIds.length === 2 && same(racers[0] + racers[1], 5), `${JSON.stringify(duelRace)} ${JSON.stringify(db)} balances ${racers}`);
+    const third = await joinAs(h3, duelId, 'B', 5);
+    check('a full head-to-head bet refuses everyone else', third.reason === 'FULL' && same(await balance(h3), 5), JSON.stringify(third));
     for (const h of (await gql('query ($f: ModelTrustScoreHistoryFilterInput) { listTrustScoreHistories(filter: $f, limit: 1000) { items { id } } }', { f: { relatedBetId: { eq: a.id } } })).listTrustScoreHistories.items) {
       created.push(['trustScoreHistory', h.id]);
     }

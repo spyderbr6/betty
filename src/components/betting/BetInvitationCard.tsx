@@ -17,6 +17,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { BetInvitation } from '../../types/betting';
 import { colors, typography, spacing, textStyles } from '../../styles';
+import { betOptions, isBetOption, isHeadToHead, optionCount, optionName, parseOdds } from '../../../amplify/shared/betOptions';
 
 // Bet Invitation Card Component
 interface BetInvitationCardProps {
@@ -36,32 +37,17 @@ export const BetInvitationCard: React.FC<BetInvitationCardProps> = ({
 
   if (!invitation.bet) return null;
 
-  const parseBetOdds = (odds: any) => {
-    try {
-      const parsedOdds = typeof odds === 'string' ? JSON.parse(odds) : odds;
-      return {
-        sideAName: parsedOdds?.sideAName || 'Side A',
-        sideBName: parsedOdds?.sideBName || 'Side B',
-      };
-    } catch {
-      return {
-        sideAName: 'Side A',
-        sideBName: 'Side B',
-      };
-    }
-  };
-
-  const betOdds = parseBetOdds(invitation.bet.odds);
-  const hasSpecificSide = invitation.invitedSide && invitation.invitedSide.trim() !== '';
-  const invitedSideName = hasSpecificSide
-    ? (invitation.invitedSide === 'A' ? betOdds.sideAName : betOdds.sideBName)
-    : null;
+  const betOdds = parseOdds(invitation.bet.odds);
+  const options = betOptions(betOdds);
+  // A head-to-head bet leaves one side open: the invitation is to that side, whatever it says
+  const openSide = isHeadToHead(invitation.bet)
+    ? options.find((option) => optionCount(invitation.bet!, option.key) === 0)?.key
+    : undefined;
+  const invitedSide = openSide ?? (isBetOption(betOdds, invitation.invitedSide) ? invitation.invitedSide : '');
+  const hasSpecificSide = invitedSide !== '';
+  const invitedSideName = hasSpecificSide ? optionName(betOdds, invitedSide) : null;
   const timeUntilExpiry = new Date(invitation.expiresAt).getTime() - new Date().getTime();
   const hoursLeft = Math.max(0, Math.floor(timeUntilExpiry / (1000 * 60 * 60)));
-
-  // Use denormalized counts from bet record
-  const sideACount = invitation.bet.sideACount || 0;
-  const sideBCount = invitation.bet.sideBCount || 0;
 
   return (
     <View testID={`invitation-card-${invitation.id}`} style={[styles.betCard, styles.invitationCard]}>
@@ -104,69 +90,47 @@ export const BetInvitationCard: React.FC<BetInvitationCardProps> = ({
         {!hasSpecificSide && (
           <View style={styles.sideSelectionContainer}>
             <Text style={styles.sideSelectionLabel}>Choose your side:</Text>
-            <View style={styles.sideOptions}>
-              <TouchableOpacity
-                style={[
-                  styles.sideOption,
-                  selectedSide === 'A' && styles.sideOptionSelected
-                ]}
-                onPress={() => setSelectedSide('A')}
-                activeOpacity={0.7}
-              >
-                <View style={[
-                  styles.sideOptionIndicator,
-                  selectedSide === 'A' && styles.sideOptionIndicatorSelected
-                ]} />
-                <View style={styles.sideOptionContent}>
-                  <Text style={[
-                    styles.sideOptionText,
-                    selectedSide === 'A' && styles.sideOptionTextSelected
-                  ]}>
-                    {betOdds.sideAName}
-                  </Text>
-                  <View style={styles.sideOptionParticipants}>
-                    <Ionicons name="people-outline" size={11} color={selectedSide === 'A' ? colors.background : colors.textMuted} />
-                    <Text style={[
-                      styles.sideOptionParticipantCount,
-                      selectedSide === 'A' && styles.sideOptionParticipantCountSelected
-                    ]}>
-                      {sideACount}
-                    </Text>
-                  </View>
-                </View>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.sideOption,
-                  styles.sideOptionLast,
-                  selectedSide === 'B' && styles.sideOptionSelected
-                ]}
-                onPress={() => setSelectedSide('B')}
-                activeOpacity={0.7}
-              >
-                <View style={[
-                  styles.sideOptionIndicator,
-                  selectedSide === 'B' && styles.sideOptionIndicatorSelected
-                ]} />
-                <View style={styles.sideOptionContent}>
-                  <Text style={[
-                    styles.sideOptionText,
-                    selectedSide === 'B' && styles.sideOptionTextSelected
-                  ]}>
-                    {betOdds.sideBName}
-                  </Text>
-                  <View style={styles.sideOptionParticipants}>
-                    <Ionicons name="people-outline" size={11} color={selectedSide === 'B' ? colors.background : colors.textMuted} />
-                    <Text style={[
-                      styles.sideOptionParticipantCount,
-                      selectedSide === 'B' && styles.sideOptionParticipantCountSelected
-                    ]}>
-                      {sideBCount}
-                    </Text>
-                  </View>
-                </View>
-              </TouchableOpacity>
+            <View style={[styles.sideOptions, options.length > 2 && styles.sideOptionsWrap]}>
+              {options.map((option, index) => {
+                const selected = selectedSide === option.key;
+                return (
+                  <TouchableOpacity
+                    key={option.key}
+                    testID={`invitation-side-${option.key.toLowerCase()}`}
+                    style={[
+                      styles.sideOption,
+                      options.length > 2
+                        ? styles.sideOptionWrapped
+                        : index === options.length - 1 && styles.sideOptionLast,
+                      selected && styles.sideOptionSelected
+                    ]}
+                    onPress={() => setSelectedSide(option.key)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={[
+                      styles.sideOptionIndicator,
+                      selected && styles.sideOptionIndicatorSelected
+                    ]} />
+                    <View style={styles.sideOptionContent}>
+                      <Text style={[
+                        styles.sideOptionText,
+                        selected && styles.sideOptionTextSelected
+                      ]}>
+                        {option.name}
+                      </Text>
+                      <View style={styles.sideOptionParticipants}>
+                        <Ionicons name="people-outline" size={11} color={selected ? colors.background : colors.textMuted} />
+                        <Text style={[
+                          styles.sideOptionParticipantCount,
+                          selected && styles.sideOptionParticipantCountSelected
+                        ]}>
+                          {optionCount(invitation.bet!, option.key)}
+                        </Text>
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           </View>
         )}
@@ -200,7 +164,7 @@ export const BetInvitationCard: React.FC<BetInvitationCardProps> = ({
             styles.acceptButton,
             (!hasSpecificSide && !selectedSide) && styles.acceptButtonDisabled
           ]}
-          onPress={() => onAccept(hasSpecificSide ? invitation.invitedSide : selectedSide!)}
+          onPress={() => onAccept(hasSpecificSide ? invitedSide : selectedSide!)}
           disabled={isProcessing || (!hasSpecificSide && !selectedSide)}
           activeOpacity={0.7}
         >
@@ -418,6 +382,17 @@ const styles = StyleSheet.create({
   },
   sideOptions: {
     flexDirection: 'row',
+  },
+  // A pool's options stack, one to a row
+  sideOptionsWrap: {
+    flexDirection: 'column',
+  },
+  sideOptionWrapped: {
+    flexGrow: 0,
+    flexShrink: 0,
+    flexBasis: 'auto',
+    marginRight: 0,
+    marginBottom: spacing.xs,
   },
   sideSelectionContainer: {
     marginTop: spacing.sm,

@@ -48,6 +48,7 @@ const FIELD_NAMES: Record<string, string> = {
   deadlineMinutes: 'the deadline',
   category: 'the category',
   side: 'your side',
+  options: 'the options',
 };
 
 /** The alert for a refused or failed create; null when it was created. */

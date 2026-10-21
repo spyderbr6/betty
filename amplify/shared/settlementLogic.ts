@@ -26,7 +26,7 @@ export interface SettlementInput {
   betTitle: string;
   winningSide: string;
   /** Display names of the sides, for the history notes. */
-  sideNames?: { A?: string; B?: string };
+  sideNames?: Record<string, string | undefined>;
   participants: SettlementParticipant[];
   /** Participants whose owners are Pro: their winnings fee is waived. */
   proUserIds: Set<string>;
@@ -64,7 +64,7 @@ export const refundTransactionId = (participantId: string) => `refund#${particip
  */
 export function planSettlement(input: SettlementInput): SettlementPlan {
   const { betId, betTitle, winningSide, participants, proUserIds } = input;
-  const winningName = input.sideNames?.[winningSide as 'A' | 'B'] ?? winningSide;
+  const winningName = input.sideNames?.[winningSide] ?? winningSide;
 
   const potCents = participants.reduce((sum, p) => sum + toCents(p.amount), 0);
   const winners = participants.filter((p) => p.side === winningSide && p.amount > 0);

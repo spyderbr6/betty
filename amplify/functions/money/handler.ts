@@ -27,6 +27,7 @@ import { isProActive } from '../../../src/config/subscriptionConfig';
 import { applyLedger } from './ledgerExecutor';
 import { parseAwsJson, type SettleResult } from '../../shared/moneyClient';
 import { checkJoin, planJoin, type JoinResult } from '../../shared/joinLogic';
+import { optionName, optionNames, type BetOddsShape, type OptionKey } from '../../shared/betOptions';
 import { invalidField, planCreateBet, type CreateBetArgs, type CreateBetResult } from '../../shared/createBetLogic';
 import { checkResolve, planResolve, type ExistingLedgerRow, type ResolvePlan, type ResolveResult } from '../../shared/resolveLogic';
 import { checkAccept, planAccept, type AcceptParticipant, type AcceptResult } from '../../shared/acceptLogic';
@@ -163,12 +164,12 @@ async function settleBet(betId: string): Promise<SettleResult> {
     if (isProActive(user)) proUserIds.add(userId);
   }
 
-  const odds = parseJson<{ sideAName?: string; sideBName?: string }>(bet.odds, {});
+  const odds = parseJson<BetOddsShape>(bet.odds, {});
   const plan = planSettlement({
     betId,
     betTitle: bet.title ?? 'Bet',
     winningSide: bet.winningSide,
-    sideNames: { A: odds.sideAName, B: odds.sideBName },
+    sideNames: optionNames(odds),
     participants: participants.map((p) => ({ id: p.id, userId: p.userId, side: p.side, amount: p.amount ?? 0 })),
     proUserIds,
   });
@@ -277,7 +278,12 @@ async function joinBet(userId: string, args: JoinBetArgs): Promise<JoinResult> {
   const { betId, side, amount } = args;
   const now = new Date().toISOString();
 
-  const { data: bet } = await client.models.Bet.get({ id: betId });
+  // The stored odds are JSON text; the checks read the bet's options from them
+  const readBet = async () => {
+    const { data } = await client.models.Bet.get({ id: betId });
+    return data ? { ...data, odds: parseJson<BetOddsShape>(data.odds, {}) } : null;
+  };
+  const bet = await readBet();
   const participants = bet ? await listParticipants(betId) : [];
   const refusal = checkJoin({
     bet,
@@ -287,12 +293,11 @@ async function joinBet(userId: string, args: JoinBetArgs): Promise<JoinResult> {
     now,
     alreadyJoined: participants.some((p) => p.userId === userId),
     invited: bet?.isPrivate ? await isInvited(userId, betId) : false,
+    takenSides: participants.map((p) => p.side),
   });
   if (refusal) return { status: 'refused', reason: refusal };
 
-  const odds = parseJson<{ sideAName?: string; sideBName?: string }>(bet.odds, {});
-  const sideName = (side === 'A' ? odds.sideAName : odds.sideBName) || `Side ${side}`;
-  const plan = planJoin({ bet, userId, side: side as 'A' | 'B', sideName, now });
+  const plan = planJoin({ bet, userId, side: side as OptionKey, sideName: optionName(bet.odds, side), now });
 
   const result = await applyLedger(plan.entries, plan.stateUpdates);
   switch (result.status) {
@@ -304,17 +309,18 @@ async function joinBet(userId: string, args: JoinBetArgs): Promise<JoinResult> {
       // The stake row exists: this user's join went through before
       return { status: 'refused', reason: 'ALREADY_JOINED' };
     case 'state_changed': {
-      // The bet closed, passed its deadline or was joined by this user in the meantime;
-      // say which, from a fresh read
-      const { data: fresh } = await client.models.Bet.get({ id: betId });
+      // The bet closed, passed its deadline, filled up or was joined by this user in the
+      // meantime; say which, from a fresh read
+      const freshParticipants = await listParticipants(betId);
       const again = checkJoin({
-        bet: fresh,
+        bet: await readBet(),
         userId,
         side,
         amount,
         now: new Date().toISOString(),
-        alreadyJoined: (await listParticipants(betId)).some((p) => p.userId === userId),
+        alreadyJoined: freshParticipants.some((p) => p.userId === userId),
         invited: true,
+        takenSides: freshParticipants.map((p) => p.side),
       });
       return { status: 'refused', reason: again ?? 'BUSY' };
     }
@@ -419,9 +425,15 @@ const RESOLVE_BATCH = 90;
  * money moves; the payout processor pays after the dispute window.
  */
 async function resolveBet(userId: string, betId: string, winningSide: string): Promise<ResolveResult> {
-  const { data: bet } = await client.models.Bet.get({ id: betId });
+  // The stored odds are JSON text; the check reads the bet's options from them
+  const readBet = async () => {
+    const { data } = await client.models.Bet.get({ id: betId });
+    return data ? { ...data, odds: parseJson<BetOddsShape>(data.odds, {}) } : null;
+  };
+  const bet = await readBet();
   const refusal = checkResolve(bet, userId, winningSide);
   if (refusal) return { status: 'refused', reason: refusal };
+  const odds: BetOddsShape = bet.odds;
 
   const participants = await listParticipants(betId);
   const proUserIds = new Set<string>();
@@ -429,11 +441,10 @@ async function resolveBet(userId: string, betId: string, winningSide: string): P
     const { data: participantUser } = await client.models.User.get({ id });
     if (isProActive(participantUser)) proUserIds.add(id);
   }
-  const odds = parseJson<{ sideAName?: string; sideBName?: string }>(bet.odds, {});
   const plan = planResolve({
     bet,
-    winningSide: winningSide as 'A' | 'B',
-    sideNames: { A: odds.sideAName, B: odds.sideBName },
+    winningSide,
+    sideNames: optionNames(odds),
     participants: participants.map((p) => ({ id: p.id, userId: p.userId, side: p.side, amount: p.amount ?? 0 })),
     proUserIds,
     existing: await listBetTransactions(betId),
@@ -468,18 +479,17 @@ async function resolveBet(userId: string, betId: string, winningSide: string): P
 
   if (result.status === 'state_changed' || result.status === 'already_applied') {
     // Someone joined, or it was resolved, since it was read: say which from a fresh read
-    const { data: fresh } = await client.models.Bet.get({ id: betId });
-    return { status: 'refused', reason: checkResolve(fresh, userId, winningSide) ?? 'BUSY' };
+    return { status: 'refused', reason: checkResolve(await readBet(), userId, winningSide) ?? 'BUSY' };
   }
   if (result.status !== 'applied') {
     throw new Error(`Resolve bet ${betId}: ${JSON.stringify(result)}`);
   }
 
   await touchBet(betId);
-  await notifyResolved(plan, bet, winningSide as 'A' | 'B', odds, userId);
+  await notifyResolved(plan, bet, winningSide, odds, userId);
   return {
     status: 'resolved',
-    winningSide: winningSide as 'A' | 'B',
+    winningSide,
     disputeWindowEndsAt: plan.disputeWindowEndsAt,
     winners: plan.winners,
     refundedNoWinners: plan.refundedNoWinners,
@@ -502,11 +512,11 @@ async function listBetTransactions(betId: string): Promise<ExistingLedgerRow[]> 
 async function notifyResolved(
   plan: ResolvePlan,
   bet: { id: string; title?: string | null },
-  winningSide: 'A' | 'B',
-  odds: { sideAName?: string; sideBName?: string },
+  winningSide: string,
+  odds: BetOddsShape,
   creatorId: string
 ): Promise<void> {
-  const winnerName = (winningSide === 'A' ? odds.sideAName : odds.sideBName) || `Side ${winningSide}`;
+  const winnerName = optionName(odds, winningSide);
   const title = bet.title ?? 'the bet';
   for (const outcome of plan.outcomes) {
     if (outcome.userId === creatorId) continue;

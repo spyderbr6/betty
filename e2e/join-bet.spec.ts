@@ -162,3 +162,69 @@ test('a join request that fails outright says so and changes nothing', async ({ 
   await expect(page.getByTestId('join-side-a')).toBeVisible();
   for (const write of CLIENT_MONEY_WRITES) expect(calls).not.toContain(write);
 });
+
+const POOL_ODDS = JSON.stringify({ sideAName: 'Chiefs', sideBName: 'Bills', options: ['Chiefs', 'Bills', 'Eagles'] });
+
+test('a pool offers every option, and joining sends the one picked', async ({ page }) => {
+  await signInAs(page);
+  const sent: Record<string, unknown>[] = [];
+  await mockAppSync(page, {
+    ...withOpenBet({ odds: POOL_ODDS, sideACount: 1, sideCCount: 0, totalPot: 25 }),
+    joinBet: (variables) => {
+      sent.push(variables);
+      return JSON.stringify({ status: 'joined', participantId: 'bet-open#user', amount: 25, balance: 225 });
+    },
+  });
+  await openLiveTab(page);
+
+  await expect(page.getByTestId('join-side-a')).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId('join-side-b')).toBeVisible();
+  await expect(page.getByTestId('bet-card-bet-open')).toContainText('Eagles');
+
+  await page.getByTestId('join-side-c').dispatchEvent('click');
+  await expect(page.getByTestId('alert-message')).toContainText('Eagles');
+  await page.getByTestId('alert-button-join').dispatchEvent('click');
+
+  await expect(page.getByTestId('alert-title')).toHaveText('Joined Successfully!');
+  expect(sent).toEqual([{ betId: 'bet-open', side: 'C', amount: 25 }]);
+  await expect(page.getByTestId('join-side-c')).toBeHidden();
+});
+
+test('a head-to-head bet can only be joined on the side left open', async ({ page }) => {
+  await signInAs(page);
+  await mockAppSync(page, {
+    ...withOpenBet({ maxParticipants: 2, sideACount: 1, participantUserIds: [OTHER_USER.id], totalPot: 25 }),
+    // Someone else got there first: the server, not the card, says no
+    joinBet: joinAnswer({ status: 'refused', reason: 'FULL' }),
+  });
+  await openLiveTab(page);
+
+  // toContainText: the row's icon is a font glyph, which is text too
+  await expect(page.getByTestId('bet-card-bet-open-head-to-head')).toContainText('1 v 1', { timeout: 15_000 });
+  await expect(page.getByTestId('bet-card-bet-open-head-to-head')).not.toContainText('Full');
+  await expect(page.getByTestId('join-side-b')).toBeVisible();
+  await expect(page.getByTestId('join-side-a')).toBeHidden();
+
+  await page.getByTestId('join-side-b').dispatchEvent('click');
+  await page.getByTestId('alert-button-join').dispatchEvent('click');
+  await expect(page.getByTestId('alert-title')).toHaveText('Bet Full');
+});
+
+test('a full head-to-head bet offers no way in', async ({ page }) => {
+  await signInAs(page);
+  await mockAppSync(
+    page,
+    withOpenBet({
+      maxParticipants: 2,
+      sideACount: 1,
+      sideBCount: 1,
+      participantUserIds: [OTHER_USER.id, 'someone-else'],
+      totalPot: 50,
+    })
+  );
+  await openLiveTab(page);
+
+  await expect(page.getByTestId('bet-card-bet-open-head-to-head')).toContainText('Full', { timeout: 15_000 });
+  await expect(page.getByTestId('join-side-a')).toBeHidden();
+  await expect(page.getByTestId('join-side-b')).toBeHidden();
+});

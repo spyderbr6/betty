@@ -26,6 +26,7 @@ import { formatCurrency } from '../utils/formatting';
 import { resolveBet } from '../services/resolveBetService';
 import { resolveMessage } from '../services/resolveBetLogic';
 import { showAlert } from '../components/ui/CustomAlert';
+import { betOptions, optionCount, optionCounts, optionName, type OptionKey } from '../../amplify/shared/betOptions';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { ResolveStackParamList } from '../types/navigation';
@@ -71,8 +72,8 @@ const transformAmplifyBet = (bet: any): Bet | null => {
     resolutionReason: bet.resolutionReason || undefined,
     disputeWindowEndsAt: bet.disputeWindowEndsAt || undefined,
     isPrivate: bet.isPrivate || false,
-    sideACount: bet.sideACount || 0,
-    sideBCount: bet.sideBCount || 0,
+    ...optionCounts(bet),
+    maxParticipants: bet.maxParticipants || undefined,
     participantUserIds: bet.participantUserIds || [],
     createdAt: bet.createdAt || new Date().toISOString(),
     updatedAt: bet.updatedAt || new Date().toISOString(),
@@ -103,7 +104,7 @@ export const ResolveScreen: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isResolving, setIsResolving] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  const [selectedSides, setSelectedSides] = useState<Record<string, 'A' | 'B' | null>>({});
+  const [selectedSides, setSelectedSides] = useState<Record<string, OptionKey | null>>({});
 
   /**
    * Everything this screen shows, loaded from the viewer's own partitions.
@@ -258,7 +259,7 @@ export const ResolveScreen: React.FC = () => {
     await loadResolutionData();
   };
 
-  const handleSideSelection = (bet: Bet, side: 'A' | 'B') => {
+  const handleSideSelection = (bet: Bet, side: OptionKey) => {
     if (isResolving) return;
 
     // Only allow creator to resolve bets
@@ -280,7 +281,7 @@ export const ResolveScreen: React.FC = () => {
     await confirmResolveBet(bet, selectedSide);
   };
 
-  const confirmResolveBet = async (bet: Bet, winningSide: 'A' | 'B') => {
+  const confirmResolveBet = async (bet: Bet, winningSide: OptionKey) => {
     setIsResolving(bet.id);
 
     try {
@@ -290,7 +291,7 @@ export const ResolveScreen: React.FC = () => {
       // pending winnings together. It also tells the participants. This phone used to
       // compute the payouts and fees itself and write them, and recorded each loss
       // through a call that rewrote the loser's balance.
-      const winnerName = (winningSide === 'A' ? bet.odds.sideAName : bet.odds.sideBName) || `Side ${winningSide}`;
+      const winnerName = optionName(bet.odds, winningSide);
       const result = await resolveBet(bet.id, winningSide);
       const { title, message } = resolveMessage(result, winnerName);
 
@@ -366,61 +367,42 @@ export const ResolveScreen: React.FC = () => {
                     <Text style={styles.payoutSubtitle}>Winners split the entire pot based on their contribution</Text>
                   </View>
 
-                  <Text style={styles.resolutionTitle}>Select the winning side:</Text>
+                  <Text style={styles.resolutionTitle}>
+                    {betOptions(bet.odds).length > 2 ? 'Select the winning option:' : 'Select the winning side:'}
+                  </Text>
                   <View style={styles.resolutionButtons}>
-                    <TouchableOpacity
-                      style={[
-                        styles.resolutionButton,
-                        styles.resolutionButtonA,
-                        selectedSides[bet.id] === 'A' && styles.resolutionButtonSelected,
-                        isResolving === bet.id && styles.resolutionButtonDisabled
-                      ]}
-                      onPress={() => handleSideSelection(bet, 'A')}
-                      testID={`resolve-side-A-${bet.id}`}
-                      disabled={isResolving === bet.id}
-                    >
-                      <>
-                        <Text style={[
-                          styles.resolutionButtonText,
-                          selectedSides[bet.id] === 'A' && styles.resolutionButtonTextSelected
-                        ]}>
-                          {bet.odds.sideAName || 'Side A'}
-                        </Text>
-                        <Text style={[
-                          styles.resolutionButtonPayout,
-                          selectedSides[bet.id] === 'A' && styles.resolutionButtonPayoutSelected
-                        ]}>
-                          {bet.sideACount || 0} winners
-                        </Text>
-                      </>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={[
-                        styles.resolutionButton,
-                        styles.resolutionButtonB,
-                        selectedSides[bet.id] === 'B' && styles.resolutionButtonSelected,
-                        isResolving === bet.id && styles.resolutionButtonDisabled
-                      ]}
-                      onPress={() => handleSideSelection(bet, 'B')}
-                      testID={`resolve-side-B-${bet.id}`}
-                      disabled={isResolving === bet.id}
-                    >
-                      <>
-                        <Text style={[
-                          styles.resolutionButtonText,
-                          selectedSides[bet.id] === 'B' && styles.resolutionButtonTextSelected
-                        ]}>
-                          {bet.odds.sideBName || 'Side B'}
-                        </Text>
-                        <Text style={[
-                          styles.resolutionButtonPayout,
-                          selectedSides[bet.id] === 'B' && styles.resolutionButtonPayoutSelected
-                        ]}>
-                          {bet.sideBCount || 0} winners
-                        </Text>
-                      </>
-                    </TouchableOpacity>
+                    {betOptions(bet.odds).map((option) => {
+                      const selected = selectedSides[bet.id] === option.key;
+                      return (
+                        <View key={option.key} style={styles.resolutionButtonCell}>
+                          <TouchableOpacity
+                            style={[
+                              styles.resolutionButton,
+                              selected && styles.resolutionButtonSelected,
+                              isResolving === bet.id && styles.resolutionButtonDisabled
+                            ]}
+                            onPress={() => handleSideSelection(bet, option.key)}
+                            testID={`resolve-side-${option.key}-${bet.id}`}
+                            disabled={isResolving === bet.id}
+                          >
+                            <>
+                              <Text style={[
+                                styles.resolutionButtonText,
+                                selected && styles.resolutionButtonTextSelected
+                              ]}>
+                                {option.name}
+                              </Text>
+                              <Text style={[
+                                styles.resolutionButtonPayout,
+                                selected && styles.resolutionButtonPayoutSelected
+                              ]}>
+                                {optionCount(bet, option.key)} winners
+                              </Text>
+                            </>
+                          </TouchableOpacity>
+                        </View>
+                      );
+                    })}
                   </View>
 
                   {/* Confirm Resolution Button */}
@@ -439,7 +421,7 @@ export const ResolveScreen: React.FC = () => {
                       ) : (
                         <>
                           <Text style={styles.confirmButtonText}>
-                            Resolve: {selectedSides[bet.id] === 'A' ? bet.odds.sideAName || 'Side A' : bet.odds.sideBName || 'Side B'} Wins
+                            Resolve: {optionName(bet.odds, selectedSides[bet.id])} Wins
                           </Text>
                           <Text style={styles.confirmButtonSubtext}>
                             This action cannot be undone
@@ -545,9 +527,18 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
     fontWeight: typography.fontWeight.medium,
   },
+  // Two to a row, wrapping for a pool's further options (margins, not gap)
   resolutionButtons: {
     flexDirection: 'row',
-    marginBottom: spacing.md,
+    flexWrap: 'wrap',
+    marginHorizontal: -spacing.xs,
+    marginBottom: spacing.md - spacing.sm,
+  },
+  resolutionButtonCell: {
+    width: '50%',
+    flexDirection: 'row',
+    paddingHorizontal: spacing.xs,
+    marginBottom: spacing.sm,
   },
   resolutionButton: {
     flex: 1,
@@ -560,12 +551,6 @@ const styles = StyleSheet.create({
     minHeight: 60,
     borderWidth: 1,
     borderColor: colors.border,
-  },
-  resolutionButtonA: {
-    marginRight: spacing.xs,
-  },
-  resolutionButtonB: {
-    marginLeft: spacing.xs,
   },
   resolutionButtonDisabled: {
     opacity: 0.6,

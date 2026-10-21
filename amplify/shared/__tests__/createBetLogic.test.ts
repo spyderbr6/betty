@@ -46,6 +46,24 @@ describe('invalidField', () => {
     expect(invalidField(args({ category: 'POKER' }))).toBe('category');
   });
 
+  it('accepts a pool of three to six distinct options, and a side among them', () => {
+    const options = ['Chiefs', 'Bills', 'Eagles'];
+    expect(invalidField(args({ options, side: 'C' }))).toBeNull();
+    expect(invalidField(args({ options, side: 'D' }))).toBe('side');
+    expect(invalidField(args({ options: ['Chiefs', 'Bills'] }))).toBe('options');
+    expect(invalidField(args({ options: ['1', '2', '3', '4', '5', '6', '7'] }))).toBe('options');
+    expect(invalidField(args({ options: ['Chiefs', 'Bills', ' '] }))).toBe('options');
+    expect(invalidField(args({ options: ['Chiefs', 'Bills', ' chiefs'] }))).toBe('options');
+    expect(invalidField(args({ options: 'Chiefs' as unknown as string[] }))).toBe('options');
+    expect(invalidField(args({ options: null }))).toBeNull();
+  });
+
+  it('caps a bet at two people only, and never a pool', () => {
+    expect(invalidField(args({ maxParticipants: 2 }))).toBeNull();
+    expect(invalidField(args({ maxParticipants: 3 }))).toBe('maxParticipants');
+    expect(invalidField(args({ maxParticipants: 2, options: ['Chiefs', 'Bills', 'Eagles'] }))).toBe('maxParticipants');
+  });
+
   it('needs a deadline of whole minutes, at least one and at most a year out', () => {
     expect(invalidField(args({ deadlineMinutes: 0 }))).toBe('deadlineMinutes');
     expect(invalidField(args({ deadlineMinutes: 1.5 }))).toBe('deadlineMinutes');
@@ -100,6 +118,31 @@ describe('planCreateBet', () => {
         relatedBetId: BET_ID,
       }),
     ]);
+  });
+
+  it('leaves a two-sided bet without pool counts or a cap', () => {
+    expect(bet?.set).not.toHaveProperty('sideCCount');
+    expect(bet?.set).not.toHaveProperty('maxParticipants');
+  });
+
+  it('writes a pool\'s options and one count each, with the creator on their pick', () => {
+    const pool = planCreateBet({
+      args: args({ options: [' Chiefs ', 'Bills', 'Eagles'], side: 'C', sideAName: 'ignored', sideBName: 'ignored' }),
+      userId: 'u-1',
+      creatorName: 'Pat',
+      now: NOW,
+    });
+    const set = pool.stateUpdates[0].set;
+    expect(set.odds).toEqual({ sideAName: 'Chiefs', sideBName: 'Bills', options: ['Chiefs', 'Bills', 'Eagles'] });
+    expect(set).toMatchObject({ sideACount: 0, sideBCount: 0, sideCCount: 1 });
+    expect(set).not.toHaveProperty('sideDCount');
+    expect(pool.stateUpdates[1].set.side).toBe('C');
+    expect(pool.entries[0].notes).toBe('Chiefs win - You bet on Eagles');
+  });
+
+  it('records the cap of a head-to-head bet', () => {
+    const duel = planCreateBet({ args: args({ maxParticipants: 2, side: 'B' }), userId: 'u-1', creatorName: 'Pat', now: NOW });
+    expect(duel.stateUpdates[0].set).toMatchObject({ maxParticipants: 2, sideACount: 0, sideBCount: 1 });
   });
 
   it('records the event only when there is one', () => {

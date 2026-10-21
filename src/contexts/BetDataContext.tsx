@@ -15,6 +15,7 @@ import { Bet, BetInvitation, BetInvitationStatus, SquaresInvitation } from '../t
 import { NotificationService } from '../services/notificationService';
 import { joinBet } from '../services/joinBetService';
 import { joinMessage } from '../services/joinBetLogic';
+import { isBetOption, optionCounts } from '../../amplify/shared/betOptions';
 import { showAlert } from '../components/ui/CustomAlert';
 
 const client = generateClient<Schema>();
@@ -143,8 +144,8 @@ const transformAmplifyBet = (bet: any): Bet | null => {
     // Without this the field round-trips to the database and is dropped on read,
     // so nothing downstream can tell which event a bet belongs to.
     eventId: bet.eventId || undefined,
-    sideACount: bet.sideACount || 0,
-    sideBCount: bet.sideBCount || 0,
+    ...optionCounts(bet),
+    maxParticipants: bet.maxParticipants || undefined,
     participantUserIds: bet.participantUserIds || [],
     createdAt: bet.createdAt || new Date().toISOString(),
     updatedAt: bet.updatedAt || new Date().toISOString(),
@@ -929,7 +930,7 @@ export const BetDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
       });
 
     try {
-      if (selectedSide !== 'A' && selectedSide !== 'B') throw new Error(`Invalid side ${selectedSide}`);
+      if (!isBetOption(invitation.bet.odds, selectedSide)) throw new Error(`Invalid side ${selectedSide}`);
 
       // Join first, through the server (joinBetService): it checks the bet is open, the
       // deadline, the invitation and the balance, and writes the participant, the stake

@@ -23,6 +23,15 @@ import { colors, spacing, textStyles, typography, shadows } from '../styles';
 import { useAuth } from '../contexts/AuthContext';
 import { formatCurrency, formatCategory } from '../utils/formatting';
 import { TransactionService } from '../services/transactionService';
+import {
+  betOptions,
+  optionCount,
+  optionCounts,
+  optionName,
+  parseOdds,
+  participantCount,
+  type BetOddsShape,
+} from '../../amplify/shared/betOptions';
 
 const client = generateClient<Schema>();
 
@@ -38,12 +47,16 @@ interface BetData {
   creatorDisplayName: string;
   totalPot: number;
   betAmount?: number;
-  odds: { sideAName: string; sideBName: string };
+  odds: BetOddsShape;
   deadline: string;
   winningSide?: string;
   resolutionReason?: string;
   sideACount: number;
   sideBCount: number;
+  sideCCount: number;
+  sideDCount: number;
+  sideECount: number;
+  sideFCount: number;
   participantUserIds: string[];
   createdAt: string;
   updatedAt: string;
@@ -116,15 +129,11 @@ export const BetDetailsScreen: React.FC<Props> = ({ navigation, route }) => {
         creatorDisplayName,
         totalPot: raw.totalPot,
         betAmount: raw.betAmount || undefined,
-        odds: (raw.odds as { sideAName: string; sideBName: string }) || {
-          sideAName: 'Side A',
-          sideBName: 'Side B',
-        },
+        odds: parseOdds(raw.odds),
         deadline: raw.deadline,
         winningSide: raw.winningSide || undefined,
         resolutionReason: raw.resolutionReason || undefined,
-        sideACount: raw.sideACount || 0,
-        sideBCount: raw.sideBCount || 0,
+        ...optionCounts(raw),
         participantUserIds: (raw.participantUserIds?.filter(Boolean) as string[]) || [],
         createdAt: raw.createdAt || '',
         updatedAt: raw.updatedAt || '',
@@ -248,11 +257,10 @@ export const BetDetailsScreen: React.FC<Props> = ({ navigation, route }) => {
     );
   }
 
-  const sideAName = bet.odds?.sideAName || 'Side A';
-  const sideBName = bet.odds?.sideBName || 'Side B';
+  const options = betOptions(bet.odds);
   const isCreator = user?.userId === bet.creatorId;
   const userResult = getUserResult();
-  const totalParticipants = (bet.sideACount || 0) + (bet.sideBCount || 0);
+  const totalParticipants = participantCount(bet);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -350,67 +358,48 @@ export const BetDetailsScreen: React.FC<Props> = ({ navigation, route }) => {
 
         {/* Sides Breakdown */}
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Sides</Text>
+          <Text style={styles.cardTitle}>{options.length > 2 ? 'Options' : 'Sides'}</Text>
 
-          <View style={[
-            styles.sideRow,
-            bet.winningSide === 'A' && styles.winningSideRow,
-            participant?.side === 'A' && !bet.winningSide && styles.yourSideRow,
-          ]}>
-            <View style={styles.sideInfo}>
-              <View style={styles.sideLabelRow}>
-                <Text style={styles.sideLabel}>{sideAName}</Text>
-                {participant?.side === 'A' && (
-                  <View style={styles.yourSideBadge}>
-                    <Text style={styles.yourSideBadgeText}>YOUR SIDE</Text>
+          {options.map((option, index) => {
+            const count = optionCount(bet, option.key);
+            return (
+              <React.Fragment key={option.key}>
+                {index > 0 && (
+                  <View style={styles.vsDivider}>
+                    <View style={styles.vsDividerLine} />
+                    {options.length === 2 && <Text style={styles.vsText}>VS</Text>}
+                    <View style={styles.vsDividerLine} />
                   </View>
                 )}
-                {bet.winningSide === 'A' && (
-                  <View style={styles.winnerBadge}>
-                    <Ionicons name="trophy" size={10} color={colors.success} />
-                    <Text style={styles.winnerBadgeText}>WINNER</Text>
+                <View style={[
+                  styles.sideRow,
+                  bet.winningSide === option.key && styles.winningSideRow,
+                  participant?.side === option.key && !bet.winningSide && styles.yourSideRow,
+                ]}>
+                  <View style={styles.sideInfo}>
+                    <View style={styles.sideLabelRow}>
+                      <Text style={styles.sideLabel}>{option.name}</Text>
+                      {participant?.side === option.key && (
+                        <View style={styles.yourSideBadge}>
+                          <Text style={styles.yourSideBadgeText}>{options.length > 2 ? 'YOUR PICK' : 'YOUR SIDE'}</Text>
+                        </View>
+                      )}
+                      {bet.winningSide === option.key && (
+                        <View style={styles.winnerBadge}>
+                          <Ionicons name="trophy" size={10} color={colors.success} />
+                          <Text style={styles.winnerBadgeText}>WINNER</Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text style={styles.sideCount}>
+                      {count} participant{count !== 1 ? 's' : ''}
+                    </Text>
                   </View>
-                )}
-              </View>
-              <Text style={styles.sideCount}>
-                {bet.sideACount || 0} participant{bet.sideACount !== 1 ? 's' : ''}
-              </Text>
-            </View>
-            <Text style={styles.sideLetter}>A</Text>
-          </View>
-
-          <View style={styles.vsDivider}>
-            <View style={styles.vsDividerLine} />
-            <Text style={styles.vsText}>VS</Text>
-            <View style={styles.vsDividerLine} />
-          </View>
-
-          <View style={[
-            styles.sideRow,
-            bet.winningSide === 'B' && styles.winningSideRow,
-            participant?.side === 'B' && !bet.winningSide && styles.yourSideRow,
-          ]}>
-            <View style={styles.sideInfo}>
-              <View style={styles.sideLabelRow}>
-                <Text style={styles.sideLabel}>{sideBName}</Text>
-                {participant?.side === 'B' && (
-                  <View style={styles.yourSideBadge}>
-                    <Text style={styles.yourSideBadgeText}>YOUR SIDE</Text>
-                  </View>
-                )}
-                {bet.winningSide === 'B' && (
-                  <View style={styles.winnerBadge}>
-                    <Ionicons name="trophy" size={10} color={colors.success} />
-                    <Text style={styles.winnerBadgeText}>WINNER</Text>
-                  </View>
-                )}
-              </View>
-              <Text style={styles.sideCount}>
-                {bet.sideBCount || 0} participant{bet.sideBCount !== 1 ? 's' : ''}
-              </Text>
-            </View>
-            <Text style={styles.sideLetter}>B</Text>
-          </View>
+                  <Text style={styles.sideLetter}>{option.key}</Text>
+                </View>
+              </React.Fragment>
+            );
+          })}
 
           {!!bet.resolutionReason && (
             <>
@@ -431,7 +420,7 @@ export const BetDetailsScreen: React.FC<Props> = ({ navigation, route }) => {
               <View style={styles.infoItem}>
                 <Text style={styles.infoLabel}>Your Side</Text>
                 <Text style={styles.infoValue}>
-                  {participant.side === 'A' ? sideAName : sideBName}{' '}
+                  {optionName(bet.odds, participant.side)}{' '}
                   <Text style={styles.sideLetterInline}>({participant.side})</Text>
                 </Text>
               </View>
@@ -511,7 +500,7 @@ export const BetDetailsScreen: React.FC<Props> = ({ navigation, route }) => {
           {bet.winningSide && (
             <IdRow
               label="Winning Side"
-              value={`${bet.winningSide} (${bet.winningSide === 'A' ? sideAName : sideBName})`}
+              value={`${bet.winningSide} (${optionName(bet.odds, bet.winningSide)})`}
               mono={false}
             />
           )}

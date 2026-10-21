@@ -1,0 +1,192 @@
+{
+  "projectId": "3b8edbac-6f51-4707-bced-1a76f7123c12",
+  "shape": "package",
+  "pkg": "sidebet-ui",
+  "globalName": "SideBet",
+  "buildCmd": "node .design-sync/lib/build.mjs",
+  "entry": "./.design-sync/lib/dist/index.js",
+  "srcDir": "../../src",
+  "componentSrcMap": {
+    "View": null,
+    "Text": null,
+    "ScrollView": null,
+    "FlatList": null,
+    "Image": null,
+    "TextInput": null,
+    "Pressable": null,
+    "TouchableOpacity": null,
+    "Switch": null,
+    "ActivityIndicator": null,
+    "StyleSheet": null,
+    "Platform": null,
+    "SafeAreaProvider": null,
+    "SafeAreaView": null,
+    "Ionicons": null,
+    "MaterialIcons": null,
+    "MaterialCommunityIcons": null,
+    "CustomAlertController": null,
+    "SideBetProvider": null
+  },
+  "cssEntry": "dist/tokens.css",
+  "provider": {
+    "component": "SideBetProvider"
+  },
+  "libOverrides": {
+    "dts.mjs": "declare in-repo domain types (Bet, User, LiveEvent...) referenced by props, via the prelude slot"
+  },
+  "overrides": {
+    "EventPickerModal": {
+      "cardMode": "single",
+      "viewport": "390x844"
+    },
+    "PurchaseSquaresModal": {
+      "cardMode": "single",
+      "viewport": "390x844"
+    },
+    "AddFriendModal": {
+      "cardMode": "single",
+      "viewport": "390x844"
+    },
+    "AddFundsModal": {
+      "cardMode": "single",
+      "viewport": "390x844"
+    },
+    "AddPaymentMethodModal": {
+      "cardMode": "single",
+      "viewport": "390x844"
+    },
+    "BetInviteModal": {
+      "cardMode": "single",
+      "viewport": "390x844"
+    },
+    "BetQRCodeModal": {
+      "cardMode": "single",
+      "viewport": "390x844"
+    },
+    "CustomAlert": {
+      "cardMode": "single",
+      "viewport": "390x844"
+    },
+    "EventDiscoveryModal": {
+      "cardMode": "single",
+      "viewport": "390x844"
+    },
+    "FeedbackModal": {
+      "cardMode": "single",
+      "viewport": "390x844"
+    },
+    "FileDisputeModal": {
+      "cardMode": "single",
+      "viewport": "390x844"
+    },
+    "FriendRequestsModal": {
+      "cardMode": "single",
+      "viewport": "390x844"
+    },
+    "NotificationModal": {
+      "cardMode": "single",
+      "viewport": "390x844"
+    },
+    "PolicyModal": {
+      "cardMode": "single",
+      "viewport": "390x844"
+    },
+    "QRScannerModal": {
+      "cardMode": "single",
+      "viewport": "390x844"
+    },
+    "SquaresInviteModal": {
+      "cardMode": "single",
+      "viewport": "390x844"
+    },
+    "VerifyPhoneModal": {
+      "cardMode": "single",
+      "viewport": "390x844"
+    },
+    "WithdrawFundsModal": {
+      "cardMode": "single",
+      "viewport": "390x844"
+    },
+    "Login": {
+      "cardMode": "single",
+      "viewport": "440x844"
+    },
+    "ForgotPassword": {
+      "cardMode": "single",
+      "viewport": "440x844"
+    },
+    "SignUp": {
+      "cardMode": "single",
+      "viewport": "440x1100"
+    },
+    "NotificationPreferencesPanel": {
+      "cardMode": "single",
+      "viewport": "440x1800"
+    },
+    "SquaresGrid": {
+      "cardMode": "single",
+      "viewport": "390x844"
+    },
+    "BetCard": {
+      "cardMode": "column"
+    },
+    "BetInvitationCard": {
+      "cardMode": "column"
+    },
+    "BetList": {
+      "cardMode": "column"
+    },
+    "LiveBetCard": {
+      "cardMode": "column"
+    },
+    "PendingInvitations": {
+      "cardMode": "column"
+    },
+    "PeriodResultsCard": {
+      "cardMode": "column"
+    },
+    "SquaresGameCard": {
+      "cardMode": "column"
+    },
+    "FriendSelector": {
+      "cardMode": "column"
+    },
+    "Header": {
+      "cardMode": "column"
+    },
+    "LiveGameBanner": {
+      "cardMode": "column"
+    },
+    "ModalHeader": {
+      "cardMode": "column"
+    },
+    "PhoneInput": {
+      "cardMode": "column"
+    },
+    "ProfileEditor": {
+      "cardMode": "column"
+    },
+    "TabBar": {
+      "cardMode": "column"
+    },
+    "UpdateRequired": {
+      "cardMode": "column"
+    },
+    "UserBalance": {
+      "cardMode": "column"
+    },
+    "OnboardingAddFriendsStep": {
+      "cardMode": "column"
+    },
+    "OnboardingAddFundsStep": {
+      "cardMode": "column"
+    },
+    "OnboardingProfilePictureStep": {
+      "cardMode": "column"
+    },
+    "PushSoftAsk": {
+      "cardMode": "column"
+    }
+  },
+  "readmeHeader": ".design-sync/conventions.md"
+}

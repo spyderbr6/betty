@@ -6,6 +6,7 @@
 
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
+import type { OptionKey } from '../../amplify/shared/betOptions';
 import { parseCreateBetResult, type CreateBetResult } from './createBetLogic';
 
 const client = generateClient<Schema>();
@@ -16,12 +17,16 @@ export interface CreateBetRequest {
   description: string;
   category: string;
   amount: number;
-  side: 'A' | 'B';
+  side: OptionKey;
   sideAName: string;
   sideBName: string;
   deadlineMinutes: number;
   isPrivate: boolean;
   eventId?: string;
+  /** A pool: three to six option names; the first two repeat sideAName and sideBName. */
+  options?: string[];
+  /** Head-to-head: 2. */
+  maxParticipants?: number;
 }
 
 /** Null when the call itself failed (network, server error); the caller says so. */

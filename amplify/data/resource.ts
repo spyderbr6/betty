@@ -270,6 +270,13 @@ const schema = a.schema({
       // Denormalized participant counts for efficient list queries (no participant fetch needed)
       sideACount: a.integer().default(0),
       sideBCount: a.integer().default(0),
+      // A pool's further options (shared/betOptions.ts): 'C' to 'F', named in odds.options
+      sideCCount: a.integer(),
+      sideDCount: a.integer(),
+      sideECount: a.integer(),
+      sideFCount: a.integer(),
+      // 2 on a head-to-head bet (the creator and one opponent); unset means no cap
+      maxParticipants: a.integer(),
       participantUserIds: a.string().array(), // Array of user IDs who have joined
       createdAt: a.datetime(),
       updatedAt: a.datetime(),
@@ -309,7 +316,7 @@ const schema = a.schema({
       id: a.id(),
       betId: a.id().required(),
       userId: a.id().required(),
-      side: a.string().required(), // 'A' or 'B' or custom side name
+      side: a.string().required(), // The option's key: 'A' or 'B', up to 'F' in a pool
       amount: a.float().required(),
       status: a.enum(['PENDING', 'ACCEPTED', 'DECLINED']),
       payout: a.float().default(0), // Calculated payout if they win
@@ -1105,6 +1112,10 @@ const schema = a.schema({
       deadlineMinutes: a.integer().required(),
       isPrivate: a.boolean(),
       eventId: a.id(),
+      // A pool: three to six option names (the first two repeat sideAName and sideBName)
+      options: a.string().array(),
+      // Head-to-head: 2
+      maxParticipants: a.integer(),
     })
     .returns(a.json())
     .handler(a.handler.function(money))
