@@ -1,0 +1,18 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "noEmit": false,
+    "noEmitOnError": false,
+    "skipLibCheck": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "rootDir": "../..",
+    "outDir": "dist/types",
+    "paths": { "@env": ["./env-stub.ts"], "sidebet-canvas-amplify-config": ["./dist/canvas-amplify.json"] }
+  },
+  "include": ["index.ts", "../../types/**/*.d.ts"],
+  "exclude": []
+}

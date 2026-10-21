@@ -69,3 +69,13 @@ blob-report/
 *serviceAccount*.json
 *firebase-adminsdk*.json
 sidebet-*-*.json
+
+# design-sync (claude.ai/design) - staged converter, build output, machine state
+.ds-sync/
+ds-bundle/
+.design-sync/.cache/
+.design-sync/learnings/
+.design-sync/node_modules
+.design-sync/lib/dist/
+.design-sync/lib/build.log
+.design-sync/*.log

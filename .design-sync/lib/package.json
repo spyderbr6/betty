@@ -1,0 +1,9 @@
+{
+  "name": "sidebet-ui",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Design-sync library build of the SideBet app's components (react-native-web). Built by build.mjs; dist/ is gitignored.",
+  "type": "module",
+  "module": "dist/index.js",
+  "types": "dist/types/.design-sync/lib/index.d.ts"
+}
