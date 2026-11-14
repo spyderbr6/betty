@@ -82,7 +82,7 @@ export function betSuggestions(game: GameForSuggestions | null | undefined): Bet
       : { id: 'who-wins', label: 'Who wins', title: `Who wins, ${away} or ${home}?`, format: 'sides', options: teams };
   const overUnder = (unit: string): BetSuggestion => ({
     id: 'over-under',
-    label: `Over/Under ${unit}`,
+    label: 'Over/Under',
     // Ends where the number goes: the screen puts the cursor there
     title: `Total ${unit}: over or under `,
     format: 'sides',
@@ -93,8 +93,9 @@ export function betSuggestions(game: GameForSuggestions | null | undefined): Bet
   if (FOOTBALL.includes(sport)) {
     if (inGame) {
       list.push(
-        { id: 'away-drive', label: `${away} score this drive`, title: `${away} score on this drive?`, format: 'sides', options: ['Yes', 'No'] },
-        { id: 'home-drive', label: `${home} score this drive`, title: `${home} score on this drive?`, format: 'sides', options: ['Yes', 'No'] },
+        // One chip, not one per team: the feed does not say who has the ball, and two
+        // long chips pushed Next score off the screen
+        { id: 'drive', label: 'Score this drive', title: 'Points on this drive?', format: 'sides', options: ['Yes', 'No'] },
         {
           id: 'next-score',
           label: 'Next score',
@@ -343,7 +344,8 @@ export function createButtonText(params: {
   if (params.format === 'challenge') {
     parts.push(params.opponentName ? `${params.opponentName} gets the other side` : 'One person can take the other side');
   } else {
-    parts.push(params.isPrivate ? 'Only invited people can join' : 'Friends can join');
+    // The same words as the Who can join switch, so the line fits the button
+    parts.push(params.isPrivate ? 'Invited only' : 'Friends');
   }
   if (params.inviteCount > 0 && params.format !== 'challenge') {
     parts.push(

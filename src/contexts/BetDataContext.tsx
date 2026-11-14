@@ -15,6 +15,7 @@ import { Bet, BetInvitation, BetInvitationStatus, SquaresInvitation } from '../t
 import { NotificationService } from '../services/notificationService';
 import { joinBet } from '../services/joinBetService';
 import { joinMessage } from '../services/joinBetLogic';
+import { participationToFetch } from '../services/participationLogic';
 import { isBetOption, optionCounts } from '../../amplify/shared/betOptions';
 import { showAlert } from '../components/ui/CustomAlert';
 
@@ -847,6 +848,43 @@ export const BetDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
       })
       .sort((a: Bet, b: Bet) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [allBets, user?.userId]);
+
+  // The viewer's pick on bets they joined or created after the load: the subscription
+  // brings the bet but not the participant row, so its card could not mark the option
+  // picked. Each missing row is read once, by its fixed id (services/participationLogic).
+  const participationRequestedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    participationRequestedRef.current = new Set();
+  }, [user?.userId]);
+  useEffect(() => {
+    if (!user?.userId) return;
+    const wanted = participationToFetch({
+      bets: myBets,
+      userId: user.userId,
+      known: myParticipation,
+      requested: participationRequestedRef.current,
+    });
+    if (wanted.length === 0) return;
+    for (const { betId } of wanted) participationRequestedRef.current.add(betId);
+    Promise.all(
+      wanted.map(({ participantId }) =>
+        client.models.Participant.get({ id: participantId })
+          .then(({ data }) => data)
+          .catch((error) => {
+            console.error('[BetData] Error reading participation:', error);
+            return null;
+          }),
+      ),
+    ).then((rows) => {
+      const found = rows.filter((row) => row?.betId && row?.side);
+      if (found.length === 0) return;
+      setMyParticipation((prev) => {
+        const next = new Map(prev);
+        for (const row of found) next.set(row!.betId, { side: row!.side, amount: row!.amount || 0 });
+        return next;
+      });
+    });
+  }, [myBets, myParticipation, user?.userId]);
 
   const joinableBets = useMemo((): Bet[] => {
     if (!user?.userId) return [];

@@ -12,14 +12,15 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { LayoutChangeEvent, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { LayoutChangeEvent, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
-import { commonStyles, spacing } from '../styles';
-import { Header } from '../components/ui/Header';
+import { colors, commonStyles, spacing, textStyles, typography } from '../styles';
+import { LiveGameBanner } from '../components/ui/LiveGameBanner';
+import { EventDiscoveryModal } from '../components/ui/EventDiscoveryModal';
 import { showAlert } from '../components/ui/CustomAlert';
 import { AddFundsModal } from '../components/ui/AddFundsModal';
 import { BetQRCodeModal } from '../components/ui/BetQRCodeModal';
@@ -34,6 +35,7 @@ import { createBetProblem, newBetId } from '../services/createBetLogic';
 import { endBetEarly } from '../services/betStatusService';
 import { endEarlyProblem } from '../services/betStatusLogic';
 import { friendIdsAtEvent, loadFriends } from '../services/createBetFriends';
+import { getProfilePictureUrl } from '../services/imageUploadService';
 import {
   betDescription,
   betSuggestions,
@@ -60,7 +62,9 @@ import { FormatTabs } from '../components/createBet/FormatTabs';
 import { BetQuestion } from '../components/createBet/BetQuestion';
 import { SidePicker, type SidePreset } from '../components/createBet/SidePicker';
 import { PoolOptions } from '../components/createBet/PoolOptions';
-import { ChallengeCard } from '../components/createBet/ChallengeCard';
+import { ChallengeCard, ChallengeOpponents } from '../components/createBet/ChallengeCard';
+import { CreateHeader } from '../components/createBet/CreateHeader';
+import { createStyles } from '../components/createBet/styles';
 import { StakeAndClose } from '../components/createBet/StakeAndClose';
 import { FriendRow } from '../components/createBet/FriendRow';
 import { FriendPickerModal } from '../components/createBet/FriendPickerModal';
@@ -89,7 +93,15 @@ export const CreateBetScreen: React.FC = () => {
   const { user } = useAuth();
   const { balance, isLoading: balanceLoading, profile } = useProfile();
   const { myBets } = useBetData();
-  const { checkedInEvent, handleCheckInPress } = useEventCheckIn();
+  const {
+    checkedInEvent,
+    handleCheckInPress,
+    handleCheckOut,
+    nearbyEventsCount,
+    showEventDiscovery,
+    setShowEventDiscovery,
+    handleCheckInSuccess,
+  } = useEventCheckIn();
   const navigation = useNavigation<any>(); // eslint-disable-line @typescript-eslint/no-explicit-any
   const scrollRef = useRef<ScrollView | null>(null);
   const titleRef = useRef<TextInput | null>(null);
@@ -153,6 +165,21 @@ export const CreateBetScreen: React.FC = () => {
     const timer = setInterval(() => setNow(new Date()), 30_000);
     return () => clearInterval(timer);
   }, []);
+
+  // Your own picture, for the "You" side of a challenge: the record holds the S3 key
+  const myPictureKey = profile?.profilePictureUrl;
+  const [myPictureUrl, setMyPictureUrl] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    let cancelled = false;
+    if (!myPictureKey) {
+      setMyPictureUrl(undefined);
+      return;
+    }
+    getProfilePictureUrl(myPictureKey).then((url) => !cancelled && setMyPictureUrl(url || undefined));
+    return () => {
+      cancelled = true;
+    };
+  }, [myPictureKey]);
 
   // Start at the last stake used on this device
   useEffect(() => {
@@ -222,7 +249,23 @@ export const CreateBetScreen: React.FC = () => {
   // Form actions
   // ---------------------------------------------------------------------------
 
+  const activeSuggestionId = suggestion && suggestion.title === title ? suggestion.id : null;
+
   const pickSuggestion = (picked: BetSuggestion) => {
+    // A second tap on the selected suggestion clears what it filled in
+    if (picked.id === activeSuggestionId) {
+      setSuggestion(null);
+      setTitle('');
+      setPresetId(defaultPreset.id);
+      setSideNames(defaultPreset.options ?? ['Yes', 'No']);
+      if (picked.format === 'pool') {
+        setPoolNames(defaultPoolOptions());
+        setPoolEditing(true);
+        setFormat('sides');
+      }
+      setPickedIndex(format === 'challenge' ? 0 : null);
+      return;
+    }
     setSuggestion(picked);
     setTitle(picked.title);
     if (picked.format === 'pool') {
@@ -309,7 +352,7 @@ export const CreateBetScreen: React.FC = () => {
     format,
     stake,
     pickName,
-    opponentName: opponent ? friendName(opponent) : null,
+    opponentName: opponent ? friendName(opponent).split(' ')[0] : null,
     isPrivate: effectivePrivate,
     inviteCount: invitees.length,
     atGameCount: atGameInvited,
@@ -415,7 +458,7 @@ export const CreateBetScreen: React.FC = () => {
         invitedNames: invitees
           .map((id) => friends.find((friend) => friend.id === id))
           .filter((friend): friend is User => !!friend)
-          .map(friendName),
+          .map((friend) => friendName(friend).split(' ')[0]),
       });
       setClosed(false);
       scrollRef.current?.scrollTo({ y: 0, animated: true });
@@ -476,18 +519,21 @@ export const CreateBetScreen: React.FC = () => {
 
   const onBarLayout = (layoutEvent: LayoutChangeEvent) => setBarHeight(layoutEvent.nativeEvent.layout.height);
   const showBar = !sent && !showSquares;
+  const friendsHere = orderedFriends.filter((friend) => atGame.has(friend.id));
+
+  if (showSquares) {
+    // Squares has its own title bar (with the back arrow), scroll and create button
+    return (
+      <SafeAreaView style={styles.container} edges={['top']} testID="screen-create-bet">
+        <SquaresSetup checkedInGame={event} friends={orderedFriends} onBack={() => setShowSquares(false)} />
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container} edges={['top']} testID="screen-create-bet">
-      <Header showBalance={true} variant="default" showEventBanner={!event} />
-      {event && <GameHeader event={event} onChangeGame={handleCheckInPress} />}
+      <CreateHeader title="New bet" />
 
-      {showSquares ? (
-        // Squares has its own scroll and create button
-        <View style={styles.content}>
-          <SquaresSetup checkedInGame={event} friends={orderedFriends} onBack={() => setShowSquares(false)} />
-        </View>
-      ) : (
       <ScrollView
         ref={scrollRef}
         style={styles.content}
@@ -495,29 +541,53 @@ export const CreateBetScreen: React.FC = () => {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {sent ? (
-          <BetSentPanel
-            invitedText={sent.invitedNames.length > 0 ? `${joinNames(sent.invitedNames)} ${sent.invitedNames.length === 1 ? 'was' : 'were'} invited` : null}
-            summary={`You: ${sent.pickName} · $${sent.stake.toFixed(2)} · Closes ${sent.closeAt}`}
-            againLabel={event ? 'Another bet on this game' : 'Another bet'}
-            againDetail={`Keeps ${formatStake(sent.stake)} · ${sent.closeLabel}${sent.invitedNames.length > 0 ? ` · same ${sent.invitedNames.length === 1 ? 'friend' : `${sent.invitedNames.length} friends`}` : ''}`}
-            onAgain={anotherBet}
-            onShare={() => setShowShare(true)}
-            onView={() => viewBet(sent.betId)}
-            onCloseBetting={closeBetting}
-            closing={closing}
-            closed={closed}
-            openOnGame={openOnGame > 0 ? `${openOnGame} open bet${openOnGame === 1 ? '' : 's'} on this game` : null}
-            onOpenOnGame={() => navigation.navigate('Bets')}
+        {event ? (
+          <GameHeader event={event} onChangeGame={handleCheckInPress} friendsHere={friendsHere} />
+        ) : (
+          // Not checked in: checking in is one tap away, in the game's place
+          <LiveGameBanner
+            checkedInEvent={null}
+            nearbyEventsCount={nearbyEventsCount}
+            onCheckInPress={handleCheckInPress}
+            onCheckOutPress={handleCheckOut}
           />
+        )}
+
+        {openOnGame > 0 && (
+          <View style={createStyles.block}>
+            <TouchableOpacity
+              testID="create-open-on-game"
+              style={styles.notice}
+              onPress={() => navigation.navigate('Bets')}
+              accessibilityRole="button"
+            >
+              <Text style={styles.noticeText}>
+                <Text style={styles.noticeStrong}>
+                  {openOnGame} open bet{openOnGame === 1 ? '' : 's'}
+                </Text>{' '}
+                on this game
+              </Text>
+              <Text style={createStyles.link}>View ›</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {format === 'challenge' ? (
+          <FormatTabs value={format} onChange={changeFormat} onSquares={() => setShowSquares(true)} />
         ) : (
           <>
-            <SuggestionChips
-              suggestions={suggestions}
-              activeId={suggestion && suggestion.title === title ? suggestion.id : null}
-              onPick={pickSuggestion}
-            />
+            <SuggestionChips suggestions={suggestions} activeId={activeSuggestionId} onPick={pickSuggestion} />
             <FormatTabs value={format} onChange={changeFormat} onSquares={() => setShowSquares(true)} />
+          </>
+        )}
+        {format === 'challenge' && (
+          <ChallengeOpponents
+            friends={orderedFriends}
+            atGame={atGame}
+            opponentId={opponentId}
+            onPickOpponent={(id) => setOpponentId((prev) => (prev === id ? null : id))}
+          />
+        )}
             <BetQuestion
               ref={titleRef}
               title={title}
@@ -561,9 +631,7 @@ export const CreateBetScreen: React.FC = () => {
             {format === 'challenge' && (
               <ChallengeCard
                 friends={orderedFriends}
-                atGame={atGame}
                 opponentId={opponentId}
-                onPickOpponent={(id) => setOpponentId((prev) => (prev === id ? null : id))}
                 options={sideNames}
                 pickedIndex={pickedIndex}
                 onPick={setPickedIndex}
@@ -572,7 +640,7 @@ export const CreateBetScreen: React.FC = () => {
                 presets={presets}
                 activePresetId={presetId}
                 onPreset={pickPreset}
-                myName={profile?.displayName || profile?.username || 'You'}
+                myPictureUrl={myPictureUrl}
               />
             )}
 
@@ -598,13 +666,9 @@ export const CreateBetScreen: React.FC = () => {
                 onAllFriends={() => setShowAllFriends(true)}
                 isPrivate={isPrivate}
                 onPrivacyChange={setIsPrivate}
-                showInvites={true}
               />
             )}
-          </>
-        )}
       </ScrollView>
-      )}
 
       {showBar && (
         <View onLayout={onBarLayout} style={styles.barHost} pointerEvents="box-none">
@@ -618,6 +682,30 @@ export const CreateBetScreen: React.FC = () => {
         </View>
       )}
 
+      {sent && (
+        <BetSentPanel
+          invitedText={sent.invitedNames.length > 0 ? `${joinNames(sent.invitedNames)} ${sent.invitedNames.length === 1 ? 'was' : 'were'} notified` : null}
+          title={sent.title}
+          pickName={sent.pickName}
+          stakeText={`$${sent.stake.toFixed(2)}`}
+          closeAt={sent.closeAt}
+          againLabel={event ? 'Another bet on this game' : 'Another bet'}
+          againDetail={`Keeps ${formatStake(sent.stake)} · ${sent.closeLabel}${sent.invitedNames.length > 0 ? ` · same ${sent.invitedNames.length === 1 ? 'friend' : `${sent.invitedNames.length} friends`}` : ''}`}
+          onAgain={anotherBet}
+          onShare={() => setShowShare(true)}
+          onView={() => viewBet(sent.betId)}
+          onCloseBetting={closeBetting}
+          closing={closing}
+          closed={closed}
+        />
+      )}
+
+      <EventDiscoveryModal
+        visible={showEventDiscovery}
+        onClose={() => setShowEventDiscovery(false)}
+        currentUserId={user?.userId || ''}
+        onCheckInSuccess={handleCheckInSuccess}
+      />
       <FriendPickerModal
         visible={showAllFriends}
         onClose={() => setShowAllFriends(false)}
@@ -644,5 +732,23 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
+  },
+  notice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderColor: colors.success,
+    backgroundColor: colors.successTint,
+    borderRadius: spacing.radius.xl,
+    paddingHorizontal: spacing.padding.sm,
+    paddingVertical: spacing.padding.sm,
+  },
+  noticeText: {
+    ...textStyles.bodySmall,
+    color: colors.textPrimary,
+  },
+  noticeStrong: {
+    fontWeight: typography.fontWeight.bold,
   },
 });

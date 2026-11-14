@@ -1,7 +1,8 @@
 /**
- * Stake and closing time, side by side. The stake steps through STAKE_STEPS (tap the
- * amount to type one) and turns red above the balance. Closing time opens a row of
- * durations; "Pick a date" adds a day row and a time stepper.
+ * Stake and closing time, side by side, each a −/+ stepper as the design draws them. The
+ * stake steps through STAKE_STEPS (tap the amount to type one) and turns red above the
+ * balance. Closing time steps through the durations; tap it for every choice, including
+ * a picked date (a day row and a half-hour stepper).
  */
 
 import React, { useState } from 'react';
@@ -33,6 +34,33 @@ interface StakeAndCloseProps {
 const DAYS_AHEAD = 14;
 const TIME_STEP_MINUTES = 30;
 
+interface StepperProps {
+  label: string;
+  onDown: () => void;
+  onUp: () => void;
+  downTestID: string;
+  upTestID: string;
+  downLabel: string;
+  upLabel: string;
+  children: React.ReactNode;
+  error?: boolean;
+  style?: object;
+}
+
+const Stepper: React.FC<StepperProps> = ({ label, onDown, onUp, downTestID, upTestID, downLabel, upLabel, children, error, style }) => (
+  <View style={[createStyles.card, styles.box, error && styles.boxError, style]}>
+    <Text style={createStyles.label}>{label}</Text>
+    <View style={styles.stepRow}>
+      <TouchableOpacity testID={downTestID} style={createStyles.stepButton} onPress={onDown} accessibilityRole="button" accessibilityLabel={downLabel}>
+        <Text style={createStyles.stepText}>−</Text>
+      </TouchableOpacity>
+      <View style={styles.value}>{children}</View>
+      <TouchableOpacity testID={upTestID} style={createStyles.stepButton} onPress={onUp} accessibilityRole="button" accessibilityLabel={upLabel}>
+        <Text style={createStyles.stepText}>+</Text>
+      </TouchableOpacity>
+    </View>
+  </View>
+);
 
 export const StakeAndClose: React.FC<StakeAndCloseProps> = ({
   stake,
@@ -50,6 +78,13 @@ export const StakeAndClose: React.FC<StakeAndCloseProps> = ({
   const [typed, setTyped] = useState('');
   const [closeOpen, setCloseOpen] = useState(false);
   const closeLabel = closeOptions.find((option) => option.id === closeId)?.label ?? '';
+  // The stepper moves through the durations; a picked date is reached by tapping
+  const durations = closeOptions.filter((option) => option.id !== 'date');
+  const stepClose = (direction: 1 | -1) => {
+    const at = durations.findIndex((option) => option.id === closeId);
+    const next = at === -1 ? (direction === 1 ? durations.length - 1 : 0) : Math.max(0, Math.min(durations.length - 1, at + direction));
+    onCloseChange(durations[next].id);
+  };
 
   const finishTyping = () => {
     setTyping(false);
@@ -76,87 +111,94 @@ export const StakeAndClose: React.FC<StakeAndCloseProps> = ({
   return (
     <View style={createStyles.block}>
       <View style={styles.row}>
-        <View style={[styles.box, overBalance && styles.boxError]}>
-          <Text style={createStyles.label}>Stake</Text>
-          <View style={styles.stepper}>
-            <TouchableOpacity
-              testID="create-stake-down"
-              style={styles.stepButton}
-              onPress={() => onStakeChange(stepStake(stake, -1))}
-              accessibilityRole="button"
-              accessibilityLabel="Lower the stake"
-            >
-              <Text style={styles.stepText}>−</Text>
-            </TouchableOpacity>
-            {typing ? (
-              <TextInput
-                testID="create-amount"
-                style={[styles.amount, styles.amountInput]}
-                value={typed}
-                onChangeText={(text) => setTyped(text.replace(/[^0-9.]/g, ''))}
-                onBlur={finishTyping}
-                onSubmitEditing={finishTyping}
-                keyboardType="decimal-pad"
-                autoFocus
-                selectTextOnFocus
-                accessibilityLabel="Stake in dollars"
-              />
-            ) : (
-              <TouchableOpacity
-                testID="create-stake-value"
-                onPress={() => {
-                  setTyped(String(stake));
-                  setTyping(true);
-                }}
-                accessibilityRole="button"
-                accessibilityLabel={`Stake ${formatStake(stake)}, tap to type an amount`}
-              >
-                <Text style={[styles.amount, overBalance && styles.errorText]}>{formatStake(stake)}</Text>
-              </TouchableOpacity>
-            )}
-            <TouchableOpacity
-              testID="create-stake-up"
-              style={styles.stepButton}
-              onPress={() => onStakeChange(stepStake(stake, 1))}
-              accessibilityRole="button"
-              accessibilityLabel="Raise the stake"
-            >
-              <Text style={styles.stepText}>+</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        <TouchableOpacity
-          testID="create-close-time"
-          style={[styles.box, styles.closeBox, closeOpen && styles.boxOpen]}
-          onPress={() => setCloseOpen((open) => !open)}
-          accessibilityRole="button"
-          accessibilityLabel={`Closes in ${closeLabel}${closeAt ? `, at ${closeAt}` : ''}. Change`}
+        <Stepper
+          label="Stake"
+          onDown={() => onStakeChange(stepStake(stake, -1))}
+          onUp={() => onStakeChange(stepStake(stake, 1))}
+          downTestID="create-stake-down"
+          upTestID="create-stake-up"
+          downLabel="Lower the stake"
+          upLabel="Raise the stake"
+          error={overBalance}
+          style={styles.stakeBox}
         >
-          <Text style={createStyles.label}>Closes</Text>
-          <Text style={styles.closeLabel}>{closeLabel}</Text>
-          <Text style={[styles.closeAt, !closeAt && styles.warningText]}>{closeAt ? `at ${closeAt}` : 'Pick a later time'}</Text>
-        </TouchableOpacity>
+          {typing ? (
+            <TextInput
+              testID="create-amount"
+              style={[styles.amount, styles.amountInput]}
+              value={typed}
+              onChangeText={(text) => setTyped(text.replace(/[^0-9.]/g, ''))}
+              onBlur={finishTyping}
+              onSubmitEditing={finishTyping}
+              keyboardType="decimal-pad"
+              autoFocus
+              selectTextOnFocus
+              accessibilityLabel="Stake in dollars"
+            />
+          ) : (
+            <TouchableOpacity
+              testID="create-stake-value"
+              onPress={() => {
+                setTyped(String(stake));
+                setTyping(true);
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={`Stake ${formatStake(stake)}, tap to type an amount`}
+              hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+            >
+              <Text style={[styles.amount, overBalance && styles.errorText]}>{formatStake(stake)}</Text>
+            </TouchableOpacity>
+          )}
+        </Stepper>
+
+        <Stepper
+          label="Closes"
+          onDown={() => stepClose(-1)}
+          onUp={() => stepClose(1)}
+          downTestID="create-close-down"
+          upTestID="create-close-up"
+          downLabel="Close sooner"
+          upLabel="Close later"
+          style={styles.closeBox}
+        >
+          <TouchableOpacity
+            testID="create-close-time"
+            onPress={() => setCloseOpen((open) => !open)}
+            accessibilityRole="button"
+            accessibilityLabel={`Closes in ${closeLabel}${closeAt ? `, at ${closeAt}` : ''}. Show every choice`}
+            style={styles.closeValue}
+          >
+            <Text style={styles.amount} numberOfLines={1}>
+              {closeLabel}
+            </Text>
+            <Text style={[styles.closeAt, !closeAt && styles.warningText]} numberOfLines={1}>
+              {closeAt ? `at ${closeAt}` : 'Pick a later time'}
+            </Text>
+          </TouchableOpacity>
+        </Stepper>
       </View>
 
       {closeOpen && (
         <View style={styles.closeOptions}>
           <View style={createStyles.chipRow}>
-            {closeOptions.map((option) => (
-              <TouchableOpacity
-                key={option.id}
-                testID={`create-close-${option.id}`}
-                style={[createStyles.chip, option.id === closeId && createStyles.chipSelected]}
-                onPress={() => {
-                  onCloseChange(option.id);
-                  if (option.id !== 'date') setCloseOpen(false);
-                }}
-                accessibilityRole="button"
-                accessibilityState={{ selected: option.id === closeId }}
-              >
-                <Text style={createStyles.chipText}>{option.label}</Text>
-              </TouchableOpacity>
-            ))}
+            {closeOptions.map((option) => {
+              const active = option.id === closeId;
+              return (
+                <TouchableOpacity
+                  key={option.id}
+                  testID={`create-close-${option.id}`}
+                  style={[createStyles.chip, active && createStyles.chipSelected]}
+                  onPress={() => {
+                    onCloseChange(option.id);
+                    if (option.id !== 'date') setCloseOpen(false);
+                  }}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: active }}
+                >
+                  <Text style={[createStyles.chipText, active && createStyles.chipTextSelected]}>{option.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
           {closeId === 'date' && (
             <View>
@@ -172,7 +214,7 @@ export const StakeAndClose: React.FC<StakeAndCloseProps> = ({
                       accessibilityRole="button"
                       accessibilityState={{ selected: active }}
                     >
-                      <Text style={createStyles.chipText}>
+                      <Text style={[createStyles.chipText, active && createStyles.chipTextSelected]}>
                         {i === 0
                           ? 'Today'
                           : i === 1
@@ -186,31 +228,26 @@ export const StakeAndClose: React.FC<StakeAndCloseProps> = ({
               <View style={styles.timeRow}>
                 <TouchableOpacity
                   testID="create-close-earlier"
-                  style={styles.stepButton}
+                  style={createStyles.stepButton}
                   onPress={() => stepTime(-1)}
                   accessibilityRole="button"
                   accessibilityLabel="Half an hour earlier"
                 >
-                  <Text style={styles.stepText}>−</Text>
+                  <Text style={createStyles.stepText}>−</Text>
                 </TouchableOpacity>
                 <Text style={styles.time}>
                   {(pickedDate ?? initialPickedDate(now)).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
                 </Text>
                 <TouchableOpacity
                   testID="create-close-later"
-                  style={styles.stepButton}
+                  style={createStyles.stepButton}
                   onPress={() => stepTime(1)}
                   accessibilityRole="button"
                   accessibilityLabel="Half an hour later"
                 >
-                  <Text style={styles.stepText}>+</Text>
+                  <Text style={createStyles.stepText}>+</Text>
                 </TouchableOpacity>
-                <TouchableOpacity
-                  testID="create-close-done"
-                  onPress={() => setCloseOpen(false)}
-                  accessibilityRole="button"
-                  style={styles.done}
-                >
+                <TouchableOpacity testID="create-close-done" onPress={() => setCloseOpen(false)} accessibilityRole="button" style={styles.done}>
                   <Text style={createStyles.link}>Done</Text>
                 </TouchableOpacity>
               </View>
@@ -227,68 +264,55 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
   },
   box: {
-    flex: 1,
-    backgroundColor: colors.surface,
-    borderRadius: spacing.radius.xl,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.padding.sm,
+    paddingHorizontal: spacing.sm,
+  },
+  // 5:6, as the design splits the row
+  stakeBox: {
+    flex: 5,
+  },
+  closeBox: {
+    flex: 6,
+    marginLeft: spacing.sm,
   },
   boxError: {
     borderColor: colors.error,
   },
-  boxOpen: {
-    borderColor: colors.textSecondary,
-  },
-  closeBox: {
-    marginLeft: spacing.sm,
-  },
-  stepper: {
+  stepRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: spacing.xs,
+    marginTop: spacing.sm,
   },
-  stepButton: {
-    width: spacing[9],
-    height: spacing[9],
-    borderRadius: spacing.radius.full,
-    backgroundColor: colors.surfaceLight,
+  value: {
+    flex: 1,
     alignItems: 'center',
-    justifyContent: 'center',
+    marginHorizontal: spacing.xs,
   },
-  stepText: {
-    ...textStyles.h3,
-    color: colors.textPrimary,
+  closeValue: {
+    alignItems: 'center',
   },
   amount: {
-    ...textStyles.h2,
+    ...textStyles.body,
+    fontWeight: typography.fontWeight.bold,
     color: colors.textPrimary,
-    fontFamily: typography.fontFamily.mono,
     textAlign: 'center',
   },
   amountInput: {
-    minWidth: spacing[16],
+    minWidth: spacing[12],
     textAlignVertical: 'center',
     borderBottomWidth: 1,
     borderBottomColor: colors.primary,
-    paddingVertical: 0,
-  },
-  warningText: {
-    color: colors.warning,
+    padding: 0,
   },
   errorText: {
     color: colors.error,
   },
-  closeLabel: {
-    ...textStyles.h4,
-    color: colors.textPrimary,
-    marginTop: spacing.xs,
+  warningText: {
+    color: colors.warning,
   },
   closeAt: {
     ...textStyles.caption,
     color: colors.textSecondary,
-    marginTop: spacing.xs / 2,
   },
   closeOptions: {
     marginTop: spacing.sm,
@@ -296,7 +320,6 @@ const styles = StyleSheet.create({
   timeRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: spacing.xs,
   },
   time: {
     ...textStyles.h4,

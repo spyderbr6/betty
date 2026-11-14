@@ -70,6 +70,18 @@ export const colors = {
   gradientStart: '#111827', // Dark gradient start
   gradientEnd: '#1F2937',   // Dark gradient end
   
+  // Tints: a picked option's background, an "open bets" notice
+  primaryTint: 'rgba(234, 179, 8, 0.12)',  // yellow-500 at 12%
+  successTint: 'rgba(16, 185, 129, 0.1)',  // green-500 at 10%
+
+  // Avatar fills for people without a picture (white initials pass 4.5:1 on each)
+  avatar1: '#7C3AED', // violet-600
+  avatar2: '#0E7490', // cyan-700
+  avatar3: '#B45309', // amber-700
+  avatar4: '#BE123C', // rose-700
+  avatar5: '#15803D', // green-700
+  avatar6: '#1D4ED8', // blue-700
+
   // Overlay colors
   overlay: 'rgba(0, 0, 0, 0.8)',        // Modal overlays
   overlayLight: 'rgba(0, 0, 0, 0.4)',   // Light overlays

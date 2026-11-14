@@ -122,7 +122,7 @@ test('starts on Yes / No, and the button waits for a side', async ({ page }) => 
   await tap(page, 'create-side-a');
   await expect(page.getByTestId('create-submit')).not.toHaveAttribute('aria-disabled', 'true');
   await expect(page.getByTestId('create-submit')).toContainText('Create · $5 on Yes');
-  await expect(page.getByTestId('create-submit-detail')).toContainText('Friends can join');
+  await expect(page.getByTestId('create-submit-detail')).toContainText('Friends');
 });
 
 test('asks for the question before sending anything', async ({ page }) => {
@@ -182,7 +182,7 @@ test('details, a typed stake, a closing time and Invited only all reach the serv
   await tap(page, 'create-close-30m');
   await tap(page, 'create-join-invited');
   await tap(page, 'create-side-a');
-  await expect(page.getByTestId('create-submit-detail')).toContainText('Only invited people can join');
+  await expect(page.getByTestId('create-submit-detail')).toContainText('Invited only');
   await submit(page);
 
   await expect.poll(() => sent.length, { timeout: 15_000 }).toBe(1);
@@ -429,7 +429,7 @@ test('challenging a friend invites only them, to the other side, and keeps it to
   await tap(page, 'create-format-challenge');
   await page.getByTestId('create-title').fill('Saturday golf round');
   await tap(page, `create-opponent-${OTHER_USER.id}`);
-  await expect(page.getByTestId('create-submit')).toContainText('Challenge Casey Friend · $5');
+  await expect(page.getByTestId('create-submit')).toContainText('Challenge Casey · $5');
   await submit(page);
 
   await expect.poll(() => invitations.length, { timeout: 15_000 }).toBe(1);
@@ -459,15 +459,15 @@ test('a suggestion fills the question and sides, and the bet is tagged to the ga
   const { sent } = await recordCreates(page, atTheGame());
   await openCreateTab(page);
 
-  await tap(page, 'create-suggestion-away-drive');
-  await expect(page.getByTestId('create-title')).toHaveValue('Bills score on this drive?');
+  await tap(page, 'create-suggestion-drive');
+  await expect(page.getByTestId('create-title')).toHaveValue('Points on this drive?');
   await expect(page.getByTestId('create-side-a')).toContainText('Yes');
   await tap(page, 'create-side-a');
   await submit(page);
 
   await expect.poll(() => sent.length, { timeout: 15_000 }).toBe(1);
   expect(sent[0]).toMatchObject({
-    title: 'Bills score on this drive?',
+    title: 'Points on this drive?',
     description: 'Bills @ Chiefs',
     category: 'SPORTS',
     eventId: EVENT_ID,
@@ -494,6 +494,21 @@ test('Next score switches to a pool with the scoring options filled in', async (
   });
 });
 
+test('tapping the selected suggestion again clears it, back to the teams', async ({ page }) => {
+  await signInAs(page);
+  await mockAppSync(page, baseHandlers(atTheGame()));
+  await openCreateTab(page);
+
+  await tap(page, 'create-suggestion-next-score');
+  await expect(page.getByTestId('create-option-e')).toContainText('No score');
+  await tap(page, 'create-suggestion-next-score');
+
+  await expect(page.getByTestId('create-title')).toHaveValue('');
+  await expect(page.getByTestId('create-option-a')).toBeHidden();
+  await expect(page.getByTestId('create-side-a')).toContainText('Bills');
+  await expect(page.getByTestId('create-side-b')).toContainText('Chiefs');
+});
+
 test('friends at the same game start invited, and the sent panel names them', async ({ page }) => {
   await signInAs(page);
   const { sent, invitations } = await recordCreates(page, atTheGame());
@@ -506,7 +521,44 @@ test('friends at the same game start invited, and the sent panel names them', as
   await expect(page.getByTestId('create-submit-detail')).toContainText('invites 1 at the game');
   await submit(page);
 
-  await expect(page.getByTestId('create-sent')).toContainText('Casey Friend was invited', { timeout: 15_000 });
+  await expect(page.getByTestId('create-sent')).toContainText('Casey was notified', { timeout: 15_000 });
   expect(invitations).toHaveLength(1);
   expect(invitations[0]).toMatchObject({ betId: sent[0].betId, toUserId: OTHER_USER.id, invitedSide: '' });
+});
+
+test('friends and you show a profile picture where there is one, and an initial otherwise', async ({ page }) => {
+  const pictured = { ...OTHER_USER, id: 'friend-pic', displayName: 'Morgan Lee', profilePictureUrl: 'profile-pictures/friend-pic/me.png' };
+  const plain = { ...OTHER_USER, id: 'friend-plain', displayName: 'Sam Park', profilePictureUrl: null };
+  const requested: string[] = [];
+  await page.route(
+    (url) => url.hostname.includes('s3') && url.hostname.includes('amazonaws.com'),
+    (route) => {
+      requested.push(new URL(route.request().url()).pathname);
+      return route.fulfill({ status: 200, contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"/>' });
+    },
+  );
+  await signInAs(page);
+  await mockAppSync(
+    page,
+    baseHandlers({
+      getUser: (variables) =>
+        variables.id === pictured.id
+          ? pictured
+          : variables.id === plain.id
+            ? plain
+            : { id: TEST_USER.userId, email: 'me@example.com', displayName: 'E2E Tester', balance: 250, role: 'USER', onboardingCompleted: true, profilePictureUrl: 'profile-pictures/me/me.png' },
+      friendshipsByUser1: list([
+        { id: 'f1', user1Id: TEST_USER.userId, user2Id: pictured.id },
+        { id: 'f2', user1Id: TEST_USER.userId, user2Id: plain.id },
+      ]),
+    }),
+  );
+  await openCreateTab(page);
+  await tap(page, 'create-format-challenge');
+  await expect(page.getByTestId(`create-opponent-${plain.id}`)).toContainText('S');
+
+  // Only the people with a picture have one fetched: the friend, and you (the 1 v 1 card)
+  await expect.poll(() => requested.some((path) => path.endsWith('friend-pic/me.png')), { timeout: 15_000 }).toBe(true);
+  await expect.poll(() => requested.some((path) => path.endsWith('/me/me.png'))).toBe(true);
+  expect(requested.some((path) => path.includes('friend-plain'))).toBe(false);
 });

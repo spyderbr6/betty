@@ -47,7 +47,7 @@ describe('gameTeams', () => {
 describe('betSuggestions', () => {
   it('offers in-game football bets while the game is live', () => {
     const ids = betSuggestions(game).map((s) => s.id);
-    expect(ids).toEqual(['away-drive', 'home-drive', 'next-score', 'who-wins', 'over-under']);
+    expect(ids).toEqual(['drive', 'next-score', 'who-wins', 'over-under']);
   });
 
   it('fills the next-score pool with both teams and no score', () => {
@@ -223,7 +223,7 @@ describe('createButtonText', () => {
   it('names the stake, the pick, who can join and when it closes', () => {
     expect(createButtonText(base)).toEqual({
       label: 'Create · $5 on Yes',
-      detail: 'Friends can join · invites 4 at the game · closes 9:56 PM',
+      detail: 'Friends · invites 4 at the game · closes 9:56 PM',
     });
   });
 
@@ -234,9 +234,9 @@ describe('createButtonText', () => {
 
   it('says who is invited when not everyone is at the game, and when it is private', () => {
     expect(createButtonText({ ...base, isPrivate: true, atGameCount: 1 }).detail).toBe(
-      'Only invited people can join · invites 4 · closes 9:56 PM',
+      'Invited only · invites 4 · closes 9:56 PM',
     );
-    expect(createButtonText({ ...base, inviteCount: 0, atGameCount: 0 }).detail).toBe('Friends can join · closes 9:56 PM');
+    expect(createButtonText({ ...base, inviteCount: 0, atGameCount: 0 }).detail).toBe('Friends · closes 9:56 PM');
   });
 
   it('names the opponent of a challenge', () => {
