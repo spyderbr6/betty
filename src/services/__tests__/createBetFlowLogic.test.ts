@@ -11,6 +11,9 @@ import {
   draftProblem,
   formatCloseAt,
   formatStake,
+  friendName,
+  initialPickedDate,
+  initials,
   gameTeams,
   isValidStake,
   joinNames,
@@ -254,5 +257,27 @@ describe('joinNames', () => {
     expect(joinNames(['Morgan'])).toBe('Morgan');
     expect(joinNames(['Morgan', 'Sam'])).toBe('Morgan and Sam');
     expect(joinNames(['Morgan', 'Sam', 'Priya', 'Jordan'])).toBe('Morgan, Sam, Priya and Jordan');
+  });
+});
+
+describe('initialPickedDate', () => {
+  it('starts on the half hour at least an hour away', () => {
+    expect(initialPickedDate(new Date(2026, 10, 14, 21, 41)).toTimeString().slice(0, 5)).toBe('23:00');
+    expect(initialPickedDate(new Date(2026, 10, 14, 21, 10)).toTimeString().slice(0, 5)).toBe('22:30');
+    expect(initialPickedDate(new Date(2026, 10, 14, 23, 50)).getDate()).toBe(15);
+  });
+});
+
+describe('friend names', () => {
+  it('prefers the display name, then the username, then the email', () => {
+    expect(friendName({ displayName: 'Morgan', username: 'm1' })).toBe('Morgan');
+    expect(friendName({ username: 'sam_k', email: 's@x.com' })).toBe('sam_k');
+    expect(friendName({ email: 'priya@x.com' })).toBe('priya');
+  });
+
+  it('makes up to two initials', () => {
+    expect(initials('Morgan Lee')).toBe('ML');
+    expect(initials('sam_k_q')).toBe('SK');
+    expect(initials('')).toBe('?');
   });
 });

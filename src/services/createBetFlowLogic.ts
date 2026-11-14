@@ -361,3 +361,28 @@ export function joinNames(names: string[]): string {
   if (names.length <= 1) return names[0] ?? '';
   return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 }
+
+/** Where "Pick a date" starts: the next half hour at least an hour from now. */
+export function initialPickedDate(now: Date): Date {
+  const date = new Date(now.getTime() + 60 * 60_000);
+  date.setSeconds(0, 0);
+  date.setMinutes(date.getMinutes() <= 30 ? 30 : 60);
+  return date;
+}
+
+/** A friend's name as the form shows it. */
+export function friendName(friend: { displayName?: string | null; username?: string | null; email?: string | null }): string {
+  return friend.displayName || friend.username || friend.email?.split('@')[0] || 'Friend';
+}
+
+/** Up to two initials for an avatar without a picture. */
+export function initials(name: string): string {
+  return (
+    name
+      .split(/[\s_.]/)
+      .map((part) => part[0]?.toUpperCase())
+      .filter(Boolean)
+      .join('')
+      .slice(0, 2) || '?'
+  );
+}
