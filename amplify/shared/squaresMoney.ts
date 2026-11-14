@@ -92,6 +92,22 @@ export function calculatePayout(period: number, pot: number, payoutStructure: Re
   return Math.round(pot * share * 100) / 100;
 }
 
+/**
+ * Whether a period carries no share of the pot by design ("Final only" pays periods 1-3
+ * nothing). Such a period is still recorded, with its winning square and $0, so the game
+ * counts its four periods and resolves; no money moves. Only a valid structure counts: a
+ * broken one is not a deliberate zero and is left to the error path.
+ */
+export function isZeroSharePeriod(period: number, payoutStructure: unknown): boolean {
+  if (!isValidPayoutStructure(payoutStructure)) return false;
+  let structure = payoutStructure;
+  for (let i = 0; i < 3 && typeof structure === 'string'; i++) structure = JSON.parse(structure);
+  const s = structure as Record<string, number>;
+  // Overtime periods take the final share, as in calculatePayout
+  const shares = [s.period1, s.period2, s.period3, s.period4];
+  return Number.isInteger(period) && period >= 1 && shares[Math.min(period, 4) - 1] === 0;
+}
+
 /** The payout periods: three as they finish, then the final score. */
 export const FINAL_PERIOD = 4;
 
