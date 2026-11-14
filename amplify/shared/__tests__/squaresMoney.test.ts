@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   calculatePayout,
   checkSquaresCancel,
+  isZeroSharePeriod,
   periodsToSettle,
   settledPeriodCount,
   cancelSquaresGame,
@@ -211,5 +212,27 @@ describe('cancelSquaresGame', () => {
     const { outcome } = await cancelSquaresGame(apply, 'g1', 'ACTIVE', [purchase('a', 5)], 'r');
     expect(outcome.status).toBe('skipped');
     expect(calls[1].entries).toEqual([]);
+  });
+});
+
+describe('isZeroSharePeriod', () => {
+  const finalOnly = { period1: 0, period2: 0, period3: 0, period4: 1 };
+
+  it('marks the periods a Final-only game pays nothing for', () => {
+    expect([1, 2, 3, 4].map((p) => isZeroSharePeriod(p, finalOnly))).toEqual([true, true, true, false]);
+    // Overtime takes the final share, which is not zero here
+    expect(isZeroSharePeriod(5, finalOnly)).toBe(false);
+  });
+
+  it('reads the structure as stored JSON text too', () => {
+    expect(isZeroSharePeriod(1, JSON.stringify(finalOnly))).toBe(true);
+    expect(isZeroSharePeriod(1, JSON.stringify(JSON.stringify(finalOnly)))).toBe(true);
+  });
+
+  it('is false for a paying period, and for a broken structure (not a deliberate zero)', () => {
+    expect(isZeroSharePeriod(1, { period1: 0.15, period2: 0.25, period3: 0.15, period4: 0.45 })).toBe(false);
+    expect(isZeroSharePeriod(1, { period1: 0, period2: 0.5 })).toBe(false);
+    expect(isZeroSharePeriod(1, null)).toBe(false);
+    expect(isZeroSharePeriod(0, finalOnly)).toBe(false);
   });
 });
