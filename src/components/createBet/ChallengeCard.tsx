@@ -55,6 +55,8 @@ interface ChallengeCardProps {
   presets: SidePreset[];
   activePresetId: string;
   onPreset: (preset: SidePreset) => void;
+  /** Your own profile picture, signed; initials without one */
+  myPictureUrl?: string;
 }
 
 export const ChallengeCard: React.FC<ChallengeCardProps> = ({
@@ -68,6 +70,7 @@ export const ChallengeCard: React.FC<ChallengeCardProps> = ({
   presets,
   activePresetId,
   onPreset,
+  myPictureUrl,
 }) => {
   const opponent = friends.find((friend) => friend.id === opponentId) ?? null;
   const opponentLabel = opponent ? friendName(opponent).split(' ')[0] : 'Any friend';
@@ -80,7 +83,7 @@ export const ChallengeCard: React.FC<ChallengeCardProps> = ({
       <SidePresetSwitch label="The sides" presets={presets} activeId={activePresetId} onPick={onPreset} />
       <View style={[createStyles.card, styles.card]}>
         <View style={styles.party}>
-          <Avatar name="You" fill={colors.primaryDark} size={spacing[12]} />
+          <Avatar name="You" fill={colors.primaryDark} pictureUrl={myPictureUrl} size={spacing[12]} />
           <Text style={styles.partyName}>You</Text>
           <SideTile
             compact

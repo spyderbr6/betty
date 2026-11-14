@@ -525,3 +525,40 @@ test('friends at the same game start invited, and the sent panel names them', as
   expect(invitations).toHaveLength(1);
   expect(invitations[0]).toMatchObject({ betId: sent[0].betId, toUserId: OTHER_USER.id, invitedSide: '' });
 });
+
+test('friends and you show a profile picture where there is one, and an initial otherwise', async ({ page }) => {
+  const pictured = { ...OTHER_USER, id: 'friend-pic', displayName: 'Morgan Lee', profilePictureUrl: 'profile-pictures/friend-pic/me.png' };
+  const plain = { ...OTHER_USER, id: 'friend-plain', displayName: 'Sam Park', profilePictureUrl: null };
+  const requested: string[] = [];
+  await page.route(
+    (url) => url.hostname.includes('s3') && url.hostname.includes('amazonaws.com'),
+    (route) => {
+      requested.push(new URL(route.request().url()).pathname);
+      return route.fulfill({ status: 200, contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"/>' });
+    },
+  );
+  await signInAs(page);
+  await mockAppSync(
+    page,
+    baseHandlers({
+      getUser: (variables) =>
+        variables.id === pictured.id
+          ? pictured
+          : variables.id === plain.id
+            ? plain
+            : { id: TEST_USER.userId, email: 'me@example.com', displayName: 'E2E Tester', balance: 250, role: 'USER', onboardingCompleted: true, profilePictureUrl: 'profile-pictures/me/me.png' },
+      friendshipsByUser1: list([
+        { id: 'f1', user1Id: TEST_USER.userId, user2Id: pictured.id },
+        { id: 'f2', user1Id: TEST_USER.userId, user2Id: plain.id },
+      ]),
+    }),
+  );
+  await openCreateTab(page);
+  await tap(page, 'create-format-challenge');
+  await expect(page.getByTestId(`create-opponent-${plain.id}`)).toContainText('S');
+
+  // Only the people with a picture have one fetched: the friend, and you (the 1 v 1 card)
+  await expect.poll(() => requested.some((path) => path.endsWith('friend-pic/me.png')), { timeout: 15_000 }).toBe(true);
+  await expect.poll(() => requested.some((path) => path.endsWith('/me/me.png'))).toBe(true);
+  expect(requested.some((path) => path.includes('friend-plain'))).toBe(false);
+});

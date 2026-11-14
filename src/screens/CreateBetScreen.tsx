@@ -35,6 +35,7 @@ import { createBetProblem, newBetId } from '../services/createBetLogic';
 import { endBetEarly } from '../services/betStatusService';
 import { endEarlyProblem } from '../services/betStatusLogic';
 import { friendIdsAtEvent, loadFriends } from '../services/createBetFriends';
+import { getProfilePictureUrl } from '../services/imageUploadService';
 import {
   betDescription,
   betSuggestions,
@@ -164,6 +165,21 @@ export const CreateBetScreen: React.FC = () => {
     const timer = setInterval(() => setNow(new Date()), 30_000);
     return () => clearInterval(timer);
   }, []);
+
+  // Your own picture, for the "You" side of a challenge: the record holds the S3 key
+  const myPictureKey = profile?.profilePictureUrl;
+  const [myPictureUrl, setMyPictureUrl] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    let cancelled = false;
+    if (!myPictureKey) {
+      setMyPictureUrl(undefined);
+      return;
+    }
+    getProfilePictureUrl(myPictureKey).then((url) => !cancelled && setMyPictureUrl(url || undefined));
+    return () => {
+      cancelled = true;
+    };
+  }, [myPictureKey]);
 
   // Start at the last stake used on this device
   useEffect(() => {
@@ -624,6 +640,7 @@ export const CreateBetScreen: React.FC = () => {
                 presets={presets}
                 activePresetId={presetId}
                 onPreset={pickPreset}
+                myPictureUrl={myPictureUrl}
               />
             )}
 
