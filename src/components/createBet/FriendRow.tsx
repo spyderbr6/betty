@@ -20,6 +20,8 @@ interface FriendRowProps {
   onPrivacyChange: (isPrivate: boolean) => void;
   /** A challenge picks its opponent elsewhere and is always open to that one person */
   showInvites: boolean;
+  /** Overrides the invite row's label (squares: "Notify · optional") */
+  label?: string;
 }
 
 export const FriendRow: React.FC<FriendRowProps> = ({
@@ -31,6 +33,7 @@ export const FriendRow: React.FC<FriendRowProps> = ({
   isPrivate,
   onPrivacyChange,
   showInvites,
+  label,
 }) => {
   const anyAtGame = friends.some((friend) => atGame.has(friend.id));
   return (
@@ -38,7 +41,7 @@ export const FriendRow: React.FC<FriendRowProps> = ({
       {showInvites && (
         <>
           <View style={createStyles.labelRow}>
-            <Text style={createStyles.label}>{anyAtGame ? 'At the game · invited' : 'Invite friends · optional'}</Text>
+            <Text style={createStyles.label}>{label ?? (anyAtGame ? 'At the game · invited' : 'Invite friends · optional')}</Text>
             {friends.length > 0 && (
               <TouchableOpacity
                 testID="create-all-friends"

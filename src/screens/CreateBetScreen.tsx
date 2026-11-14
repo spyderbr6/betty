@@ -12,13 +12,13 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { LayoutChangeEvent, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { LayoutChangeEvent, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
-import { colors, commonStyles, spacing, textStyles, typography } from '../styles';
+import { commonStyles, spacing } from '../styles';
 import { Header } from '../components/ui/Header';
 import { showAlert } from '../components/ui/CustomAlert';
 import { AddFundsModal } from '../components/ui/AddFundsModal';
@@ -145,7 +145,6 @@ export const CreateBetScreen: React.FC = () => {
   const [sent, setSent] = useState<SentBet | null>(null);
   const [closing, setClosing] = useState(false);
   const [closed, setClosed] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
   const [barHeight, setBarHeight] = useState<number>(spacing[24]);
   const [now, setNow] = useState(() => new Date());
 
@@ -472,10 +471,6 @@ export const CreateBetScreen: React.FC = () => {
       ({ id: sent.betId, title: sent.title, description: sent.description } as Bet)
     : null;
 
-  const showToast = (message: string) => {
-    setToast(message);
-    setTimeout(() => setToast(null), 3000);
-  };
 
   // ---------------------------------------------------------------------------
 
@@ -487,12 +482,12 @@ export const CreateBetScreen: React.FC = () => {
       <Header showBalance={true} variant="default" showEventBanner={!event} />
       {event && <GameHeader event={event} onChangeGame={handleCheckInPress} />}
 
-      {toast && (
-        <View style={styles.toast} testID="create-toast">
-          <Text style={styles.toastText}>{toast}</Text>
+      {showSquares ? (
+        // Squares has its own scroll and create button
+        <View style={styles.content}>
+          <SquaresSetup checkedInGame={event} friends={orderedFriends} onBack={() => setShowSquares(false)} />
         </View>
-      )}
-
+      ) : (
       <ScrollView
         ref={scrollRef}
         style={styles.content}
@@ -500,16 +495,7 @@ export const CreateBetScreen: React.FC = () => {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {showSquares ? (
-          <SquaresSetup
-            initialEvent={event}
-            onBack={() => setShowSquares(false)}
-            onCreated={(message) => {
-              setShowSquares(false);
-              showToast(message);
-            }}
-          />
-        ) : sent ? (
+        {sent ? (
           <BetSentPanel
             invitedText={sent.invitedNames.length > 0 ? `${joinNames(sent.invitedNames)} ${sent.invitedNames.length === 1 ? 'was' : 'were'} invited` : null}
             summary={`You: ${sent.pickName} · $${sent.stake.toFixed(2)} · Closes ${sent.closeAt}`}
@@ -618,6 +604,7 @@ export const CreateBetScreen: React.FC = () => {
           </>
         )}
       </ScrollView>
+      )}
 
       {showBar && (
         <View onLayout={onBarLayout} style={styles.barHost} pointerEvents="box-none">
@@ -657,19 +644,5 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-  },
-  toast: {
-    backgroundColor: colors.success,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    marginHorizontal: spacing.md,
-    marginTop: spacing.xs,
-    borderRadius: spacing.radius.sm,
-  },
-  toastText: {
-    ...textStyles.button,
-    color: colors.textInverse,
-    fontWeight: typography.fontWeight.medium,
-    textAlign: 'center',
   },
 });

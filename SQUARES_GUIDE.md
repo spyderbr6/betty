@@ -54,6 +54,13 @@ row = rowNumbers.indexOf(homeScore % 10)
    bought that square the period is recorded as a house win — a payout row is
    still written, so the outcome is auditable rather than silently dropped.
 
+   **A period can carry no share.** The setup offers Standard (15/25/15/45), Even
+   (25 each), Final only (0/0/0/100) and Custom. A period with a 0% share is
+   recorded with its winning square and $0, and no money moves
+   (`isZeroSharePeriod` in `amplify/shared/squaresMoney.ts`). Before 2026-11-14 the
+   checker skipped such a period every run, so a game never reached its four
+   recorded periods and sat LIVE until the two-day fallback.
+
    **The final share pays on the final score.** Periods 1-3 pay as their scores
    arrive. The period 4 share waits until the event is FINISHED and pays once, on
    the last score, overtime included: a game tied after regulation and decided in
