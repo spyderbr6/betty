@@ -1,11 +1,11 @@
 /**
- * Two sides as big tiles: tap the one you back. The quick-sides presets (the teams,
- * Yes / No, Over / Under, Custom) swap the names; Custom makes them editable.
+ * Two sides as tiles: tap the one you back. The link on the label row offers the other
+ * sides (the teams, Yes / No, Over / Under, Custom); Custom makes the names editable.
  */
 
 import React, { useState } from 'react';
-import { Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { colors, spacing } from '../../styles';
+import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { colors, spacing, textStyles, typography } from '../../styles';
 import { LIMITS } from '../../../amplify/shared/createBetLogic';
 import { createStyles } from './styles';
 
@@ -16,16 +16,19 @@ export interface SidePreset {
   options: [string, string] | null;
 }
 
-interface SidePresetRowProps {
+interface SidePresetSwitchProps {
   presets: SidePreset[];
   activeId: string;
   onPick: (preset: SidePreset) => void;
+  label: string;
 }
 
-/** The label row's switch: shows the current preset, and the others when opened. */
-export const SidePresetSwitch: React.FC<SidePresetRowProps & { label: string }> = ({ presets, activeId, onPick, label }) => {
+/** The label row, and its link to the other sides. */
+export const SidePresetSwitch: React.FC<SidePresetSwitchProps> = ({ presets, activeId, onPick, label }) => {
   const [open, setOpen] = useState(false);
-  const active = presets.find((preset) => preset.id === activeId);
+  const others = presets.filter((preset) => preset.id !== activeId);
+  // The link names the first other choice, as the design does ("Yes / No" under the teams)
+  const offer = others.find((preset) => preset.options) ?? others[0];
   return (
     <>
       <View style={createStyles.labelRow}>
@@ -37,22 +40,21 @@ export const SidePresetSwitch: React.FC<SidePresetRowProps & { label: string }> 
           accessibilityLabel="Change the sides"
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
-          <Text style={createStyles.link}>{(active?.label ?? 'Sides') + (open ? ' ▴' : ' ▾')}</Text>
+          <Text style={createStyles.link}>{open ? 'Close' : offer?.label ?? 'Sides'}</Text>
         </TouchableOpacity>
       </View>
       {open && (
         <View style={createStyles.chipRow}>
-          {presets.map((preset) => (
+          {others.map((preset) => (
             <TouchableOpacity
               key={preset.id}
               testID={`create-side-preset-${preset.id}`}
-              style={[createStyles.chip, preset.id === activeId && createStyles.chipSelected]}
+              style={createStyles.chip}
               onPress={() => {
                 onPick(preset);
                 setOpen(false);
               }}
               accessibilityRole="button"
-              accessibilityState={{ selected: preset.id === activeId }}
             >
               <Text style={createStyles.chipText}>{preset.label}</Text>
             </TouchableOpacity>
@@ -71,12 +73,25 @@ interface SideTileProps {
   onRename: (name: string) => void;
   testID: string;
   pickedHint?: string;
+  idleHint?: string;
+  /** A compact tile (the challenge card's) */
+  compact?: boolean;
 }
 
-export const SideTile: React.FC<SideTileProps> = ({ name, picked, editable, onPick, onRename, testID, pickedHint }) => (
+export const SideTile: React.FC<SideTileProps> = ({
+  name,
+  picked,
+  editable,
+  onPick,
+  onRename,
+  testID,
+  pickedHint = '✓ YOUR SIDE',
+  idleHint = 'Tap to back',
+  compact,
+}) => (
   <TouchableOpacity
     testID={testID}
-    style={[createStyles.tile, picked && createStyles.tileSelected]}
+    style={[styles.tile, compact && styles.tileCompact, picked && createStyles.picked]}
     onPress={onPick}
     activeOpacity={0.85}
     accessibilityRole="button"
@@ -86,22 +101,20 @@ export const SideTile: React.FC<SideTileProps> = ({ name, picked, editable, onPi
     {editable ? (
       <TextInput
         testID={`${testID}-name`}
-        style={[createStyles.tileInput, picked && createStyles.tileNameSelected, picked && { borderBottomColor: colors.textInverse }]}
+        style={[styles.name, styles.input, compact && styles.nameCompact]}
         value={name}
         onChangeText={onRename}
         placeholder="Side name"
-        placeholderTextColor={picked ? colors.textInverse : colors.textMuted}
+        placeholderTextColor={colors.textMuted}
         maxLength={LIMITS.sideName}
         accessibilityLabel="Side name"
       />
     ) : (
-      <Text style={[createStyles.tileName, picked && createStyles.tileNameSelected]} numberOfLines={2}>
+      <Text style={[styles.name, compact && styles.nameCompact]} numberOfLines={1}>
         {name}
       </Text>
     )}
-    <Text style={[createStyles.tileHint, picked && createStyles.tileHintSelected]}>
-      {picked ? pickedHint ?? '✓ YOUR SIDE' : 'Tap to back'}
-    </Text>
+    {!compact && <Text style={[styles.hint, picked && styles.hintPicked]}>{picked ? pickedHint : idleHint}</Text>}
   </TouchableOpacity>
 );
 
@@ -123,25 +136,76 @@ export const SidePicker: React.FC<SidePickerProps> = ({
   presets,
   activePresetId,
   onPreset,
-}) => {
-  const editable = activePresetId === 'custom';
-  return (
-    <View style={createStyles.block}>
-      <SidePresetSwitch label="Tap your side" presets={presets} activeId={activePresetId} onPick={onPreset} />
-      <View style={{ flexDirection: 'row' }}>
-        {options.slice(0, 2).map((name, index) => (
-          <View key={index} style={{ flex: 1, marginLeft: index === 0 ? 0 : spacing.sm, flexDirection: 'row' }}>
-            <SideTile
-              testID={`create-side-${index === 0 ? 'a' : 'b'}`}
-              name={name}
-              picked={pickedIndex === index}
-              editable={editable}
-              onPick={() => onPick(index)}
-              onRename={(text) => onRename(index, text)}
-            />
-          </View>
-        ))}
-      </View>
+}) => (
+  <View style={createStyles.block}>
+    <SidePresetSwitch label="Tap your side" presets={presets} activeId={activePresetId} onPick={onPreset} />
+    <View style={styles.row}>
+      {options.slice(0, 2).map((name, index) => (
+        <View key={index} style={[styles.cell, index === 1 && styles.cellRight]}>
+          <SideTile
+            testID={`create-side-${index === 0 ? 'a' : 'b'}`}
+            name={name}
+            picked={pickedIndex === index}
+            editable={activePresetId === 'custom'}
+            onPick={() => onPick(index)}
+            onRename={(text) => onRename(index, text)}
+          />
+        </View>
+      ))}
     </View>
-  );
-};
+  </View>
+);
+
+const styles = StyleSheet.create({
+  row: {
+    flexDirection: 'row',
+  },
+  cell: {
+    flex: 1,
+  },
+  cellRight: {
+    marginLeft: spacing.sm,
+  },
+  tile: {
+    height: spacing[16] + spacing.sm, // 72, the design's side tile
+    borderRadius: spacing.radius.xl,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    paddingHorizontal: spacing.padding.sm,
+    paddingVertical: spacing.padding.xs + spacing.xs / 2,
+    justifyContent: 'space-between',
+  },
+  tileCompact: {
+    alignSelf: 'stretch',
+    height: spacing[11],
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 0,
+  },
+  name: {
+    ...textStyles.h3,
+    fontSize: typography.fontSize.xl,
+    fontWeight: typography.fontWeight.bold,
+    color: colors.textPrimary,
+  },
+  nameCompact: {
+    fontSize: typography.fontSize.base,
+    textAlign: 'center',
+  },
+  input: {
+    padding: 0,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    textAlignVertical: 'center',
+  },
+  hint: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+  },
+  hintPicked: {
+    color: colors.primary,
+    fontWeight: typography.fontWeight.bold,
+    letterSpacing: typography.letterSpacing.wide,
+  },
+});

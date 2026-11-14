@@ -1,11 +1,12 @@
 /**
- * The create button, kept above the tab bar so it never scrolls away. Its second line
- * says who can join, who is invited and when the bet closes.
+ * The create button, kept above the tab bar so it never scrolls away. It spells the bet
+ * out on its first line ("Create · $5 on Yes") and who can join, who is invited and when
+ * it closes on its second. Grey until there is a pick.
  */
 
 import React from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { colors, shadows, spacing, textStyles, typography } from '../../styles';
+import { colors, spacing, textStyles, typography } from '../../styles';
 
 interface CreateBarProps {
   label: string;
@@ -29,15 +30,22 @@ export const CreateBar: React.FC<CreateBarProps> = ({ label, detail, onPress, di
       {busy ? (
         <View style={styles.busy}>
           <ActivityIndicator size="small" color={colors.textInverse} />
-          <Text style={[styles.label, { marginLeft: spacing.sm }]}>Creating…</Text>
+          <Text style={[styles.label, styles.busyLabel]}>Creating…</Text>
         </View>
       ) : (
-        <Text style={[styles.label, disabled && styles.labelDisabled]}>{label}</Text>
+        <>
+          <Text style={[styles.label, disabled && styles.labelDisabled]} numberOfLines={1}>
+            {label}
+          </Text>
+          {!!detail && (
+            <Text testID="create-submit-detail" style={[styles.detail, disabled && styles.detailDisabled]} numberOfLines={2}>
+              {/* A no-break space keeps "6:20 PM" on one line when the detail wraps */}
+              {detail.replace(/ (AM|PM)/g, ' $1')}
+            </Text>
+          )}
+        </>
       )}
     </TouchableOpacity>
-    <Text testID="create-submit-detail" style={styles.detail} numberOfLines={2}>
-      {detail}
-    </Text>
   </View>
 );
 
@@ -45,17 +53,18 @@ const styles = StyleSheet.create({
   container: {
     backgroundColor: colors.background,
     borderTopWidth: 1,
-    borderTopColor: colors.border,
+    borderTopColor: colors.surfaceLight,
     paddingHorizontal: spacing.md,
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.sm,
-    ...shadows.header,
+    paddingVertical: spacing.padding.sm,
   },
   button: {
+    minHeight: spacing[14],
     backgroundColor: colors.primary,
     borderRadius: spacing.radius.xl,
-    paddingVertical: spacing.padding.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   buttonDisabled: {
     backgroundColor: colors.surfaceLight,
@@ -64,8 +73,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
+  busyLabel: {
+    marginLeft: spacing.sm,
+  },
   label: {
-    ...textStyles.button,
+    ...textStyles.body,
     color: colors.textInverse,
     fontWeight: typography.fontWeight.bold,
   },
@@ -74,8 +86,11 @@ const styles = StyleSheet.create({
   },
   detail: {
     ...textStyles.caption,
-    color: colors.textSecondary,
+    color: colors.textInverse,
+    marginTop: spacing.xs / 2,
     textAlign: 'center',
-    marginTop: spacing.xs,
+  },
+  detailDisabled: {
+    color: colors.textSecondary,
   },
 });

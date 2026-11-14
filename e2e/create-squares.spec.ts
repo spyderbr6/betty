@@ -171,7 +171,7 @@ test('friends picked to notify are invited to the new grid', async ({ page }) =>
   await tap(page, `create-friend-${OTHER_USER.id}`);
   await tap(page, 'create-submit');
 
-  await expect(page.getByTestId('create-squares-created')).toContainText('Casey Friend was notified', { timeout: 15_000 });
+  await expect(page.getByTestId('create-squares-created')).toContainText('Casey was notified', { timeout: 15_000 });
   expect(invitations).toHaveLength(1);
   expect(invitations[0]).toMatchObject({ squaresGameId: 'squares-new', toUserId: OTHER_USER.id, status: 'PENDING' });
 });
@@ -200,9 +200,25 @@ test("a friend's open grid on a game is pointed out, to join instead of duplicat
   });
   await openSquares(page);
 
-  await expect(page.getByTestId(`create-squares-game-${upcoming.id}-friends`)).toContainText(
-    'Casey Friend has squares on this',
-    { timeout: 15_000 },
-  );
-  await expect(page.getByTestId(`create-squares-game-${otherUpcoming.id}-friends`)).toBeHidden();
+  await expect(page.getByTestId(`create-squares-game-${upcoming.id}`)).toContainText('Casey Friend has squares on this', {
+    timeout: 15_000,
+  });
+  await expect(page.getByTestId(`create-squares-game-${otherUpcoming.id}`)).not.toContainText('has squares on this');
+
+  // Picking that game offers their grid before setting up another
+  await tap(page, `create-squares-game-${upcoming.id}`);
+  await expect(page.getByTestId('create-squares-friend-grid')).toContainText('Join theirs');
+});
+
+test('the back arrow goes from the setup to the game list, then back to the bet', async ({ page }) => {
+  await signInAs(page);
+  await setup(page);
+  await openSquares(page);
+
+  await tap(page, `create-squares-game-${upcoming.id}`);
+  await expect(page.getByTestId('create-squares-setup')).toBeVisible();
+  await tap(page, 'create-squares-back');
+  await expect(page.getByTestId(`create-squares-game-${upcoming.id}`)).toBeVisible();
+  await tap(page, 'create-squares-back');
+  await expect(page.getByTestId('create-title')).toBeVisible();
 });

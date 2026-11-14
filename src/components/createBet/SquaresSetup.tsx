@@ -1,7 +1,9 @@
 /**
- * Squares from the Create screen (the design's "Squares setup"): pick a game, then one
- * screen for the price (with the pot it makes), payouts as a preset, who can join and who
- * to notify, then a confirmation whose next step is claiming your own squares.
+ * Squares from the Create screen (the design's "Squares setup"), under its own "‹ Squares"
+ * title bar: pick a game, then one screen for the price (with the pot it makes), payouts
+ * as a preset, who can join and who to notify, then a sheet whose next step is claiming
+ * your own squares. The back arrow goes from the setup to the game list, and from the
+ * list back to the bet.
  *
  * Squares are usually set up days ahead, so this never depends on being checked in; the
  * game you are at is just listed first.
@@ -28,18 +30,20 @@ import {
   friendSquaresSignal,
   fullPot,
   lockLabel,
-  payoutAmounts,
   percentsTotal,
+  presetFor,
   stepPrice,
   type GameForSquares,
   type PayoutPercents,
 } from '../../services/squaresSetupLogic';
 import { createSquares, inviteToSquares, loadSquaresGames } from '../../services/squaresSetupService';
+import { CreateHeader } from './CreateHeader';
 import { SquaresGameList } from './SquaresGameList';
 import { FriendRow } from './FriendRow';
 import { FriendPickerModal } from './FriendPickerModal';
 import { CreateBar } from './CreateBar';
-import { createStyles } from './styles';
+import { SentSheet } from './SentSheet';
+import { createStyles, sheetStyles } from './styles';
 
 interface SquaresSetupProps {
   checkedInGame: GameForSquares | null;
@@ -56,6 +60,7 @@ interface CreatedGame {
 }
 
 const PERCENT_STEP = 5;
+const GRID_DOTS = 10;
 
 export const SquaresSetup: React.FC<SquaresSetupProps> = ({ checkedInGame, friends, onBack }) => {
   const { user } = useAuth();
@@ -161,7 +166,7 @@ export const SquaresSetup: React.FC<SquaresSetupProps> = ({ checkedInGame, frien
         notified: invitedIds
           .map((id) => friends.find((friend) => friend.id === id))
           .filter((friend): friend is User => !!friend)
-          .map(friendName),
+          .map((friend) => friendName(friend).split(' ')[0]),
       });
     } catch (error) {
       console.error('[Squares] Error creating squares game:', error);
@@ -174,47 +179,14 @@ export const SquaresSetup: React.FC<SquaresSetupProps> = ({ checkedInGame, frien
 
   // ---------------------------------------------------------------------------
 
-  if (created) {
-    return (
-      <ScrollView contentContainerStyle={styles.created} testID="create-squares-created">
-        <View style={styles.check}>
-          <Text style={styles.checkText}>✓</Text>
-        </View>
-        <Text style={styles.createdTitle} accessibilityRole="header">Squares created</Text>
-        {created.notified.length > 0 && (
-          <Text style={styles.createdLine}>
-            {joinNames(created.notified)} {created.notified.length === 1 ? 'was' : 'were'} notified
-          </Text>
-        )}
-        <Text style={styles.createdMatchup}>{created.matchup}</Text>
-        <Text testID="create-squares-created-summary" style={styles.createdLine}>
-          {formatDollars(created.price)} a square · 0 of {SQUARES_PER_GRID} taken
-        </Text>
-        <Text style={styles.createdLine}>Locks {created.lock}</Text>
-        <TouchableOpacity testID="create-squares-pick" style={styles.primary} onPress={() => openGrid(created.id)} accessibilityRole="button">
-          <Text style={styles.primaryText}>Pick your squares</Text>
-        </TouchableOpacity>
-        <TouchableOpacity testID="create-squares-done" style={styles.secondary} onPress={onBack} accessibilityRole="button">
-          <Text style={styles.secondaryText}>Done</Text>
-        </TouchableOpacity>
-      </ScrollView>
-    );
-  }
-
   if (!game) {
     return (
-      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: spacing.lg }}>
-        <SquaresGameList
-          games={games}
-          checkedInGame={checkedInGame}
-          loading={loading}
-          signals={signals}
-          onPick={setGame}
-          onOpenFriendGrid={openGrid}
-          onBack={onBack}
-          now={now}
-        />
-      </ScrollView>
+      <View style={styles.fill}>
+        <CreateHeader title="Squares" onBack={onBack} backTestID="create-squares-back" />
+        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.listContent}>
+          <SquaresGameList games={games} checkedInGame={checkedInGame} loading={loading} signals={signals} onPick={setGame} now={now} />
+        </ScrollView>
+      </View>
     );
   }
 
@@ -226,19 +198,18 @@ export const SquaresSetup: React.FC<SquaresSetupProps> = ({ checkedInGame, frien
     hour: 'numeric',
     minute: '2-digit',
   });
+  const friendsGrid = signals.get(game.id);
+  const shares = PERIOD_LABELS.map((label, index) => ({ label, percent: percents[index], amount: Math.round(pot * percents[index]) / 100 }));
 
   return (
     <View style={styles.fill}>
-      <ScrollView
-        keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{ paddingBottom: barHeight + spacing.lg }}
-        testID="create-squares-setup"
-      >
+      <CreateHeader title="Squares" onBack={() => setGame(null)} backTestID="create-squares-back" />
+      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: barHeight + spacing.lg }} testID="create-squares-setup">
         <View style={createStyles.block}>
-          <View style={styles.gameCard}>
+          <View style={[createStyles.card, styles.gameCard]}>
             <View style={styles.gameText}>
-              <Text style={styles.gameTeams}>
-                {away} <Text style={styles.gameAt}>@</Text> {home}
+              <Text style={styles.gameTeams} numberOfLines={1}>
+                {away} <Text style={styles.gameAt}>at</Text> {home}
               </Text>
               <Text style={styles.gameWhen}>{kickoff} · locks at kickoff</Text>
             </View>
@@ -248,81 +219,122 @@ export const SquaresSetup: React.FC<SquaresSetupProps> = ({ checkedInGame, frien
           </View>
         </View>
 
+        {friendsGrid && (
+          <View style={createStyles.block}>
+            <TouchableOpacity
+              testID="create-squares-friend-grid"
+              style={styles.notice}
+              onPress={() => openGrid(friendsGrid.squaresGameId)}
+              accessibilityRole="button"
+            >
+              <Text style={styles.noticeText}>{friendsGrid.text}</Text>
+              <Text style={createStyles.link}>Join theirs ›</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         <View style={createStyles.block}>
-          <Text style={[createStyles.label, styles.labelGap]}>Price per square</Text>
-          <View style={styles.priceRow}>
-            <TouchableOpacity
-              testID="create-squares-price-down"
-              style={styles.stepButton}
-              onPress={() => setPrice((p) => stepPrice(p, -1))}
-              accessibilityRole="button"
-              accessibilityLabel="Lower the price"
-            >
-              <Text style={styles.stepText}>−</Text>
-            </TouchableOpacity>
-            <Text testID="create-squares-price" style={styles.price}>{formatDollars(price)}</Text>
-            <TouchableOpacity
-              testID="create-squares-price-up"
-              style={styles.stepButton}
-              onPress={() => setPrice((p) => stepPrice(p, 1))}
-              accessibilityRole="button"
-              accessibilityLabel="Raise the price"
-            >
-              <Text style={styles.stepText}>+</Text>
-            </TouchableOpacity>
-            <Text testID="create-squares-pot" style={styles.pot}>
-              Pot {formatDollars(pot)} when all {SQUARES_PER_GRID} fill
-            </Text>
+          <View style={createStyles.card}>
+            <Text style={createStyles.label}>Price per square</Text>
+            <View style={styles.priceRow}>
+              <TouchableOpacity
+                testID="create-squares-price-down"
+                style={createStyles.stepButton}
+                onPress={() => setPrice((p) => stepPrice(p, -1))}
+                accessibilityRole="button"
+                accessibilityLabel="Lower the price"
+              >
+                <Text style={createStyles.stepText}>−</Text>
+              </TouchableOpacity>
+              <View style={styles.priceValue}>
+                <Text testID="create-squares-price" style={styles.price}>
+                  {formatDollars(price)}
+                </Text>
+                <Text testID="create-squares-pot" style={styles.pot}>
+                  Pot <Text style={styles.potAmount}>{formatDollars(pot)}</Text> when all {SQUARES_PER_GRID} fill
+                </Text>
+              </View>
+              <TouchableOpacity
+                testID="create-squares-price-up"
+                style={createStyles.stepButton}
+                onPress={() => setPrice((p) => stepPrice(p, 1))}
+                accessibilityRole="button"
+                accessibilityLabel="Raise the price"
+              >
+                <Text style={createStyles.stepText}>+</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
 
         <View style={createStyles.block}>
-          <Text style={[createStyles.label, styles.labelGap]}>Payouts</Text>
-          <View style={createStyles.chipRow}>
-            {[...PAYOUT_PRESETS, { id: 'custom', label: 'Custom', percents }].map((preset) => (
-              <TouchableOpacity
-                key={preset.id}
-                testID={`create-squares-payout-${preset.id}`}
-                style={[createStyles.chip, presetId === preset.id && createStyles.chipSelected]}
-                onPress={() => {
-                  setPresetId(preset.id);
-                  if (preset.id !== 'custom') setPercents(preset.percents);
-                }}
-                accessibilityRole="button"
-                accessibilityState={{ selected: presetId === preset.id }}
-              >
-                <Text style={createStyles.chipText}>{preset.label}</Text>
-              </TouchableOpacity>
-            ))}
+          <View style={createStyles.labelRow}>
+            <Text style={createStyles.label}>Payouts</Text>
+            <TouchableOpacity
+              testID="create-squares-payout-custom"
+              onPress={() => {
+                if (presetId !== 'custom') return setPresetId('custom');
+                // Back to the presets: the matching one, or Standard for a split that is none
+                const match = presetFor(percents);
+                setPresetId(match === 'custom' ? PAYOUT_PRESETS[0].id : match);
+                if (match === 'custom') setPercents(PAYOUT_PRESETS[0].percents);
+              }}
+              accessibilityRole="button"
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Text style={createStyles.link}>{presetId === 'custom' ? 'Presets' : 'Custom'}</Text>
+            </TouchableOpacity>
           </View>
+          {presetId !== 'custom' && (
+            <View style={createStyles.segment}>
+              {PAYOUT_PRESETS.map((preset) => {
+                const active = presetId === preset.id;
+                return (
+                  <TouchableOpacity
+                    key={preset.id}
+                    testID={`create-squares-payout-${preset.id}`}
+                    style={[createStyles.segmentItem, styles.payoutTab, active && createStyles.segmentItemActive]}
+                    onPress={() => {
+                      setPresetId(preset.id);
+                      setPercents(preset.percents);
+                    }}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: active }}
+                  >
+                    <Text style={[createStyles.segmentText, active && createStyles.segmentTextActive]}>{preset.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
 
           {presetId === 'custom' ? (
             <View>
-              {PERIOD_LABELS.map((label, index) => (
-                <View key={label} style={styles.customRow}>
-                  <Text style={styles.customLabel}>{label}</Text>
+              {shares.map((share, index) => (
+                <View key={share.label} style={styles.customRow}>
+                  <Text style={styles.customLabel}>{share.label}</Text>
                   <TouchableOpacity
                     testID={`create-squares-percent-${index}-down`}
-                    style={styles.stepButtonSmall}
+                    style={createStyles.stepButton}
                     onPress={() => stepPercent(index, -1)}
                     accessibilityRole="button"
-                    accessibilityLabel={`Lower the ${label} share`}
+                    accessibilityLabel={`Lower the ${share.label} share`}
                   >
-                    <Text style={styles.stepText}>−</Text>
+                    <Text style={createStyles.stepText}>−</Text>
                   </TouchableOpacity>
                   <Text testID={`create-squares-percent-${index}`} style={styles.customValue}>
-                    {percents[index]}%
+                    {share.percent}%
                   </Text>
                   <TouchableOpacity
                     testID={`create-squares-percent-${index}-up`}
-                    style={styles.stepButtonSmall}
+                    style={createStyles.stepButton}
                     onPress={() => stepPercent(index, 1)}
                     accessibilityRole="button"
-                    accessibilityLabel={`Raise the ${label} share`}
+                    accessibilityLabel={`Raise the ${share.label} share`}
                   >
-                    <Text style={styles.stepText}>+</Text>
+                    <Text style={createStyles.stepText}>+</Text>
                   </TouchableOpacity>
-                  <Text style={styles.customDollars}>{formatDollars(Math.round(pot * percents[index]) / 100)}</Text>
+                  <Text style={styles.customDollars}>{formatDollars(share.amount)}</Text>
                 </View>
               ))}
               <Text testID="create-squares-percent-total" style={[styles.total, total !== 100 && styles.totalOff]}>
@@ -330,20 +342,28 @@ export const SquaresSetup: React.FC<SquaresSetupProps> = ({ checkedInGame, frien
               </Text>
             </View>
           ) : (
-            <View style={styles.amounts}>
-              {payoutAmounts(percents, pot).map((row) => (
-                <View key={row.label} style={styles.amount}>
-                  <Text style={styles.amountLabel}>{row.label}</Text>
-                  <Text style={styles.amountValue}>{formatDollars(row.amount)}</Text>
-                </View>
-              ))}
+            // Each period's share of the pot as a bar, its width the share
+            <View style={styles.bars}>
+              {shares
+                .filter((share) => share.percent > 0)
+                .map((share, index, shown) => (
+                  <View key={share.label} style={[styles.barCell, { flex: share.percent }, index > 0 && styles.barGap]}>
+                    <View style={[styles.bar, index === shown.length - 1 && styles.barFinal]} />
+                    <Text style={styles.barLabel} numberOfLines={1}>
+                      {share.label}
+                    </Text>
+                    <Text style={styles.barAmount} numberOfLines={1}>
+                      {formatDollars(share.amount)}
+                    </Text>
+                  </View>
+                ))}
             </View>
           )}
 
           {showDetails ? (
             <TextInput
               testID="create-squares-description"
-              style={styles.details}
+              style={[createStyles.card, styles.details]}
               placeholder="Rules or details (optional)"
               placeholderTextColor={colors.textMuted}
               value={description}
@@ -354,12 +374,7 @@ export const SquaresSetup: React.FC<SquaresSetupProps> = ({ checkedInGame, frien
               accessibilityLabel="Details"
             />
           ) : (
-            <TouchableOpacity
-              testID="create-squares-add-details"
-              onPress={() => setShowDetails(true)}
-              accessibilityRole="button"
-              style={{ marginTop: spacing.sm }}
-            >
+            <TouchableOpacity testID="create-squares-add-details" onPress={() => setShowDetails(true)} accessibilityRole="button" style={styles.addDetails}>
               <Text style={createStyles.link}>+ Add details</Text>
             </TouchableOpacity>
           )}
@@ -373,20 +388,56 @@ export const SquaresSetup: React.FC<SquaresSetupProps> = ({ checkedInGame, frien
           onAllFriends={() => setShowAllFriends(true)}
           isPrivate={isPrivate}
           onPrivacyChange={setIsPrivate}
-          showInvites={true}
           label="Notify · optional"
         />
       </ScrollView>
 
-      <View style={styles.barHost} onLayout={(e: LayoutChangeEvent) => setBarHeight(e.nativeEvent.layout.height)}>
-        <CreateBar
-          label={`Create squares · ${formatDollars(price)} a square`}
-          detail={`${matchup} · locks ${lockLabel(game.scheduledTime)}`}
-          onPress={handleCreate}
-          disabled={total !== 100}
-          busy={creating}
-        />
-      </View>
+      {!created && (
+        <View style={styles.barHost} onLayout={(e: LayoutChangeEvent) => setBarHeight(e.nativeEvent.layout.height)}>
+          <CreateBar
+            label={`Create squares · ${formatDollars(price)} a square`}
+            detail={`${matchup} · locks ${lockLabel(game.scheduledTime)}`}
+            onPress={handleCreate}
+            disabled={total !== 100}
+            busy={creating}
+          />
+        </View>
+      )}
+
+      {created && (
+        <SentSheet
+          testID="create-squares-created"
+          title="Squares created"
+          subtitle={created.notified.length > 0 ? `${joinNames(created.notified)} ${created.notified.length === 1 ? 'was' : 'were'} notified` : null}
+        >
+          <View style={[sheetStyles.summary, styles.createdCard]}>
+            <View style={styles.grid} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+              {Array.from({ length: GRID_DOTS }, (_, r) => (
+                <View key={r} style={styles.gridRow}>
+                  {Array.from({ length: GRID_DOTS }, (__, c) => (
+                    <View key={c} style={styles.gridDot} />
+                  ))}
+                </View>
+              ))}
+            </View>
+            <View style={styles.createdText}>
+              <Text style={styles.createdMatchup}>{created.matchup}</Text>
+              <Text testID="create-squares-created-summary" style={styles.createdLine}>
+                {formatDollars(created.price)} a square · 0 of {SQUARES_PER_GRID} taken
+              </Text>
+              <Text style={styles.createdLine}>Locks {created.lock}</Text>
+            </View>
+          </View>
+          <TouchableOpacity testID="create-squares-pick" style={sheetStyles.primary} onPress={() => openGrid(created.id)} accessibilityRole="button">
+            <Text style={sheetStyles.primaryText}>Pick your squares</Text>
+          </TouchableOpacity>
+          <View style={sheetStyles.row}>
+            <TouchableOpacity testID="create-squares-done" style={sheetStyles.secondary} onPress={onBack} accessibilityRole="button">
+              <Text style={sheetStyles.secondaryText}>Done</Text>
+            </TouchableOpacity>
+          </View>
+        </SentSheet>
+      )}
 
       <FriendPickerModal
         visible={showAllFriends}
@@ -404,23 +455,18 @@ const styles = StyleSheet.create({
   fill: {
     flex: 1,
   },
+  listContent: {
+    paddingBottom: spacing.lg,
+  },
   barHost: {
     position: 'absolute',
     left: 0,
     right: 0,
     bottom: 0,
   },
-  labelGap: {
-    marginBottom: spacing.sm,
-  },
   gameCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderRadius: spacing.radius.xl,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.padding.sm,
   },
   gameText: {
     flex: 1,
@@ -428,6 +474,8 @@ const styles = StyleSheet.create({
   },
   gameTeams: {
     ...textStyles.h4,
+    fontSize: typography.fontSize.lg,
+    fontWeight: typography.fontWeight.bold,
     color: colors.textPrimary,
   },
   gameAt: {
@@ -435,71 +483,82 @@ const styles = StyleSheet.create({
     fontWeight: typography.fontWeight.normal,
   },
   gameWhen: {
-    ...textStyles.caption,
+    ...textStyles.bodySmall,
     color: colors.textSecondary,
-    marginTop: spacing.xs / 2,
+    marginTop: spacing.xs,
+  },
+  notice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderColor: colors.success,
+    backgroundColor: colors.successTint,
+    borderRadius: spacing.radius.xl,
+    paddingHorizontal: spacing.padding.sm,
+    paddingVertical: spacing.padding.sm,
+  },
+  noticeText: {
+    ...textStyles.bodySmall,
+    color: colors.textPrimary,
+    flex: 1,
+    marginRight: spacing.sm,
   },
   priceRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    marginTop: spacing.sm,
   },
-  stepButton: {
-    width: spacing[10],
-    height: spacing[10],
-    borderRadius: spacing.radius.full,
-    backgroundColor: colors.surfaceLight,
+  priceValue: {
     alignItems: 'center',
-    justifyContent: 'center',
-  },
-  stepButtonSmall: {
-    width: spacing[8],
-    height: spacing[8],
-    borderRadius: spacing.radius.full,
-    backgroundColor: colors.surfaceLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  stepText: {
-    ...textStyles.h4,
-    color: colors.textPrimary,
+    flex: 1,
   },
   price: {
     ...textStyles.h2,
+    fontSize: typography.fontSize['2xl'],
+    fontWeight: typography.fontWeight.bold,
     color: colors.textPrimary,
-    fontFamily: typography.fontFamily.mono,
-    minWidth: spacing[20],
-    textAlign: 'center',
   },
   pot: {
-    ...textStyles.bodySmall,
-    color: colors.textSecondary,
-    marginLeft: spacing.md,
-    flexShrink: 1,
-  },
-  amounts: {
-    flexDirection: 'row',
-    marginHorizontal: -spacing.xs,
-  },
-  amount: {
-    flex: 1,
-    backgroundColor: colors.surface,
-    borderRadius: spacing.radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingVertical: spacing.sm,
-    alignItems: 'center',
-    marginHorizontal: spacing.xs,
-  },
-  amountLabel: {
     ...textStyles.caption,
     color: colors.textSecondary,
   },
-  amountValue: {
+  potAmount: {
+    color: colors.success,
+    fontWeight: typography.fontWeight.bold,
+  },
+  payoutTab: {
+    height: spacing[10],
+  },
+  bars: {
+    flexDirection: 'row',
+    marginTop: spacing.padding.sm,
+  },
+  barCell: {
+    minWidth: 0,
+  },
+  barGap: {
+    marginLeft: spacing.xs,
+  },
+  bar: {
+    height: spacing.xs + spacing.xs / 2,
+    borderRadius: spacing.radius.sm,
+    backgroundColor: colors.surfaceElevated,
+  },
+  barFinal: {
+    backgroundColor: colors.primary,
+  },
+  barLabel: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    marginTop: spacing.xs + spacing.xs / 2,
+  },
+  barAmount: {
     ...textStyles.label,
     color: colors.textPrimary,
     fontWeight: typography.fontWeight.bold,
-    marginTop: spacing.xs / 2,
+    letterSpacing: typography.letterSpacing.normal,
   },
   customRow: {
     flexDirection: 'row',
@@ -531,73 +590,43 @@ const styles = StyleSheet.create({
     color: colors.warning,
   },
   details: {
-    ...textStyles.body,
+    ...textStyles.bodySmall,
     color: colors.textPrimary,
     textAlignVertical: 'top',
-    backgroundColor: colors.surface,
-    borderRadius: spacing.radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.padding.sm,
-    marginTop: spacing.sm,
     minHeight: spacing[16],
+    marginTop: spacing.padding.sm,
   },
-  created: {
-    padding: spacing.lg,
+  addDetails: {
+    marginTop: spacing.padding.sm,
   },
-  check: {
-    alignSelf: 'center',
-    width: spacing[14],
-    height: spacing[14],
-    borderRadius: spacing.radius.full,
-    backgroundColor: colors.success,
+  createdCard: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
   },
-  checkText: {
-    ...textStyles.h2,
-    color: colors.textInverse,
+  grid: {
+    marginRight: spacing.md,
   },
-  createdTitle: {
-    ...textStyles.h2,
-    color: colors.textPrimary,
-    textAlign: 'center',
-    marginTop: spacing.md,
+  gridRow: {
+    flexDirection: 'row',
+  },
+  gridDot: {
+    width: spacing.sm,
+    height: spacing.sm,
+    borderRadius: spacing.radius.xs,
+    backgroundColor: colors.surfaceElevated,
+    margin: 1,
+  },
+  createdText: {
+    flex: 1,
   },
   createdMatchup: {
-    ...textStyles.h4,
-    color: colors.textPrimary,
-    textAlign: 'center',
-    marginTop: spacing.md,
-  },
-  createdLine: {
     ...textStyles.body,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    marginTop: spacing.xs,
-  },
-  primary: {
-    backgroundColor: colors.primary,
-    borderRadius: spacing.radius.xl,
-    paddingVertical: spacing.padding.sm,
-    alignItems: 'center',
-    marginTop: spacing.lg,
-  },
-  primaryText: {
-    ...textStyles.button,
-    color: colors.textInverse,
+    color: colors.textPrimary,
     fontWeight: typography.fontWeight.bold,
   },
-  secondary: {
-    borderRadius: spacing.radius.xl,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingVertical: spacing.padding.sm,
-    alignItems: 'center',
-    marginTop: spacing.sm,
-  },
-  secondaryText: {
-    ...textStyles.label,
-    color: colors.textPrimary,
+  createdLine: {
+    ...textStyles.bodySmall,
+    color: colors.textSecondary,
+    marginTop: spacing.xs,
   },
 });

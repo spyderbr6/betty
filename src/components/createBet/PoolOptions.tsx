@@ -1,11 +1,11 @@
 /**
- * A pool's three to six options in a two-column grid: tap your pick. "Edit" turns the
- * tiles into name fields with a remove button each.
+ * A pool's three to six options in a two-column grid of equal tiles: tap your pick (a
+ * yellow check marks it). "Edit" turns the names into fields with a remove button each.
  */
 
 import React from 'react';
 import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { colors, spacing, textStyles } from '../../styles';
+import { colors, spacing, textStyles, typography } from '../../styles';
 import { MAX_OPTIONS, MIN_POOL_OPTIONS, OPTION_KEYS } from '../../../amplify/shared/betOptions';
 import { LIMITS } from '../../../amplify/shared/createBetLogic';
 import { createStyles } from './styles';
@@ -30,120 +30,166 @@ export const PoolOptions: React.FC<PoolOptionsProps> = ({
   onRename,
   onAdd,
   onRemove,
-}) => (
-  <View style={createStyles.block}>
-    <View style={createStyles.labelRow}>
-      <Text style={createStyles.label}>
-        Tap your pick · {options.length} of {MAX_OPTIONS}
-      </Text>
-      <TouchableOpacity
-        testID="create-option-edit"
-        onPress={onToggleEdit}
-        accessibilityRole="button"
-        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-      >
-        <Text style={createStyles.link}>{editing ? 'Done' : 'Edit'}</Text>
-      </TouchableOpacity>
-    </View>
-    <View style={styles.grid}>
-      {options.map((name, index) => {
-        const key = OPTION_KEYS[index].toLowerCase();
-        const picked = pickedIndex === index;
-        return (
-          <View key={key} style={styles.cell}>
-            <TouchableOpacity
-              testID={`create-option-${key}`}
-              style={[styles.option, picked && createStyles.tileSelected]}
-              onPress={() => onPick(index)}
-              activeOpacity={0.85}
-              accessibilityRole="button"
-              accessibilityState={{ selected: picked }}
-              accessibilityLabel={`Back ${name || `option ${index + 1}`}`}
-            >
-              {editing ? (
-                <TextInput
-                  testID={`create-option-${key}-name`}
-                  style={[styles.input, picked && createStyles.tileNameSelected]}
-                  value={name}
-                  onChangeText={(text) => onRename(index, text)}
-                  placeholder={`Option ${index + 1}`}
-                  placeholderTextColor={picked ? colors.textInverse : colors.textMuted}
-                  maxLength={LIMITS.sideName}
-                  accessibilityLabel={`Option ${index + 1} name`}
-                />
-              ) : (
-                <Text style={[styles.name, picked && createStyles.tileNameSelected]} numberOfLines={2}>
-                  {picked ? `✓ ${name}` : name || `Option ${index + 1}`}
-                </Text>
-              )}
-              {editing && options.length > MIN_POOL_OPTIONS && (
+}) => {
+  const cells: Array<{ kind: 'option'; index: number } | { kind: 'add' }> = options.map((_, index) => ({
+    kind: 'option' as const,
+    index,
+  }));
+  if (options.length < MAX_OPTIONS) cells.push({ kind: 'add' });
+  // Pairs, so both columns are always the same width whatever the count
+  const rows: Array<typeof cells> = [];
+  for (let i = 0; i < cells.length; i += 2) rows.push(cells.slice(i, i + 2));
+
+  return (
+    <View style={createStyles.block}>
+      <View style={createStyles.labelRow}>
+        <Text style={createStyles.label}>
+          Tap your pick · {options.length} of {MAX_OPTIONS}
+        </Text>
+        <TouchableOpacity
+          testID="create-option-edit"
+          onPress={onToggleEdit}
+          accessibilityRole="button"
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Text style={createStyles.link}>{editing ? 'Done' : 'Edit'}</Text>
+        </TouchableOpacity>
+      </View>
+      {rows.map((row, r) => (
+        <View key={r} style={[styles.row, r > 0 && styles.rowGap]}>
+          {row.map((cell, c) => {
+            const spacer = c === 1 ? styles.cellRight : null;
+            if (cell.kind === 'add') {
+              return (
                 <TouchableOpacity
-                  testID={`create-option-${key}-remove`}
-                  onPress={() => onRemove(index)}
+                  key="add"
+                  testID="create-option-add"
+                  style={[styles.tile, styles.add, spacer]}
+                  onPress={onAdd}
                   accessibilityRole="button"
-                  accessibilityLabel={`Remove option ${index + 1}`}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
-                  <Text style={[styles.remove, picked && createStyles.tileNameSelected]}>✕</Text>
+                  <Text style={styles.addText}>+ Add option</Text>
                 </TouchableOpacity>
-              )}
-            </TouchableOpacity>
-          </View>
-        );
-      })}
-      {options.length < MAX_OPTIONS && (
-        <View style={styles.cell}>
-          <TouchableOpacity
-            testID="create-option-add"
-            style={[styles.option, styles.add]}
-            onPress={onAdd}
-            accessibilityRole="button"
-          >
-            <Text style={createStyles.link}>+ Add option</Text>
-          </TouchableOpacity>
+              );
+            }
+            const { index } = cell;
+            const name = options[index];
+            const key = OPTION_KEYS[index].toLowerCase();
+            const picked = pickedIndex === index;
+            return (
+              <TouchableOpacity
+                key={key}
+                testID={`create-option-${key}`}
+                style={[styles.tile, spacer, picked && createStyles.picked]}
+                onPress={() => onPick(index)}
+                activeOpacity={0.85}
+                accessibilityRole="button"
+                accessibilityState={{ selected: picked }}
+                accessibilityLabel={`Back ${name || `option ${index + 1}`}`}
+              >
+                {picked && (
+                  <View style={styles.check}>
+                    <Text style={styles.checkText}>✓</Text>
+                  </View>
+                )}
+                {editing ? (
+                  <TextInput
+                    testID={`create-option-${key}-name`}
+                    style={[styles.name, styles.input]}
+                    value={name}
+                    onChangeText={(text) => onRename(index, text)}
+                    placeholder={`Option ${index + 1}`}
+                    placeholderTextColor={colors.textMuted}
+                    maxLength={LIMITS.sideName}
+                    accessibilityLabel={`Option ${index + 1} name`}
+                  />
+                ) : (
+                  <Text style={[styles.name, !name && styles.placeholder]} numberOfLines={1}>
+                    {name || `Option ${index + 1}`}
+                  </Text>
+                )}
+                {editing && options.length > MIN_POOL_OPTIONS && (
+                  <TouchableOpacity
+                    testID={`create-option-${key}-remove`}
+                    onPress={() => onRemove(index)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Remove option ${index + 1}`}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Text style={styles.remove}>✕</Text>
+                  </TouchableOpacity>
+                )}
+              </TouchableOpacity>
+            );
+          })}
+          {row.length === 1 && <View style={[styles.empty, styles.cellRight]} />}
         </View>
-      )}
+      ))}
     </View>
-  </View>
-);
+  );
+};
 
 const styles = StyleSheet.create({
-  grid: {
+  row: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginHorizontal: -spacing.xs,
   },
-  cell: {
-    width: '50%',
-    padding: spacing.xs,
+  rowGap: {
+    marginTop: spacing.sm,
   },
-  option: {
-    minHeight: spacing[14],
+  tile: {
+    flex: 1,
+    height: spacing[12],
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
     borderRadius: spacing.radius.xl,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surface,
     paddingHorizontal: spacing.padding.sm,
   },
+  cellRight: {
+    marginLeft: spacing.sm,
+  },
+  empty: {
+    flex: 1,
+  },
   add: {
     borderStyle: 'dashed',
     backgroundColor: colors.background,
+    justifyContent: 'center',
+  },
+  addText: {
+    ...textStyles.label,
+    color: colors.textSecondary,
+    fontWeight: typography.fontWeight.semibold,
+    letterSpacing: typography.letterSpacing.normal,
+  },
+  check: {
+    width: spacing[5],
+    height: spacing[5],
+    borderRadius: spacing.radius.full,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.sm,
+  },
+  checkText: {
+    ...textStyles.caption,
+    color: colors.textInverse,
+    fontWeight: typography.fontWeight.bold,
   },
   name: {
-    ...textStyles.label,
+    ...textStyles.body,
     color: colors.textPrimary,
-    textAlign: 'center',
-    flexShrink: 1,
+    fontWeight: typography.fontWeight.semibold,
+    flex: 1,
+  },
+  placeholder: {
+    color: colors.textMuted,
   },
   input: {
-    ...textStyles.label,
-    color: colors.textPrimary,
+    padding: 0,
     textAlignVertical: 'center',
-    flex: 1,
-    paddingVertical: spacing.xs,
   },
   remove: {
     ...textStyles.label,

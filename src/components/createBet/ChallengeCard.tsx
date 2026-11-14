@@ -1,6 +1,7 @@
 /**
- * A one-on-one challenge: pick the person first (friends at your game first), then the
- * card shows you and them on opposite sides; ⇄ swaps who has which.
+ * A one-on-one challenge, as the design lays it out: pick the person first (friends at
+ * your game first), then a card with you and them facing each other on opposite sides;
+ * ⇄ swaps who has which.
  */
 
 import React from 'react';
@@ -10,13 +11,41 @@ import type { User } from '../../types/betting';
 import { Avatar, FriendAvatars } from './FriendAvatars';
 import { friendName } from '../../services/createBetFlowLogic';
 import { SidePresetSwitch, SideTile, type SidePreset } from './SidePicker';
-import { createStyles } from './styles';
+import { createStyles, TARGET } from './styles';
 
-interface ChallengeCardProps {
+interface ChallengeOpponentsProps {
   friends: User[];
   atGame: Set<string>;
   opponentId: string | null;
   onPickOpponent: (friendId: string) => void;
+}
+
+/** Who you are challenging: one pick, friends at the game first. */
+export const ChallengeOpponents: React.FC<ChallengeOpponentsProps> = ({ friends, atGame, opponentId, onPickOpponent }) => {
+  const anyAtGame = friends.some((friend) => atGame.has(friend.id));
+  return (
+    <View style={createStyles.block}>
+      <Text style={[createStyles.label, styles.labelGap]}>
+        Who are you challenging?{anyAtGame ? ' · At the game first' : ''}
+      </Text>
+      {friends.length === 0 ? (
+        <Text style={styles.empty}>Add friends to challenge them. Without one, any friend can take the other side.</Text>
+      ) : (
+        <FriendAvatars
+          friends={friends}
+          selected={new Set(opponentId ? [opponentId] : [])}
+          atGame={atGame}
+          onToggle={onPickOpponent}
+          testIDPrefix="create-opponent"
+        />
+      )}
+    </View>
+  );
+};
+
+interface ChallengeCardProps {
+  friends: User[];
+  opponentId: string | null;
   options: string[];
   /** Your side; the opponent gets the other */
   pickedIndex: number | null;
@@ -26,14 +55,11 @@ interface ChallengeCardProps {
   presets: SidePreset[];
   activePresetId: string;
   onPreset: (preset: SidePreset) => void;
-  myName: string;
 }
 
 export const ChallengeCard: React.FC<ChallengeCardProps> = ({
   friends,
-  atGame,
   opponentId,
-  onPickOpponent,
   options,
   pickedIndex,
   onPick,
@@ -42,126 +68,109 @@ export const ChallengeCard: React.FC<ChallengeCardProps> = ({
   presets,
   activePresetId,
   onPreset,
-  myName,
 }) => {
   const opponent = friends.find((friend) => friend.id === opponentId) ?? null;
-  const opponentLabel = opponent ? friendName(opponent) : 'Any friend';
+  const opponentLabel = opponent ? friendName(opponent).split(' ')[0] : 'Any friend';
   const editable = activePresetId === 'custom';
   const mine = pickedIndex ?? 0;
   const theirs = mine === 0 ? 1 : 0;
-  const anyAtGame = friends.some((friend) => atGame.has(friend.id));
 
   return (
-    <>
-      <View style={createStyles.block}>
-        <Text style={[createStyles.label, { marginBottom: spacing.sm }]}>
-          Who are you challenging?{anyAtGame ? ' · At the game first' : ''}
-        </Text>
-        {friends.length === 0 ? (
-          <Text style={styles.empty}>Add friends to challenge them. Without one, any friend can take the other side.</Text>
-        ) : (
-          <FriendAvatars
-            friends={friends}
-            selected={new Set(opponentId ? [opponentId] : [])}
-            atGame={atGame}
-            onToggle={onPickOpponent}
-            testIDPrefix="create-opponent"
+    <View style={createStyles.block}>
+      <SidePresetSwitch label="The sides" presets={presets} activeId={activePresetId} onPick={onPreset} />
+      <View style={[createStyles.card, styles.card]}>
+        <View style={styles.party}>
+          <Avatar name="You" fill={colors.primaryDark} size={spacing[12]} />
+          <Text style={styles.partyName}>You</Text>
+          <SideTile
+            compact
+            testID="create-challenge-mine"
+            name={options[mine]}
+            picked={pickedIndex !== null}
+            editable={editable}
+            onPick={() => onPick(mine)}
+            onRename={(text) => onRename(mine, text)}
           />
-        )}
-      </View>
-
-      <View style={createStyles.block}>
-        <SidePresetSwitch label="The sides" presets={presets} activeId={activePresetId} onPick={onPreset} />
-        <View style={styles.card}>
-          <View style={styles.party}>
-            <Avatar name={myName} size={spacing[8]} />
-            <Text style={styles.partyName}>You</Text>
-            <View style={styles.tileWrap}>
-              <SideTile
-                testID="create-challenge-mine"
-                name={options[mine]}
-                picked={pickedIndex !== null}
-                editable={editable}
-                onPick={() => onPick(mine)}
-                onRename={(text) => onRename(mine, text)}
-                pickedHint="✓ YOU"
-              />
-            </View>
-          </View>
-          <View style={styles.middle}>
-            <Text style={styles.vs}>VS</Text>
-            <TouchableOpacity
-              testID="create-challenge-swap"
-              style={styles.swap}
-              onPress={onSwap}
-              accessibilityRole="button"
-              accessibilityLabel="Swap sides"
-            >
-              <Text style={styles.swapText}>⇄</Text>
-            </TouchableOpacity>
-          </View>
-          <View style={styles.party}>
-            <Avatar name={opponentLabel} pictureUrl={opponent?.profilePictureUrl} size={spacing[8]} />
-            <Text style={styles.partyName} numberOfLines={1}>{opponentLabel}</Text>
-            <View style={styles.tileWrap}>
-              <SideTile
-                testID="create-challenge-theirs"
-                name={options[theirs]}
-                picked={false}
-                editable={editable}
-                onPick={onSwap}
-                onRename={(text) => onRename(theirs, text)}
-              />
-            </View>
-          </View>
+        </View>
+        <View style={styles.middle}>
+          <Text style={styles.vs}>VS</Text>
+          <TouchableOpacity
+            testID="create-challenge-swap"
+            style={styles.swap}
+            onPress={onSwap}
+            accessibilityRole="button"
+            accessibilityLabel="Swap sides"
+          >
+            <Text style={styles.swapText}>⇄</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={styles.party}>
+          <Avatar
+            name={opponent ? friendName(opponent) : '?'}
+            colorKey={opponent?.id}
+            fill={opponent ? undefined : colors.surfaceLight}
+            pictureUrl={opponent?.profilePictureUrl}
+            size={spacing[12]}
+          />
+          <Text style={styles.partyName} numberOfLines={1}>
+            {opponentLabel}
+          </Text>
+          <SideTile
+            compact
+            testID="create-challenge-theirs"
+            name={options[theirs]}
+            picked={false}
+            editable={editable}
+            onPick={onSwap}
+            onRename={(text) => onRename(theirs, text)}
+          />
         </View>
       </View>
-    </>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
+  labelGap: {
+    marginBottom: spacing.sm,
+  },
   empty: {
     ...textStyles.bodySmall,
     color: colors.textSecondary,
   },
   card: {
     flexDirection: 'row',
-    alignItems: 'stretch',
+    alignItems: 'flex-end',
+    paddingVertical: spacing.md,
   },
   party: {
     flex: 1,
     alignItems: 'center',
   },
   partyName: {
-    ...textStyles.caption,
+    ...textStyles.bodySmall,
     color: colors.textSecondary,
+    textAlign: 'center',
     marginTop: spacing.xs,
-    marginBottom: spacing.sm,
-  },
-  tileWrap: {
-    alignSelf: 'stretch',
-    flexDirection: 'row',
-    flex: 1,
+    marginBottom: spacing.padding.sm,
   },
   middle: {
-    justifyContent: 'center',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    alignSelf: 'stretch',
     paddingHorizontal: spacing.sm,
+    paddingTop: spacing.padding.sm,
   },
   vs: {
-    ...textStyles.caption,
-    color: colors.textMuted,
+    ...textStyles.label,
+    color: colors.textSecondary,
     fontWeight: typography.fontWeight.bold,
   },
   swap: {
-    marginTop: spacing.sm,
-    width: spacing[9],
-    height: spacing[9],
+    width: TARGET,
+    height: TARGET,
     borderRadius: spacing.radius.full,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.surfaceLight,
     alignItems: 'center',
     justifyContent: 'center',
   },
