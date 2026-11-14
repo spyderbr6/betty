@@ -343,7 +343,7 @@ export function createButtonText(params: {
   if (params.format === 'challenge') {
     parts.push(params.opponentName ? `${params.opponentName} gets the other side` : 'One person can take the other side');
   } else {
-    parts.push(params.isPrivate ? 'Only invited people can join' : 'Anyone can join');
+    parts.push(params.isPrivate ? 'Only invited people can join' : 'Friends can join');
   }
   if (params.inviteCount > 0 && params.format !== 'challenge') {
     parts.push(

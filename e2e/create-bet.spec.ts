@@ -122,7 +122,7 @@ test('starts on Yes / No, and the button waits for a side', async ({ page }) => 
   await tap(page, 'create-side-a');
   await expect(page.getByTestId('create-submit')).not.toHaveAttribute('aria-disabled', 'true');
   await expect(page.getByTestId('create-submit')).toContainText('Create · $5 on Yes');
-  await expect(page.getByTestId('create-submit-detail')).toContainText('Anyone can join');
+  await expect(page.getByTestId('create-submit-detail')).toContainText('Friends can join');
 });
 
 test('asks for the question before sending anything', async ({ page }) => {

@@ -223,7 +223,7 @@ describe('createButtonText', () => {
   it('names the stake, the pick, who can join and when it closes', () => {
     expect(createButtonText(base)).toEqual({
       label: 'Create · $5 on Yes',
-      detail: 'Anyone can join · invites 4 at the game · closes 9:56 PM',
+      detail: 'Friends can join · invites 4 at the game · closes 9:56 PM',
     });
   });
 
@@ -236,7 +236,7 @@ describe('createButtonText', () => {
     expect(createButtonText({ ...base, isPrivate: true, atGameCount: 1 }).detail).toBe(
       'Only invited people can join · invites 4 · closes 9:56 PM',
     );
-    expect(createButtonText({ ...base, inviteCount: 0, atGameCount: 0 }).detail).toBe('Anyone can join · closes 9:56 PM');
+    expect(createButtonText({ ...base, inviteCount: 0, atGameCount: 0 }).detail).toBe('Friends can join · closes 9:56 PM');
   });
 
   it('names the opponent of a challenge', () => {

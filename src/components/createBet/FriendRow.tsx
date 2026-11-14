@@ -1,6 +1,7 @@
 /**
  * Who to invite (friends at your game come first and start invited), the full list
- * behind "All friends ›", and who can join: anyone, or only the people invited.
+ * behind "All friends ›", and who can join: friends (it shows on their Join tab), or only
+ * the people invited.
  */
 
 import React from 'react';
@@ -71,7 +72,7 @@ export const FriendRow: React.FC<FriendRowProps> = ({
         <Text style={createStyles.label}>Who can join</Text>
         <View style={styles.segment} accessibilityRole="radiogroup">
           {[
-            { value: false, label: 'Anyone', testID: 'create-join-anyone' },
+            { value: false, label: 'Friends', testID: 'create-join-friends' },
             { value: true, label: 'Invited only', testID: 'create-join-invited' },
           ].map((option) => {
             const active = option.value === isPrivate;

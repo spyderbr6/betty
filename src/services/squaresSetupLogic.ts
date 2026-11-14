@@ -12,7 +12,7 @@ import { joinNames } from './createBetFlowLogic';
 /** Squares never depend on a check-in: the list covers the same 14 days as before. */
 export const SQUARES_DAYS_AHEAD = 14;
 
-/** New games start open to everyone, like bets; "Invited only" is one tap. */
+/** New games start open to friends (they show on their Join tab), like bets; "Invited only" is one tap. */
 export const SQUARES_DEFAULT_PRIVATE = false;
 
 export interface GameForSquares {

@@ -45,7 +45,7 @@ export const ChallengeCard: React.FC<ChallengeCardProps> = ({
   myName,
 }) => {
   const opponent = friends.find((friend) => friend.id === opponentId) ?? null;
-  const opponentLabel = opponent ? friendName(opponent) : 'Anyone';
+  const opponentLabel = opponent ? friendName(opponent) : 'Any friend';
   const editable = activePresetId === 'custom';
   const mine = pickedIndex ?? 0;
   const theirs = mine === 0 ? 1 : 0;
@@ -58,7 +58,7 @@ export const ChallengeCard: React.FC<ChallengeCardProps> = ({
           Who are you challenging?{anyAtGame ? ' · At the game first' : ''}
         </Text>
         {friends.length === 0 ? (
-          <Text style={styles.empty}>Add friends to challenge them. Without one, anyone can take the other side.</Text>
+          <Text style={styles.empty}>Add friends to challenge them. Without one, any friend can take the other side.</Text>
         ) : (
           <FriendAvatars
             friends={friends}
