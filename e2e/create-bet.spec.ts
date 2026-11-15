@@ -438,6 +438,64 @@ test('challenging a friend invites only them, to the other side, and keeps it to
 });
 
 // ---------------------------------------------------------------------------
+// Typing the bet fills the form (services/betTextParser.ts, unit tested)
+// ---------------------------------------------------------------------------
+
+test('typing "Bet Casey $20 ..." makes a 1 v 1 at $20, and those words leave the question', async ({ page }) => {
+  await signInAs(page);
+  const { sent, invitations } = await recordCreates(page, { friendshipsByUser1: list([friendship]) });
+  await openCreateTab(page);
+  // The question can only name a friend once the friends have loaded
+  await expect(page.getByTestId(`create-friend-${OTHER_USER.id}`)).toBeVisible({ timeout: 15_000 });
+
+  await page.getByTestId('create-title').fill('Bet Casey $20 it snows tomorrow');
+  await expect(page.getByTestId('create-format-challenge')).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByTestId('create-stake-value')).toHaveText('$20');
+  await expect(page.getByTestId('create-submit')).toContainText('Challenge Casey · $20');
+
+  await page.getByTestId('create-title').blur();
+  await expect(page.getByTestId('create-title')).toHaveValue('It snows tomorrow');
+  // Still a $20 1 v 1 once the words are gone
+  await expect(page.getByTestId('create-submit')).toContainText('Challenge Casey · $20');
+  await submit(page);
+
+  await expect.poll(() => invitations.length, { timeout: 15_000 }).toBe(1);
+  expect(sent[0]).toMatchObject({
+    title: 'It snows tomorrow',
+    category: 'WEATHER',
+    amount: 20,
+    side: 'A',
+    sideAName: 'Yes',
+    sideBName: 'No',
+    maxParticipants: 2,
+    isPrivate: true,
+  });
+  // Tomorrow 11:59 PM, so more than the 1 hour default
+  expect(sent[0].deadlineMinutes as number).toBeGreaterThan(60);
+  expect(invitations[0]).toMatchObject({ toUserId: OTHER_USER.id, invitedSide: 'B' });
+});
+
+test('the question is tidied when sent even if it was never left, and deleting the stake takes it back', async ({ page }) => {
+  await signInAs(page);
+  const { sent } = await recordCreates(page);
+  await openCreateTab(page);
+
+  const title = page.getByTestId('create-title');
+  await title.fill('$15 says it rains');
+  await expect(page.getByTestId('create-stake-value')).toHaveText('$15');
+  await title.fill('it rains');
+  await expect(page.getByTestId('create-stake-value')).toHaveText('$5');
+
+  await title.fill('$15 says it rains');
+  // "says" means you back what follows: Yes is already picked
+  await expect(page.getByTestId('create-submit')).toContainText('Create · $15 on Yes');
+  await submit(page);
+
+  await expect.poll(() => sent.length, { timeout: 15_000 }).toBe(1);
+  expect(sent[0]).toMatchObject({ title: 'It rains', amount: 15, side: 'A', category: 'WEATHER' });
+});
+
+// ---------------------------------------------------------------------------
 // At a game
 // ---------------------------------------------------------------------------
 

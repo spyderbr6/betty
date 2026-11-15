@@ -13,6 +13,8 @@ import { createStyles } from './styles';
 interface BetQuestionProps {
   title: string;
   onTitleChange: (title: string) => void;
+  /** Leaving the question (not the details) */
+  onTitleBlur?: () => void;
   details: string;
   onDetailsChange: (details: string) => void;
   showDetails: boolean;
@@ -24,7 +26,7 @@ interface BetQuestionProps {
 const ONE_ROW = Platform.OS === 'web' ? 1 : undefined;
 
 export const BetQuestion = forwardRef<TextInput, BetQuestionProps>(
-  ({ title, onTitleChange, details, onDetailsChange, showDetails, onShowDetails, placeholder }, ref) => {
+  ({ title, onTitleChange, onTitleBlur, details, onDetailsChange, showDetails, onShowDetails, placeholder }, ref) => {
     const [focused, setFocused] = useState(false);
     return (
       <View style={createStyles.block}>
@@ -38,7 +40,10 @@ export const BetQuestion = forwardRef<TextInput, BetQuestionProps>(
             value={title}
             onChangeText={onTitleChange}
             onFocus={() => setFocused(true)}
-            onBlur={() => setFocused(false)}
+            onBlur={() => {
+              setFocused(false);
+              onTitleBlur?.();
+            }}
             maxLength={LIMITS.title}
             multiline
             numberOfLines={ONE_ROW}

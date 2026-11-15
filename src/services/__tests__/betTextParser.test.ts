@@ -7,7 +7,10 @@ const friends = [
   { id: 'u-mike', username: 'mikeb', displayName: 'Mike Brown' },
   { id: 'u-sara', username: 'sara22', displayName: 'Sara Lee' },
 ];
+// The form shows "Bills" and "Chiefs", away first
 const event = {
+  sport: 'NFL',
+  status: 'LIVE',
   homeTeam: 'Kansas City Chiefs',
   awayTeam: 'Buffalo Bills',
   homeTeamShortName: 'Chiefs',
@@ -22,180 +25,162 @@ const minutesUntil = (d: Date) => Math.ceil((d.getTime() - now.getTime()) / 6000
 const tonight = minutesUntil(new Date(2026, 10, 14, 23, 59));
 const tomorrowNight = minutesUntil(new Date(2026, 10, 15, 23, 59));
 
-describe('parseBetText: whole sentences', () => {
-  it('reads a sports bet against a checked-in game', () => {
-    const r = parse('$20 says the Chiefs beat the Bills tonight', { event });
-    expect(r).toMatchObject({
-      template: 'custom',
-      category: 'SPORTS',
-      sideAName: 'Kansas City Chiefs',
-      sideBName: 'Buffalo Bills',
-      usesEvent: true,
-      amount: 20,
+describe('parseBetText: whole questions', () => {
+  it('reads a bet on the checked-in game, with the teams as the form names them', () => {
+    expect(parse('$20 says the Chiefs beat the Bills tonight', { event })).toEqual({
+      format: 'sides',
+      options: ['Chiefs', 'Bills'],
+      pickedIndex: 0,
+      stake: 20,
       deadlineMinutes: tonight,
-      mySide: 'A',
-      title: 'The Chiefs beat the Bills tonight',
-    });
-  });
-
-  it('makes a bet with one friend head-to-head, keeping yes/no sides', () => {
-    const r = parse('Bet Mike $10 it rains tomorrow');
-    expect(r).toMatchObject({
-      template: 'head-to-head',
-      category: 'WEATHER',
-      sideAName: 'Yes',
-      sideBName: 'No',
-      friendIds: ['u-mike'],
-      amount: 10,
-      deadlineMinutes: tomorrowNight,
-      title: 'It rains tomorrow',
-    });
-  });
-
-  it('names the two people in a "me vs friend" bet', () => {
-    const r = parse('Me vs Mike at golf Sunday for 20 bucks');
-    expect(r).toMatchObject({
-      template: 'head-to-head',
       category: 'SPORTS',
-      sideAName: 'I win',
-      sideBName: 'Mike wins',
-      mySide: 'A',
-      amount: 20,
+      cleanTitle: 'The Chiefs beat the Bills tonight',
+    });
+  });
+
+  it('makes a bet against one named friend a 1 v 1, keeping yes/no sides', () => {
+    expect(parse('Bet Mike $10 it rains tomorrow')).toEqual({
+      format: 'challenge',
+      opponentId: 'u-mike',
+      options: ['Yes', 'No'],
+      pickedIndex: 0,
+      stake: 10,
       deadlineMinutes: tomorrowNight,
+      category: 'WEATHER',
+      cleanTitle: 'It rains tomorrow',
+    });
+  });
+
+  it('names the two people in "me vs friend"', () => {
+    expect(parse('Me vs Mike at golf Sunday for 20 bucks')).toMatchObject({
+      format: 'challenge',
+      opponentId: 'u-mike',
+      options: ['I win', 'Mike wins'],
+      pickedIndex: 0,
+      stake: 20,
+      deadlineMinutes: tomorrowNight,
+      category: 'SPORTS',
+      cleanTitle: 'Me vs Mike at golf Sunday',
     });
   });
 
   it('reads an over/under and the side taken', () => {
-    const r = parse("Over/under 45.5 points tonight, I'll take the over");
-    expect(r).toMatchObject({
-      template: 'over-under',
-      category: 'SPORTS',
-      sideAName: 'Over',
-      sideBName: 'Under',
-      mySide: 'A',
-      title: 'Over/under 45.5 points tonight',
+    expect(parse("Over/under 45.5 points tonight, I'll take the over")).toMatchObject({
+      format: 'sides',
+      options: ['Over', 'Under'],
+      pickedIndex: 0,
+      cleanTitle: 'Over/under 45.5 points tonight',
     });
-    expect(parse('o/u 3.5 goals, I take the under').mySide).toBe('B');
+    expect(parse('o/u 3.5 goals, I take the under').pickedIndex).toBe(1);
+    expect(parse('$5 says under 45.5 points').pickedIndex).toBe(1);
   });
 
-  it('reads a pool from a list after a colon or a dash', () => {
-    expect(parse('Who wins Survivor: Ana, Ben or Cal')).toMatchObject({
-      template: 'pool',
-      category: 'ENTERTAINMENT',
+  it('reads a pool, and takes the list out of the question', () => {
+    expect(parse('Who wins Survivor: Ana, Ben or Cal')).toEqual({
+      format: 'pool',
       options: ['Ana', 'Ben', 'Cal'],
-      title: 'Who wins Survivor?',
+      category: 'ENTERTAINMENT',
+      cleanTitle: 'Who wins Survivor?',
+    });
+    expect(parse('Who wins the Super Bowl? Chiefs, Bills or Eagles')).toMatchObject({
+      format: 'pool',
+      options: ['Chiefs', 'Bills', 'Eagles'],
+      cleanTitle: 'Who wins the Super Bowl?',
     });
     expect(parse('who wins best picture - Dune, Wicked, Anora, Conclave').options).toEqual([
       'Dune', 'Wicked', 'Anora', 'Conclave',
-    ]);
-    expect(parse('Who wins the race, Max, Lando, Oscar or Charles?').options).toEqual([
-      'Max', 'Lando', 'Oscar', 'Charles',
     ]);
     expect(parse('Red vs Blue vs Green').options).toEqual(['Red', 'Blue', 'Green']);
   });
 
   it('does not make a pool of more than six options', () => {
-    expect(parse('Pick one: a, b, c, d, e, f, g').template).not.toBe('pool');
+    expect(parse('Pick one: a, b, c, d, e, f, g').format).not.toBe('pool');
   });
 
-  it('reads a yes/no question about a stock', () => {
-    expect(parse('Will AAPL close above 250 Friday?')).toMatchObject({
-      template: 'yes-no',
-      category: 'STOCKS',
-      sideAName: 'Yes',
-      sideBName: 'No',
+  it('reads a yes/no question, leaving the question as typed', () => {
+    expect(parse('Will AAPL close above 250 Friday?')).toEqual({
+      format: 'sides',
+      options: ['Yes', 'No'],
       deadlineMinutes: minutesUntil(new Date(2026, 10, 20, 23, 59)),
-      title: 'Will AAPL close above 250 Friday?',
+      category: 'STOCKS',
     });
   });
 
-  it('reads a player prop', () => {
-    expect(parse('Mahomes throws 3+ TDs')).toMatchObject({ template: 'player-prop', category: 'SPORTS' });
-    expect(parse('LeBron gets at least 30 points').template).toBe('player-prop');
+  it('reads next score at a game as the two teams, away first', () => {
+    expect(parse('Who scores next?', { event }).options).toEqual(['Bills', 'Chiefs']);
   });
 
-  it('reads next score, taking the sides from the checked-in game', () => {
-    expect(parse('Who scores next?', { event })).toMatchObject({
-      template: 'next-score',
-      sideAName: 'Kansas City Chiefs',
-      sideBName: 'Buffalo Bills',
-      usesEvent: true,
-    });
+  it('orders the teams as they are mentioned', () => {
+    expect(parse('Chiefs or Bills', { event }).options).toEqual(['Chiefs', 'Bills']);
+    expect(parse('Buffalo vs KC', { event }).options).toEqual(['Bills', 'Chiefs']);
   });
 
-  it('reads two sides from "vs", "or" and "beats"', () => {
+  it('reads two sides from "vs", "or" and "beats", and the side backed', () => {
     expect(parse('Lakers vs Celtics, my money is on the Celtics')).toMatchObject({
-      sideAName: 'Lakers',
-      sideBName: 'Celtics',
-      mySide: 'B',
+      options: ['Lakers', 'Celtics'],
+      pickedIndex: 1,
+      cleanTitle: 'Lakers vs Celtics',
     });
-    expect(parse('Pizza or tacos?')).toMatchObject({ sideAName: 'Pizza', sideBName: 'Tacos' });
-    expect(parse('Duke beats UNC by Saturday')).toMatchObject({ sideAName: 'Duke', sideBName: 'UNC' });
+    expect(parse('Pizza or tacos?').options).toEqual(['Pizza', 'Tacos']);
+    expect(parse('Duke beats UNC by Saturday').options).toEqual(['Duke', 'UNC']);
   });
 
-  it('orders the game teams as they are mentioned', () => {
-    expect(parse('Bills or Chiefs', { event })).toMatchObject({
-      sideAName: 'Buffalo Bills',
-      sideBName: 'Kansas City Chiefs',
-    });
-  });
-
-  it('invites several friends without making it head-to-head', () => {
-    const r = parse('bet @sara22 and Mike a fiver that the anthem goes over 2 minutes');
-    expect(r).toMatchObject({
-      template: 'over-under',
+  it('invites several friends without making it a 1 v 1', () => {
+    expect(parse('bet @sara22 and Mike a fiver that the anthem goes over 2 minutes')).toMatchObject({
+      format: 'sides',
+      options: ['Over', 'Under'],
       friendIds: ['u-sara', 'u-mike'],
-      amount: 5,
-      title: 'The anthem goes over 2 minutes',
+      stake: 5,
+      cleanTitle: 'The anthem goes over 2 minutes',
     });
   });
 });
 
-describe('parseBetText: leaving the defaults alone', () => {
-  it('sets nothing for empty text', () => {
-    expect(parse('   ')).toEqual({ found: [] });
+describe('parseBetText: leaving the rest of the form alone', () => {
+  it('says nothing about empty text', () => {
+    expect(parse('   ')).toEqual({});
   });
 
-  it('lists only what it understood', () => {
-    const r = parse('Will it snow');
-    expect(r.found).toEqual(expect.arrayContaining(['template', 'title', 'category']));
-    expect(r.found).not.toContain('amount');
-    expect(r.found).not.toContain('deadline');
-    expect(r.amount).toBeUndefined();
-    expect(r.deadlineMinutes).toBeUndefined();
-    expect(r.friendIds).toBeUndefined();
+  it('says nothing about a statement with no clues', () => {
+    expect(parse('Sam makes the 8:15 train')).toEqual({});
   });
 
-  it('reads a plain statement as yes/no, but does not claim it found the type', () => {
-    const r = parse("Sara can't eat 10 wings");
-    expect(r.template).toBe('yes-no');
-    expect(r.found).not.toContain('template');
+  it('does not read an open question as yes/no', () => {
+    expect(parse('Who wins the Super Bowl?')).toEqual({ category: 'SPORTS' });
   });
 
-  it('does not take "in 5 minutes" in the challenge as the deadline', () => {
+  it('only gives a cleaned question when words went elsewhere', () => {
+    expect(parse('Will it snow').cleanTitle).toBeUndefined();
+    expect(parse('will it snow tomorrow?').cleanTitle).toBeUndefined();
+    expect(parse('$5 will it snow').cleanTitle).toBe('Will it snow');
+  });
+
+  it('does not take "in 5 minutes" in the challenge as the closing time', () => {
     expect(parse("Sara can't eat 10 wings in 5 minutes").deadlineMinutes).toBeUndefined();
     expect(parse('Will it rain, closes in 45 minutes').deadlineMinutes).toBe(45);
   });
 
   it('does not split "or more" and "or not" into sides', () => {
-    expect(parse('Bills win by 10 or more').sideBName).toBe('No');
-    expect(parse('Will it rain or not').template).toBe('yes-no');
+    expect(parse('Bills win by 10 or more').options).toBeUndefined();
+    expect(parse('Will it rain or not').options).toEqual(['Yes', 'No']);
   });
 
   it('does not match a friend just because their name is a word in the bet', () => {
-    expect(parse('Will Mike Trout hit a homer').friendIds).toBeUndefined();
+    const r = parse('Will Mike Trout hit a homer');
+    expect(r.friendIds).toBeUndefined();
+    expect(r.opponentId).toBeUndefined();
   });
 
   it('does not guess a category from nothing', () => {
     expect(parse('Pizza or tacos?').category).toBeUndefined();
   });
 
-  it('keeps the description as typed', () => {
-    expect(parse('  bet  you $5   it snows ').description).toBe('bet you $5 it snows');
+  it('does not pick a side for a pool nobody picked in', () => {
+    expect(parse('I bet: Ana, Ben or Cal').pickedIndex).toBeUndefined();
   });
 });
 
-describe('parseBetText: amounts', () => {
+describe('parseBetText: stakes', () => {
   it.each([
     ['$20 it snows', 20],
     ['$ 7.50 it snows', 7.5],
@@ -203,17 +188,17 @@ describe('parseBetText: amounts', () => {
     ['twenty dollars it snows', 20],
     ['a fiver it snows', 5],
     ['for 3 dollars, it snows', 3],
-  ])('%s', (text, amount) => {
-    expect(parse(text).amount).toBe(amount);
+  ])('%s', (text, stake) => {
+    expect(parse(text).stake).toBe(stake);
   });
 
-  it('does not read a ticker or a score as an amount', () => {
-    expect(parse('$TSLA closes green').amount).toBeUndefined();
-    expect(parse('Over 45.5 points').amount).toBeUndefined();
+  it('does not read a ticker or a line as a stake', () => {
+    expect(parse('$TSLA closes green').stake).toBeUndefined();
+    expect(parse('Over 45.5 points').stake).toBeUndefined();
   });
 });
 
-describe('parseBetText: deadlines', () => {
+describe('parseBetText: closing times', () => {
   it.each([
     ['it snows in 2 hours', 120],
     ['it snows in an hour', 60],
@@ -234,7 +219,7 @@ describe('parseBetText: deadlines', () => {
     expect(parse(text).deadlineMinutes).toBe(minutes);
   });
 
-  it('caps a deadline at a year', () => {
+  it('caps a closing time at a year', () => {
     expect(parse('it snows in 500 days').deadlineMinutes).toBe(365 * 24 * 60);
   });
 });

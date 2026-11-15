@@ -1,89 +1,59 @@
 /**
- * Reads a bet typed in plain words ("$20 says the Chiefs beat the Bills tonight") and
- * works out as much of the create-bet form as it can: bet type, category, sides or pool
- * options, amount, deadline, friends to invite and which side the creator is backing.
+ * Reads the bet question as it is typed ("$20 says the Bills win tonight") and works out
+ * what else on the Create screen it already says: two sides or a pool's options, a 1 v 1
+ * against a friend, the side the creator backs, the stake, the closing time, friends to
+ * invite and a category.
  *
- * It returns only what the text actually said. Every field it leaves out stays at the
- * form's default, and `found` lists what it did set, so the screen can show what was
- * understood. Nothing here is trusted: the creator reviews the form, and the server's
- * createBetWithStake checks it again (amplify/shared/createBetLogic.ts).
+ * It returns only what the text said. A field it leaves out was not mentioned, and the
+ * form keeps whatever it holds (see betTextAutofill.ts for how the screen applies it).
+ * Nothing here is trusted: the creator sees the filled form before sending, and the
+ * server's createBetWithStake checks everything again.
  *
  * Rules, not a model: instant, offline, the same answer every time. Pure, so it is unit
  * tested (__tests__/betTextParser.test.ts holds the phrasings it is meant to handle).
  */
 
-import { MAX_OPTIONS, MIN_POOL_OPTIONS, type OptionKey } from '../../amplify/shared/betOptions';
+import { MAX_OPTIONS, MIN_POOL_OPTIONS } from '../../amplify/shared/betOptions';
 import { LIMITS } from '../../amplify/shared/createBetLogic';
-
-export type BetTemplateId =
-  | 'next-score'
-  | 'player-prop'
-  | 'over-under'
-  | 'yes-no'
-  | 'head-to-head'
-  | 'pool'
-  | 'custom';
+import { gameTeams, isValidStake, type BetFormat, type GameForSuggestions } from './createBetFlowLogic';
 
 export type BetCategory = 'SPORTS' | 'ENTERTAINMENT' | 'WEATHER' | 'STOCKS' | 'CUSTOM';
 
 export interface ParserFriend {
   id: string;
-  username: string;
+  username?: string | null;
   displayName?: string | null;
-}
-
-export interface ParserEvent {
-  homeTeam: string;
-  awayTeam: string;
-  homeTeamShortName?: string;
-  awayTeamShortName?: string;
-  homeTeamCode?: string;
-  awayTeamCode?: string;
 }
 
 export interface ParseContext {
   friends?: ParserFriend[];
-  /** The game the creator is checked in to, if any. */
-  event?: ParserEvent | null;
-  /** For deadlines like "tonight"; defaults to the current time. */
+  /** The game the creator is checked in to, if any */
+  event?: GameForSuggestions | null;
+  /** For closing times like "tonight"; defaults to the current time */
   now?: Date;
 }
 
-export type ParsedField =
-  | 'template'
-  | 'category'
-  | 'title'
-  | 'sides'
-  | 'options'
-  | 'amount'
-  | 'deadline'
-  | 'friends'
-  | 'side'
-  | 'event';
-
+/** The parts of the form the text spoke to. Anything left out was not mentioned. */
 export interface ParsedBet {
-  template?: BetTemplateId;
-  category?: BetCategory;
-  title?: string;
-  /** The text as typed, so the bet always has a description. */
-  description?: string;
-  sideAName?: string;
-  sideBName?: string;
-  /** A pool's three to six options, in order. */
+  /** 2 sides, a pool, or a 1 v 1 when one friend is named as the opponent */
+  format?: BetFormat;
+  /** Two side names, or a pool's three to six options, in key order. Comes with `format`. */
   options?: string[];
-  amount?: number;
+  /** Which of the options the creator backs */
+  pickedIndex?: number;
+  stake?: number;
   deadlineMinutes?: number;
+  /** Friends to invite (2 sides or a pool) */
   friendIds?: string[];
-  /** The option the creator is backing. */
-  mySide?: OptionKey;
-  /** The sides are the checked-in game's two teams. */
-  usesEvent?: boolean;
+  /** The one friend challenged (1 v 1) */
+  opponentId?: string;
+  category?: BetCategory;
   /**
-   * What the text set. A field missing here was not understood: keep the form's
-   * default. `template` is set even when only guessed (a plain statement reads as a
-   * yes/no bet), but is listed here only when a rule matched.
+   * The question without the words that went into other fields (the stake, "bet Mike",
+   * "I'll take the over", a pool's list). Only set when some did: otherwise the question
+   * stays exactly as typed.
    */
-  found: ParsedField[];
+  cleanTitle?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -207,6 +177,10 @@ interface FriendMatch {
   ids: string[];
   /** Named as the one opponent ("bet Mike", "me vs Mike"), not just mentioned. */
   opponent: boolean;
+  /** "Bet Mike ...": the creator backs what follows */
+  betTrigger: boolean;
+  /** Words were taken out of the question ("bet Mike", "@mikeb") */
+  removed: boolean;
   rest: string;
   /** The friends' names as typed, to recognise them as a side. */
   names: Map<string, string>;
@@ -226,7 +200,7 @@ function takeFriends(text: string, friends: ParserFriend[]): FriendMatch {
     if (first && first.length >= 3) add(first, f.id);
   }
   const names = [...byName.keys()].filter((k) => byName.get(k)).sort((a, b) => b.length - a.length);
-  const empty: FriendMatch = { ids: [], opponent: false, rest: text, names: new Map() };
+  const empty: FriendMatch = { ids: [], opponent: false, betTrigger: false, removed: false, rest: text, names: new Map() };
   if (names.length === 0) return empty;
 
   const N = `@?(?:${names.map(escapeRegExp).join('|')})`;
@@ -234,6 +208,8 @@ function takeFriends(text: string, friends: ParserFriend[]): FriendMatch {
   const ids: string[] = [];
   const typed = new Map<string, string>();
   let opponent = false;
+  let betTrigger = false;
+  let removed = false;
   let rest = text;
 
   const record = (chunk: string) => {
@@ -250,8 +226,11 @@ function takeFriends(text: string, friends: ParserFriend[]): FriendMatch {
     record(chunk);
     const t = trigger.toLowerCase();
     if (t !== 'with' && t !== 'invite') opponent = true;
+    if (t === 'bet' || t === 'challenge') betTrigger = true;
     // "Bet Mike ..." and "invite Mike" are instructions, not part of what is bet on
-    return /^(bet|challenge|invite)$/.test(t) ? ' ' : whole;
+    if (!/^(bet|challenge|invite)$/.test(t)) return whole;
+    removed = true;
+    return ' ';
   });
 
   const reverse = new RegExp(`(?:^|\\s)(${N})\\s+(?:and (?:i|me)\\b|vs\\.?\\s|versus\\b)`, 'gi');
@@ -261,9 +240,13 @@ function takeFriends(text: string, friends: ParserFriend[]): FriendMatch {
   }
 
   for (const m of rest.matchAll(/@([\w.-]+)/g)) record(m[1]);
-  rest = rest.replace(/@([\w.-]+)/g, (whole, handle: string) => (byName.get(handle.toLowerCase()) ? ' ' : whole));
+  rest = rest.replace(/@([\w.-]+)/g, (whole, handle: string) => {
+    if (!byName.get(handle.toLowerCase())) return whole;
+    removed = true;
+    return ' ';
+  });
 
-  return { ids, opponent, rest, names: typed };
+  return { ids, opponent, betTrigger, removed, rest, names: typed };
 }
 
 // ---------------------------------------------------------------------------
@@ -296,10 +279,11 @@ const okOption = (s: string) => s.length > 0 && s.length <= 40 && wordCount(s) <
 function findPool(text: string): { lead: string; items: string[] } | null {
   let lead = '';
   let seg = text;
-  const split = text.match(/^(.*?)(?::|\s[-–—]\s|\bbetween\b)\s*(.+)$/i);
+  // "Who wins: A, B or C", "Who wins? A, B or C", "Best picture - A, B, C", "between A, B and C"
+  const split = text.match(/^(.*?)(:|\?|\s[-–—]\s|\bbetween\b)\s*(.+)$/i);
   if (split) {
-    lead = split[1];
-    seg = split[2];
+    lead = split[2] === '?' ? `${split[1]}?` : split[1];
+    seg = split[3];
   }
 
   let items = seg.split(/\s+(?:vs\.?|versus)\s+/i);
@@ -348,15 +332,16 @@ function findTwoSides(text: string): [string, string] | null {
 // ---------------------------------------------------------------------------
 // The checked-in game
 
-function teamNames(event: ParserEvent, home: boolean): string[] {
+function teamNames(event: GameForSuggestions, home: boolean): string[] {
+  const { away: awayLabel, home: homeLabel } = gameTeams(event);
   const names = home
-    ? [event.homeTeam, event.homeTeamShortName, event.homeTeamCode]
-    : [event.awayTeam, event.awayTeamShortName, event.awayTeamCode];
+    ? [event.homeTeam, event.homeTeamShortName, event.homeTeamCode, homeLabel]
+    : [event.awayTeam, event.awayTeamShortName, event.awayTeamCode, awayLabel];
   return names.filter((n): n is string => !!n && n.trim().length >= 2).map((n) => n.toLowerCase());
 }
 
 /** Where the team is first mentioned, or -1. */
-function teamMention(text: string, event: ParserEvent, home: boolean): number {
+function teamMention(text: string, event: GameForSuggestions, home: boolean): number {
   let first = -1;
   for (const name of teamNames(event, home)) {
     const m = text.match(new RegExp(`\\b${escapeRegExp(name)}\\b`, 'i'));
@@ -365,13 +350,13 @@ function teamMention(text: string, event: ParserEvent, home: boolean): number {
   return first;
 }
 
-/** The team's full name if this side is one of the game's teams. */
-function asTeam(side: string, event: ParserEvent): string | undefined {
+/** The team as the form names it ("Bills"), if this side is one of the game's teams. */
+function asTeam(side: string, event: GameForSuggestions): string | undefined {
   const s = side.toLowerCase();
+  const labels = gameTeams(event);
   for (const home of [true, false]) {
-    const full = home ? event.homeTeam : event.awayTeam;
     for (const name of teamNames(event, home)) {
-      if (s === name || (s.length >= 3 && (name.includes(s) || s.includes(name)))) return full;
+      if (s === name || (s.length >= 3 && (name.includes(s) || s.includes(name)))) return home ? labels.home : labels.away;
     }
   }
   return undefined;
@@ -401,45 +386,37 @@ function readCategory(text: string): BetCategory | undefined {
 
 const NEXT_SCORE = /\bnext\s+(?:score|basket|bucket|goal|touchdown|td|point|points|run|field goal|fg)\b|\bscores?\s+(?:next|first)\b|\bfirst\s+to\s+score\b/i;
 const OVER_UNDER = /\bover\s*\/\s*under\b|\bover[\s-]+under\b|\bo\/u\b|\bover or under\b|\b(?:over|under)\s+\d+(?:\.\d+)?\b/i;
-const PROP_NUMBER = /\b\d+(?:\.\d+)?\s*\+|\bat least\s+\d+|\b\d+\s+or more\b/i;
-const PROP_STAT =
-  /\b(?:points?|pts|tds?|touchdowns?|yards?|yds|goals?|assists?|rebounds?|boards|hits?|home runs?|hrs|homers?|strikeouts?|ks|sacks?|threes|3s|3-pointers|receptions?|catches|interceptions?|ints|saves|aces|birdies)\b/i;
 const ME = /^(?:me|i|myself)$/i;
 
 // ---------------------------------------------------------------------------
 
 export function parseBetText(input: string, context: ParseContext = {}): ParsedBet {
   const now = context.now ?? new Date();
-  const found = new Set<ParsedField>();
-  const result: ParsedBet = { found: [] };
+  const result: ParsedBet = {};
   const original = squash(input);
   if (!original) return result;
-
-  result.description = original.slice(0, LIMITS.description);
+  // Words that went into another field, so the question can lose them
+  let removed = false;
 
   // 1. Pull out the parts that are not what the bet is about
   const amount = takeAmount(original);
-  if (amount.amount !== undefined) {
-    result.amount = amount.amount;
-    found.add('amount');
+  if (amount.amount !== undefined && isValidStake(amount.amount)) {
+    result.stake = amount.amount;
+    removed = true;
   }
 
   const deadline = readDeadline(original, now);
-  if (deadline !== undefined) {
-    result.deadlineMinutes = deadline;
-    found.add('deadline');
-  }
+  if (deadline !== undefined) result.deadlineMinutes = deadline;
 
   const friends = takeFriends(amount.rest, context.friends ?? []);
-  if (friends.ids.length > 0) {
-    result.friendIds = friends.ids;
-    found.add('friends');
-  }
+  if (friends.removed) removed = true;
 
   const pick = takePick(friends.rest);
+  if (pick.pick) removed = true;
+
   // "I bet ...", "$20 says ...", "bet you ...": the creator backs what follows
   let text = squash(pick.rest);
-  let assertive = false;
+  let assertive = friends.betTrigger;
   const lead = text.match(/^(?:i\s+)?(?:bet(?:\s+you)?|says?)\b(?:\s+that)?\s*|^i\s+think\s+(?:that\s+)?/i);
   if (lead) {
     assertive = true;
@@ -447,61 +424,44 @@ export function parseBetText(input: string, context: ParseContext = {}): ParsedB
   }
   text = trimEdges(text);
 
-  // 2. What kind of bet it is
-  let template: BetTemplateId | undefined;
-  let sides: [string, string] | undefined;
-
+  // 2. The sides, or a pool's options
   const pool = findPool(text);
   const two = pool ? null : findTwoSides(text);
-
-  if (NEXT_SCORE.test(text)) template = 'next-score';
-  else if (OVER_UNDER.test(text)) template = 'over-under';
-  else if (pool) template = 'pool';
-  else if (PROP_NUMBER.test(text) && PROP_STAT.test(text) && !two) template = 'player-prop';
-  else if (two) template = 'custom';
-  else if (QUESTION_START.test(text) || assertive || /\?$/.test(text)) template = 'yes-no';
-  if (template) found.add('template');
-
-  if (pool) {
-    result.options = pool.items;
-    found.add('options');
-  } else if (template === 'over-under') {
-    sides = ['Over', 'Under'];
-  } else if (two) {
-    sides = two;
-  }
-
-  // The checked-in game's teams, when the text names them
   const event = context.event;
-  if (event && !pool) {
-    if (sides) {
-      const a = asTeam(sides[0], event);
-      const b = asTeam(sides[1], event);
-      if (a && b && a !== b) {
-        sides = [a, b];
-        result.usesEvent = true;
-      }
-    } else if (template !== 'yes-no' && template !== 'player-prop' && template !== 'over-under') {
-      const home = teamMention(text, event, true);
-      const away = teamMention(text, event, false);
-      if ((home >= 0 && away >= 0) || template === 'next-score') {
-        sides = home >= 0 && away >= 0 && away < home ? [event.awayTeam, event.homeTeam] : [event.homeTeam, event.awayTeam];
-        result.usesEvent = true;
-      }
-    }
-    if (!result.usesEvent && (teamMention(text, event, true) >= 0 || teamMention(text, event, false) >= 0)) {
-      result.category = 'SPORTS';
-    }
-    if (result.usesEvent) found.add('event');
+  let options: string[] | undefined;
+  if (pool) {
+    options = pool.items;
+    removed = true;
+  } else if (OVER_UNDER.test(text)) {
+    options = ['Over', 'Under'];
+  } else if (two) {
+    options = two;
+  } else if (QUESTION_START.test(text) || assertive) {
+    // "Will it rain?", "I bet it rains". An open question ("Who wins?") is not yes/no.
+    options = ['Yes', 'No'];
   }
 
-  // Two named sides that are a game's teams read as sports; "who wins" alone does not
-  if (two && template === 'custom' && result.usesEvent) result.category = 'SPORTS';
+  // The checked-in game's teams, named as the form names them
+  if (event && !pool) {
+    const home = teamMention(text, event, true);
+    const away = teamMention(text, event, false);
+    if (options?.length === 2 && two) {
+      const a = asTeam(two[0], event);
+      const b = asTeam(two[1], event);
+      if (a && b && a !== b) options = [a, b];
+    } else if (!options && ((home >= 0 && away >= 0) || NEXT_SCORE.test(text))) {
+      const { away: awayLabel, home: homeLabel } = gameTeams(event);
+      options = home >= 0 && away >= 0 && home < away ? [homeLabel, awayLabel] : [awayLabel, homeLabel];
+    }
+    if (home >= 0 || away >= 0) result.category = 'SPORTS';
+  }
 
-  // One friend named as the opponent: head-to-head, keeping the sides already read
-  if (friends.opponent && friends.ids.length === 1 && template !== 'pool') {
-    if (template === 'yes-no' || !template) sides = ['Yes', 'No'];
-    if (sides) {
+  // 3. A 1 v 1 when one friend is named as the opponent; otherwise friends are invited
+  const challenge = friends.opponent && friends.ids.length === 1 && !pool;
+  if (challenge) {
+    result.format = 'challenge';
+    result.opponentId = friends.ids[0];
+    if (options && two) {
       // "Me vs Mike at golf": the sides are the two people
       const friend = context.friends?.find((f) => f.id === friends.ids[0]);
       const theirName = capitalize(friend?.displayName?.trim().split(/\s+/)[0] || friend?.username || 'They');
@@ -509,69 +469,50 @@ export function parseBetText(input: string, context: ParseContext = {}): ParsedB
         const first = s.toLowerCase().split(/\s+/)[0].replace(/^@/, '');
         return friends.names.has(first) || friends.names.has(s.toLowerCase());
       };
-      if (ME.test(sides[0]) && isFriend(sides[1])) sides = ['I win', `${theirName} wins`];
-      else if (isFriend(sides[0]) && ME.test(sides[1])) sides = [`${theirName} wins`, 'I win'];
+      if (ME.test(two[0]) && isFriend(two[1])) options = ['I win', `${theirName} wins`];
+      else if (isFriend(two[0]) && ME.test(two[1])) options = [`${theirName} wins`, 'I win'];
     }
-    template = 'head-to-head';
-    found.add('template');
+  } else if (friends.ids.length > 0) {
+    result.friendIds = friends.ids;
+  }
+  if (options) {
+    result.options = options.map((o) => o.slice(0, LIMITS.sideName));
+    if (!result.format) result.format = pool ? 'pool' : 'sides';
   }
 
-  if (sides) {
-    result.sideAName = sides[0].slice(0, LIMITS.sideName);
-    result.sideBName = sides[1].slice(0, LIMITS.sideName);
-    if (template !== 'yes-no' && template !== 'over-under') found.add('sides');
-  }
-
-  // A plain statement with nothing else to go on is a yes/no bet; not listed as found
-  result.template = template ?? (wordCount(text) >= 2 ? 'yes-no' : undefined);
-  if (result.template === 'yes-no' && !sides) {
-    result.sideAName = 'Yes';
-    result.sideBName = 'No';
-  }
-
-  // 3. Which side the creator is on
-  const optionNames = result.options ?? (result.sideAName ? [result.sideAName, result.sideBName ?? ''] : []);
-  const keys: OptionKey[] = ['A', 'B', 'C', 'D', 'E', 'F'];
-  let mine: number | undefined;
-  if (pick.pick) {
-    const p = pick.pick.replace(/^the\s+/, '');
-    const yesNo: Record<string, number> = { yes: 0, no: 1, over: 0, under: 1 };
-    mine = optionNames.findIndex((n) => {
-      const name = n.toLowerCase();
-      return name === p || (p.length >= 3 && (name.includes(p) || p.includes(name)));
-    });
-    if (mine < 0 && result.sideAName === 'Yes' && p in yesNo) mine = yesNo[p];
-    if (mine < 0 && result.sideAName === 'Over' && p in yesNo) mine = yesNo[p];
-    if (mine < 0) mine = undefined;
-  } else if (optionNames.length === 2) {
-    if (optionNames[0] === 'I win') mine = 0;
-    else if (optionNames[1] === 'I win') mine = 1;
-    else if (assertive && (result.template === 'yes-no' || result.template === 'head-to-head' || two)) mine = 0;
-  }
-  if (mine !== undefined) {
-    result.mySide = keys[mine];
-    found.add('side');
-  }
-
-  // 4. Title: what is bet on, without the amount, the friend or the pick
-  let title = text;
-  if (pool && pool.lead) title = pool.lead;
-  title = trimEdges(title);
-  if (QUESTION_START.test(title) || OPEN_QUESTION.test(title)) title = title.replace(/\?*$/, '?');
-  title = capitalize(title);
-  if (title.length > LIMITS.title) title = title.slice(0, LIMITS.title).replace(/\s+\S*$/, '');
-  if (title.length >= 2) {
-    result.title = title;
-    found.add('title');
+  // 4. Which side the creator is on
+  if (options) {
+    let mine = -1;
+    if (pick.pick) {
+      const p = pick.pick.replace(/^the\s+/, '');
+      mine = options.findIndex((n) => {
+        const name = n.toLowerCase();
+        return name === p || (p.length >= 3 && (name.includes(p) || p.includes(name)));
+      });
+    } else if (options.includes('I win')) {
+      mine = options.indexOf('I win');
+    } else if (assertive && options[0] === 'Over') {
+      // "$20 says under 45.5"
+      mine = /^under\b/i.test(text) ? 1 : 0;
+    } else if (assertive && !pool) {
+      mine = 0;
+    }
+    if (mine >= 0) result.pickedIndex = mine;
   }
 
   // 5. Category, from the words used
-  const category = result.category ?? readCategory(original);
-  if (category) {
-    result.category = category;
-    found.add('category');
+  result.category = result.category ?? readCategory(original);
+  if (!result.category) delete result.category;
+
+  // 6. The question without what went elsewhere; untouched when nothing did
+  if (removed) {
+    let title = pool && pool.lead ? pool.lead : text;
+    title = trimEdges(title);
+    if (pool && pool.lead && OPEN_QUESTION.test(title)) title = title.replace(/\?*$/, '?');
+    title = capitalize(title);
+    if (title.length > LIMITS.title) title = title.slice(0, LIMITS.title).replace(/\s+\S*$/, '');
+    if (title.length >= 2 && title !== original) result.cleanTitle = title;
   }
 
-  result.found = [...found];
   return result;
 }

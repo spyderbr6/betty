@@ -6,6 +6,11 @@
  * After a bet is sent, "Another bet" keeps the game, stake, closing time and friends and
  * clears only the question.
  *
+ * The question is read as it is typed (services/betTextParser.ts): "$20 says the Bills
+ * win tonight, bet Sam" fills the sides, the pick, the stake, the closing time and the
+ * friend, and only those (services/betTextAutofill.ts). The words that went into other
+ * fields leave the question when you are done typing.
+ *
  * Creating is one call to the server's createBetWithStake (it re-checks everything and
  * takes the stake); invitations are still sent from here afterwards. The decisions are
  * pure functions in services/createBetFlowLogic.ts.
@@ -71,6 +76,14 @@ import { FriendPickerModal } from '../components/createBet/FriendPickerModal';
 import { CreateBar } from '../components/createBet/CreateBar';
 import { BetSentPanel } from '../components/createBet/BetSentPanel';
 import { SquaresSetup } from '../components/createBet/SquaresSetup';
+import { parseBetText } from '../services/betTextParser';
+import {
+  autofillValues,
+  EMPTY_AUTOFILL,
+  planAutofill,
+  type AutofillState,
+  type AutofillValues,
+} from '../services/betTextAutofill';
 
 const client = generateClient<Schema>();
 
@@ -145,6 +158,8 @@ export const CreateBetScreen: React.FC = () => {
   const [pickedDate, setPickedDate] = useState<Date | null>(null);
   const [isPrivate, setIsPrivate] = useState(false);
   const [selectedFriends, setSelectedFriends] = useState<Set<string>>(new Set());
+  // What the question has filled in so far, so it can be taken back when the words go
+  const autofillRef = useRef<AutofillState>(EMPTY_AUTOFILL);
 
   // Around the form
   const [friends, setFriends] = useState<User[]>([]);
@@ -252,6 +267,8 @@ export const CreateBetScreen: React.FC = () => {
   const activeSuggestionId = suggestion && suggestion.title === title ? suggestion.id : null;
 
   const pickSuggestion = (picked: BetSuggestion) => {
+    // A suggestion replaces the question, and with it what the typed one filled in
+    autofillRef.current = EMPTY_AUTOFILL;
     // A second tap on the selected suggestion clears what it filled in
     if (picked.id === activeSuggestionId) {
       setSuggestion(null);
@@ -335,6 +352,78 @@ export const CreateBetScreen: React.FC = () => {
   };
 
   // ---------------------------------------------------------------------------
+  // The question fills the rest of the form
+  // ---------------------------------------------------------------------------
+
+  /** The fields the question can fill, as the form holds them now. */
+  const formValues = (): AutofillValues => ({
+    format,
+    sides: sideNames,
+    pool: poolNames,
+    pickedIndex,
+    stake,
+    close: { id: closeId, date: closeId === 'date' && pickedDate ? pickedDate.toISOString() : null },
+    friends: Array.from(selectedFriends).sort(),
+    opponentId,
+  });
+
+  const parseQuestion = (text: string) =>
+    parseBetText(text, { friends, event, now: new Date() });
+
+  const applyAutofill = (set: AutofillValues) => {
+    if ('format' in set && set.format && set.format !== format) {
+      setFormat(set.format);
+      if (set.format === 'challenge') setPickedIndex((prev) => (prev === 0 || prev === 1 ? prev : 0));
+      else if (set.format === 'sides') setPickedIndex((prev) => (prev === 0 || prev === 1 ? prev : null));
+      else setPickedIndex(null);
+    }
+    if ('sides' in set && set.sides) {
+      const names = set.sides;
+      setSideNames(names);
+      const preset = presets.find((p) => p.options && p.options.join('\n') === names.join('\n'));
+      setPresetId(preset?.id ?? 'custom');
+    }
+    if ('pool' in set && set.pool) {
+      setPoolNames(set.pool);
+      setPoolEditing(false);
+    }
+    if ('pickedIndex' in set) setPickedIndex(set.pickedIndex ?? null);
+    if ('stake' in set && set.stake !== undefined) setStake(set.stake);
+    if ('close' in set && set.close) {
+      setCloseId(set.close.id);
+      if (set.close.date) setPickedDate(new Date(set.close.date));
+    }
+    if ('friends' in set) setSelectedFriends(new Set(set.friends ?? []));
+    if ('opponentId' in set) setOpponentId(set.opponentId ?? null);
+  };
+
+  const typeQuestion = (text: string) => {
+    setTitle(text);
+    const current = formValues();
+    const next = autofillValues(parseQuestion(text), {
+      now: new Date(),
+      closeOptions: closeTimeOptions(new Date()),
+      state: autofillRef.current,
+      current,
+    });
+    const plan = planAutofill(autofillRef.current, next, current);
+    autofillRef.current = plan.state;
+    applyAutofill(plan.set);
+  };
+
+  /**
+   * Done typing: the words that went into other fields ("$20", "bet Sam") leave the
+   * question. What they filled in stays, and is no longer tied to the words.
+   */
+  const tidyQuestion = (): string => {
+    const clean = parseQuestion(title).cleanTitle;
+    if (!clean) return title;
+    setTitle(clean);
+    autofillRef.current = EMPTY_AUTOFILL;
+    return clean;
+  };
+
+  // ---------------------------------------------------------------------------
   // What the form adds up to
   // ---------------------------------------------------------------------------
 
@@ -401,7 +490,9 @@ export const CreateBetScreen: React.FC = () => {
       setShowAddFunds(true);
       return;
     }
-    const problem = draftProblem({ format, title, details, options, pickedIndex, stake, closeMinutes: deadline });
+    // The keyboard can stay up while Create is tapped, so the question may not be tidied yet
+    const question = tidyQuestion();
+    const problem = draftProblem({ format, title: question, details, options, pickedIndex, stake, closeMinutes: deadline });
     if (problem) {
       showAlert(problem.title, problem.message);
       return;
@@ -416,12 +507,13 @@ export const CreateBetScreen: React.FC = () => {
       if (!pendingBetIdRef.current) pendingBetIdRef.current = newBetId();
       const betId = pendingBetIdRef.current;
       const names = options.map((name) => name.trim());
-      const description = betDescription(details, title, event);
+      const description = betDescription(details, question, event);
       const result = await createBetWithStake({
         betId,
-        title: title.trim(),
+        title: question.trim(),
         description,
-        category: event ? 'SPORTS' : 'CUSTOM',
+        // At a game it is sports; otherwise what the question is about, if that is clear
+        category: event ? 'SPORTS' : parseQuestion(question).category ?? 'CUSTOM',
         amount: stake,
         side: OPTION_KEYS[pickedIndex],
         sideAName: names[0],
@@ -445,11 +537,11 @@ export const CreateBetScreen: React.FC = () => {
       pendingBetIdRef.current = null;
       AsyncStorage.setItem(LAST_STAKE_KEY, String(stake)).catch(() => undefined);
 
-      await sendInvitations(betId, title.trim(), invitees);
+      await sendInvitations(betId, question.trim(), invitees);
 
       setSent({
         betId,
-        title: title.trim(),
+        title: question.trim(),
         description,
         pickName: names[pickedIndex],
         stake,
@@ -473,6 +565,7 @@ export const CreateBetScreen: React.FC = () => {
   /** The next bet: the question clears; game, stake, closing time and friends stay. */
   const anotherBet = () => {
     pendingBetIdRef.current = null;
+    autofillRef.current = EMPTY_AUTOFILL;
     setSent(null);
     setSuggestion(null);
     setTitle('');
@@ -572,6 +665,25 @@ export const CreateBetScreen: React.FC = () => {
           </View>
         )}
 
+        {/* The question first: typing it can fill in everything below */}
+        <BetQuestion
+          ref={titleRef}
+          title={title}
+          onTitleChange={typeQuestion}
+          onTitleBlur={tidyQuestion}
+          details={details}
+          onDetailsChange={setDetails}
+          showDetails={showDetails}
+          onShowDetails={() => setShowDetails(true)}
+          placeholder={
+            format === 'challenge'
+              ? 'e.g. Bet Sam $10 I win at golf'
+              : format === 'pool'
+                ? 'e.g. Who wins the Super Bowl? Chiefs, Bills or Eagles'
+                : "What's the bet? e.g. $10 says it snows tonight"
+          }
+        />
+
         {format === 'challenge' ? (
           <FormatTabs value={format} onChange={changeFormat} onSquares={() => setShowSquares(true)} />
         ) : (
@@ -588,22 +700,6 @@ export const CreateBetScreen: React.FC = () => {
             onPickOpponent={(id) => setOpponentId((prev) => (prev === id ? null : id))}
           />
         )}
-            <BetQuestion
-              ref={titleRef}
-              title={title}
-              onTitleChange={setTitle}
-              details={details}
-              onDetailsChange={setDetails}
-              showDetails={showDetails}
-              onShowDetails={() => setShowDetails(true)}
-              placeholder={
-                format === 'challenge'
-                  ? 'What are the two of you betting on?'
-                  : format === 'pool'
-                    ? 'e.g. Who wins the Super Bowl?'
-                    : "What's the bet?"
-              }
-            />
 
             {format === 'sides' && (
               <SidePicker
