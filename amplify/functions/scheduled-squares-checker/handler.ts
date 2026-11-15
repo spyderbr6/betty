@@ -10,6 +10,7 @@ import { ledgerApply } from '../../shared/moneyClient';
 import { isProActive } from '../../../src/config/subscriptionConfig';
 import {
   calculatePayout,
+  isZeroSharePeriod,
   FINAL_PERIOD,
   periodsToSettle,
   settledPeriodCount,
@@ -457,6 +458,36 @@ async function processPeriodScoresForLiveGames(): Promise<number> {
         // Calculate payout from what the buyers actually paid, not the game's totalPot
         // field (written by buyers' phones, read-then-write, so it can drift or be set)
         const pot = potFromPurchases(purchases);
+        // A period the creator gave no share ("Final only"): record its winning square
+        // with $0 so the game still counts four periods and resolves. No money moves.
+        // Without this the $0 check below skipped it every run, and the game sat LIVE
+        // until the two-day fallback.
+        if (isZeroSharePeriod(period, payoutStructure)) {
+          const now = new Date().toISOString();
+          const recorded = await recordPayout({
+            id: squaresPayoutRecordId(fullGame.id, periodEnum as SquaresPeriod),
+            squaresGameId: fullGame.id,
+            squaresPurchaseId: winningPurchase.id,
+            userId: winningPurchase.userId,
+            ownerName: winningPurchase.ownerName,
+            period: periodEnum,
+            amount: 0,
+            homeScore: homeScore % 10,
+            awayScore: awayScore % 10,
+            homeScoreFull: homeScore,
+            awayScoreFull: awayScore,
+            status: 'COMPLETED',
+            createdAt: now,
+            paidAt: now,
+          });
+          if (recorded === 'failed') {
+            console.error(`❌ Failed to record no-share Period ${period} of game ${fullGame.id}; will retry`);
+          } else {
+            console.log(`Period ${period} of game ${fullGame.id} carries no share; recorded with $0 (${recorded})`);
+          }
+          continue;
+        }
+
         const payoutAmount = calculatePayout(period, pot, payoutStructure);
 
         // CRITICAL: Prevent zero or negative payouts

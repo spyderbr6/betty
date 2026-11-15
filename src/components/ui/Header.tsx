@@ -33,6 +33,8 @@ interface HeaderProps {
   rightComponent?: React.ReactNode;
   variant?: 'default' | 'transparent' | 'minimal';
   notificationCount?: number;
+  /** False on a screen that shows the checked-in game itself (Create, while checked in) */
+  showEventBanner?: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -43,6 +45,7 @@ export const Header: React.FC<HeaderProps> = ({
   rightComponent,
   variant = 'default',
   notificationCount, // Remove default value, we'll fetch it
+  showEventBanner = true,
 }) => {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
@@ -152,13 +155,15 @@ export const Header: React.FC<HeaderProps> = ({
           </View>
         </View>
 
-        {/* Event Check-In Banner - Always visible */}
-        <LiveGameBanner
-          checkedInEvent={checkedInEvent}
-          nearbyEventsCount={nearbyEventsCount}
-          onCheckInPress={handleCheckInPress}
-          onCheckOutPress={handleCheckOut}
-        />
+        {/* Event Check-In Banner, unless the screen shows the game itself */}
+        {showEventBanner && (
+          <LiveGameBanner
+            checkedInEvent={checkedInEvent}
+            nearbyEventsCount={nearbyEventsCount}
+            onCheckInPress={handleCheckInPress}
+            onCheckOutPress={handleCheckOut}
+          />
+        )}
       </View>
 
       {/* Notification Modal */}
