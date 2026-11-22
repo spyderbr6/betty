@@ -1,12 +1,13 @@
 /**
  * One-tap bets on the game you are at: a tap fills the question and the sides; tapping
- * the selected one again clears it.
+ * the selected one again clears it. Shown in every format (the screen orders them with
+ * the current format first); a chip that switches the format says so ("Next score · Pool").
  */
 
 import React from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { spacing } from '../../styles';
-import type { BetSuggestion } from '../../services/createBetFlowLogic';
+import { colors, spacing, typography } from '../../styles';
+import { suggestionTag, type BetSuggestion } from '../../services/createBetFlowLogic';
 import { createStyles } from './styles';
 
 interface SuggestionChipsProps {
@@ -30,6 +31,7 @@ export const SuggestionChips: React.FC<SuggestionChipsProps> = ({ suggestions, a
       >
         {suggestions.map((suggestion) => {
           const active = suggestion.id === activeId;
+          const tag = suggestionTag(suggestion.format);
           return (
             <TouchableOpacity
               key={suggestion.id}
@@ -40,7 +42,14 @@ export const SuggestionChips: React.FC<SuggestionChipsProps> = ({ suggestions, a
               accessibilityState={{ selected: active }}
               accessibilityHint={active ? 'Tap again to clear' : undefined}
             >
-              <Text style={[createStyles.chipText, active && createStyles.chipTextSelected]}>{suggestion.label}</Text>
+              <Text style={[createStyles.chipText, active && createStyles.chipTextSelected]}>
+                {suggestion.label}
+                {tag && (
+                  <Text testID={`create-suggestion-${suggestion.id}-tag`} style={[styles.tag, active && createStyles.chipTextSelected]}>
+                    {`  ${tag}`}
+                  </Text>
+                )}
+              </Text>
             </TouchableOpacity>
           );
         })}
@@ -62,5 +71,9 @@ const styles = StyleSheet.create({
   },
   chip: {
     marginBottom: 0,
+  },
+  tag: {
+    color: colors.textSecondary,
+    fontWeight: typography.fontWeight.normal,
   },
 });

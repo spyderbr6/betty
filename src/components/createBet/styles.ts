@@ -72,6 +72,11 @@ export const createStyles = StyleSheet.create({
     color: colors.textInverse,
     fontWeight: typography.fontWeight.bold,
   },
+  /** Only guessed from the typed bet: a dashed blue outline (FillMark) */
+  guess: {
+    borderStyle: 'dashed',
+    borderColor: colors.filled,
+  },
   /** A picked option: yellow border on a yellow tint */
   picked: {
     borderWidth: 2,

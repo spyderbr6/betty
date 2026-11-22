@@ -48,7 +48,8 @@ export interface BetSuggestion {
   label: string;
   /** The bet's question */
   title: string;
-  format: 'sides' | 'pool';
+  /** The format a tap switches to */
+  format: BetFormat;
   /** Two sides, or a pool's three to six options */
   options: string[];
   /**
@@ -133,7 +134,28 @@ export function betSuggestions(game: GameForSuggestions | null | undefined): Bet
   } else {
     list.push(whoWins);
   }
+  // One against one on the result, offered in every sport ("Challenge a friend · 1 v 1")
+  list.push({
+    id: 'challenge',
+    label: 'Challenge a friend',
+    title: `Who wins, ${away} or ${home}?`,
+    format: 'challenge',
+    options: teams,
+  });
   return list;
+}
+
+/**
+ * The suggestions as the row shows them: the ones in the current format first, the rest
+ * after in their own order, so picking a format never hides any.
+ */
+export function orderSuggestions(list: BetSuggestion[], format: BetFormat): BetSuggestion[] {
+  return [...list.filter((s) => s.format === format), ...list.filter((s) => s.format !== format)];
+}
+
+/** The tag a chip carries when a tap switches the format: "Pool", "1 v 1"; none for 2 sides. */
+export function suggestionTag(format: BetFormat): string | null {
+  return format === 'pool' ? 'Pool' : format === 'challenge' ? '1 v 1' : null;
 }
 
 // ---------------------------------------------------------------------------

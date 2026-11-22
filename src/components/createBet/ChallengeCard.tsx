@@ -12,21 +12,25 @@ import { Avatar, FriendAvatars } from './FriendAvatars';
 import { friendName } from '../../services/createBetFlowLogic';
 import { SidePresetSwitch, SideTile, type SidePreset } from './SidePicker';
 import { createStyles, TARGET } from './styles';
+import { FillMark, type FillMarkKind } from './FillMark';
 
 interface ChallengeOpponentsProps {
   friends: User[];
   atGame: Set<string>;
   opponentId: string | null;
   onPickOpponent: (friendId: string) => void;
+  /** The opponent was named in the typed bet */
+  mark?: FillMarkKind;
 }
 
 /** Who you are challenging: one pick, friends at the game first. */
-export const ChallengeOpponents: React.FC<ChallengeOpponentsProps> = ({ friends, atGame, opponentId, onPickOpponent }) => {
+export const ChallengeOpponents: React.FC<ChallengeOpponentsProps> = ({ friends, atGame, opponentId, onPickOpponent, mark }) => {
   const anyAtGame = friends.some((friend) => atGame.has(friend.id));
   return (
     <View style={createStyles.block}>
       <Text style={[createStyles.label, styles.labelGap]}>
         Who are you challenging?{anyAtGame ? ' · At the game first' : ''}
+        <FillMark kind={mark} testID="create-opponent-mark" />
       </Text>
       {friends.length === 0 ? (
         <Text style={styles.empty}>Add friends to challenge them. Without one, any friend can take the other side.</Text>
@@ -57,6 +61,8 @@ interface ChallengeCardProps {
   onPreset: (preset: SidePreset) => void;
   /** Your own profile picture, signed; initials without one */
   myPictureUrl?: string;
+  /** The sides were filled from the typed bet */
+  mark?: FillMarkKind;
 }
 
 export const ChallengeCard: React.FC<ChallengeCardProps> = ({
@@ -71,6 +77,7 @@ export const ChallengeCard: React.FC<ChallengeCardProps> = ({
   activePresetId,
   onPreset,
   myPictureUrl,
+  mark,
 }) => {
   const opponent = friends.find((friend) => friend.id === opponentId) ?? null;
   const opponentLabel = opponent ? friendName(opponent).split(' ')[0] : 'Any friend';
@@ -80,7 +87,7 @@ export const ChallengeCard: React.FC<ChallengeCardProps> = ({
 
   return (
     <View style={createStyles.block}>
-      <SidePresetSwitch label="The sides" presets={presets} activeId={activePresetId} onPick={onPreset} />
+      <SidePresetSwitch label="The sides" presets={presets} activeId={activePresetId} onPick={onPreset} mark={mark} />
       <View style={[createStyles.card, styles.card]}>
         <View style={styles.party}>
           <Avatar name="You" fill={colors.primaryDark} pictureUrl={myPictureUrl} size={spacing[12]} />

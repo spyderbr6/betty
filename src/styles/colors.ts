@@ -73,6 +73,10 @@ export const colors = {
   // Tints: a picked option's background, an "open bets" notice
   primaryTint: 'rgba(234, 179, 8, 0.12)',  // yellow-500 at 12%
   successTint: 'rgba(16, 185, 129, 0.1)',  // green-500 at 10%
+  // Filled from the typed bet (✦), and a guess's dashed outline: blue-400 passes 4.5:1
+  // on the background and on surface
+  filled: '#60A5FA',
+  filledTint: 'rgba(96, 165, 250, 0.1)',   // blue-400 at 10%
 
   // Avatar fills for people without a picture (white initials pass 4.5:1 on each)
   avatar1: '#7C3AED', // violet-600

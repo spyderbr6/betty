@@ -4,6 +4,8 @@ import {
   STAKE_STEPS,
   betDescription,
   betSuggestions,
+  orderSuggestions,
+  suggestionTag,
   closeMinutes,
   closeTimeOptions,
   createButtonText,
@@ -47,7 +49,7 @@ describe('gameTeams', () => {
 describe('betSuggestions', () => {
   it('offers in-game football bets while the game is live', () => {
     const ids = betSuggestions(game).map((s) => s.id);
-    expect(ids).toEqual(['drive', 'next-score', 'who-wins', 'over-under']);
+    expect(ids).toEqual(['drive', 'next-score', 'who-wins', 'over-under', 'challenge']);
   });
 
   it('fills the next-score pool with both teams and no score', () => {
@@ -70,7 +72,7 @@ describe('betSuggestions', () => {
   });
 
   it('only offers whole-game bets before kickoff', () => {
-    expect(betSuggestions({ ...game, status: 'UPCOMING' }).map((s) => s.id)).toEqual(['who-wins', 'over-under']);
+    expect(betSuggestions({ ...game, status: 'UPCOMING' }).map((s) => s.id)).toEqual(['who-wins', 'over-under', 'challenge']);
   });
 
   it('offers nothing for a finished game, or with no game', () => {
@@ -82,6 +84,21 @@ describe('betSuggestions', () => {
     const whoWins = betSuggestions({ ...game, sport: 'SOCCER' }).find((s) => s.id === 'who-wins')!;
     expect(whoWins.format).toBe('pool');
     expect(whoWins.options).toEqual(['Bills', 'Draw', 'Chiefs']);
+  });
+
+  it('offers a 1 v 1 on the result, tagged with its format', () => {
+    const challenge = betSuggestions(game).find((s) => s.id === 'challenge')!;
+    expect(challenge).toMatchObject({ format: 'challenge', options: ['Bills', 'Chiefs'] });
+    expect(suggestionTag('challenge')).toBe('1 v 1');
+    expect(suggestionTag('pool')).toBe('Pool');
+    expect(suggestionTag('sides')).toBeNull();
+  });
+
+  it('puts the current format first without hiding any', () => {
+    const list = betSuggestions(game);
+    expect(orderSuggestions(list, 'pool').map((s) => s.id)).toEqual(['next-score', 'drive', 'who-wins', 'over-under', 'challenge']);
+    expect(orderSuggestions(list, 'challenge').map((s) => s.id)[0]).toBe('challenge');
+    expect(orderSuggestions(list, 'sides')).toHaveLength(list.length);
   });
 
   it('asks for the over/under number instead of inventing a line', () => {

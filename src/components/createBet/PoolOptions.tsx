@@ -9,6 +9,7 @@ import { colors, spacing, textStyles, typography } from '../../styles';
 import { MAX_OPTIONS, MIN_POOL_OPTIONS, OPTION_KEYS } from '../../../amplify/shared/betOptions';
 import { LIMITS } from '../../../amplify/shared/createBetLogic';
 import { createStyles } from './styles';
+import { MarkedLabel, type FillMarkKind } from './FillMark';
 
 interface PoolOptionsProps {
   options: string[];
@@ -19,6 +20,8 @@ interface PoolOptionsProps {
   onRename: (index: number, name: string) => void;
   onAdd: () => void;
   onRemove: (index: number) => void;
+  /** The options were filled from the typed bet */
+  mark?: FillMarkKind;
 }
 
 export const PoolOptions: React.FC<PoolOptionsProps> = ({
@@ -30,6 +33,7 @@ export const PoolOptions: React.FC<PoolOptionsProps> = ({
   onRename,
   onAdd,
   onRemove,
+  mark,
 }) => {
   const cells: Array<{ kind: 'option'; index: number } | { kind: 'add' }> = options.map((_, index) => ({
     kind: 'option' as const,
@@ -43,9 +47,7 @@ export const PoolOptions: React.FC<PoolOptionsProps> = ({
   return (
     <View style={createStyles.block}>
       <View style={createStyles.labelRow}>
-        <Text style={createStyles.label}>
-          Tap your pick · {options.length} of {MAX_OPTIONS}
-        </Text>
+        <MarkedLabel label={`Tap your pick · ${options.length} of ${MAX_OPTIONS}`} kind={mark} long testID="create-options-mark" />
         <TouchableOpacity
           testID="create-option-edit"
           onPress={onToggleEdit}
