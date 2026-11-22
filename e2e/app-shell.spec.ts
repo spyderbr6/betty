@@ -161,6 +161,7 @@ test('participation is fetched newest-first, not oldest-first', async ({ page })
   // most recent bets then have no side, and their cards fall back to showing
   // RESOLVED instead of WON/LOST. The mock cannot reproduce that ordering, so the
   // only honest check is that the request asked for DESC.
-  expect(seen.length, 'participantsByUser was never called').toBeGreaterThan(0);
+  // The fetch can land just after the screen shows: wait for it rather than race it
+  await expect.poll(() => seen.length, { message: 'participantsByUser was never called', timeout: 10_000 }).toBeGreaterThan(0);
   expect(seen[0].sortDirection).toBe('DESC');
 });

@@ -94,6 +94,19 @@ const openCreateTab = async (page: Page) => {
 const tap = (page: Page, testId: string) => page.getByTestId(testId).dispatchEvent('click');
 const submit = (page: Page) => tap(page, 'create-submit');
 
+/**
+ * A press as a finger or mouse makes it: down, then up, at the element. Unlike `tap`
+ * (a click event sent to the element), the press down moves focus first, so a field
+ * that loses focus reacts before the press lands, as on a device.
+ */
+const realPress = async (page: Page, testId: string) => {
+  const box = await page.getByTestId(testId).boundingBox();
+  if (!box) throw new Error(`${testId} is not on screen`);
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.up();
+};
+
 /** Type a stake: tap the amount to turn it into a field. */
 const typeStake = async (page: Page, value: string) => {
   await tap(page, 'create-stake-value');
@@ -508,8 +521,9 @@ test('We heard shows what the typed bet filled, and creates from there', async (
   await expect(page.getByTestId('create-heard-close')).toHaveText('Tonight');
   // The panel's button is the create button while it shows
   await expect(page.getByTestId('create-submit')).toHaveCount(1);
-  await submit(page);
+  await realPress(page, 'create-submit');
 
+  // One press creates: the question losing focus must not take the button away first
   await expect.poll(() => sent.length, { timeout: 15_000 }).toBe(1);
   expect(sent[0]).toMatchObject({ title: 'It rains tonight', amount: 15, side: 'A' });
 });
