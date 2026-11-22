@@ -7,8 +7,8 @@
  * - When the text stops saying something ("$20" deleted), the field goes back to what it
  *   held before. Once the question is tidied (the "$20" moved to the stake), what was
  *   filled stays.
- * - Undo fill puts back what every filled field held, and the question fills nothing more
- *   until it is cleared.
+ * - Undo fill puts back what every filled field held. Changing the question afterwards
+ *   reads it again.
  *
  * Pure, so it is unit tested; the screen reads and sets its own state around it.
  */
@@ -48,11 +48,9 @@ export interface AutofillState {
   settled: AutofillKey[];
   /** Filled fields that are only guesses (a dashed outline) */
   guesses: AutofillKey[];
-  /** After Undo fill: the question fills nothing until it is cleared */
-  paused: boolean;
 }
 
-export const EMPTY_AUTOFILL: AutofillState = { applied: {}, before: {}, settled: [], guesses: [], paused: false };
+export const EMPTY_AUTOFILL: AutofillState = { applied: {}, before: {}, settled: [], guesses: [] };
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
@@ -122,7 +120,6 @@ export function planAutofill(
   touched: readonly AutofillKey[] = [],
   guesses: readonly AutofillKey[] = [],
 ): { set: AutofillValues; state: AutofillState } {
-  if (state.paused) return { set: {}, state };
   const set: Record<string, unknown> = {};
   const applied: Record<string, unknown> = { ...state.applied };
   const before: Record<string, unknown> = { ...state.before };
@@ -160,7 +157,6 @@ export function planAutofill(
       before: before as AutofillValues,
       settled: [...settled],
       guesses: guesses.filter((key) => key in applied),
-      paused: false,
     },
   };
 }
@@ -170,11 +166,14 @@ export function settleAutofill(state: AutofillState): AutofillState {
   return { ...state, settled: Object.keys(state.applied) as AutofillKey[] };
 }
 
-/** Undo fill: every filled field back to what it held, and no more filling. */
+/**
+ * Undo fill: every filled field back to what it held. The question is read again when it
+ * next changes, and only then.
+ */
 export function undoAutofill(state: AutofillState): { set: AutofillValues; state: AutofillState } {
   const set: Record<string, unknown> = {};
   for (const key of Object.keys(state.applied) as AutofillKey[]) set[key] = state.before[key];
-  return { set: set as AutofillValues, state: { ...EMPTY_AUTOFILL, paused: true } };
+  return { set: set as AutofillValues, state: EMPTY_AUTOFILL };
 }
 
 /** The fields to mark ✦, and which of them are guesses. */

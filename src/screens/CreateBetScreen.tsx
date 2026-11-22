@@ -20,13 +20,13 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { LayoutChangeEvent, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { LayoutChangeEvent, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
-import { colors, commonStyles, spacing, textStyles, typography } from '../styles';
+import { commonStyles, spacing } from '../styles';
 import { LiveGameBanner } from '../components/ui/LiveGameBanner';
 import { EventDiscoveryModal } from '../components/ui/EventDiscoveryModal';
 import { showAlert } from '../components/ui/CustomAlert';
@@ -73,7 +73,6 @@ import { SidePicker, type SidePreset } from '../components/createBet/SidePicker'
 import { PoolOptions } from '../components/createBet/PoolOptions';
 import { ChallengeCard, ChallengeOpponents } from '../components/createBet/ChallengeCard';
 import { CreateHeader } from '../components/createBet/CreateHeader';
-import { createStyles } from '../components/createBet/styles';
 import { StakeAndClose } from '../components/createBet/StakeAndClose';
 import { FriendRow } from '../components/createBet/FriendRow';
 import { FriendPickerModal } from '../components/createBet/FriendPickerModal';
@@ -478,12 +477,8 @@ export const CreateBetScreen: React.FC = () => {
 
   const typeQuestion = (text: string) => {
     setTitle(text);
-    // A cleared question starts over, including after Undo fill
-    let state = autofillRef.current;
-    if (!text.trim()) {
-      state = { ...EMPTY_AUTOFILL, applied: state.applied, before: state.before, settled: state.settled };
-      setCleaned(false);
-    }
+    const state = autofillRef.current;
+    if (!text.trim()) setCleaned(false);
     const parsed = parseQuestion(text);
     const current = formValues();
     const next = autofillValues(parsed, {
@@ -521,12 +516,34 @@ export const CreateBetScreen: React.FC = () => {
     tidyQuestion();
   };
 
-  /** Undo fill: every filled field back to what it held; the question stays as it is. */
+  /**
+   * Undo fill: every filled field back to what it held; the question stays as it is, and
+   * is read again once it is changed.
+   */
   const undoFill = () => {
     const plan = undoAutofill(autofillRef.current);
     applyAutofill(plan.set);
     commitAutofill(plan.state);
     setCleaned(false);
+  };
+
+  /**
+   * ✕ on the question: empty it, and put back what it filled. A suggestion's question
+   * clears as a second tap on the suggestion does.
+   */
+  const clearQuestion = () => {
+    const active = suggestions.find((s) => s.id === activeSuggestionId);
+    if (active) {
+      pickSuggestion(active);
+    } else {
+      const plan = undoAutofill(autofillRef.current);
+      applyAutofill(plan.set);
+      commitAutofill(plan.state);
+      setTitle('');
+      setSuggestion(null);
+    }
+    setCleaned(false);
+    titleRef.current?.focus();
   };
 
   const { filled, guessed } = filledFields(autofill);
@@ -692,6 +709,25 @@ export const CreateBetScreen: React.FC = () => {
     setPickedIndex(format === 'challenge' ? 0 : null);
   };
 
+  // Leaving the Create tab ends what was showing on it: coming back, from the tab bar or
+  // anywhere else, is always the form, never the "Bet sent" sheet or the squares setup.
+  // Through refs, so the cleanup runs on leaving only, not on every change to `sent`.
+  const sentRef = useRef<SentBet | null>(null);
+  const anotherBetRef = useRef(anotherBet);
+  useEffect(() => {
+    sentRef.current = sent;
+    anotherBetRef.current = anotherBet;
+  });
+  useFocusEffect(
+    useCallback(
+      () => () => {
+        if (sentRef.current) anotherBetRef.current();
+        setShowSquares(false);
+      },
+      [],
+    ),
+  );
+
   const closeBetting = () => {
     if (!sent) return;
     showAlert('Close betting?', 'Nobody else can join once it closes. You can resolve it whenever you are ready.', [
@@ -715,7 +751,6 @@ export const CreateBetScreen: React.FC = () => {
     navigation.navigate('Bets', { screen: 'BetDetails', params: { betId, returnToTab: 'Create' } });
   };
 
-  const openOnGame = event ? myBets.filter((bet) => bet.eventId === event.id && bet.status === 'ACTIVE').length : 0;
   const sentBet: Bet | null = sent
     ? myBets.find((bet) => bet.id === sent.betId) ??
       ({ id: sent.betId, title: sent.title, description: sent.description } as Bet)
@@ -764,24 +799,6 @@ export const CreateBetScreen: React.FC = () => {
           />
         )}
 
-        {openOnGame > 0 && (
-          <View style={createStyles.block}>
-            <TouchableOpacity
-              testID="create-open-on-game"
-              style={styles.notice}
-              onPress={() => navigation.navigate('Bets')}
-              accessibilityRole="button"
-            >
-              <Text style={styles.noticeText}>
-                <Text style={styles.noticeStrong}>
-                  {openOnGame} open bet{openOnGame === 1 ? '' : 's'}
-                </Text>{' '}
-                on this game
-              </Text>
-              <Text style={createStyles.link}>View ›</Text>
-            </TouchableOpacity>
-          </View>
-        )}
 
         {/* The question first: typing it can fill in everything below */}
         <BetQuestion
@@ -792,6 +809,7 @@ export const CreateBetScreen: React.FC = () => {
           onTitleBlur={leaveQuestion}
           fill={filled.size > 0 ? { cleaned } : null}
           onUndoFill={undoFill}
+          onClear={clearQuestion}
           details={details}
           onDetailsChange={setDetails}
           showDetails={showDetails}
@@ -975,23 +993,5 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-  },
-  notice: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderWidth: 1,
-    borderColor: colors.success,
-    backgroundColor: colors.successTint,
-    borderRadius: spacing.radius.xl,
-    paddingHorizontal: spacing.padding.sm,
-    paddingVertical: spacing.padding.sm,
-  },
-  noticeText: {
-    ...textStyles.bodySmall,
-    color: colors.textPrimary,
-  },
-  noticeStrong: {
-    fontWeight: typography.fontWeight.bold,
   },
 });

@@ -402,7 +402,7 @@ function readCategory(text: string): BetCategory | undefined {
 // ---------------------------------------------------------------------------
 // Bet type signals
 
-const NEXT_SCORE = /\bnext\s+(?:score|basket|bucket|goal|touchdown|td|point|points|run|field goal|fg)\b|\bscores?\s+(?:next|first)\b|\bfirst\s+to\s+score\b/i;
+const NEXT_SCORE = /\bnext\s+(?:score|basket|bucket|goal|touchdown|td|point|points|run|field goal|fg)\b|\bscores?\s+(?:next|first)\b|\b(?:first|next)\s+to\s+score\b/i;
 const OVER_UNDER = /\bover\s*\/\s*under\b|\bover[\s-]+under\b|\bo\/u\b|\bover or under\b|\b(?:over|under)\s+\d+(?:\.\d+)?\b/i;
 const ME = /^(?:me|i|myself)$/i;
 /** Bets where naming one team means backing it against the other */
@@ -474,6 +474,15 @@ export function parseBetText(input: string, context: ParseContext = {}): ParsedB
     options = ['Yes', 'No'];
     guesses.add('options');
   }
+  // "Steelers score next": yes or no. Two teams would leave no winner if nobody scores
+  // again, where "No" covers the other team scoring and nobody scoring. An open question
+  // ("Who scores next?") is not yes / no: at a game it gets the two teams below.
+  let scoresNext = false;
+  if (!pool && !two && NEXT_SCORE.test(text) && !OPEN_QUESTION.test(text) && (!options || options[0] === 'Yes')) {
+    options = ['Yes', 'No'];
+    scoresNext = true;
+    guesses.delete('options');
+  }
   /** The index of the one team the text names, if it backs it */
   let namedTeam: number | null = null;
 
@@ -486,11 +495,12 @@ export function parseBetText(input: string, context: ParseContext = {}): ParsedB
       const b = asTeam(two[1], event);
       if (a && b && a !== b) options = [a, b];
     } else if (
+      !scoresNext &&
       (!options || options[0] === 'Yes') &&
       (home >= 0) !== (away >= 0) &&
-      (NEXT_SCORE.test(text) || TEAM_OUTCOME.test(text))
+      TEAM_OUTCOME.test(text)
     ) {
-      // "Steelers score next", "Ravens win tonight": the named team against the other,
+      // "Ravens win tonight": the named team against the other,
       // in the game's order (away first) so the sides stay the game's own
       const { away: awayLabel, home: homeLabel } = gameTeams(event);
       options = [awayLabel, homeLabel];
@@ -538,6 +548,9 @@ export function parseBetText(input: string, context: ParseContext = {}): ParsedB
       });
     } else if (namedTeam !== null && !QUESTION_START.test(text)) {
       mine = namedTeam;
+    } else if (scoresNext && !QUESTION_START.test(text)) {
+      // "Steelers score next" says yes; "Will the Steelers score next?" asks
+      mine = 0;
     } else if (options.includes('I win')) {
       mine = options.indexOf('I win');
     } else if (assertive && options[0] === 'Over') {

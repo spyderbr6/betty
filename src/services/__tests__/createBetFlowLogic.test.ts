@@ -49,7 +49,7 @@ describe('gameTeams', () => {
 describe('betSuggestions', () => {
   it('offers in-game football bets while the game is live', () => {
     const ids = betSuggestions(game).map((s) => s.id);
-    expect(ids).toEqual(['drive', 'next-score', 'who-wins', 'over-under', 'challenge']);
+    expect(ids).toEqual(['drive', 'next-score', 'who-wins', 'scores-next', 'over-under', 'challenge']);
   });
 
   it('fills the next-score pool with both teams and no score', () => {
@@ -72,7 +72,7 @@ describe('betSuggestions', () => {
   });
 
   it('only offers whole-game bets before kickoff', () => {
-    expect(betSuggestions({ ...game, status: 'UPCOMING' }).map((s) => s.id)).toEqual(['who-wins', 'over-under', 'challenge']);
+    expect(betSuggestions({ ...game, status: 'UPCOMING' }).map((s) => s.id)).toEqual(['who-wins', 'scores-next', 'over-under', 'challenge']);
   });
 
   it('offers nothing for a finished game, or with no game', () => {
@@ -86,6 +86,11 @@ describe('betSuggestions', () => {
     expect(whoWins.options).toEqual(['Bills', 'Draw', 'Chiefs']);
   });
 
+  it('offers Scores next beside Who wins, as yes / no on a named team', () => {
+    const scoresNext = betSuggestions(game).find((s) => s.id === 'scores-next')!;
+    expect(scoresNext).toMatchObject({ label: 'Scores next', title: 'Chiefs score next?', format: 'sides', options: ['Yes', 'No'] });
+  });
+
   it('offers a 1 v 1 on the result, tagged with its format', () => {
     const challenge = betSuggestions(game).find((s) => s.id === 'challenge')!;
     expect(challenge).toMatchObject({ format: 'challenge', options: ['Bills', 'Chiefs'] });
@@ -96,7 +101,7 @@ describe('betSuggestions', () => {
 
   it('puts the current format first without hiding any', () => {
     const list = betSuggestions(game);
-    expect(orderSuggestions(list, 'pool').map((s) => s.id)).toEqual(['next-score', 'drive', 'who-wins', 'over-under', 'challenge']);
+    expect(orderSuggestions(list, 'pool').map((s) => s.id)).toEqual(['next-score', 'drive', 'who-wins', 'scores-next', 'over-under', 'challenge']);
     expect(orderSuggestions(list, 'challenge').map((s) => s.id)[0]).toBe('challenge');
     expect(orderSuggestions(list, 'sides')).toHaveLength(list.length);
   });

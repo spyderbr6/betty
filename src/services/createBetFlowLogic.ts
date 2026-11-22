@@ -81,6 +81,15 @@ export function betSuggestions(game: GameForSuggestions | null | undefined): Bet
     sport === 'SOCCER'
       ? { id: 'who-wins', label: 'Who wins', title: `${away} or ${home}?`, format: 'pool', options: [away, 'Draw', home] }
       : { id: 'who-wins', label: 'Who wins', title: `Who wins, ${away} or ${home}?`, format: 'sides', options: teams };
+  // Yes / No, not the two teams: "No" also covers nobody scoring again. Names the home
+  // team; the creator edits the question for the other one.
+  const scoresNext: BetSuggestion = {
+    id: 'scores-next',
+    label: 'Scores next',
+    title: `${home} score next?`,
+    format: 'sides',
+    options: ['Yes', 'No'],
+  };
   const overUnder = (unit: string): BetSuggestion => ({
     id: 'over-under',
     label: 'Over/Under',
@@ -99,14 +108,15 @@ export function betSuggestions(game: GameForSuggestions | null | undefined): Bet
         { id: 'drive', label: 'Score this drive', title: 'Points on this drive?', format: 'sides', options: ['Yes', 'No'] },
         {
           id: 'next-score',
-          label: 'Next score',
+          // Not "Next score": that reads like the Scores next chip beside it
+          label: 'Next TD or FG',
           title: 'Next score?',
           format: 'pool',
           options: [`${away} TD`, `${away} FG`, `${home} TD`, `${home} FG`, 'No score'],
         },
       );
     }
-    list.push(whoWins, overUnder('points'));
+    list.push(whoWins, scoresNext, overUnder('points'));
   } else if (BASKETBALL.includes(sport)) {
     if (inGame) {
       list.push(
@@ -114,7 +124,7 @@ export function betSuggestions(game: GameForSuggestions | null | undefined): Bet
         { id: 'win-quarter', label: 'Wins this quarter', title: 'Who wins this quarter?', format: 'sides', options: teams },
       );
     }
-    list.push(whoWins, overUnder('points'));
+    list.push(whoWins, scoresNext, overUnder('points'));
   } else if (sport === 'NHL' || sport === 'SOCCER') {
     if (inGame) {
       list.push({
@@ -125,14 +135,14 @@ export function betSuggestions(game: GameForSuggestions | null | undefined): Bet
         options: [away, home, 'No more goals'],
       });
     }
-    list.push(whoWins, overUnder('goals'));
+    list.push(whoWins, scoresNext, overUnder('goals'));
   } else if (sport === 'MLB') {
     if (inGame) {
       list.push({ id: 'run-inning', label: 'Run this inning', title: 'A run scores this inning?', format: 'sides', options: ['Yes', 'No'] });
     }
-    list.push(whoWins, overUnder('runs'));
+    list.push(whoWins, scoresNext, overUnder('runs'));
   } else {
-    list.push(whoWins);
+    list.push(whoWins, scoresNext);
   }
   // One against one on the result, offered in every sport ("Challenge a friend · 1 v 1")
   list.push({
