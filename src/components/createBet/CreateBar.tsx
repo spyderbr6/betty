@@ -12,16 +12,18 @@ interface CreateBarProps {
   label: string;
   detail: string;
   onPress: () => void;
+  onPressIn?: () => void;
   disabled: boolean;
   busy: boolean;
 }
 
-export const CreateBar: React.FC<CreateBarProps> = ({ label, detail, onPress, disabled, busy }) => (
+export const CreateBar: React.FC<CreateBarProps> = ({ label, detail, onPress, onPressIn, disabled, busy }) => (
   <View style={styles.container}>
     <TouchableOpacity
       testID="create-submit"
       style={[styles.button, disabled && styles.buttonDisabled]}
       onPress={onPress}
+      onPressIn={onPressIn}
       disabled={disabled || busy}
       activeOpacity={0.8}
       accessibilityRole="button"

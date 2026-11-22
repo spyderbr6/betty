@@ -31,6 +31,8 @@ interface WeHeardPanelProps {
   createLabel: string;
   createDetail: string;
   onCreate: () => void;
+  /** The press on the create button has started (the question is losing focus) */
+  onCreatePressIn?: () => void;
   createDisabled: boolean;
   busy: boolean;
 }
@@ -59,6 +61,7 @@ export const WeHeardPanel: React.FC<WeHeardPanelProps> = ({
   createLabel,
   createDetail,
   onCreate,
+  onCreatePressIn,
   createDisabled,
   busy,
 }) => {
@@ -99,7 +102,14 @@ export const WeHeardPanel: React.FC<WeHeardPanelProps> = ({
         )}
       </View>
       <View style={styles.button}>
-        <CreateBar label={createLabel} detail={createDetail} onPress={onCreate} disabled={createDisabled} busy={busy} />
+        <CreateBar
+          label={createLabel}
+          detail={createDetail}
+          onPress={onCreate}
+          onPressIn={onCreatePressIn}
+          disabled={createDisabled}
+          busy={busy}
+        />
       </View>
     </View>
   );

@@ -100,6 +100,12 @@ const client = generateClient<Schema>();
 const LAST_STAKE_KEY = 'createBet:lastStake';
 /** How long typing pauses before "We heard" shows what was understood */
 const HEARD_PAUSE_MS = 400;
+/**
+ * How long "We heard" stays after the question loses focus. Pressing its create button
+ * takes the focus first; hiding the panel at once took the button away before the press
+ * landed, so the press did nothing.
+ */
+const HEARD_HIDE_MS = 300;
 /** How long an invitation stays open */
 const INVITATION_HOURS = 24;
 
@@ -193,8 +199,12 @@ export const CreateBetScreen: React.FC = () => {
   const [questionFocused, setQuestionFocused] = useState(false);
   const [heardReady, setHeardReady] = useState(false);
   const heardTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const heardHideRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // A press on the panel's create button has started: the panel stays until it ends
+  const heardPressRef = useRef(false);
   useEffect(() => () => {
     if (heardTimerRef.current) clearTimeout(heardTimerRef.current);
+    if (heardHideRef.current) clearTimeout(heardHideRef.current);
   }, []);
 
   // Around the form
@@ -509,11 +519,34 @@ export const CreateBetScreen: React.FC = () => {
     return clean;
   };
 
-  const leaveQuestion = () => {
+  const hideHeard = () => {
     setQuestionFocused(false);
     setHeardReady(false);
+  };
+
+  const leaveQuestion = () => {
     if (heardTimerRef.current) clearTimeout(heardTimerRef.current);
     tidyQuestion();
+    // Not at once: this blur may be the start of a press on the panel's create button
+    if (heardHideRef.current) clearTimeout(heardHideRef.current);
+    heardHideRef.current = setTimeout(() => {
+      if (!heardPressRef.current) hideHeard();
+    }, HEARD_HIDE_MS);
+  };
+
+  const enterQuestion = () => {
+    if (heardHideRef.current) clearTimeout(heardHideRef.current);
+    setQuestionFocused(true);
+  };
+
+  /** Create from "We heard": the panel goes once the press has done its work. */
+  const createFromHeard = async () => {
+    try {
+      await handleCreate();
+    } finally {
+      heardPressRef.current = false;
+      hideHeard();
+    }
   };
 
   /**
@@ -805,7 +838,7 @@ export const CreateBetScreen: React.FC = () => {
           ref={titleRef}
           title={title}
           onTitleChange={typeQuestion}
-          onTitleFocus={() => setQuestionFocused(true)}
+          onTitleFocus={enterQuestion}
           onTitleBlur={leaveQuestion}
           fill={filled.size > 0 ? { cleaned } : null}
           onUndoFill={undoFill}
@@ -837,7 +870,10 @@ export const CreateBetScreen: React.FC = () => {
             closeGuess={guessed.has('close')}
             createLabel={button.label}
             createDetail={button.detail}
-            onCreate={handleCreate}
+            onCreate={createFromHeard}
+            onCreatePressIn={() => {
+              heardPressRef.current = true;
+            }}
             createDisabled={!overBalance && pickedIndex === null}
             busy={isCreating}
           />
