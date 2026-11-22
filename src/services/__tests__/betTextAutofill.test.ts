@@ -145,7 +145,7 @@ describe('planAutofill', () => {
     expect(f.values.stake).toBe(30);
   });
 
-  it('Undo fill puts every filled field back, and fills nothing more', () => {
+  it('Undo fill puts every filled field back, and reads the question again when it changes', () => {
     const f = form(START);
     f.type('bet Mike $20 it snows tonight');
     expect(f.values).toMatchObject({ format: 'challenge', opponentId: 'u-mike', stake: 20 });
@@ -153,7 +153,7 @@ describe('planAutofill', () => {
     f.undo();
     expect(f.values).toEqual(START);
     expect(f.marks.filled.size).toBe(0);
-    expect(f.type('$40 it snows')).toEqual({});
+    expect(f.type('$40 it snows tonight')).toMatchObject({ stake: 40, close: { id: 'tonight' } });
   });
 
   it('adds a named friend to the ones picked by hand, and takes back only that one', () => {

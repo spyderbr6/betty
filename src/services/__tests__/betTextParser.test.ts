@@ -181,19 +181,36 @@ describe('parseBetText: leaving the rest of the form alone', () => {
 });
 
 describe('parseBetText: the "type it" design', () => {
-  it('backs a team named alone, against the other one', () => {
-    expect(parse('I bet a dollar that the Steelers score next', { event: { ...event, homeTeamShortName: 'Steelers', awayTeamShortName: 'Ravens', homeTeam: 'Pittsburgh Steelers', awayTeam: 'Baltimore Ravens', homeTeamCode: 'PIT', awayTeamCode: 'BAL' } })).toMatchObject({
+  it('backs a team named to win, against the other one', () => {
+    expect(parse('Bills win tonight', { event })).toMatchObject({ options: ['Bills', 'Chiefs'], pickedIndex: 0 });
+    expect(parse('Chiefs win tonight', { event })).toMatchObject({ options: ['Bills', 'Chiefs'], pickedIndex: 1 });
+  });
+
+  it('reads "scores next" as yes / no, saying yes', () => {
+    expect(parse('I bet a dollar that the Steelers score next', { event })).toMatchObject({
       format: 'sides',
-      // The game's order, away first, with you on the team named
-      options: ['Ravens', 'Steelers'],
-      pickedIndex: 1,
+      options: ['Yes', 'No'],
+      pickedIndex: 0,
       stake: 1,
       deadlineMinutes: 15,
       guesses: ['deadline'],
       cleanTitle: 'The Steelers score next',
     });
-    expect(parse('Bills win tonight', { event })).toMatchObject({ options: ['Bills', 'Chiefs'], pickedIndex: 0 });
-    expect(parse('Chiefs win tonight', { event })).toMatchObject({ options: ['Bills', 'Chiefs'], pickedIndex: 1 });
+    // Away from a game too, with no close time to guess
+    const away = parse('Steelers score next');
+    expect(away).toMatchObject({ options: ['Yes', 'No'], pickedIndex: 0 });
+    expect(away.deadlineMinutes).toBeUndefined();
+    expect(parse('Bills next to score', { event })).toMatchObject({ options: ['Yes', 'No'], pickedIndex: 0 });
+  });
+
+  it('asks without picking: "Will the Bills score next?"', () => {
+    const r = parse('Will the Bills score next?', { event });
+    expect(r.options).toEqual(['Yes', 'No']);
+    expect(r.pickedIndex).toBeUndefined();
+  });
+
+  it('keeps the two teams for an open "who scores next"', () => {
+    expect(parse('Who scores next?', { event }).options).toEqual(['Bills', 'Chiefs']);
   });
 
   it('does not pick a side when a named team is asked about', () => {

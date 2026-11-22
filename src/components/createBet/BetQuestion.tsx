@@ -22,6 +22,8 @@ interface BetQuestionProps {
    */
   fill?: { cleaned: boolean } | null;
   onUndoFill?: () => void;
+  /** ✕: empties the question, shown while it has text */
+  onClear?: () => void;
   details: string;
   onDetailsChange: (details: string) => void;
   showDetails: boolean;
@@ -33,15 +35,16 @@ interface BetQuestionProps {
 const ONE_ROW = Platform.OS === 'web' ? 1 : undefined;
 
 export const BetQuestion = forwardRef<TextInput, BetQuestionProps>(
-  ({ title, onTitleChange, onTitleBlur, onTitleFocus, fill, onUndoFill, details, onDetailsChange, showDetails, onShowDetails, placeholder }, ref) => {
+  ({ title, onTitleChange, onTitleBlur, onTitleFocus, fill, onUndoFill, onClear, details, onDetailsChange, showDetails, onShowDetails, placeholder }, ref) => {
     const [focused, setFocused] = useState(false);
     return (
       <View style={createStyles.block}>
         <View style={[createStyles.card, (focused || !title.trim()) && styles.cardActive]}>
+          <View style={styles.titleRow}>
           <TextInput
             ref={ref}
             testID="create-title"
-            style={styles.title}
+            style={[styles.title, styles.titleInput]}
             placeholder={placeholder}
             placeholderTextColor={colors.textMuted}
             value={title}
@@ -59,6 +62,19 @@ export const BetQuestion = forwardRef<TextInput, BetQuestionProps>(
             numberOfLines={ONE_ROW}
             accessibilityLabel="What's the bet?"
           />
+          {!!title && onClear && (
+            <TouchableOpacity
+              testID="create-clear-title"
+              style={styles.clear}
+              onPress={onClear}
+              accessibilityRole="button"
+              accessibilityLabel="Clear the question"
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            >
+              <Text style={styles.clearText}>✕</Text>
+            </TouchableOpacity>
+          )}
+          </View>
           {showDetails && (
             <TextInput
               testID="create-description"
@@ -121,6 +137,28 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
     padding: 0,
     outlineWidth: 0,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  titleInput: {
+    flex: 1,
+  },
+  // A round grey button, its 44px target made up by hitSlop
+  clear: {
+    width: spacing[6],
+    height: spacing[6],
+    borderRadius: spacing.radius.full,
+    backgroundColor: colors.surfaceLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: spacing.sm,
+  },
+  clearText: {
+    ...textStyles.caption,
+    color: colors.textPrimary,
+    fontWeight: typography.fontWeight.bold,
   },
   details: {
     ...textStyles.bodySmall,
