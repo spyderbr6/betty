@@ -6,10 +6,13 @@
  * After a bet is sent, "Another bet" keeps the game, stake, closing time and friends and
  * clears only the question.
  *
- * The question is read as it is typed (services/betTextParser.ts): "$20 says the Bills
- * win tonight, bet Sam" fills the sides, the pick, the stake, the closing time and the
- * friend, and only those (services/betTextAutofill.ts). The words that went into other
- * fields leave the question when you are done typing.
+ * The question comes first, and is read as it is typed ("Create Bet Type It" design;
+ * services/betTextParser.ts): "$20 says the Bills win tonight, bet Sam" fills the sides,
+ * the pick, the stake, the closing time and the friend, and only those
+ * (services/betTextAutofill.ts). After a pause, "We heard" under the question shows what
+ * was understood, with the create button. Filled fields carry a blue ✦ (a guess, a dashed
+ * outline); a field set by hand is never changed by typing; Undo fill puts them all back.
+ * The words that went into other fields leave the question when you are done typing.
  *
  * Creating is one call to the server's createBetWithStake (it re-checks everything and
  * takes the stake); invitations are still sent from here afterwards. The decisions are
@@ -55,6 +58,7 @@ import {
   gameTeams,
   initialPickedDate,
   joinNames,
+  orderSuggestions,
   restoreStake,
   type BetFormat,
   type BetSuggestion,
@@ -78,16 +82,25 @@ import { BetSentPanel } from '../components/createBet/BetSentPanel';
 import { SquaresSetup } from '../components/createBet/SquaresSetup';
 import { parseBetText } from '../services/betTextParser';
 import {
+  autofillGuesses,
   autofillValues,
   EMPTY_AUTOFILL,
+  filledFields,
   planAutofill,
+  settleAutofill,
+  undoAutofill,
+  type AutofillKey,
   type AutofillState,
   type AutofillValues,
 } from '../services/betTextAutofill';
+import { WeHeardPanel } from '../components/createBet/WeHeardPanel';
+import type { FillMarkKind } from '../components/createBet/FillMark';
 
 const client = generateClient<Schema>();
 
 const LAST_STAKE_KEY = 'createBet:lastStake';
+/** How long typing pauses before "We heard" shows what was understood */
+const HEARD_PAUSE_MS = 400;
 /** How long an invitation stays open */
 const INVITATION_HOURS = 24;
 
@@ -143,7 +156,13 @@ export const CreateBetScreen: React.FC = () => {
 
   // The form
   const [format, setFormat] = useState<BetFormat>('sides');
-  const [suggestion, setSuggestion] = useState<BetSuggestion | null>(null);
+  const [suggestion, setSuggestionState] = useState<BetSuggestion | null>(null);
+  // Read by the game-change reset below, which can run just after a tap with an older render
+  const suggestionRef = useRef<BetSuggestion | null>(null);
+  const setSuggestion = (next: BetSuggestion | null) => {
+    suggestionRef.current = next;
+    setSuggestionState(next);
+  };
   const [title, setTitle] = useState('');
   const [details, setDetails] = useState('');
   const [showDetails, setShowDetails] = useState(false);
@@ -158,8 +177,26 @@ export const CreateBetScreen: React.FC = () => {
   const [pickedDate, setPickedDate] = useState<Date | null>(null);
   const [isPrivate, setIsPrivate] = useState(false);
   const [selectedFriends, setSelectedFriends] = useState<Set<string>>(new Set());
-  // What the question has filled in so far, so it can be taken back when the words go
+  // What the question has filled in so far, so it can be taken back when the words go. The
+  // ref is read while typing; the state redraws the ✦ marks.
   const autofillRef = useRef<AutofillState>(EMPTY_AUTOFILL);
+  const [autofill, setAutofill] = useState<AutofillState>(EMPTY_AUTOFILL);
+  const commitAutofill = (next: AutofillState) => {
+    autofillRef.current = next;
+    setAutofill(next);
+  };
+  // Fields set by hand: typing never changes them
+  const touchedRef = useRef<Set<AutofillKey>>(new Set());
+  const touch = (key: AutofillKey) => touchedRef.current.add(key);
+  // Words moved out of the question ("✦ Cleaned up from what you typed")
+  const [cleaned, setCleaned] = useState(false);
+  // "We heard": shown while the question has focus, once typing has paused
+  const [questionFocused, setQuestionFocused] = useState(false);
+  const [heardReady, setHeardReady] = useState(false);
+  const heardTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (heardTimerRef.current) clearTimeout(heardTimerRef.current);
+  }, []);
 
   // Around the form
   const [friends, setFriends] = useState<User[]>([]);
@@ -242,14 +279,22 @@ export const CreateBetScreen: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [event?.id, friendIdsKey]);
 
-  // A new game (or none) brings back its default sides, unless the creator typed their own
+  // A new game (or none) brings back its default sides, unless the creator typed their own,
+  // picked a suggestion or typed a bet that filled them. The refs, not this render's
+  // state: the game can finish loading just as a suggestion is tapped, and this effect
+  // then runs after the tap with the render from before it.
   const eventId = event?.id ?? null;
   useEffect(() => {
-    if (presetId === 'custom' || suggestion) return;
-    setPresetId(defaultPreset.id);
-    setSideNames(defaultPreset.options ?? ['Yes', 'No']);
-    setPoolNames((prev) => (prev.every((name) => !name.trim()) || teams ? defaultPoolOptions() : prev));
-    setCloseId(defaultCloseTime(atLiveGame));
+    const applied = autofillRef.current.applied;
+    const keepSides =
+      presetId === 'custom' || suggestionRef.current || 'sides' in applied || 'pool' in applied || 'format' in applied;
+    if (!keepSides) {
+      setPresetId(defaultPreset.id);
+      setSideNames(defaultPreset.options ?? ['Yes', 'No']);
+      setPoolNames((prev) => (prev.every((name) => !name.trim()) || teams ? defaultPoolOptions() : prev));
+    }
+    // The game's closing time (short at a live game), unless it was set by hand or typed
+    if (!('close' in applied) && !touchedRef.current.has('close')) setCloseId(defaultCloseTime(atLiveGame));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eventId]);
 
@@ -268,7 +313,8 @@ export const CreateBetScreen: React.FC = () => {
 
   const pickSuggestion = (picked: BetSuggestion) => {
     // A suggestion replaces the question, and with it what the typed one filled in
-    autofillRef.current = EMPTY_AUTOFILL;
+    commitAutofill(EMPTY_AUTOFILL);
+    setCleaned(false);
     // A second tap on the selected suggestion clears what it filled in
     if (picked.id === activeSuggestionId) {
       setSuggestion(null);
@@ -278,9 +324,9 @@ export const CreateBetScreen: React.FC = () => {
       if (picked.format === 'pool') {
         setPoolNames(defaultPoolOptions());
         setPoolEditing(true);
-        setFormat('sides');
       }
-      setPickedIndex(format === 'challenge' ? 0 : null);
+      if (picked.format !== 'sides') setFormat('sides');
+      setPickedIndex(null);
       return;
     }
     setSuggestion(picked);
@@ -296,14 +342,17 @@ export const CreateBetScreen: React.FC = () => {
       );
       setPresetId(matching?.id ?? 'custom');
       setSideNames(picked.options);
-      if (format === 'pool') setFormat('sides');
-      setPickedIndex(format === 'challenge' ? 0 : null);
+      // A 1 v 1 chip switches to 1 v 1; a two-sided one leaves a 1 v 1 as it is
+      const nextFormat = picked.format === 'challenge' || format === 'challenge' ? 'challenge' : 'sides';
+      if (nextFormat !== format) setFormat(nextFormat);
+      setPickedIndex(nextFormat === 'challenge' ? 0 : null);
     }
     if (picked.needsNumber) setTimeout(() => titleRef.current?.focus(), 0);
   };
 
   const changeFormat = (next: BetFormat) => {
     if (next === format) return;
+    touch('format');
     setFormat(next);
     if (next === 'pool') {
       if (poolNames.every((name) => !name.trim())) setPoolNames(defaultPoolOptions());
@@ -317,25 +366,30 @@ export const CreateBetScreen: React.FC = () => {
   };
 
   const pickPreset = (preset: SidePreset) => {
+    touch('sides');
     setPresetId(preset.id);
     if (preset.options) setSideNames(preset.options);
   };
 
   const renameSide = (index: number, name: string) => {
+    touch('sides');
     setSideNames((prev) => prev.map((existing, i) => (i === index ? name : existing)));
   };
 
   const renamePool = (index: number, name: string) => {
+    touch('pool');
     setPoolNames((prev) => prev.map((existing, i) => (i === index ? name : existing)));
   };
   // Removing an option shifts the later ones up a key, so the pick moves with its option
   const removePoolOption = (index: number) => {
     if (poolNames.length <= MIN_POOL_OPTIONS) return;
+    touch('pool');
     setPoolNames((prev) => prev.filter((_, i) => i !== index));
     setPickedIndex((prev) => (prev === null ? prev : prev === index ? null : prev > index ? prev - 1 : prev));
   };
 
   const toggleFriend = (friendId: string) => {
+    touch('friends');
     setSelectedFriends((prev) => {
       const next = new Set(prev);
       if (next.has(friendId)) next.delete(friendId);
@@ -344,11 +398,36 @@ export const CreateBetScreen: React.FC = () => {
     });
   };
 
-  const changeStake = (amount: number) => setStake(amount);
+  const changeStake = (amount: number) => {
+    touch('stake');
+    setStake(amount);
+  };
 
   const changeCloseTime = (id: CloseTimeId) => {
+    touch('close');
     setCloseId(id);
     if (id === 'date' && !pickedDate) setPickedDate(initialPickedDate(now));
+  };
+
+  const pickSide = (index: number) => {
+    touch('pickedIndex');
+    setPickedIndex(index);
+  };
+  const swapSides = () => {
+    touch('pickedIndex');
+    setPickedIndex((prev) => (prev === 1 ? 0 : 1));
+  };
+  const changePickedDate = (date: Date) => {
+    touch('close');
+    setPickedDate(date);
+  };
+  const pickOpponent = (id: string) => {
+    touch('opponentId');
+    setOpponentId((prev) => (prev === id ? null : id));
+  };
+  const addPoolOption = () => {
+    touch('pool');
+    setPoolNames((prev) => (prev.length < MAX_OPTIONS ? [...prev, ''] : prev));
   };
 
   // ---------------------------------------------------------------------------
@@ -399,29 +478,62 @@ export const CreateBetScreen: React.FC = () => {
 
   const typeQuestion = (text: string) => {
     setTitle(text);
+    // A cleared question starts over, including after Undo fill
+    let state = autofillRef.current;
+    if (!text.trim()) {
+      state = { ...EMPTY_AUTOFILL, applied: state.applied, before: state.before, settled: state.settled };
+      setCleaned(false);
+    }
+    const parsed = parseQuestion(text);
     const current = formValues();
-    const next = autofillValues(parseQuestion(text), {
+    const next = autofillValues(parsed, {
       now: new Date(),
       closeOptions: closeTimeOptions(new Date()),
-      state: autofillRef.current,
+      state,
       current,
     });
-    const plan = planAutofill(autofillRef.current, next, current);
-    autofillRef.current = plan.state;
+    const plan = planAutofill(state, next, current, [...touchedRef.current], autofillGuesses(parsed));
+    commitAutofill(plan.state);
     applyAutofill(plan.set);
+
+    // "We heard" once typing pauses
+    if (heardTimerRef.current) clearTimeout(heardTimerRef.current);
+    heardTimerRef.current = setTimeout(() => setHeardReady(true), HEARD_PAUSE_MS);
   };
 
   /**
    * Done typing: the words that went into other fields ("$20", "bet Sam") leave the
-   * question. What they filled in stays, and is no longer tied to the words.
+   * question. What they filled in stays, whatever is typed next.
    */
   const tidyQuestion = (): string => {
     const clean = parseQuestion(title).cleanTitle;
     if (!clean) return title;
     setTitle(clean);
-    autofillRef.current = EMPTY_AUTOFILL;
+    commitAutofill(settleAutofill(autofillRef.current));
+    setCleaned(true);
     return clean;
   };
+
+  const leaveQuestion = () => {
+    setQuestionFocused(false);
+    setHeardReady(false);
+    if (heardTimerRef.current) clearTimeout(heardTimerRef.current);
+    tidyQuestion();
+  };
+
+  /** Undo fill: every filled field back to what it held; the question stays as it is. */
+  const undoFill = () => {
+    const plan = undoAutofill(autofillRef.current);
+    applyAutofill(plan.set);
+    commitAutofill(plan.state);
+    setCleaned(false);
+  };
+
+  const { filled, guessed } = filledFields(autofill);
+  const markFor = (key: AutofillKey): FillMarkKind =>
+    guessed.has(key) ? 'guess' : filled.has(key) ? 'filled' : null;
+  // "Tap your side ✦" when the sides or the side backed came from the text
+  const sidesMark: FillMarkKind = markFor('sides') ?? (filled.has('pickedIndex') ? 'filled' : null);
 
   // ---------------------------------------------------------------------------
   // What the form adds up to
@@ -565,7 +677,9 @@ export const CreateBetScreen: React.FC = () => {
   /** The next bet: the question clears; game, stake, closing time and friends stay. */
   const anotherBet = () => {
     pendingBetIdRef.current = null;
-    autofillRef.current = EMPTY_AUTOFILL;
+    commitAutofill(EMPTY_AUTOFILL);
+    touchedRef.current = new Set();
+    setCleaned(false);
     setSent(null);
     setSuggestion(null);
     setTitle('');
@@ -611,7 +725,11 @@ export const CreateBetScreen: React.FC = () => {
   // ---------------------------------------------------------------------------
 
   const onBarLayout = (layoutEvent: LayoutChangeEvent) => setBarHeight(layoutEvent.nativeEvent.layout.height);
-  const showBar = !sent && !showSquares;
+  // "We heard" brings its own create button; the bar at the bottom waits until it goes
+  const showHeard = questionFocused && heardReady && filled.size > 0 && !sent;
+  const showBar = !sent && !showSquares && !showHeard;
+  const closeLabelNow =
+    closeId === 'date' ? closeAt ?? 'Pick a date' : closeOptionsList.find((option) => option.id === closeId)?.label ?? '';
   const friendsHere = orderedFriends.filter((friend) => atGame.has(friend.id));
 
   if (showSquares) {
@@ -670,100 +788,129 @@ export const CreateBetScreen: React.FC = () => {
           ref={titleRef}
           title={title}
           onTitleChange={typeQuestion}
-          onTitleBlur={tidyQuestion}
+          onTitleFocus={() => setQuestionFocused(true)}
+          onTitleBlur={leaveQuestion}
+          fill={filled.size > 0 ? { cleaned } : null}
+          onUndoFill={undoFill}
           details={details}
           onDetailsChange={setDetails}
           showDetails={showDetails}
           onShowDetails={() => setShowDetails(true)}
           placeholder={
-            format === 'challenge'
-              ? 'e.g. Bet Sam $10 I win at golf'
-              : format === 'pool'
-                ? 'e.g. Who wins the Super Bowl? Chiefs, Bills or Eagles'
-                : "What's the bet? e.g. $10 says it snows tonight"
+            suggestions.length > 0
+              ? 'Say the bet, or tap one below'
+              : format === 'challenge'
+                ? 'e.g. Bet Sam $10 I win at golf'
+                : format === 'pool'
+                  ? 'e.g. Who wins the Super Bowl? Chiefs, Bills or Eagles'
+                  : "What's the bet? e.g. $10 says it snows tonight"
           }
         />
 
-        {format === 'challenge' ? (
-          <FormatTabs value={format} onChange={changeFormat} onSquares={() => setShowSquares(true)} />
-        ) : (
-          <>
-            <SuggestionChips suggestions={suggestions} activeId={activeSuggestionId} onPick={pickSuggestion} />
-            <FormatTabs value={format} onChange={changeFormat} onSquares={() => setShowSquares(true)} />
-          </>
+        {showHeard && (
+          <WeHeardPanel
+            format={format}
+            options={options}
+            pickedIndex={pickedIndex}
+            opponentName={opponent ? friendName(opponent).split(' ')[0] : null}
+            stake={stake}
+            closeLabel={closeLabelNow}
+            sidesGuess={guessed.has('sides') || guessed.has('pool')}
+            closeGuess={guessed.has('close')}
+            createLabel={button.label}
+            createDetail={button.detail}
+            onCreate={handleCreate}
+            createDisabled={!overBalance && pickedIndex === null}
+            busy={isCreating}
+          />
         )}
+
+        {/* Every format shows every suggestion, the current format's first */}
+        <SuggestionChips suggestions={orderSuggestions(suggestions, format)} activeId={activeSuggestionId} onPick={pickSuggestion} />
+        <FormatTabs
+          value={format}
+          onChange={changeFormat}
+          onSquares={() => setShowSquares(true)}
+          filled={filled.has('format')}
+        />
         {format === 'challenge' && (
           <ChallengeOpponents
             friends={orderedFriends}
             atGame={atGame}
             opponentId={opponentId}
-            onPickOpponent={(id) => setOpponentId((prev) => (prev === id ? null : id))}
+            onPickOpponent={pickOpponent}
+            mark={markFor('opponentId')}
           />
         )}
 
-            {format === 'sides' && (
-              <SidePicker
-                options={sideNames}
-                pickedIndex={pickedIndex}
-                onPick={setPickedIndex}
-                onRename={renameSide}
-                presets={presets}
-                activePresetId={presetId}
-                onPreset={pickPreset}
-              />
-            )}
-            {format === 'pool' && (
-              <PoolOptions
-                options={poolNames}
-                pickedIndex={pickedIndex}
-                onPick={setPickedIndex}
-                editing={poolEditing}
-                onToggleEdit={() => setPoolEditing((value) => !value)}
-                onRename={renamePool}
-                onAdd={() => setPoolNames((prev) => (prev.length < MAX_OPTIONS ? [...prev, ''] : prev))}
-                onRemove={removePoolOption}
-              />
-            )}
-            {format === 'challenge' && (
-              <ChallengeCard
-                friends={orderedFriends}
-                opponentId={opponentId}
-                options={sideNames}
-                pickedIndex={pickedIndex}
-                onPick={setPickedIndex}
-                onSwap={() => setPickedIndex((prev) => (prev === 1 ? 0 : 1))}
-                onRename={renameSide}
-                presets={presets}
-                activePresetId={presetId}
-                onPreset={pickPreset}
-                myPictureUrl={myPictureUrl}
-              />
-            )}
+        {format === 'sides' && (
+          <SidePicker
+            options={sideNames}
+            pickedIndex={pickedIndex}
+            onPick={pickSide}
+            onRename={renameSide}
+            presets={presets}
+            activePresetId={presetId}
+            onPreset={pickPreset}
+            mark={sidesMark}
+          />
+        )}
+        {format === 'pool' && (
+          <PoolOptions
+            options={poolNames}
+            pickedIndex={pickedIndex}
+            onPick={pickSide}
+            editing={poolEditing}
+            onToggleEdit={() => setPoolEditing((value) => !value)}
+            onRename={renamePool}
+            onAdd={addPoolOption}
+            onRemove={removePoolOption}
+            mark={markFor('pool')}
+          />
+        )}
+        {format === 'challenge' && (
+          <ChallengeCard
+            friends={orderedFriends}
+            opponentId={opponentId}
+            options={sideNames}
+            pickedIndex={pickedIndex}
+            onPick={pickSide}
+            onSwap={swapSides}
+            onRename={renameSide}
+            presets={presets}
+            activePresetId={presetId}
+            onPreset={pickPreset}
+            myPictureUrl={myPictureUrl}
+            mark={sidesMark}
+          />
+        )}
 
-            <StakeAndClose
-              stake={stake}
-              onStakeChange={changeStake}
-              overBalance={overBalance}
-              closeOptions={closeOptionsList}
-              closeId={closeId}
-              onCloseChange={changeCloseTime}
-              closeAt={closeAt}
-              pickedDate={pickedDate}
-              onPickedDateChange={setPickedDate}
-              now={now}
-            />
+        <StakeAndClose
+          stake={stake}
+          onStakeChange={changeStake}
+          overBalance={overBalance}
+          closeOptions={closeOptionsList}
+          closeId={closeId}
+          onCloseChange={changeCloseTime}
+          closeAt={closeAt}
+          pickedDate={pickedDate}
+          onPickedDateChange={changePickedDate}
+          now={now}
+          stakeMark={markFor('stake')}
+          closeMark={markFor('close')}
+        />
 
-            {format !== 'challenge' && (
-              <FriendRow
-                friends={orderedFriends}
-                atGame={atGame}
-                selected={selectedFriends}
-                onToggle={toggleFriend}
-                onAllFriends={() => setShowAllFriends(true)}
-                isPrivate={isPrivate}
-                onPrivacyChange={setIsPrivate}
-              />
-            )}
+        {format !== 'challenge' && (
+          <FriendRow
+            friends={orderedFriends}
+            atGame={atGame}
+            selected={selectedFriends}
+            onToggle={toggleFriend}
+            onAllFriends={() => setShowAllFriends(true)}
+            isPrivate={isPrivate}
+            onPrivacyChange={setIsPrivate}
+          />
+        )}
       </ScrollView>
 
       {showBar && (

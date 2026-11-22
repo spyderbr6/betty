@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
+  autofillGuesses,
   autofillValues,
   closeChoiceFor,
   EMPTY_AUTOFILL,
+  filledFields,
   planAutofill,
+  settleAutofill,
+  undoAutofill,
+  type AutofillKey,
   type AutofillState,
   type AutofillValues,
 } from '../betTextAutofill';
@@ -19,24 +24,36 @@ const friends = [{ id: 'u-mike', username: 'mikeb', displayName: 'Mike Brown' }]
 function form(start: AutofillValues) {
   let values: AutofillValues = { ...start };
   let state: AutofillState = EMPTY_AUTOFILL;
+  const touched = new Set<AutofillKey>();
+  const apply = (set: AutofillValues) => {
+    values = { ...values, ...set };
+  };
   return {
     type(text: string) {
-      const next = autofillValues(parseBetText(text, { now, friends }), {
-        now,
-        closeOptions: offered,
-        state,
-        current: values,
-      });
-      const plan = planAutofill(state, next, values);
+      const parsed = parseBetText(text, { now, friends });
+      const next = autofillValues(parsed, { now, closeOptions: offered, state, current: values });
+      const plan = planAutofill(state, next, values, [...touched], autofillGuesses(parsed));
       state = plan.state;
-      values = { ...values, ...plan.set };
+      apply(plan.set);
       return plan.set;
     },
     byHand(change: AutofillValues) {
-      values = { ...values, ...change };
+      for (const key of Object.keys(change) as AutofillKey[]) touched.add(key);
+      apply(change);
+    },
+    tidy() {
+      state = settleAutofill(state);
+    },
+    undo() {
+      const plan = undoAutofill(state);
+      state = plan.state;
+      apply(plan.set);
     },
     get values() {
       return values;
+    },
+    get marks() {
+      return filledFields(state);
     },
   };
 }
@@ -71,10 +88,13 @@ describe('closeChoiceFor', () => {
 });
 
 describe('planAutofill', () => {
-  it('fills only what the question says', () => {
+  it('fills only what the question says, and marks it', () => {
     const f = form(START);
     expect(f.type('$20 it snows')).toEqual({ stake: 20 });
     expect(f.values).toMatchObject({ stake: 20, close: { id: '1h' }, friends: [] });
+    expect([...f.marks.filled].sort()).toEqual(['format', 'sides', 'stake']);
+    // Money on a bare statement: the yes / no is a guess
+    expect([...f.marks.guessed]).toEqual(['sides']);
   });
 
   it('follows the text as it is typed', () => {
@@ -91,17 +111,20 @@ describe('planAutofill', () => {
     expect(f.values).toMatchObject({ stake: 20, close: { id: 'tonight' } });
     f.type('it snows');
     expect(f.values).toMatchObject({ stake: 5, close: { id: '1h' } });
+    expect(f.marks.filled.size).toBe(0);
   });
 
-  it('keeps a field changed by hand while the text says the same', () => {
+  it('never changes a field set by hand, before or after the text', () => {
     const f = form(START);
-    f.type('$20 it snows');
     f.byHand({ stake: 50 });
-    f.type('$20 it snows a lot');
+    f.type('$20 it snows');
     expect(f.values.stake).toBe(50);
+    f.type('$25 it snows');
+    expect(f.values.stake).toBe(50);
+    expect(f.marks.filled.has('stake')).toBe(false);
   });
 
-  it('does not put back a field changed by hand when the words go', () => {
+  it('does not put back a field changed by hand after it was filled', () => {
     const f = form(START);
     f.type('$20 it snows');
     f.byHand({ stake: 50 });
@@ -109,12 +132,28 @@ describe('planAutofill', () => {
     expect(f.values.stake).toBe(50);
   });
 
-  it('lets new words win over a field changed by hand', () => {
+  it('keeps what was filled once the question is tidied', () => {
     const f = form(START);
-    f.type('$20 it snows');
-    f.byHand({ stake: 50 });
-    f.type('$25 it snows');
-    expect(f.values.stake).toBe(25);
+    f.type('$20 it snows tonight');
+    f.tidy();
+    // The tidied question no longer says $20
+    f.type('It snows tonight');
+    expect(f.values).toMatchObject({ stake: 20, close: { id: 'tonight' } });
+    expect(f.marks.filled.has('stake')).toBe(true);
+    // New words still fill
+    f.type('It snows tonight, $30');
+    expect(f.values.stake).toBe(30);
+  });
+
+  it('Undo fill puts every filled field back, and fills nothing more', () => {
+    const f = form(START);
+    f.type('bet Mike $20 it snows tonight');
+    expect(f.values).toMatchObject({ format: 'challenge', opponentId: 'u-mike', stake: 20 });
+    f.tidy();
+    f.undo();
+    expect(f.values).toEqual(START);
+    expect(f.marks.filled.size).toBe(0);
+    expect(f.type('$40 it snows')).toEqual({});
   });
 
   it('adds a named friend to the ones picked by hand, and takes back only that one', () => {
@@ -141,7 +180,7 @@ describe('planAutofill', () => {
 
   it('changes nothing for a question with no clues', () => {
     const f = form(START);
-    expect(f.type('Sam makes the 8:15 train')).toEqual({});
+    expect(f.type('Sam makes the early train')).toEqual({});
     expect(f.values).toEqual(START);
   });
 });

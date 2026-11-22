@@ -54,6 +54,11 @@ export interface ParsedBet {
    * stays exactly as typed.
    */
   cleanTitle?: string;
+  /**
+   * Fields filled on a weak clue, for the screen to show as guesses: Yes / No read from a
+   * bare statement with a stake ("$5 Lamar throws 2 TDs"), or "next score" read as 15 min.
+   */
+  guesses?: Array<'options' | 'deadline'>;
 }
 
 // ---------------------------------------------------------------------------
@@ -111,7 +116,7 @@ function takeAmount(text: string): { amount?: number; rest: string } {
 // ---------------------------------------------------------------------------
 // Deadline (read only; the words stay in the title, where they mean something)
 
-function readDeadline(text: string, now: Date): number | undefined {
+function readDeadline(text: string, now: Date, atGame: boolean): number | undefined {
   const t = text.toLowerCase();
   let target: Date | undefined;
 
@@ -158,6 +163,19 @@ function readDeadline(text: string, now: Date): number | undefined {
     target = endOfDay(addDays(now, 7));
   } else if (/\bend of (?:the )?month\b/.test(t)) {
     target = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59);
+  } else if (!atGame && /\b\d{1,2}:\d{2}\b/.test(t)) {
+    // Away from a game, a bare clock time is when it is decided ("Sam makes the 8:15
+    // train"): its next 8:15, morning or evening
+    const bare = t.match(/\b(\d{1,2}):(\d{2})\b/)!;
+    const hours = parseInt(bare[1], 10);
+    const minutes = parseInt(bare[2], 10);
+    if (hours <= 23 && minutes <= 59) {
+      const candidates = (hours === 0 || hours > 12 ? [hours] : [hours % 12, (hours % 12) + 12]).flatMap((h) => [
+        new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, minutes),
+        new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, h, minutes),
+      ]);
+      target = candidates.filter((d) => d > now).sort((a, b) => a.getTime() - b.getTime())[0];
+    }
   } else if (/\bend of (?:the )?year\b/.test(t)) {
     target = new Date(now.getFullYear(), 11, 31, 23, 59);
   }
@@ -225,10 +243,10 @@ function takeFriends(text: string, friends: ParserFriend[]): FriendMatch {
   rest = rest.replace(direct, (whole, trigger: string, chunk: string) => {
     record(chunk);
     const t = trigger.toLowerCase();
-    if (t !== 'with' && t !== 'invite') opponent = true;
+    if (t !== 'invite') opponent = true;
     if (t === 'bet' || t === 'challenge') betTrigger = true;
-    // "Bet Mike ..." and "invite Mike" are instructions, not part of what is bet on
-    if (!/^(bet|challenge|invite)$/.test(t)) return whole;
+    // "Bet Mike", "with Mike", "invite Mike" say who, not what is bet on
+    if (!/^(bet|challenge|invite|with)$/.test(t)) return whole;
     removed = true;
     return ' ';
   });
@@ -387,12 +405,18 @@ function readCategory(text: string): BetCategory | undefined {
 const NEXT_SCORE = /\bnext\s+(?:score|basket|bucket|goal|touchdown|td|point|points|run|field goal|fg)\b|\bscores?\s+(?:next|first)\b|\bfirst\s+to\s+score\b/i;
 const OVER_UNDER = /\bover\s*\/\s*under\b|\bover[\s-]+under\b|\bo\/u\b|\bover or under\b|\b(?:over|under)\s+\d+(?:\.\d+)?\b/i;
 const ME = /^(?:me|i|myself)$/i;
+/** Bets where naming one team means backing it against the other */
+const TEAM_OUTCOME = /\bwins?\b|\bwinning\b|\bbeats?\b|\btakes? it\b/i;
+/** In-game moments the app cannot close on: read as a short close, and shown as a guess */
+const GAME_MOMENT = /\bnext\s+(?:score|basket|bucket|goal|touchdown|td|point|run)\b|\bscores?\s+(?:next|first)\b|\bfirst\s+to\s+score\b|\bthis\s+(?:drive|possession|inning|quarter|period)\b/i;
+const GAME_MOMENT_MINUTES = 15;
 
 // ---------------------------------------------------------------------------
 
 export function parseBetText(input: string, context: ParseContext = {}): ParsedBet {
   const now = context.now ?? new Date();
   const result: ParsedBet = {};
+  const guesses = new Set<'options' | 'deadline'>();
   const original = squash(input);
   if (!original) return result;
   // Words that went into another field, so the question can lose them
@@ -405,8 +429,13 @@ export function parseBetText(input: string, context: ParseContext = {}): ParsedB
     removed = true;
   }
 
-  const deadline = readDeadline(original, now);
+  const deadline = readDeadline(original, now, !!context.event);
   if (deadline !== undefined) result.deadlineMinutes = deadline;
+  else if (context.event && GAME_MOMENT.test(original)) {
+    // Bets close on durations, not game moments: "next score" gets a short one
+    result.deadlineMinutes = GAME_MOMENT_MINUTES;
+    guesses.add('deadline');
+  }
 
   const friends = takeFriends(amount.rest, context.friends ?? []);
   if (friends.removed) removed = true;
@@ -439,7 +468,14 @@ export function parseBetText(input: string, context: ParseContext = {}): ParsedB
   } else if (QUESTION_START.test(text) || assertive) {
     // "Will it rain?", "I bet it rains". An open question ("Who wins?") is not yes/no.
     options = ['Yes', 'No'];
+  } else if ((result.stake !== undefined || friends.opponent) && wordCount(text) >= 2) {
+    // "$5 Lamar throws 2 TDs": money on a statement is probably yes or no, but which
+    // side is not said
+    options = ['Yes', 'No'];
+    guesses.add('options');
   }
+  /** The index of the one team the text names, if it backs it */
+  let namedTeam: number | null = null;
 
   // The checked-in game's teams, named as the form names them
   if (event && !pool) {
@@ -449,6 +485,17 @@ export function parseBetText(input: string, context: ParseContext = {}): ParsedB
       const a = asTeam(two[0], event);
       const b = asTeam(two[1], event);
       if (a && b && a !== b) options = [a, b];
+    } else if (
+      (!options || options[0] === 'Yes') &&
+      (home >= 0) !== (away >= 0) &&
+      (NEXT_SCORE.test(text) || TEAM_OUTCOME.test(text))
+    ) {
+      // "Steelers score next", "Ravens win tonight": the named team against the other,
+      // in the game's order (away first) so the sides stay the game's own
+      const { away: awayLabel, home: homeLabel } = gameTeams(event);
+      options = [awayLabel, homeLabel];
+      namedTeam = home >= 0 ? 1 : 0;
+      guesses.delete('options');
     } else if (!options && ((home >= 0 && away >= 0) || NEXT_SCORE.test(text))) {
       const { away: awayLabel, home: homeLabel } = gameTeams(event);
       options = home >= 0 && away >= 0 && home < away ? [homeLabel, awayLabel] : [awayLabel, homeLabel];
@@ -489,12 +536,14 @@ export function parseBetText(input: string, context: ParseContext = {}): ParsedB
         const name = n.toLowerCase();
         return name === p || (p.length >= 3 && (name.includes(p) || p.includes(name)));
       });
+    } else if (namedTeam !== null && !QUESTION_START.test(text)) {
+      mine = namedTeam;
     } else if (options.includes('I win')) {
       mine = options.indexOf('I win');
     } else if (assertive && options[0] === 'Over') {
       // "$20 says under 45.5"
       mine = /^under\b/i.test(text) ? 1 : 0;
-    } else if (assertive && !pool) {
+    } else if (assertive && !pool && !guesses.has('options')) {
       mine = 0;
     }
     if (mine >= 0) result.pickedIndex = mine;
@@ -514,5 +563,6 @@ export function parseBetText(input: string, context: ParseContext = {}): ParsedB
     if (title.length >= 2 && title !== original) result.cleanTitle = title;
   }
 
+  if (guesses.size > 0) result.guesses = [...guesses];
   return result;
 }

@@ -1,12 +1,14 @@
 /**
  * How the Create screen applies what the question says (betTextParser.ts) to the rest of
- * the form while it is typed.
+ * the form while it is typed ("Create Bet Type It" design).
  *
  * - Only fields the text mentions are filled; everything else keeps what it holds.
- * - A field is filled when what the text says about it changes, so a field changed by
- *   hand afterwards stays as it was set until the text says something new about it.
- * - When the text stops saying it ("$20" deleted), the field goes back to what it held
- *   before, unless it was changed by hand in the meantime.
+ * - A field set by hand is the creator's: later typing never changes it.
+ * - When the text stops saying something ("$20" deleted), the field goes back to what it
+ *   held before. Once the question is tidied (the "$20" moved to the stake), what was
+ *   filled stays.
+ * - Undo fill puts back what every filled field held, and the question fills nothing more
+ *   until it is cleared.
  *
  * Pure, so it is unit tested; the screen reads and sets its own state around it.
  */
@@ -38,13 +40,19 @@ export type AutofillKey = keyof AutofillValues;
 const KEYS: AutofillKey[] = ['format', 'sides', 'pool', 'pickedIndex', 'stake', 'close', 'friends', 'opponentId'];
 
 export interface AutofillState {
-  /** What the text last filled in */
+  /** What the text filled in, shown with ✦ */
   applied: AutofillValues;
   /** What each of those fields held before the text filled it */
   before: AutofillValues;
+  /** Filled fields whose words were tidied out of the question: kept as they are */
+  settled: AutofillKey[];
+  /** Filled fields that are only guesses (a dashed outline) */
+  guesses: AutofillKey[];
+  /** After Undo fill: the question fills nothing until it is cleared */
+  paused: boolean;
 }
 
-export const EMPTY_AUTOFILL: AutofillState = { applied: {}, before: {} };
+export const EMPTY_AUTOFILL: AutofillState = { applied: {}, before: {}, settled: [], guesses: [], paused: false };
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
@@ -95,6 +103,14 @@ export function autofillValues(
   return values;
 }
 
+/** The form fields the parse only guessed. */
+export function autofillGuesses(parsed: ParsedBet): AutofillKey[] {
+  const keys: AutofillKey[] = [];
+  if (parsed.guesses?.includes('options')) keys.push(parsed.format === 'pool' ? 'pool' : 'sides');
+  if (parsed.guesses?.includes('deadline')) keys.push('close');
+  return keys;
+}
+
 /**
  * What to change on the form for a new parse, and the state to keep for the next one.
  * `current` is what the form holds now.
@@ -103,21 +119,33 @@ export function planAutofill(
   state: AutofillState,
   next: AutofillValues,
   current: AutofillValues,
+  touched: readonly AutofillKey[] = [],
+  guesses: readonly AutofillKey[] = [],
 ): { set: AutofillValues; state: AutofillState } {
+  if (state.paused) return { set: {}, state };
   const set: Record<string, unknown> = {};
   const applied: Record<string, unknown> = { ...state.applied };
   const before: Record<string, unknown> = { ...state.before };
+  const settled = new Set(state.settled);
 
   for (const key of KEYS) {
+    if (touched.includes(key)) {
+      // Set by hand: the creator's, not the text's
+      delete applied[key];
+      delete before[key];
+      settled.delete(key);
+      continue;
+    }
     const wanted = next[key];
     const hadApplied = key in state.applied;
     if (wanted !== undefined) {
       if (hadApplied && same(wanted, state.applied[key])) continue; // the text says the same
       if (!hadApplied) before[key] = current[key];
       applied[key] = wanted;
+      settled.delete(key);
       if (!same(wanted, current[key])) set[key] = wanted;
-    } else if (hadApplied) {
-      // The text no longer says it: put back what was there, unless it was changed by hand
+    } else if (hadApplied && !settled.has(key)) {
+      // The text no longer says it: put back what was there, if it still holds the fill
       if (same(current[key], state.applied[key]) && !same(current[key], state.before[key])) {
         set[key] = state.before[key];
       }
@@ -125,5 +153,31 @@ export function planAutofill(
       delete before[key];
     }
   }
-  return { set: set as AutofillValues, state: { applied: applied as AutofillValues, before: before as AutofillValues } };
+  return {
+    set: set as AutofillValues,
+    state: {
+      applied: applied as AutofillValues,
+      before: before as AutofillValues,
+      settled: [...settled],
+      guesses: guesses.filter((key) => key in applied),
+      paused: false,
+    },
+  };
+}
+
+/** The question was tidied: what it filled stays, whatever is typed next. */
+export function settleAutofill(state: AutofillState): AutofillState {
+  return { ...state, settled: Object.keys(state.applied) as AutofillKey[] };
+}
+
+/** Undo fill: every filled field back to what it held, and no more filling. */
+export function undoAutofill(state: AutofillState): { set: AutofillValues; state: AutofillState } {
+  const set: Record<string, unknown> = {};
+  for (const key of Object.keys(state.applied) as AutofillKey[]) set[key] = state.before[key];
+  return { set: set as AutofillValues, state: { ...EMPTY_AUTOFILL, paused: true } };
+}
+
+/** The fields to mark ✦, and which of them are guesses. */
+export function filledFields(state: AutofillState): { filled: Set<AutofillKey>; guessed: Set<AutofillKey> } {
+  return { filled: new Set(Object.keys(state.applied) as AutofillKey[]), guessed: new Set(state.guesses) };
 }

@@ -142,7 +142,7 @@ describe('parseBetText: leaving the rest of the form alone', () => {
   });
 
   it('says nothing about a statement with no clues', () => {
-    expect(parse('Sam makes the 8:15 train')).toEqual({});
+    expect(parse('Sam makes the early train')).toEqual({});
   });
 
   it('does not read an open question as yes/no', () => {
@@ -177,6 +177,57 @@ describe('parseBetText: leaving the rest of the form alone', () => {
 
   it('does not pick a side for a pool nobody picked in', () => {
     expect(parse('I bet: Ana, Ben or Cal').pickedIndex).toBeUndefined();
+  });
+});
+
+describe('parseBetText: the "type it" design', () => {
+  it('backs a team named alone, against the other one', () => {
+    expect(parse('I bet a dollar that the Steelers score next', { event: { ...event, homeTeamShortName: 'Steelers', awayTeamShortName: 'Ravens', homeTeam: 'Pittsburgh Steelers', awayTeam: 'Baltimore Ravens', homeTeamCode: 'PIT', awayTeamCode: 'BAL' } })).toMatchObject({
+      format: 'sides',
+      // The game's order, away first, with you on the team named
+      options: ['Ravens', 'Steelers'],
+      pickedIndex: 1,
+      stake: 1,
+      deadlineMinutes: 15,
+      guesses: ['deadline'],
+      cleanTitle: 'The Steelers score next',
+    });
+    expect(parse('Bills win tonight', { event })).toMatchObject({ options: ['Bills', 'Chiefs'], pickedIndex: 0 });
+    expect(parse('Chiefs win tonight', { event })).toMatchObject({ options: ['Bills', 'Chiefs'], pickedIndex: 1 });
+  });
+
+  it('does not pick a side when a named team is asked about', () => {
+    const r = parse('Will the Bills win?', { event });
+    expect(r.options).toEqual(['Bills', 'Chiefs']);
+    expect(r.pickedIndex).toBeUndefined();
+  });
+
+  it('keeps yes / no for a team bet that is not about winning or scoring next', () => {
+    expect(parse('Will the Bills score this drive?', { event }).options).toEqual(['Yes', 'No']);
+  });
+
+  it('makes "with" a friend a 1 v 1, with the side named', () => {
+    expect(parse('$20 with Mike the Bills win tonight', { event })).toMatchObject({
+      format: 'challenge',
+      opponentId: 'u-mike',
+      options: ['Bills', 'Chiefs'],
+      pickedIndex: 0,
+      stake: 20,
+      cleanTitle: 'The Bills win tonight',
+    });
+  });
+
+  it('reads money on a bare statement as a yes / no guess, with no side', () => {
+    const r = parse('$5 Lamar throws for 2 or more TDs');
+    expect(r).toMatchObject({ options: ['Yes', 'No'], stake: 5, guesses: ['options'] });
+    expect(r.pickedIndex).toBeUndefined();
+  });
+
+  it('takes a bare clock time as the close away from a game, but not at one', () => {
+    // 3pm now: the next 8:15 is this evening
+    expect(parse('Sam makes the 8:15 train').deadlineMinutes).toBe(minutesUntil(new Date(2026, 10, 14, 20, 15)));
+    expect(parse('Sam makes the 2:30 train').deadlineMinutes).toBe(minutesUntil(new Date(2026, 10, 15, 2, 30)));
+    expect(parse('Sam makes the 8:15 train', { event }).deadlineMinutes).toBeUndefined();
   });
 });
 

@@ -15,6 +15,13 @@ interface BetQuestionProps {
   onTitleChange: (title: string) => void;
   /** Leaving the question (not the details) */
   onTitleBlur?: () => void;
+  onTitleFocus?: () => void;
+  /**
+   * The typed bet filled fields: "✦ Cleaned up from what you typed" when words moved out
+   * of the question, "✦ Filled from what you typed" otherwise, with Undo fill.
+   */
+  fill?: { cleaned: boolean } | null;
+  onUndoFill?: () => void;
   details: string;
   onDetailsChange: (details: string) => void;
   showDetails: boolean;
@@ -26,7 +33,7 @@ interface BetQuestionProps {
 const ONE_ROW = Platform.OS === 'web' ? 1 : undefined;
 
 export const BetQuestion = forwardRef<TextInput, BetQuestionProps>(
-  ({ title, onTitleChange, onTitleBlur, details, onDetailsChange, showDetails, onShowDetails, placeholder }, ref) => {
+  ({ title, onTitleChange, onTitleBlur, onTitleFocus, fill, onUndoFill, details, onDetailsChange, showDetails, onShowDetails, placeholder }, ref) => {
     const [focused, setFocused] = useState(false);
     return (
       <View style={createStyles.block}>
@@ -39,7 +46,10 @@ export const BetQuestion = forwardRef<TextInput, BetQuestionProps>(
             placeholderTextColor={colors.textMuted}
             value={title}
             onChangeText={onTitleChange}
-            onFocus={() => setFocused(true)}
+            onFocus={() => {
+              setFocused(true);
+              onTitleFocus?.();
+            }}
             onBlur={() => {
               setFocused(false);
               onTitleBlur?.();
@@ -64,6 +74,21 @@ export const BetQuestion = forwardRef<TextInput, BetQuestionProps>(
               autoFocus
               accessibilityLabel="Details"
             />
+          )}
+          {fill && !focused && (
+            <View style={styles.fillRow}>
+              <Text testID="create-fill-note" style={styles.fillNote}>
+                {fill.cleaned ? '✦ Cleaned up from what you typed' : '✦ Filled from what you typed'}
+              </Text>
+              <TouchableOpacity
+                testID="create-undo-fill"
+                onPress={onUndoFill}
+                accessibilityRole="button"
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Text style={createStyles.link}>Undo fill</Text>
+              </TouchableOpacity>
+            </View>
           )}
           <View style={styles.metaRow}>
             {showDetails ? (
@@ -111,6 +136,18 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginTop: spacing.sm,
+  },
+  fillRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: spacing.sm,
+  },
+  fillNote: {
+    ...textStyles.caption,
+    color: colors.filled,
+    flexShrink: 1,
+    marginRight: spacing.sm,
   },
   counter: {
     ...textStyles.caption,

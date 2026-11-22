@@ -4,7 +4,8 @@
  */
 
 import React from 'react';
-import { Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { colors } from '../../styles';
 import type { BetFormat } from '../../services/createBetFlowLogic';
 import { createStyles } from './styles';
 
@@ -12,6 +13,8 @@ interface FormatTabsProps {
   value: BetFormat;
   onChange: (format: BetFormat) => void;
   onSquares: () => void;
+  /** The selected format was filled from the typed bet: it carries ✦ */
+  filled?: boolean;
 }
 
 const TABS: { id: BetFormat | 'squares'; label: string }[] = [
@@ -21,7 +24,7 @@ const TABS: { id: BetFormat | 'squares'; label: string }[] = [
   { id: 'squares', label: 'Squares ↗' },
 ];
 
-export const FormatTabs: React.FC<FormatTabsProps> = ({ value, onChange, onSquares }) => (
+export const FormatTabs: React.FC<FormatTabsProps> = ({ value, onChange, onSquares, filled }) => (
   <View style={createStyles.block}>
     <View style={createStyles.segment} accessibilityRole="tablist">
       {TABS.map((tab) => {
@@ -35,10 +38,19 @@ export const FormatTabs: React.FC<FormatTabsProps> = ({ value, onChange, onSquar
             accessibilityRole="tab"
             accessibilityState={{ selected }}
           >
-            <Text style={[createStyles.segmentText, selected && createStyles.segmentTextActive]}>{tab.label}</Text>
+            <Text style={[createStyles.segmentText, selected && createStyles.segmentTextActive]}>
+              {tab.label}
+              {selected && filled && <Text style={styles.mark}> ✦</Text>}
+            </Text>
           </TouchableOpacity>
         );
       })}
     </View>
   </View>
 );
+
+const styles = StyleSheet.create({
+  mark: {
+    color: colors.filled,
+  },
+});

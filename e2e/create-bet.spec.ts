@@ -143,7 +143,8 @@ test('creating a bet is one server call carrying the form, then the sent panel',
   const { sent, calls } = await recordCreates(page);
   await openCreateTab(page);
 
-  await page.getByTestId('create-title').fill('Sam makes the 8:15 train');
+  // No time in it: a bare clock time ("the 8:15 train") would set the closing time
+  await page.getByTestId('create-title').fill('Sam makes the early train');
   await tap(page, 'create-stake-up'); // $5 -> $10
   await tap(page, 'create-side-b');
   await submit(page);
@@ -151,9 +152,9 @@ test('creating a bet is one server call carrying the form, then the sent panel',
   await expect(page.getByTestId('create-sent')).toBeVisible({ timeout: 15_000 });
   expect(sent).toHaveLength(1);
   expect(sent[0]).toMatchObject({
-    title: 'Sam makes the 8:15 train',
+    title: 'Sam makes the early train',
     // No details typed and no game: the question stands in for the required description
-    description: 'Sam makes the 8:15 train',
+    description: 'Sam makes the early train',
     category: 'CUSTOM',
     amount: 10,
     side: 'B',
@@ -449,7 +450,7 @@ test('typing "Bet Casey $20 ..." makes a 1 v 1 at $20, and those words leave the
   await expect(page.getByTestId(`create-friend-${OTHER_USER.id}`)).toBeVisible({ timeout: 15_000 });
 
   await page.getByTestId('create-title').fill('Bet Casey $20 it snows tomorrow');
-  await expect(page.getByTestId('create-format-challenge')).toHaveAttribute('aria-selected', 'true');
+  // aria-selected is not rendered for the tabs: the button says it is a 1 v 1
   await expect(page.getByTestId('create-stake-value')).toHaveText('$20');
   await expect(page.getByTestId('create-submit')).toContainText('Challenge Casey · $20');
 
@@ -495,9 +496,108 @@ test('the question is tidied when sent even if it was never left, and deleting t
   expect(sent[0]).toMatchObject({ title: 'It rains', amount: 15, side: 'A', category: 'WEATHER' });
 });
 
+test('We heard shows what the typed bet filled, and creates from there', async ({ page }) => {
+  await signInAs(page);
+  const { sent } = await recordCreates(page);
+  await openCreateTab(page);
+
+  await page.getByTestId('create-title').fill('$15 says it rains tonight');
+  await expect(page.getByTestId('create-heard')).toBeVisible();
+  await expect(page.getByTestId('create-heard-stake')).toHaveText('$15');
+  await expect(page.getByTestId('create-heard-side')).toHaveText('Yes vs No');
+  await expect(page.getByTestId('create-heard-close')).toHaveText('Tonight');
+  // The panel's button is the create button while it shows
+  await expect(page.getByTestId('create-submit')).toHaveCount(1);
+  await submit(page);
+
+  await expect.poll(() => sent.length, { timeout: 15_000 }).toBe(1);
+  expect(sent[0]).toMatchObject({ title: 'It rains tonight', amount: 15, side: 'A' });
+});
+
+test('filled fields carry ✦, and Undo fill puts them back', async ({ page }) => {
+  await signInAs(page);
+  await mockAppSync(page, baseHandlers());
+  await openCreateTab(page);
+
+  const title = page.getByTestId('create-title');
+  await title.fill('$20 says it rains');
+  await title.blur();
+  await expect(title).toHaveValue('It rains');
+  await expect(page.getByTestId('create-fill-note')).toHaveText('✦ Cleaned up from what you typed');
+  await expect(page.getByTestId('create-stake-mark')).toBeVisible();
+  await expect(page.getByTestId('create-sides-mark')).toHaveText('✦ From your text');
+  await expect(page.getByTestId('create-heard')).toHaveCount(0);
+
+  await tap(page, 'create-undo-fill');
+  await expect(page.getByTestId('create-stake-value')).toHaveText('$5');
+  await expect(page.getByTestId('create-stake-mark')).toHaveCount(0);
+  await expect(page.getByTestId('create-fill-note')).toHaveCount(0);
+  // The question stays as tidied, and fills nothing more until it is cleared
+  await expect(title).toHaveValue('It rains');
+  await expect(page.getByTestId('create-submit')).toContainText('Pick your side');
+});
+
+test('a stake set by hand is never changed by typing', async ({ page }) => {
+  await signInAs(page);
+  await mockAppSync(page, baseHandlers());
+  await openCreateTab(page);
+
+  await tap(page, 'create-stake-up'); // $5 -> $10
+  await page.getByTestId('create-title').fill('$20 says it rains');
+  // The side is filled, the stake is not
+  await expect(page.getByTestId('create-submit')).toContainText('on Yes');
+  await expect(page.getByTestId('create-stake-value')).toHaveText('$10');
+  await expect(page.getByTestId('create-stake-mark')).toHaveCount(0);
+});
+
 // ---------------------------------------------------------------------------
 // At a game
 // ---------------------------------------------------------------------------
+
+test('suggestions stay in every format, tagged with the format they switch to', async ({ page }) => {
+  await signInAs(page);
+  await mockAppSync(page, baseHandlers(atTheGame()));
+  await openCreateTab(page);
+
+  await expect(page.getByTestId('create-suggestion-next-score-tag')).toHaveText(/Pool/);
+  await expect(page.getByTestId('create-suggestion-challenge-tag')).toHaveText(/1 v 1/);
+  await expect(page.getByTestId('create-suggestion-who-wins-tag')).toHaveCount(0);
+
+  await tap(page, 'create-format-challenge');
+  await expect(page.getByTestId('create-suggestion-next-score')).toBeVisible();
+  await expect(page.getByTestId('create-suggestion-drive')).toBeVisible();
+
+  // Tapping a tagged chip switches the format
+  await tap(page, 'create-format-sides');
+  await tap(page, 'create-suggestion-challenge');
+  await expect(page.getByTestId('create-submit-detail')).toContainText('One person can take the other side');
+  await expect(page.getByTestId('create-title')).toHaveValue('Who wins, Bills or Chiefs?');
+});
+
+test('typing a team at the game backs that team against the other', async ({ page }) => {
+  await signInAs(page);
+  const { sent } = await recordCreates(page, atTheGame());
+  await openCreateTab(page);
+
+  await page.getByTestId('create-title').fill('I bet a dollar that the Chiefs score next');
+  await expect(page.getByTestId('create-submit')).toContainText('Create · $1 on Chiefs');
+  // The game's own sides, away first, with Chiefs picked
+  await expect(page.getByTestId('create-side-a')).toContainText('Bills');
+  await expect(page.getByTestId('create-side-b')).toContainText('Chiefs');
+  await expect(page.getByTestId('create-side-b')).toContainText('YOUR SIDE');
+  await submit(page);
+
+  await expect.poll(() => sent.length, { timeout: 15_000 }).toBe(1);
+  expect(sent[0]).toMatchObject({
+    title: 'The Chiefs score next',
+    amount: 1,
+    side: 'B',
+    sideAName: 'Bills',
+    sideBName: 'Chiefs',
+    deadlineMinutes: 15,
+    eventId: EVENT_ID,
+  });
+});
 
 test('at a live game the screen opens on it, with the teams as the sides', async ({ page }) => {
   await signInAs(page);

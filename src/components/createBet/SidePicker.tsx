@@ -8,6 +8,7 @@ import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-nativ
 import { colors, spacing, textStyles, typography } from '../../styles';
 import { LIMITS } from '../../../amplify/shared/createBetLogic';
 import { createStyles } from './styles';
+import { MarkedLabel, type FillMarkKind } from './FillMark';
 
 export interface SidePreset {
   id: string;
@@ -21,10 +22,12 @@ interface SidePresetSwitchProps {
   activeId: string;
   onPick: (preset: SidePreset) => void;
   label: string;
+  /** The sides were filled from the typed bet */
+  mark?: FillMarkKind;
 }
 
 /** The label row, and its link to the other sides. */
-export const SidePresetSwitch: React.FC<SidePresetSwitchProps> = ({ presets, activeId, onPick, label }) => {
+export const SidePresetSwitch: React.FC<SidePresetSwitchProps> = ({ presets, activeId, onPick, label, mark }) => {
   const [open, setOpen] = useState(false);
   const others = presets.filter((preset) => preset.id !== activeId);
   // The link names the first other choice, as the design does ("Yes / No" under the teams)
@@ -32,7 +35,7 @@ export const SidePresetSwitch: React.FC<SidePresetSwitchProps> = ({ presets, act
   return (
     <>
       <View style={createStyles.labelRow}>
-        <Text style={createStyles.label}>{label}</Text>
+        <MarkedLabel label={label} kind={mark} long testID="create-sides-mark" />
         <TouchableOpacity
           testID="create-side-presets"
           onPress={() => setOpen((value) => !value)}
@@ -76,6 +79,8 @@ interface SideTileProps {
   idleHint?: string;
   /** A compact tile (the challenge card's) */
   compact?: boolean;
+  /** Only a guess from the typed bet: dashed outline */
+  guess?: boolean;
 }
 
 export const SideTile: React.FC<SideTileProps> = ({
@@ -88,10 +93,11 @@ export const SideTile: React.FC<SideTileProps> = ({
   pickedHint = '✓ YOUR SIDE',
   idleHint = 'Tap to back',
   compact,
+  guess,
 }) => (
   <TouchableOpacity
     testID={testID}
-    style={[styles.tile, compact && styles.tileCompact, picked && createStyles.picked]}
+    style={[styles.tile, compact && styles.tileCompact, guess && !picked && createStyles.guess, picked && createStyles.picked]}
     onPress={onPick}
     activeOpacity={0.85}
     accessibilityRole="button"
@@ -126,6 +132,7 @@ interface SidePickerProps {
   presets: SidePreset[];
   activePresetId: string;
   onPreset: (preset: SidePreset) => void;
+  mark?: FillMarkKind;
 }
 
 export const SidePicker: React.FC<SidePickerProps> = ({
@@ -136,9 +143,10 @@ export const SidePicker: React.FC<SidePickerProps> = ({
   presets,
   activePresetId,
   onPreset,
+  mark,
 }) => (
   <View style={createStyles.block}>
-    <SidePresetSwitch label="Tap your side" presets={presets} activeId={activePresetId} onPick={onPreset} />
+    <SidePresetSwitch label="Tap your side" presets={presets} activeId={activePresetId} onPick={onPreset} mark={mark} />
     <View style={styles.row}>
       {options.slice(0, 2).map((name, index) => (
         <View key={index} style={[styles.cell, index === 1 && styles.cellRight]}>
@@ -149,6 +157,7 @@ export const SidePicker: React.FC<SidePickerProps> = ({
             editable={activePresetId === 'custom'}
             onPick={() => onPick(index)}
             onRename={(text) => onRename(index, text)}
+            guess={mark === 'guess'}
           />
         </View>
       ))}

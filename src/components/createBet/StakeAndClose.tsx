@@ -16,6 +16,7 @@ import {
   type CloseTimeOption,
 } from '../../services/createBetFlowLogic';
 import { createStyles } from './styles';
+import { MarkedLabel, type FillMarkKind } from './FillMark';
 
 interface StakeAndCloseProps {
   stake: number;
@@ -29,6 +30,9 @@ interface StakeAndCloseProps {
   pickedDate: Date | null;
   onPickedDateChange: (date: Date) => void;
   now: Date;
+  /** Filled from the typed bet (✦), or only guessed (dashed) */
+  stakeMark?: FillMarkKind;
+  closeMark?: FillMarkKind;
 }
 
 const DAYS_AHEAD = 14;
@@ -45,11 +49,13 @@ interface StepperProps {
   children: React.ReactNode;
   error?: boolean;
   style?: object;
+  mark?: FillMarkKind;
+  markTestID?: string;
 }
 
-const Stepper: React.FC<StepperProps> = ({ label, onDown, onUp, downTestID, upTestID, downLabel, upLabel, children, error, style }) => (
-  <View style={[createStyles.card, styles.box, error && styles.boxError, style]}>
-    <Text style={createStyles.label}>{label}</Text>
+const Stepper: React.FC<StepperProps> = ({ label, onDown, onUp, downTestID, upTestID, downLabel, upLabel, children, error, style, mark, markTestID }) => (
+  <View style={[createStyles.card, styles.box, mark === 'guess' && createStyles.guess, error && styles.boxError, style]}>
+    <MarkedLabel label={label} kind={mark} testID={markTestID} />
     <View style={styles.stepRow}>
       <TouchableOpacity testID={downTestID} style={createStyles.stepButton} onPress={onDown} accessibilityRole="button" accessibilityLabel={downLabel}>
         <Text style={createStyles.stepText}>−</Text>
@@ -73,6 +79,8 @@ export const StakeAndClose: React.FC<StakeAndCloseProps> = ({
   pickedDate,
   onPickedDateChange,
   now,
+  stakeMark,
+  closeMark,
 }) => {
   const [typing, setTyping] = useState(false);
   const [typed, setTyped] = useState('');
@@ -121,6 +129,8 @@ export const StakeAndClose: React.FC<StakeAndCloseProps> = ({
           upLabel="Raise the stake"
           error={overBalance}
           style={styles.stakeBox}
+          mark={stakeMark}
+          markTestID="create-stake-mark"
         >
           {typing ? (
             <TextInput
@@ -160,6 +170,8 @@ export const StakeAndClose: React.FC<StakeAndCloseProps> = ({
           downLabel="Close sooner"
           upLabel="Close later"
           style={styles.closeBox}
+          mark={closeMark}
+          markTestID="create-close-mark"
         >
           <TouchableOpacity
             testID="create-close-time"
