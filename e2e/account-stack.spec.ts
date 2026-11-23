@@ -109,6 +109,37 @@ test.describe('notification taps into the Account stack', () => {
     await expect(page.getByTestId('screen-account')).toBeVisible({ timeout: 15_000 });
   });
 
+  test('closing the requests list keeps it closed when the app comes back to the foreground', async ({ page }) => {
+    await signInAs(page);
+    await mockData(page);
+    await page.goto('/');
+    await expect(page.getByTestId('screen-bets')).toBeVisible({ timeout: 30_000 });
+
+    await fromServiceWorker(page, {
+      type: 'sidebet:notification-click',
+      data: { notificationId: 'n-fr', type: 'FRIEND_REQUEST_RECEIVED', relatedUserId: 'other' },
+    });
+    await expect(page.getByTestId('friend-requests-modal')).toBeVisible({ timeout: 15_000 });
+    await page.getByTestId('friend-requests-modal').getByTestId('modal-close').dispatchEvent('click');
+    await expect(page.getByTestId('friend-requests-modal')).toHaveCount(0);
+
+    // Background and foreground: React Native Web's AppState follows document visibility.
+    // Coming back refreshes the signed-in user, which reloads the Friends screen with the
+    // tap's param still set: on Android the list reopened every time.
+    for (const state of ['hidden', 'visible']) {
+      await page.evaluate((s) => {
+        Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => s });
+        Object.defineProperty(document, 'hidden', { configurable: true, get: () => s === 'hidden' });
+        document.dispatchEvent(new Event('visibilitychange'));
+      }, state);
+      await page.waitForTimeout(500);
+    }
+
+    await expect(page.getByTestId('screen-friends')).toBeVisible();
+    await page.waitForTimeout(2_000);
+    await expect(page.getByTestId('friend-requests-modal')).toHaveCount(0);
+  });
+
   test('coming back to the Account tab later does not replay the notification', async ({ page }) => {
     await signInAs(page);
     await mockData(page);

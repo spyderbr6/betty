@@ -109,7 +109,7 @@ const TRACKED_STATUSES = ['ACTIVE', 'LIVE', 'PENDING_RESOLUTION'];
 const isTracked = (status?: string | null) => TRACKED_STATUSES.includes(status ?? '');
 
 const transformAmplifyBet = (bet: any): Bet | null => {
-  if (!bet.id || !bet.title || !bet.description || !bet.category || !bet.status) {
+  if (!bet?.id || !bet.title || !bet.description || !bet.category || !bet.status) {
     return null;
   }
 
@@ -555,6 +555,7 @@ export const BetDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
     subscriptions.push(
       client.models.Bet.onCreate().subscribe({
         next: (rawBet) => {
+          if (!rawBet) return; // a write that returned too few fields reaches subscribers as null
           if (rawBet.isTestBet) return;
           const bet = transformAmplifyBet(rawBet);
           if (bet && isTracked(bet.status)) {
@@ -573,6 +574,7 @@ export const BetDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
     subscriptions.push(
       client.models.Bet.onUpdate().subscribe({
         next: (rawBet) => {
+          if (!rawBet) return; // a write that returned too few fields reaches subscribers as null
           const bet = transformAmplifyBet(rawBet);
           if (!bet) return;
 
@@ -595,6 +597,7 @@ export const BetDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
     subscriptions.push(
       client.models.Bet.onDelete().subscribe({
         next: (rawBet) => {
+          if (!rawBet) return; // a write that returned too few fields reaches subscribers as null
           setAllBets(prev => {
             const updated = new Map(prev);
             updated.delete(rawBet.id);
@@ -609,6 +612,7 @@ export const BetDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
     subscriptions.push(
       client.models.SquaresGame.onCreate().subscribe({
         next: (rawGame) => {
+          if (!rawGame) return; // a write that returned too few fields reaches subscribers as null
           const game = transformSquaresGame(rawGame);
           if (game && ['ACTIVE', 'LOCKED', 'LIVE'].includes(game.status)) {
             setAllSquaresGames(prev => {
@@ -626,6 +630,7 @@ export const BetDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
     subscriptions.push(
       client.models.SquaresGame.onUpdate().subscribe({
         next: (rawGame) => {
+          if (!rawGame) return; // a write that returned too few fields reaches subscribers as null
           const game = transformSquaresGame(rawGame);
           if (!game) return;
           setAllSquaresGames(prev => {
@@ -646,6 +651,7 @@ export const BetDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
     subscriptions.push(
       client.models.SquaresGame.onDelete().subscribe({
         next: (rawGame) => {
+          if (!rawGame) return; // a write that returned too few fields reaches subscribers as null
           setAllSquaresGames(prev => {
             const updated = new Map(prev);
             updated.delete(rawGame.id);
@@ -720,6 +726,7 @@ export const BetDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
     subscriptions.push(
       client.models.BetInvitation.onUpdate().subscribe({
         next: (rawInv) => {
+          if (!rawInv) return; // a write that returned too few fields reaches subscribers as null
           if (rawInv.toUserId !== user.userId) return;
           if (rawInv.status !== 'PENDING') {
             // Invitation accepted/declined/expired — remove it
@@ -738,6 +745,7 @@ export const BetDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
     subscriptions.push(
       client.models.Friendship.onCreate().subscribe({
         next: (rawFriendship) => {
+          if (!rawFriendship) return; // a write that returned too few fields reaches subscribers as null
           const friendId = rawFriendship.user1Id === user.userId
             ? rawFriendship.user2Id
             : rawFriendship.user1Id;
@@ -757,6 +765,7 @@ export const BetDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
     subscriptions.push(
       client.models.SquaresPurchase.onCreate().subscribe({
         next: (rawPurchase) => {
+          if (!rawPurchase) return; // a write that returned too few fields reaches subscribers as null
           if (rawPurchase.userId === user.userId && rawPurchase.squaresGameId) {
             setMyPurchasedSquaresGameIds(prev => {
               const updated = new Set(prev);

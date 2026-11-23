@@ -58,6 +58,10 @@ test('a browser that already allows notifications registers itself as a device',
   await expect(page.getByTestId('screen-bets')).toBeVisible({ timeout: 30_000 });
 
   await expect.poll(() => registrations.length).toBe(1);
+  // Once, not once per caller: sign-in used to send several at the same moment, and
+  // they raced on the server to create the same device row
+  await page.waitForTimeout(3_000);
+  expect(registrations).toHaveLength(1);
   const [registration] = registrations;
   expect(registration).toMatchObject({
     installationId: INSTALLATION_ID,

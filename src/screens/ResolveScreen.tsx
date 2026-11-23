@@ -38,7 +38,7 @@ const client = generateClient<Schema>();
 
 // Helper function to transform Amplify data to our Bet type
 const transformAmplifyBet = (bet: any): Bet | null => {
-  if (!bet.id || !bet.title || !bet.description || !bet.category || !bet.status) {
+  if (!bet?.id || !bet.title || !bet.description || !bet.category || !bet.status) {
     return null;
   }
 
