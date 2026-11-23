@@ -3,7 +3,7 @@
  * Display and manage user's friends list with add friend functionality
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -59,9 +59,14 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ onClose, initialSh
     }
   }, [user]);
 
-  // Auto-open friend requests modal when navigated from notification
+  // Auto-open friend requests modal when navigated from notification, once per request.
+  // isLoading goes true and false again on every reload (the user record changes when the
+  // app returns to the foreground), and the route param stays set, so without remembering
+  // which request was handled the list reopened each time, even after being closed.
+  const handledShowRequests = useRef<boolean | number | undefined>(undefined);
   useEffect(() => {
-    if (initialShowRequests && !isLoading) {
+    if (initialShowRequests && !isLoading && handledShowRequests.current !== initialShowRequests) {
+      handledShowRequests.current = initialShowRequests;
       setShowFriendRequestsModal(true);
     }
   }, [initialShowRequests, isLoading]);

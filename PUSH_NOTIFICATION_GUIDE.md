@@ -310,7 +310,30 @@ wrong or revoked token shows up as a logged 401 from Expo.
   drives the real Lambdas and checks every server-raised type is written once, to the right
   person, with its category, expiry and tap data. Sandbox only; it refuses other endpoints.
 
-**On a device:**
+**On a device, one push per category** (`scripts/sandbox-push-drive.mjs`, sandbox only). This
+is not part of `npm run test:e2e`: it needs a real phone or emulator, the real sandbox, and
+you signed in on the device. Throwaway sandbox users play the other side; server-raised
+notifications come from the real Lambdas.
+1. Install a preview build pointed at the sandbox (`eas build -p android --profile preview`)
+   and sign in. Allow notifications.
+2. `node scripts/sandbox-push-drive.mjs whoami` (with `SANDBOX_STACK` set) finds you from
+   your newest Android device.
+3. Put the app in the background, then run one step at a time and tap each push: `friends`,
+   `invite`, `joined`, `close`, `results`, `refund`, `reminder`, `squares`, `money`. Each
+   step prints what should arrive and where its tap should land. `cleanup` deletes the
+   throwaway users and rows; your own $1 stakes stay on the sandbox.
+4. With `adb`, `dumpsys notification --noredact` lists each posted notification with its
+   channel, so the category can be checked without reading the screen.
+
+Traps found doing this (2026-11-22):
+- **Don't `am force-stop` the app to test a tap from a closed app.** Android delivers no
+  FCM message to a force-stopped app until it is opened again. `am kill` while it's in the
+  background stops the process the way swiping it away does.
+- **A write that returns only `id` reaches subscribers as a null record.** The app now
+  ignores those, but a driver that writes Bet or SquaresGame rows through raw GraphQL with a
+  minimal selection crashed builds without that guard. Prefer the Lambdas; the driver does.
+
+**The rest by hand:**
 1. Install a build made after the backend deploy (`amplify_outputs.json` regenerated first).
 2. Sign in and allow notifications. Settings → Your Devices should list the device.
 3. Settings → This Device → **Send Test Notification**.

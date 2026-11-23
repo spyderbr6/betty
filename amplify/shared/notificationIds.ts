@@ -24,9 +24,4 @@ export const proPaymentFailedNotificationId = (subscriptionId: string, periodEnd
   `pro-payment-failed#${subscriptionId}#${periodEnd ?? 'unknown'}`;
 
 /** True when a create was refused only because the row already exists. */
-export function isDuplicate(errors: ReadonlyArray<{ errorType?: string; message?: string }> | null | undefined): boolean {
-  return (
-    !!errors?.length &&
-    errors.every((e) => /ConditionalCheckFailed/i.test(e.errorType ?? '') || /conditional request failed/i.test(e.message ?? ''))
-  );
-}
+export { isDuplicate } from './appsyncErrors';

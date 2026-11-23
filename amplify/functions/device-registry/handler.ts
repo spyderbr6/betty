@@ -16,6 +16,7 @@ import {
   validateRegistration,
 } from './deviceLogic';
 import { type AmplifyResolverEvent, resolverFieldName } from '../../shared/amplifyResolverEvent';
+import { isDuplicate } from '../../shared/appsyncErrors';
 
 // CRITICAL: Top-level await configuration - this is required for proper client initialization
 const { resourceConfig, libraryOptions } = await getAmplifyDataClientConfig(env);
@@ -96,9 +97,14 @@ async function registerDevice(userId: string, args: RegisterDeviceArgs): Promise
   const { data: existing } = await client.models.PushDevice.get({ id });
   // An update leaves pushEnabled alone: re-registering on sign-in must not override the
   // user's own switch for this device.
-  const result = existing
+  let result = existing
     ? await client.models.PushDevice.update({ id, ...fields })
     : await client.models.PushDevice.create({ id, ...fields, pushEnabled: true, failureCount: 0 });
+  // Registrations from one sign-in can arrive together: both read no row, and the second
+  // create is refused because the first just made it. That one is an update, not a failure.
+  if (!existing && isDuplicate(result.errors)) {
+    result = await client.models.PushDevice.update({ id, ...fields });
+  }
 
   if (result.errors?.length) {
     console.error('[DeviceRegistry] Write failed:', JSON.stringify(result.errors));

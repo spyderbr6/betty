@@ -18,6 +18,7 @@ import { getInstallationId } from './installationId';
 import { describeUserAgent } from './deviceDescription';
 import { notificationMeta } from '../../amplify/shared/notificationCatalog';
 import { isFeedVisible } from '../../amplify/shared/notificationPreferencesLogic';
+import { singleFlight } from './singleFlight';
 
 const client = generateClient<Schema>();
 
@@ -48,6 +49,12 @@ function currentTimezone(): string | undefined {
 /** Who this device registered for in this session, so resume/refresh doesn't re-register. */
 let sessionRegistration: { userId: string; token: string } | null = null;
 
+/**
+ * One registration at a time per user. Sign-in on Android started four at once; they all
+ * reached the server together and raced to create the same device row, and two failed.
+ */
+const registerOnce = singleFlight<string | null>();
+
 export class NotificationService {
   /**
    * Register this device's push token for the user (Expo on mobile, Web Push on web).
@@ -69,7 +76,12 @@ export class NotificationService {
     if (!options.force && sessionRegistration?.userId === userId) {
       return sessionRegistration.token;
     }
+    // Join a registration already under way for this user rather than starting another.
+    // A forced one (a tap in Settings) waits for it, then registers again as asked.
+    return registerOnce(userId, options.force === true, () => this.registerPushTokenNow(userId, prompt));
+  }
 
+  private static async registerPushTokenNow(userId: string, prompt: boolean): Promise<string | null> {
     try {
       const token = await this.getDevicePushToken(prompt);
       if (!token) return null;
