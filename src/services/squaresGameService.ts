@@ -12,8 +12,41 @@
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
 import { buyFailureMessage, cancelFailureMessage, parseMoneyResult, type BuyResult, type CancelResult } from './squaresMoneyLogic';
+import { NotificationService } from './notificationService';
 
 const client = generateClient<Schema>();
+
+/**
+ * Buying squares is how a squares invitation is accepted, so tell whoever sent it. Never
+ * throws: the squares are bought, and a missed notice must not read as a failed purchase.
+ */
+async function notifyInvitationAccepted(
+  invitation: { id?: string | null; fromUserId: string; squaresGameId: string },
+  buyerId: string,
+  squares: number
+): Promise<void> {
+  if (invitation.fromUserId === buyerId) return;
+  try {
+    const [{ data: buyer }, { data: game }] = await Promise.all([
+      client.models.User.get({ id: buyerId }),
+      client.models.SquaresGame.get({ id: invitation.squaresGameId }),
+    ]);
+    const name = buyer?.displayName || buyer?.username || 'Someone';
+    await NotificationService.createNotification({
+      userId: invitation.fromUserId,
+      type: 'SQUARES_INVITATION_ACCEPTED',
+      title: 'Squares Invitation Accepted',
+      message: `${name} accepted your invitation and picked ${squares} square${squares === 1 ? '' : 's'} in "${game?.title ?? 'your squares game'}"`,
+      priority: 'MEDIUM',
+      actionType: 'view_squares',
+      actionData: { squaresGameId: invitation.squaresGameId },
+      relatedUserId: buyerId,
+      relatedRequestId: invitation.id ?? undefined,
+    });
+  } catch (error) {
+    console.warn('[SquaresGame] Could not notify the inviter:', error);
+  }
+}
 
 export interface PayoutStructure {
   period1: number;
@@ -146,6 +179,7 @@ export class SquaresGameService {
           updatedAt: new Date().toISOString(),
         });
         console.log('[SquaresGame] Auto-accepted invitation', myInvitation.id);
+        await notifyInvitationAccepted(myInvitation, userId, result.squares);
       }
     } catch (invError) {
       console.warn('[SquaresGame] Failed to auto-accept invitation:', invError);

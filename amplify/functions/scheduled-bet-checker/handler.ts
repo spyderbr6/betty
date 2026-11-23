@@ -7,6 +7,7 @@ import { getAmplifyDataClientConfig } from '@aws-amplify/backend/function/runtim
 // @ts-ignore - Generated at build time by Amplify
 import { env } from '$amplify/env/scheduled-bet-checker';
 import { notificationMeta } from '../../shared/notificationCatalog';
+import { isDuplicate, resolutionNeededNotificationId } from '../../shared/notificationIds';
 import { ledgerApply } from '../../shared/moneyClient';
 import { cancelExpiredBet } from './cancelExpired';
 
@@ -95,6 +96,7 @@ async function updateExpiredBets(): Promise<{ updated: number; cancelled: number
             id: bet.id,
             status: 'PENDING_RESOLUTION'
           });
+          await notifyResolutionNeeded(bet);
 
           updated++;
         } else {
@@ -124,7 +126,7 @@ async function updateExpiredBets(): Promise<{ updated: number; cancelled: number
 
           // Notify bet creator that their bet was cancelled
           try {
-            await client.models.Notification.create({
+            await createNotification({
               userId: bet.creatorId!,
               type: 'BET_CANCELLED',
               ...notificationMeta('BET_CANCELLED'),
@@ -133,7 +135,7 @@ async function updateExpiredBets(): Promise<{ updated: number; cancelled: number
               isRead: false,
               priority: 'MEDIUM',
               actionType: 'view_bet',
-              actionData: { betId: bet.id },
+              actionData: JSON.stringify({ betId: bet.id }),
               relatedBetId: bet.id,
             });
 
@@ -160,5 +162,42 @@ async function updateExpiredBets(): Promise<{ updated: number; cancelled: number
   } catch (error) {
     console.error('❌ Error in scheduled updateExpiredBets:', error);
     throw error;
+  }
+}
+
+/**
+ * Write a notification and say so when AppSync refuses it: the client reports a refused
+ * write in `errors` rather than throwing (actionData as an object was refused this way).
+ */
+async function createNotification(input: Record<string, unknown>): Promise<void> {
+  const { errors } = await client.models.Notification.create(input);
+  if (errors?.length) throw new Error(`notification refused: ${JSON.stringify(errors)}`);
+}
+
+/**
+ * Tell the creator their bet has closed and is waiting on them: nobody is paid until they
+ * pick the winner. The id is fixed per bet, so two overlapping runs that both move the bet
+ * write one notification (the second create is refused as a duplicate).
+ */
+async function notifyResolutionNeeded(bet: { id: string; creatorId: string; title?: string | null }): Promise<void> {
+  try {
+    const { errors } = await client.models.Notification.create({
+      id: resolutionNeededNotificationId(bet.id),
+      userId: bet.creatorId,
+      type: 'BET_RESOLUTION_NEEDED',
+      ...notificationMeta('BET_RESOLUTION_NEEDED'),
+      title: 'Pick the Winner',
+      message: `Betting on "${bet.title}" has closed. Pick the winner so everyone gets paid.`,
+      isRead: false,
+      priority: 'HIGH',
+      actionType: 'resolve_bet',
+      actionData: JSON.stringify({ betId: bet.id }),
+      relatedBetId: bet.id,
+    });
+    if (errors?.length && !isDuplicate(errors)) {
+      console.warn(`Failed to send resolution notification for bet ${bet.id}:`, JSON.stringify(errors));
+    }
+  } catch (error) {
+    console.warn(`Failed to send resolution notification for bet ${bet.id}:`, error);
   }
 }

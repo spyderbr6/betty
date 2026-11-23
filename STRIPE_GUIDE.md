@@ -24,7 +24,7 @@ and a test upgrade actually flips `User.subscriptionTier` to `PRO`.
 - **Stripe webhook** Lambda updates Transaction + credits balance automatically
   - Exposed on **two** endpoints; configure Stripe against the API Gateway one (see Step 6).
     The Lambda Function URL returns 403 in this AWS account.
-  - Handles: `payment_intent.succeeded`, `customer.subscription.*`
+  - Handles: `payment_intent.succeeded`, `payment_intent.payment_failed` (a "Deposit Failed" notice), `customer.subscription.*` (a "Pro Payment Failed" notice on the move to past due)
 - **Pro subscription** ($4.99/month) via Stripe Billing
   - `stripe-manage` Lambda: creates subscription, returns clientSecret for Payment Sheet
   - Customer Portal via `createStripeManage({ action: 'customer_portal' })` — no custom cancel UI needed
@@ -177,6 +177,7 @@ will fail signature verification with a 400 until the secret is set (Step 6.6 be
 2. Endpoint URL: paste the API Gateway URL
 3. Events to listen for — select these:
    - `payment_intent.succeeded`
+   - `payment_intent.payment_failed` (tells the user a card deposit did not go through)
    - `customer.subscription.created`
    - `customer.subscription.updated`
    - `customer.subscription.deleted`

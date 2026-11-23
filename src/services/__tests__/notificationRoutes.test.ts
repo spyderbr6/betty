@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { getNotificationNavigationAction } from '../../utils/notificationNavigationHandler';
 import { notificationRoute } from '../notificationRoutes';
 import type { NotificationType } from '../../types/betting';
+import { NOTIFICATION_TYPES } from '../../../amplify/shared/notificationCatalog';
 
 const now = () => 1234;
 
@@ -25,13 +26,52 @@ describe('notificationRoute', () => {
   });
 
   it('sends money notifications to the Wallet', () => {
-    for (const type of ['DEPOSIT_COMPLETED', 'DEPOSIT_FAILED', 'WITHDRAWAL_COMPLETED', 'WITHDRAWAL_FAILED', 'PAYMENT_METHOD_VERIFIED']) {
+    for (const type of ['DEPOSIT_COMPLETED', 'DEPOSIT_FAILED', 'WITHDRAWAL_COMPLETED', 'WITHDRAWAL_FAILED', 'SUBSCRIPTION_PAYMENT_FAILED']) {
       expect(routeFor(type)).toEqual({ tab: 'Account', params: { screen: 'Wallet', initial: false } });
     }
   });
 
+  it('opens the Results tab, where the winner is picked, for a bet waiting on its creator', () => {
+    for (const from of ['push', 'feed'] as const) {
+      expect(routeFor('BET_RESOLUTION_NEEDED', { relatedBetId: 'bet-1' }, from)).toEqual({
+        tab: 'Resolve',
+        params: { screen: 'ResolutionList' },
+      });
+    }
+  });
+
+  it('opens the squares game for every squares notification about one game', () => {
+    const types = [
+      'SQUARES_INVITATION_RECEIVED', 'SQUARES_INVITATION_ACCEPTED', 'SQUARES_INVITATION_DECLINED',
+      'SQUARES_INVITATION_REMINDER', 'SQUARES_GRID_LOCKED', 'SQUARES_GAME_LIVE',
+      'SQUARES_PERIOD_WINNER', 'SQUARES_PURCHASE_CONFIRMED',
+    ];
+    for (const type of types) {
+      expect(routeFor(type, { actionData: { squaresGameId: 'g-1' } })).toEqual({
+        tab: 'Bets',
+        params: { screen: 'SquaresGameDetail', initial: false, params: { gameId: 'g-1' } },
+      });
+    }
+  });
+
+  it('reads the game id from actionData stored as JSON text, as the feed and banners hand it over', () => {
+    // AWSJSON comes back from AppSync as a string; only push data arrives parsed
+    expect(routeFor('SQUARES_GAME_LIVE', { actionData: JSON.stringify({ squaresGameId: 'g-1' }) }, 'feed')).toEqual({
+      tab: 'Bets',
+      params: { screen: 'SquaresGameDetail', initial: false, params: { gameId: 'g-1' } },
+    });
+    expect(routeFor('SQUARES_GAME_LIVE', { actionData: 'not json' }, 'feed')).toEqual({ tab: 'Bets', params: { screen: 'BetsList' } });
+  });
+
+  it('routes every catalogued type somewhere from a push', () => {
+    for (const type of NOTIFICATION_TYPES) {
+      const route = routeFor(type, { relatedBetId: 'bet-1', actionData: { squaresGameId: 'g-1' } }, 'push');
+      expect(route, type).not.toBeNull();
+    }
+  });
+
   it('opens the bet for bet activity, from push as well as the feed', () => {
-    for (const type of ['BET_JOINED', 'BET_RESOLVED', 'BET_DISPUTED', 'BET_DEADLINE_APPROACHING', 'BET_INVITATION_RECEIVED']) {
+    for (const type of ['BET_JOINED', 'BET_RESOLVED', 'BET_DISPUTED', 'BET_INVITATION_RECEIVED']) {
       for (const from of ['push', 'feed'] as const) {
         expect(routeFor(type, { relatedBetId: 'bet-1' }, from)).toEqual({
           tab: 'Bets',

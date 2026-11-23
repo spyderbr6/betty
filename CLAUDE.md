@@ -273,7 +273,7 @@ async function yourMainFunction() {
 - **Retention**: DynamoDB TTL on `expiresAt` — notifications 90 days (180 for money/results/refunds), devices 120 days after last seen
 - **Authorization**: recipients alone read/update their notifications; preferences and devices are owner-only
 - **User Preferences**: Per-category alerts and feed visibility (money, results, refunds and disputes always stay in the feed), quiet hours in the user's timezone, per-device push switch. Logic in `amplify/shared/notificationPreferencesLogic.ts`
-- **Testing**: Requires EAS development build on physical device
+- **Testing**: Requires EAS development build on physical device. Server-raised notifications are checked end to end against the sandbox by `scripts/sandbox-notifications-check.mjs` (every type, its producer, recipient and tap: PUSH_NOTIFICATION_GUIDE.md §3)
 
 ### Technical Integrations
 - **GitHub Feedback**: Automatic issue creation from in-app feedback

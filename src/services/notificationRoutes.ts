@@ -53,9 +53,12 @@ export function notificationRoute(
         return params.gameId
           ? { tab: 'Bets', params: { screen: 'SquaresGameDetail', initial: false, params: { gameId: params.gameId } } }
           : BETS_HOME;
+      case 'Resolve':
+        // Bets waiting on the creator to pick the winner are listed there
+        return { tab: 'Resolve', params: { screen: 'ResolutionList' } };
       case 'Account':
-        // Deposits, withdrawals and payment method changes: the Wallet is where those live
-        if (params.openTransactionHistory || params.openPaymentMethods) {
+        // Deposits, withdrawals and Pro payments: the Wallet is where those live
+        if (params.openTransactionHistory || params.openPaymentMethods || params.openWallet) {
           return { tab: 'Account', params: { screen: 'Wallet', initial: false } };
         }
         return { tab: 'Account', params: { screen: 'AccountHome' } };

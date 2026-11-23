@@ -166,7 +166,7 @@ describe('pushPresentation', () => {
 
   it('makes only the alerts that are useless late time-sensitive', () => {
     expect(pushPresentation({ type: 'SQUARES_GAME_LIVE' }).timeSensitive).toBe(true);
-    expect(pushPresentation({ type: 'BET_DEADLINE_APPROACHING' }).timeSensitive).toBe(true);
+    expect(pushPresentation({ type: 'SQUARES_INVITATION_REMINDER' }).timeSensitive).toBe(true);
     expect(pushPresentation({ type: 'BET_RESOLVED' }).timeSensitive).toBe(false);
     expect(pushPresentation({ type: 'DEPOSIT_COMPLETED' }).timeSensitive).toBe(false);
   });

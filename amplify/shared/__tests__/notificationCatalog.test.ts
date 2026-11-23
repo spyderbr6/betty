@@ -29,7 +29,7 @@ describe('notification catalog', () => {
 
   it('files every payment type under MONEY', () => {
     for (const type of NOTIFICATION_TYPES) {
-      if (/^(DEPOSIT|WITHDRAWAL|PAYMENT)_/.test(type)) {
+      if (/^(DEPOSIT|WITHDRAWAL|SUBSCRIPTION)_/.test(type)) {
         expect(NOTIFICATION_CATALOG[type].category).toBe('MONEY');
       }
     }

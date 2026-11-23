@@ -7,6 +7,8 @@ import { getAmplifyDataClientConfig } from '@aws-amplify/backend/function/runtim
 import { env } from '$amplify/env/stripe-webhook';
 import Stripe from 'stripe';
 import { notificationMeta } from '../../shared/notificationCatalog';
+import { isDuplicate, proPaymentFailedNotificationId, stripeEventNotificationId } from '../../shared/notificationIds';
+import { depositFailedNotice, proPaymentJustFailed, PRO_PAYMENT_FAILED_NOTICE } from './notifyLogic';
 import { ledgerApply } from '../../shared/moneyClient';
 
 const { resourceConfig, libraryOptions } = await getAmplifyDataClientConfig(env);
@@ -79,6 +81,10 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     switch (stripeEvent.type) {
       case 'payment_intent.succeeded':
         await handlePaymentIntentSucceeded(stripeEvent.data.object as Stripe.PaymentIntent);
+        break;
+
+      case 'payment_intent.payment_failed':
+        await notifyDepositFailed(stripeEvent.data.object as Stripe.PaymentIntent, stripeEvent.id);
         break;
 
       case 'customer.subscription.created':
@@ -219,6 +225,57 @@ async function notifyDepositCompleted(userId: string, amountDollars: number) {
     // notification, Lambda-raised ones included, according to the user's preferences.
   } catch (error) {
     console.error('[StripeWebhook] Failed to notify deposit completion:', userId, error);
+  }
+}
+
+/**
+ * A card payment for a deposit failed. Nothing was charged and the pending row is left as
+ * it is: the payment sheet may retry the same PaymentIntent, and a later success completes
+ * it as usual. One notice per Stripe event (the id is the event's), so a redelivered event
+ * does not notify twice. Never fails the webhook: there is no money to reconcile.
+ */
+async function notifyDepositFailed(paymentIntent: Stripe.PaymentIntent, stripeEventId: string) {
+  const notice = depositFailedNotice(paymentIntent);
+  if (!notice) {
+    console.log('[StripeWebhook] Failed PaymentIntent is not a deposit, skipping:', paymentIntent.id);
+    return;
+  }
+  try {
+    const { errors } = await client.models.Notification.create({
+      id: stripeEventNotificationId(stripeEventId),
+      userId: notice.userId,
+      type: 'DEPOSIT_FAILED',
+      ...notificationMeta('DEPOSIT_FAILED'),
+      title: notice.title,
+      message: notice.message,
+      isRead: false,
+      priority: 'HIGH',
+    });
+    if (errors?.length && !isDuplicate(errors)) {
+      console.error('[StripeWebhook] Failed to notify deposit failure:', notice.userId, JSON.stringify(errors));
+    }
+  } catch (error) {
+    console.error('[StripeWebhook] Failed to notify deposit failure:', notice.userId, error);
+  }
+}
+
+/** Stripe could not charge the Pro renewal: once per billing period (see notifyLogic). */
+async function notifyProPaymentFailed(userId: string, subscriptionId: string, periodEnd: string | null) {
+  try {
+    const { errors } = await client.models.Notification.create({
+      id: proPaymentFailedNotificationId(subscriptionId, periodEnd),
+      userId,
+      type: 'SUBSCRIPTION_PAYMENT_FAILED',
+      ...notificationMeta('SUBSCRIPTION_PAYMENT_FAILED'),
+      ...PRO_PAYMENT_FAILED_NOTICE,
+      isRead: false,
+      priority: 'HIGH',
+    });
+    if (errors?.length && !isDuplicate(errors)) {
+      console.error('[StripeWebhook] Failed to notify Pro payment failure:', userId, JSON.stringify(errors));
+    }
+  } catch (error) {
+    console.error('[StripeWebhook] Failed to notify Pro payment failure:', userId, error);
   }
 }
 
@@ -365,4 +422,9 @@ async function handleSubscriptionChange(subscription: Stripe.Subscription, delet
   }
 
   console.log(`[StripeWebhook] Subscription ${status} for user ${user.id} until ${periodEnd ?? 'unknown'}`);
+
+  // After the write, so the status the app shows and the notice agree
+  if (proPaymentJustFailed(user.subscriptionStatus, mapSubscriptionStatus(status))) {
+    await notifyProPaymentFailed(user.id, subscription.id, periodEnd);
+  }
 }

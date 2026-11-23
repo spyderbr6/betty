@@ -89,6 +89,65 @@ test('accepting joins through the server, then marks the invitation accepted', a
   }
 });
 
+/**
+ * Who hears about an accepted invitation. joinBet already tells the bet's creator someone
+ * joined (BET_JOINED, server side), so the app's own "invitation accepted" notice went to
+ * the creator as a second notification about the same join. It is now sent only when the
+ * invitation came from someone else.
+ */
+const joined = () => JSON.stringify({ status: 'joined', participantId: 'bet-open#user', amount: 10, balance: 90 });
+
+const notificationsSent = (sent: Record<string, unknown>[]) =>
+  acceptableWith((variables) => {
+    sent.push((variables.input ?? variables) as Record<string, unknown>);
+    return { id: `notification-${sent.length}`, ...(variables.input as object) };
+  });
+
+const acceptableWith = (createNotification: (v: Record<string, unknown>) => unknown, invitation = {}) =>
+  withInvitation({
+    betInvitationsByToUser: list([betInvitation({ invitedSide: 'A', ...invitation })]),
+    updateBetInvitation: (variables) => ({ ...variables, status: 'ACCEPTED' }),
+    joinBet: joined,
+    createNotification,
+  });
+
+test('accepting the creator\'s own invitation sends no second notice: joinBet told them', async ({ page }) => {
+  await signInAs(page);
+  const sent: Record<string, unknown>[] = [];
+  const { calls } = await mockAppSync(page, notificationsSent(sent));
+
+  await openJoinTab(page);
+  await expect(page.getByTestId('invitation-card-inv-1')).toBeVisible({ timeout: 15_000 });
+  await page.getByTestId('invitation-accept').dispatchEvent('click');
+
+  await expect(page.getByTestId('invitation-card-inv-1')).toBeHidden({ timeout: 15_000 });
+  expect(calls).toContain('updateBetInvitation');
+  expect(sent.map((n) => n.type)).not.toContain('BET_INVITATION_ACCEPTED');
+});
+
+test('accepting an invitation from someone other than the creator tells them', async ({ page }) => {
+  await signInAs(page);
+  const sent: Record<string, unknown>[] = [];
+  await mockAppSync(
+    page,
+    acceptableWith(
+      (variables) => {
+        sent.push(variables.input as Record<string, unknown>);
+        return { id: 'notification-1', ...(variables.input as object) };
+      },
+      { fromUserId: 'friend-of-both' }
+    )
+  );
+
+  await openJoinTab(page);
+  await expect(page.getByTestId('invitation-card-inv-1')).toBeVisible({ timeout: 15_000 });
+  await page.getByTestId('invitation-accept').dispatchEvent('click');
+
+  await expect(page.getByTestId('invitation-card-inv-1')).toBeHidden({ timeout: 15_000 });
+  await expect.poll(() => sent.length, { timeout: 15_000 }).toBe(1);
+  expect(sent[0]).toMatchObject({ userId: 'friend-of-both', type: 'BET_INVITATION_ACCEPTED', category: 'MY_BET_ACTIVITY' });
+});
+
 test('a refused join leaves the invitation pending', async ({ page }) => {
   await signInAs(page);
   const { calls } = await mockAppSync(

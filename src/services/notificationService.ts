@@ -516,27 +516,6 @@ export class NotificationService {
   }
 
   /**
-   * Bet Deadline Approaching
-   */
-  static async notifyBetDeadlineApproaching(
-    userId: string,
-    betTitle: string,
-    hoursRemaining: number,
-    betId: string
-  ): Promise<void> {
-    await this.createNotification({
-      userId: userId,
-      type: 'BET_DEADLINE_APPROACHING',
-      title: 'Bet Deadline Approaching',
-      message: `"${betTitle}" closes in ${hoursRemaining} hours`,
-      priority: 'MEDIUM',
-      actionType: 'view_bet',
-      actionData: { betId },
-      relatedBetId: betId,
-    });
-  }
-
-  /**
    * Bet Cancelled
    */
   static async notifyBetCancelled(

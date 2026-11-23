@@ -15,18 +15,36 @@ export interface NotificationNavigationData {
 }
 
 /**
+ * actionData as an object. It is stored as JSON text (an AWSJSON field), and the feed and
+ * the in-app banner hand it over as read, so a squares notification's game id used to be
+ * unreadable there and the tap fell back to the bets list. Push data arrives parsed.
+ */
+export function parseActionData(actionData: unknown): Record<string, unknown> {
+  let value = actionData;
+  if (typeof value === 'string') {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return {};
+    }
+  }
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+/**
  * Get navigation action for a notification type
  * Returns the screen/modal to navigate to and any params needed
  */
 export function getNotificationNavigationAction(
   type: NotificationType,
-  data?: NotificationNavigationData
+  rawData?: NotificationNavigationData
 ): {
   action: 'navigate' | 'open_modal' | 'refresh' | 'none';
   screen?: string;
   modal?: string;
   params?: any;
 } {
+  const data = rawData && { ...rawData, actionData: parseActionData(rawData.actionData) };
   // Handle batch notification (view all)
   if (data?.action === 'view_all_notifications') {
     return {
@@ -116,10 +134,11 @@ export function getNotificationNavigationAction(
         },
       };
 
-    case 'BET_DEADLINE_APPROACHING':
+    // The winner is picked on the Results tab
+    case 'BET_RESOLUTION_NEEDED':
       return {
-        action: 'open_modal',
-        modal: 'bet_details',
+        action: 'navigate',
+        screen: 'Resolve',
         params: {
           betId: data?.relatedBetId,
         },
@@ -138,12 +157,13 @@ export function getNotificationNavigationAction(
         },
       };
 
-    case 'PAYMENT_METHOD_VERIFIED':
+    // The Wallet calls out a failed Pro payment and links to managing it
+    case 'SUBSCRIPTION_PAYMENT_FAILED':
       return {
         action: 'navigate',
         screen: 'Account',
         params: {
-          openPaymentMethods: true,
+          openWallet: true,
         },
       };
 
@@ -166,6 +186,7 @@ export function getNotificationNavigationAction(
 
     case 'SQUARES_INVITATION_ACCEPTED':
     case 'SQUARES_INVITATION_DECLINED':
+    case 'SQUARES_INVITATION_REMINDER':
       return {
         action: 'navigate',
         screen: 'SquaresGameDetail',
@@ -178,6 +199,7 @@ export function getNotificationNavigationAction(
     case 'SQUARES_GRID_LOCKED':
     case 'SQUARES_GAME_LIVE':
     case 'SQUARES_PERIOD_WINNER':
+    case 'SQUARES_PURCHASE_CONFIRMED':
       return {
         action: 'navigate',
         screen: 'SquaresGameDetail',
@@ -195,12 +217,16 @@ export function getNotificationNavigationAction(
         },
       };
 
-    default:
-      console.warn(`[NotificationNavigation] Unknown notification type: ${type}`);
+    default: {
+      // Every catalogued type has a case above: a new type without one fails to compile.
+      // This is reached only by a type the app does not know (a newer server).
+      const unknown: never = type;
+      console.warn(`[NotificationNavigation] Unknown notification type: ${unknown}`);
       return {
         action: 'open_modal',
         modal: 'notifications',
       };
+    }
   }
 }
 
@@ -219,16 +245,17 @@ export function getNotificationActionDescription(type: NotificationType): string
     'BET_RESOLVED': 'Tap to view results',
     'BET_CANCELLED': 'Tap to view your bets',
     'BET_DISPUTED': 'Tap to view dispute',
-    'BET_DEADLINE_APPROACHING': 'Tap to view bet',
+    'BET_RESOLUTION_NEEDED': 'Tap to pick the winner',
     'DEPOSIT_COMPLETED': 'Tap to view transaction history',
     'DEPOSIT_FAILED': 'Tap to view transaction history',
     'WITHDRAWAL_COMPLETED': 'Tap to view transaction history',
     'WITHDRAWAL_FAILED': 'Tap to view transaction history',
-    'PAYMENT_METHOD_VERIFIED': 'Tap to view payment methods',
+    'SUBSCRIPTION_PAYMENT_FAILED': 'Tap to view your wallet',
     'SYSTEM_ANNOUNCEMENT': 'Tap to view details',
     'SQUARES_INVITATION_RECEIVED': 'Tap to view invitation',
     'SQUARES_INVITATION_ACCEPTED': 'Tap to view game',
     'SQUARES_INVITATION_DECLINED': 'Tap to view game',
+    'SQUARES_INVITATION_REMINDER': 'Tap to pick your squares',
     'SQUARES_GRID_LOCKED': 'Tap to view grid',
     'SQUARES_PERIOD_WINNER': 'Tap to view game',
     'SQUARES_GAME_LIVE': 'Tap to view game',
