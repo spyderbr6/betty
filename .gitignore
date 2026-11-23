@@ -46,7 +46,12 @@ android/app/build/
 android/build/
 android/.gradle/
 android/app/src/main/assets/
-android/app/src/main/res/drawable-*/
+# res/drawable-*/ IS committed: android/ is committed, so EAS never runs prebuild and the
+# notification icon and splash logo there are what ships. They used to be ignored, which
+# shipped whatever this machine last generated (a stale, square status-bar icon) and left a
+# fresh clone without resources that AndroidManifest.xml and styles.xml reference.
+# After changing assets/notification-icon.png or assets/splash.png, run
+# `npx expo prebuild --platform android` and commit the regenerated images.
 android/app/src/main/res/raw/
 ios/
 

@@ -234,10 +234,13 @@ recreate the gitignored `android/local.properties` with your `sdk.dir`.
 **Notification icon.** Android draws the status-bar icon from its alpha channel only, so
 it must be white on transparent: `assets/notification-icon.png`, referenced by the
 `expo-notifications` plugin in `app.json` with the brand accent colour. Prebuild turns it
-into `android/app/src/main/res/drawable-*/notification_icon.png`, and those folders are
-gitignored, so **after changing the icon run `npx expo prebuild --platform android`**
-locally before building (EAS uploads your working copy). Without `--clean` it leaves the
-committed files as they are; checked against this repo, it only regenerates the drawables.
+into `android/app/src/main/res/drawable-*/notification_icon.png`, which is committed and is
+what EAS builds with (it never runs prebuild here). So **after changing the icon, run
+`npx expo prebuild --platform android` and commit the regenerated images.** Without
+`--clean` prebuild also rewrites some tracked files from `app.json` (on 2026-11-22: the
+`versionName`, the runtime version and line endings); review those and revert what you
+didn't mean to change. Until 2026-11-22 these folders were gitignored, and builds shipped a
+stale full-colour icon that Android drew as a solid square.
 
 Registration needs Google Play services: a physical device, or an emulator image *with*
 Google Play. A plain AOSP image fails with `E_REGISTRATION_FAILED`.
