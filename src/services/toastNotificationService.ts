@@ -305,12 +305,12 @@ class ToastNotificationService {
       'BET_RESOLVED': 'bet results',
       'BET_CANCELLED': 'bet cancellations',
       'BET_DISPUTED': 'bet disputes',
-      'BET_DEADLINE_APPROACHING': 'bet deadline reminders',
+      'BET_RESOLUTION_NEEDED': 'bets to resolve',
       'DEPOSIT_COMPLETED': 'completed deposits',
       'DEPOSIT_FAILED': 'failed deposits',
       'WITHDRAWAL_COMPLETED': 'completed withdrawals',
       'WITHDRAWAL_FAILED': 'failed withdrawals',
-      'PAYMENT_METHOD_VERIFIED': 'payment verifications',
+      'SUBSCRIPTION_PAYMENT_FAILED': 'failed Pro payments',
       'SYSTEM_ANNOUNCEMENT': 'announcements',
       'SQUARES_GRID_LOCKED': 'grid locks',
       'SQUARES_PERIOD_WINNER': 'period wins',
@@ -320,6 +320,7 @@ class ToastNotificationService {
       'SQUARES_INVITATION_RECEIVED': 'squares invitations',
       'SQUARES_INVITATION_ACCEPTED': 'squares invitation acceptances',
       'SQUARES_INVITATION_DECLINED': 'squares invitation declines',
+      'SQUARES_INVITATION_REMINDER': 'squares reminders',
     };
     return labels[type] || 'notifications';
   }

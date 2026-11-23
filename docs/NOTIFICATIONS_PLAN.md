@@ -40,7 +40,8 @@
 | 5 | Owner-only access. Notifications are readable only by the recipient (the creator can read back just what they wrote). Preferences are owner-only, and their `userId` can't be changed. Compatibility layers removed (see Decisions). |
 | 6 | Web: icons served from `public/`; a manifest and page template for iOS home-screen push; clicks routed into the app (message to an open tab, or `?notification=` on a new one); renewed subscriptions re-registered; no system notification while a tab is focused (except Safari and the test push); a tap-gated soft ask in the feed. |
 | 7 | Android: white-on-transparent notification icon in the brand colour; one channel per category (the old `urgent` channel is deleted); taps that launch the app are held until sign-in finishes instead of dropped. |
-| 8 | iOS: the dispatcher sends the real unread count as the badge and the app keeps it current; `SQUARES_GAME_LIVE` and `BET_DEADLINE_APPROACHING` are time-sensitive, with the entitlement declared in `app.json`. |
+| 8 | iOS: the dispatcher sends the real unread count as the badge and the app keeps it current; `SQUARES_GAME_LIVE` and `BET_DEADLINE_APPROACHING` (now `SQUARES_INVITATION_REMINDER`) are time-sensitive, with the entitlement declared in `app.json`. |
+| 9 (2026-11-22) | Type audit: every type has a producer and a tap route (table in the guide §3). New: the creator is told to pick the winner (`BET_RESOLUTION_NEEDED`), a squares reminder before the grid locks, failed card deposits and Pro payments from the Stripe webhook, squares invitations accepted. Retired `PAYMENT_METHOD_VERIFIED` (verification was dropped). Accepting the creator's own invitation no longer notifies them twice. Feed taps on squares notifications open the game (actionData is JSON text there). **Found by the new sandbox check:** the `money` function and `scheduled-bet-checker` wrote `actionData` as an object, which AppSync refuses, so `BET_JOINED`, `BET_RESOLVED`, the expiry `BET_CANCELLED` and every `BET_DISPUTED` had never been delivered since those moved server-side; now JSON text, and refused writes are logged. Checked end to end by `scripts/sandbox-notifications-check.mjs`. |
 
 **Bugs found along the way.** All fixed; don't re-investigate.
 - The squares types were missing from the type-to-preference map, and a missing entry read as "disabled".
@@ -110,6 +111,18 @@ These are known and intentional. Don't "fix" them without revisiting the reason.
 ## 5. Remaining work
 
 ### Needs a device
+- [ ] **One push per category**, on Android, with the app in the background, against the
+      sandbox. Two accounts, A and B, friends. Each should arrive and its tap open what it says:
+  - Friends: A sends B a friend request → B, Friends with the requests list.
+  - Invitations: A creates a bet inviting B → B, the bet.
+  - Activity on my bets: B joins it → A, the bet (and only one notice, not two).
+  - Disputes & action needed: let the bet close (5-minute checker) → A, "Pick the Winner", Results tab.
+  - Results: A picks the winner → B, the bet.
+  - Refunds: a bet nobody joins closes → its creator, the bets list.
+  - Reminders: A creates squares locking within the hour and invites B; B does nothing → B, the game.
+  - Squares updates: B buys a square → B, the game; A hears "accepted" (Activity on my bets).
+  - Money: an admin approves or rejects a withdrawal → the user, the Wallet.
+  - Announcements: Settings → Send Test Notification (routes nowhere on purpose).
 - [ ] **Android**, on a device with Google Play services:
   - Send Test Notification arrives.
   - The status-bar icon is the white "SB".

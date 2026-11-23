@@ -94,14 +94,18 @@ Overhaul Phases 0–5 are done.
 - **How it works now:** [PUSH_NOTIFICATION_GUIDE.md](./PUSH_NOTIFICATION_GUIDE.md).
 - **Decisions, what's deliberately left alone, the before-launch checklist, and the on-device checks still to do:** [docs/NOTIFICATIONS_PLAN.md](./docs/NOTIFICATIONS_PLAN.md).
 
-### Notification types that are defined but never raised
+### Notification types
 
-Checked 2026-10-04. Every other type in `amplify/shared/notificationCatalog.ts` has a producer.
-- [ ] `BET_DEADLINE_APPROACHING`: `NotificationService.notifyBetDeadlineApproaching` exists but
-      nothing calls it. The natural home is `scheduled-bet-checker`.
-- [ ] `SQUARES_INVITATION_ACCEPTED`: accepting a squares invitation doesn't notify the inviter
-      (declining does).
-- [ ] `SYSTEM_ANNOUNCEMENT`: there's no way to send an announcement (an admin tool would write the rows).
+Audited 2026-11-22: every type, its producer, recipient and tap are in
+[PUSH_NOTIFICATION_GUIDE.md](./PUSH_NOTIFICATION_GUIDE.md) §3. Added `BET_RESOLUTION_NEEDED`
+(creator picks the winner), `SQUARES_INVITATION_REMINDER` (replaces `BET_DEADLINE_APPROACHING`:
+squares only), `SUBSCRIPTION_PAYMENT_FAILED`; retired `PAYMENT_METHOD_VERIFIED`. Wired
+`SQUARES_INVITATION_ACCEPTED` and card `DEPOSIT_FAILED`.
+- [x] **Stripe dashboard:** `payment_intent.payment_failed` added to the webhook endpoint's
+      events (2026-11-22, STRIPE_GUIDE.md Step 6).
+- [ ] `SYSTEM_ANNOUNCEMENT`: there's no way to send an announcement (an admin tool would write
+      the rows). Owner's decision 2026-11-22: keep the type, decide how to use it later.
+- [ ] **On a device:** one push per category (checklist in docs/NOTIFICATIONS_PLAN.md §5).
 
 ---
 

@@ -6,6 +6,8 @@ import { getAmplifyDataClientConfig } from '@aws-amplify/backend/function/runtim
 // @ts-ignore - Generated at build time by Amplify
 import { env } from '$amplify/env/scheduled-squares-checker';
 import { notificationMeta } from '../../shared/notificationCatalog';
+import { isDuplicate, squaresReminderNotificationId } from '../../shared/notificationIds';
+import { invitationsToRemind, isInReminderWindow, timeLeftText } from './reminderLogic';
 import { ledgerApply } from '../../shared/moneyClient';
 import { isProActive } from '../../../src/config/subscriptionConfig';
 import {
@@ -32,6 +34,7 @@ const client = generateClient<Schema>() as any;
  * Scheduled Squares Checker Lambda Function
  *
  * Runs every 5 minutes to manage squares game lifecycle and automatic payouts:
+ * 0. Remind invitees who have not answered, in the hour before the grid locks
  * 1. Lock grids (ACTIVE → LOCKED) when 100 squares sold or game start time reached
  * 2. Start games (LOCKED → LIVE) when event goes live
  * 3. Process period scores and create payouts (LIVE)
@@ -43,6 +46,11 @@ export const handler: EventBridgeHandler<"Scheduled Event", null, boolean> = asy
 
   try {
     let totalActions = 0;
+
+    // ============ STEP 0: REMIND INVITEES BEFORE THE GRID LOCKS ============
+    // Before locking, so a game reaching its lock time this run is not reminded after
+    console.log('\n⏰ STEP 0: Reminding invitees of games about to lock...');
+    totalActions += await remindInviteesBeforeLock();
 
     // ============ STEP 1: LOCK GRIDS (ACTIVE → LOCKED) ============
     console.log('\n📍 STEP 1: Checking for grids to lock...');
@@ -77,6 +85,48 @@ export const handler: EventBridgeHandler<"Scheduled Event", null, boolean> = asy
     return false;
   }
 };
+
+/**
+ * STEP 0: Remind each invitee who has neither answered nor bought, once, in the hour before
+ * the grid locks (reminderLogic.ts). Never throws: a failed reminder must not hold up the
+ * locking and paying below.
+ */
+async function remindInviteesBeforeLock(): Promise<number> {
+  let sent = 0;
+  try {
+    const now = new Date();
+    const games = (await gamesByStatus('ACTIVE')).filter((game: Row) => isInReminderWindow(game, now));
+    for (const game of games) {
+      try {
+        const [invitations, purchases] = await Promise.all([invitationsOf(game.id), purchasesOf(game.id)]);
+        for (const invitation of invitationsToRemind(game, invitations, purchases, now)) {
+          const { errors } = await client.models.Notification.create({
+            id: squaresReminderNotificationId(invitation.id),
+            userId: invitation.toUserId,
+            type: 'SQUARES_INVITATION_REMINDER',
+            ...notificationMeta('SQUARES_INVITATION_REMINDER'),
+            title: 'Squares Locking Soon',
+            message: `"${game.title}" locks in ${timeLeftText(game.locksAt, now)}. Pick your squares before it does.`,
+            priority: 'HIGH',
+            actionType: 'view_squares',
+            actionData: JSON.stringify({ squaresGameId: game.id }),
+            relatedRequestId: invitation.id,
+            isRead: false,
+            createdAt: now.toISOString(),
+          });
+          if (!errors?.length) sent++;
+          else if (!isDuplicate(errors)) console.warn(`Reminder for invitation ${invitation.id} failed:`, JSON.stringify(errors));
+        }
+      } catch (error) {
+        console.warn(`Reminders for game ${game.id} failed:`, error);
+      }
+    }
+    console.log(`Sent ${sent} reminder(s) across ${games.length} game(s) locking soon`);
+  } catch (error) {
+    console.error('Error in remindInviteesBeforeLock:', error);
+  }
+  return sent;
+}
 
 /**
  * STEP 1: Lock grids and assign numbers
@@ -778,6 +828,9 @@ const purchasesOf = (squaresGameId: string) =>
 
 const payoutsOf = (squaresGameId: string) =>
   listAll((options) => client.models.SquaresPayout.payoutsBySquaresGame({ squaresGameId }, options));
+
+const invitationsOf = (squaresGameId: string) =>
+  listAll((options) => client.models.SquaresInvitation.squaresInvitationsByGame({ squaresGameId }, options));
 
 /**
  * Cancel a game and refund every buyer: one ledger transaction for the refunds and the

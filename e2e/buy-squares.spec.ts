@@ -117,3 +117,40 @@ test('a square someone else just bought is named in the refusal', async ({ page 
   await expect(page.getByTestId('alert-title')).toHaveText('Purchase Failed', { timeout: 15_000 });
   await expect(page.getByTestId('alert-message')).toContainText('D8');
 });
+
+test('buying with an invitation pending accepts it and tells whoever sent it', async ({ page }) => {
+  await signInAs(page);
+  const sent: Record<string, unknown>[] = [];
+  const invitation = {
+    id: 'sq-inv-1',
+    squaresGameId: GAME_ID,
+    fromUserId: OTHER_USER.id,
+    toUserId: TEST_USER.userId,
+    status: 'PENDING',
+    createdAt: now,
+    updatedAt: now,
+  };
+  const { calls } = await mockAppSync(page, {
+    ...handlers(() => JSON.stringify({ status: 'bought', squares: 2, total: 10, balance: 90, locked: false })),
+    squaresInvitationsByGame: list([invitation]),
+    updateSquaresInvitation: (variables) => ({ ...invitation, ...(variables.input as object) }),
+    createNotification: (variables) => {
+      sent.push(variables.input as Record<string, unknown>);
+      return { id: 'notification-1', ...(variables.input as object) };
+    },
+  });
+
+  await buyTwoSquares(page);
+
+  await expect(page.getByTestId('alert-title')).toHaveText('Purchase Successful', { timeout: 15_000 });
+  await expect.poll(() => sent.length, { timeout: 15_000 }).toBe(1);
+  expect(calls).toContain('updateSquaresInvitation');
+  expect(sent[0]).toMatchObject({
+    userId: OTHER_USER.id,
+    type: 'SQUARES_INVITATION_ACCEPTED',
+    category: 'MY_BET_ACTIVITY',
+    relatedRequestId: 'sq-inv-1',
+  });
+  expect(sent[0].message).toContain('picked 2 squares');
+  expect(JSON.parse(sent[0].actionData as string)).toEqual({ squaresGameId: GAME_ID });
+});

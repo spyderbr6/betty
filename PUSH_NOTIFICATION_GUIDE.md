@@ -88,7 +88,55 @@ In the app, `NotificationService.createNotification({...})` does this for you.
 **Adding a notification type:** add it to `NOTIFICATION_TYPES` and `NOTIFICATION_CATALOG`
 in the catalog (category, whether it alerts, and whether it is time-sensitive on iOS). The schema enum and the app's
 `NotificationType` are built from it, and the compiler flags every map that needs an
-entry (`toastNotificationService`, `notificationNavigationHandler`).
+entry (`toastNotificationService`, `notificationNavigationHandler`, whose switch is
+exhaustive). Give it a producer, a route for its tap, and a line in the table below.
+
+**Write once with a fixed id** where the code that raises a notification can run twice (a
+scheduled checker overlapping itself, a redelivered Stripe event): pass an `id` from
+`amplify/shared/notificationIds.ts`. AppSync refuses a second row with that id, and
+`isDuplicate(errors)` tells that refusal apart from a real failure.
+
+**`actionData` is JSON text, both ways.** It's an AWSJSON field: write it with
+`JSON.stringify(...)` (an object is refused with "Variable 'actionData' has an invalid
+value"), and expect a string back in the feed and in-app banners, where
+`parseActionData` in `notificationNavigationHandler` reads it. Push data arrives parsed by
+the dispatcher. `NotificationService.createNotification` stringifies for you. **Check
+`errors` on a Lambda's create:** the client reports a refused write there instead of
+throwing. Until 2026-11-22 the `money` function and `scheduled-bet-checker` passed objects,
+and every bet notification they raised was silently refused.
+
+### Every type, what raises it, who gets it
+
+Checked 2026-11-22. Server-side rows are verified end to end by
+`scripts/sandbox-notifications-check.mjs` (§8).
+
+| Type | Category | Raised by | Recipient | Tap opens |
+|---|---|---|---|---|
+| `FRIEND_REQUEST_RECEIVED` | Friends | app, `AddFriendModal` | the person asked | Friends, requests |
+| `FRIEND_REQUEST_ACCEPTED` | Friends | app, `FriendRequestsModal` | the requester | Friends |
+| `FRIEND_REQUEST_DECLINED` (feed only) | Friends | app, `FriendRequestsModal` | the requester | Friends |
+| `BET_INVITATION_RECEIVED` | Invitations | app, `CreateBetScreen` / `BetInviteModal` | each friend invited | the bet |
+| `SQUARES_INVITATION_RECEIVED` | Invitations | app, squares setup / `SquaresInviteModal` | each friend invited | the game |
+| `BET_JOINED` | Activity on my bets | `money` (`joinBet`) | the creator | the bet |
+| `BET_INVITATION_ACCEPTED` | Activity on my bets | app, `BetDataContext` | the inviter, **unless they created the bet** (they get `BET_JOINED`) | bets list |
+| `BET_INVITATION_DECLINED` (feed only) | Activity on my bets | app, `BetDataContext` | the inviter | bets list |
+| `SQUARES_INVITATION_ACCEPTED` | Activity on my bets | app, `squaresGameService` (buying squares accepts the invitation) | the inviter | the game |
+| `SQUARES_INVITATION_DECLINED` (feed only) | Activity on my bets | app, `BetDataContext` | the inviter | the game |
+| `BET_RESOLVED` | Results | `money` (`resolveBet`, the last `acceptBetResult`, payout) | participants | the bet |
+| `SQUARES_PERIOD_WINNER` | Results | `scheduled-squares-checker` | the winning square's buyer | the game |
+| `BET_RESOLUTION_NEEDED` | Disputes & action needed | `scheduled-bet-checker`, when a bet with an opponent closes | the creator | Results tab |
+| `BET_DISPUTED` | Disputes & action needed | `money` (`fileDispute`, `adminResolveDispute`) | creator, filer | the bet |
+| `BET_CANCELLED` | Refunds | `scheduled-bet-checker`; `money` payout when nobody won | creator / stake holders | bets list |
+| `SQUARES_GAME_CANCELLED` | Refunds | `money` (`cancelSquaresGame`), `scheduled-squares-checker` | buyers, or the creator when none | bets list |
+| `SQUARES_INVITATION_REMINDER` | Reminders | `scheduled-squares-checker`, in the hour before the grid locks | invitees who neither answered nor bought | the game |
+| `SQUARES_GAME_LIVE` | Reminders | `scheduled-squares-checker` | buyers | the game |
+| `SQUARES_GRID_LOCKED` | Squares updates | `scheduled-squares-checker`, `money` (the filling purchase) | buyers | the game |
+| `SQUARES_PURCHASE_CONFIRMED` | Squares updates | `money` (`buySquares`) | the buyer | the game |
+| `DEPOSIT_COMPLETED` | Money | `stripe-webhook`; `money` (admin approval) | the user | Wallet |
+| `DEPOSIT_FAILED` | Money | `stripe-webhook` (`payment_intent.payment_failed`); `money` (admin rejection) | the user | Wallet |
+| `WITHDRAWAL_COMPLETED` / `WITHDRAWAL_FAILED` | Money | `money` (admin decision) | the user | Wallet |
+| `SUBSCRIPTION_PAYMENT_FAILED` | Money | `stripe-webhook`, on the move to past due (once per billing period) | the subscriber | Wallet |
+| `SYSTEM_ANNOUNCEMENT` | Announcements | nothing yet but the Settings test push | — | stays in the feed |
 
 ## 4. Devices
 
@@ -140,7 +188,7 @@ so a LOW notification that alerts will push but won't banner.
 | Where it goes | The category's channel (`category-money`, …), so the system's per-app notification settings list our categories. `default` is the fallback and carries the test push. | — | — |
 | Pops up | `high`-importance channels pop up over the screen: money, results, refunds, disputes, invitations, reminders. The rest only sound and go to the shade. | Always | Browser decides |
 | Badge | The launcher counts notifications itself | Unread, feed-visible notifications (newest 100 counted). The app corrects it as notifications are read and clears it on sign-out. | — |
-| Breaks through Focus | — | `SQUARES_GAME_LIVE` and `BET_DEADLINE_APPROACHING` are time-sensitive | — |
+| Breaks through Focus | — | `SQUARES_GAME_LIVE` and `SQUARES_INVITATION_REMINDER` are time-sensitive | — |
 | While the app is open | No system banner; the in-app banner shows | Same | No system notification while a SideBet tab is focused, except on Safari (which cancels subscriptions that receive a push without showing one) and for the test push |
 
 Android fixes a channel's importance when the app first creates it; after that only the
@@ -249,12 +297,18 @@ wrong or revoked token shows up as a logged 401 from Expo.
   - `deviceLogic`
   - device naming
   - settings formatting
-  - tap routing (`notificationTap`), and the service worker's constants matching the app's
+  - tap routing (`notificationTap`, and `notificationRoutes`: every type routes somewhere), and the service worker's constants matching the app's
+  - who gets a squares reminder (`scheduled-squares-checker/reminderLogic`), the Stripe notices (`stripe-webhook/notifyLogic`), fixed ids (`notificationIds`)
 - **Playwright:**
   - `e2e/notification-settings.spec.ts`: prompt timing, web registration, sign-out, Send test.
   - `e2e/notification-preferences.spec.ts`: categories, locked feed, quiet hours, device list, feed filtering.
+  - `e2e/notification-taps.spec.ts`: feed taps for a squares reminder and a bet waiting for its winner.
+  - `e2e/invitations.spec.ts`, `e2e/buy-squares.spec.ts`: who is told when an invitation is accepted.
   - `e2e/web-push.spec.ts`: the feed's soft ask, clicks routed from the service worker (open tab and new tab), renewed subscriptions.
   These play the service worker's part; the worker itself and real browser push are not exercised.
+- **Sandbox** (`SANDBOX_STACK=<sandbox stack> node scripts/sandbox-notifications-check.mjs`):
+  drives the real Lambdas and checks every server-raised type is written once, to the right
+  person, with its category, expiry and tap data. Sandbox only; it refuses other endpoints.
 
 **On a device:**
 1. Install a build made after the backend deploy (`amplify_outputs.json` regenerated first).

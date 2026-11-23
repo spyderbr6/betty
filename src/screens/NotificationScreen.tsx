@@ -22,12 +22,27 @@ import { ModalHeader } from '../components/ui/ModalHeader';
 import { showAlert } from '../components/ui/CustomAlert';
 import { useAuth } from '../contexts/AuthContext';
 import { NotificationService } from '../services/notificationService';
-import { Notification, NotificationType } from '../types/betting';
+import { Notification, NotificationType, NotificationCategory } from '../types/betting';
+import { NOTIFICATION_CATALOG } from '../../amplify/shared/notificationCatalog';
 import { getNotificationNavigationAction } from '../utils/notificationNavigationHandler';
 import { notificationRoute } from '../services/notificationRoutes';
 import { PushSoftAsk } from '../components/settings/PushSoftAsk';
 
 // Client not needed - using NotificationService instead
+
+/** The icon for types without one of their own, by category (Ionicons names). */
+const CATEGORY_ICONS: Record<NotificationCategory, string> = {
+  FRIENDS: 'person-add',
+  INVITATIONS: 'mail',
+  MY_BET_ACTIVITY: 'people',
+  RESULTS: 'trophy',
+  ACTION_NEEDED: 'alert-circle',
+  REFUNDS: 'return-down-back',
+  REMINDERS: 'time',
+  SQUARES_UPDATES: 'grid',
+  MONEY: 'wallet',
+  ANNOUNCEMENTS: 'megaphone',
+};
 
 interface NotificationItemProps {
   notification: Notification;
@@ -60,12 +75,13 @@ const NotificationItem: React.FC<NotificationItemProps> = ({
         return 'checkmark';
       case 'BET_INVITATION_DECLINED':
         return 'close';
-      case 'BET_DEADLINE_APPROACHING':
-        return 'time';
       case 'SYSTEM_ANNOUNCEMENT':
         return 'megaphone';
-      default:
-        return 'notifications';
+      default: {
+        // Optional: a type this build does not know (a newer server) has no catalog entry
+        const category = (NOTIFICATION_CATALOG as Partial<Record<string, { category: NotificationCategory }>>)[type]?.category;
+        return (category && CATEGORY_ICONS[category]) || 'notifications';
+      }
     }
   };
 
@@ -81,8 +97,19 @@ const NotificationItem: React.FC<NotificationItemProps> = ({
       case 'FRIEND_REQUEST_ACCEPTED':
       case 'BET_INVITATION_ACCEPTED':
         return colors.primary;
-      case 'BET_DEADLINE_APPROACHING':
+      case 'DEPOSIT_FAILED':
+      case 'WITHDRAWAL_FAILED':
+      case 'SUBSCRIPTION_PAYMENT_FAILED':
+        return colors.error;
+      case 'BET_DISPUTED':
+      case 'BET_RESOLUTION_NEEDED':
+      case 'SQUARES_INVITATION_REMINDER':
+      case 'SQUARES_GAME_LIVE':
         return colors.warning;
+      case 'DEPOSIT_COMPLETED':
+      case 'WITHDRAWAL_COMPLETED':
+      case 'SQUARES_PERIOD_WINNER':
+        return colors.success;
       default:
         return colors.textSecondary;
     }

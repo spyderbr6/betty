@@ -991,9 +991,11 @@ export const BetDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
         status: 'ACCEPTED',
       });
 
-      // Notify inviter
+      // Notify the inviter, unless they created the bet: joinBet has already sent them
+      // BET_JOINED for this same join, and a second notice would say it twice
       try {
-        const { data: accepterData } = await client.models.User.get({ id: user.userId });
+        const inviterIsCreator = invitation.fromUserId === invitation.bet.creatorId;
+        const { data: accepterData } = inviterIsCreator ? { data: null } : await client.models.User.get({ id: user.userId });
         if (accepterData && invitation.fromUserId !== user.userId) {
           await NotificationService.createNotification({
             userId: invitation.fromUserId,

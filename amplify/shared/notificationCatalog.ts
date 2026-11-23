@@ -24,12 +24,12 @@ export const NOTIFICATION_TYPES = [
   'BET_RESOLVED',
   'BET_CANCELLED',
   'BET_DISPUTED',
-  'BET_DEADLINE_APPROACHING',
+  'BET_RESOLUTION_NEEDED',
   'DEPOSIT_COMPLETED',
   'DEPOSIT_FAILED',
   'WITHDRAWAL_COMPLETED',
   'WITHDRAWAL_FAILED',
-  'PAYMENT_METHOD_VERIFIED',
+  'SUBSCRIPTION_PAYMENT_FAILED',
   'SYSTEM_ANNOUNCEMENT',
   'SQUARES_GRID_LOCKED',
   'SQUARES_PERIOD_WINNER',
@@ -39,6 +39,7 @@ export const NOTIFICATION_TYPES = [
   'SQUARES_INVITATION_RECEIVED',
   'SQUARES_INVITATION_ACCEPTED',
   'SQUARES_INVITATION_DECLINED',
+  'SQUARES_INVITATION_REMINDER',
 ] as const;
 
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
@@ -110,7 +111,7 @@ export const CATEGORY_INFO = {
   },
   ACTION_NEEDED: {
     label: 'Disputes & action needed',
-    description: 'Disputes and anything waiting on you',
+    description: 'Bets waiting for you to pick the winner, and disputes',
     feedLocked: true,
     retentionDays: 90,
     androidImportance: 'high',
@@ -124,7 +125,7 @@ export const CATEGORY_INFO = {
   },
   REMINDERS: {
     label: 'Reminders',
-    description: 'Deadlines approaching and games about to start',
+    description: 'Squares games you were invited to, about to lock',
     feedLocked: false,
     retentionDays: 90,
     androidImportance: 'high',
@@ -138,7 +139,7 @@ export const CATEGORY_INFO = {
   },
   MONEY: {
     label: 'Money',
-    description: 'Deposits, withdrawals and payment methods',
+    description: 'Deposits, withdrawals and Pro payments',
     feedLocked: true,
     retentionDays: 180,
     androidImportance: 'high',
@@ -185,11 +186,17 @@ export const NOTIFICATION_CATALOG = {
   SQUARES_PERIOD_WINNER: { category: 'RESULTS', alert: true },
 
   BET_DISPUTED: { category: 'ACTION_NEEDED', alert: true },
+  // The bet closed with people in it: only its creator can pick the winner, and nobody is
+  // paid until they do (scheduled-bet-checker).
+  BET_RESOLUTION_NEEDED: { category: 'ACTION_NEEDED', alert: true },
 
   BET_CANCELLED: { category: 'REFUNDS', alert: true },
   SQUARES_GAME_CANCELLED: { category: 'REFUNDS', alert: true },
 
-  BET_DEADLINE_APPROACHING: { category: 'REMINDERS', alert: true, timeSensitive: true },
+  // An invitation still unanswered, and no squares bought, shortly before the grid locks
+  // (scheduled-squares-checker). Squares only: bet closing times are short durations, so a
+  // bet reminder would arrive about when the invitation did.
+  SQUARES_INVITATION_REMINDER: { category: 'REMINDERS', alert: true, timeSensitive: true },
   SQUARES_GAME_LIVE: { category: 'REMINDERS', alert: true, timeSensitive: true },
 
   SQUARES_GRID_LOCKED: { category: 'SQUARES_UPDATES', alert: true },
@@ -199,8 +206,9 @@ export const NOTIFICATION_CATALOG = {
   DEPOSIT_FAILED: { category: 'MONEY', alert: true },
   WITHDRAWAL_COMPLETED: { category: 'MONEY', alert: true },
   WITHDRAWAL_FAILED: { category: 'MONEY', alert: true },
-  PAYMENT_METHOD_VERIFIED: { category: 'MONEY', alert: true },
+  SUBSCRIPTION_PAYMENT_FAILED: { category: 'MONEY', alert: true },
 
+  // No producer yet apart from the Settings test push; kept for announcements to come
   SYSTEM_ANNOUNCEMENT: { category: 'ANNOUNCEMENTS', alert: true },
 } as const satisfies Record<NotificationType, TypeInfo>;
 

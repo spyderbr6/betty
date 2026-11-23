@@ -354,7 +354,7 @@ async function isInvited(userId: string, betId: string): Promise<boolean> {
 async function notifyJoined(creatorId: string, joinerId: string, betTitle: string, betId: string, amount: number): Promise<void> {
   try {
     const { data: joiner } = await client.models.User.get({ id: joinerId });
-    await client.models.Notification.create({
+    await createNotification({
       userId: creatorId,
       type: 'BET_JOINED',
       ...notificationMeta('BET_JOINED'),
@@ -363,7 +363,7 @@ async function notifyJoined(creatorId: string, joinerId: string, betTitle: strin
       isRead: false,
       priority: 'HIGH',
       actionType: 'view_bet',
-      actionData: { betId },
+      actionData: JSON.stringify({ betId }),
       relatedBetId: betId,
       relatedUserId: joinerId,
     });
@@ -521,7 +521,7 @@ async function notifyResolved(
   for (const outcome of plan.outcomes) {
     if (outcome.userId === creatorId) continue;
     try {
-      await client.models.Notification.create({
+      await createNotification({
         userId: outcome.userId,
         type: 'BET_RESOLVED',
         ...notificationMeta('BET_RESOLVED'),
@@ -534,7 +534,7 @@ async function notifyResolved(
         isRead: false,
         priority: outcome.won ? 'HIGH' : 'MEDIUM',
         actionType: 'view_bet',
-        actionData: { betId: bet.id },
+        actionData: JSON.stringify({ betId: bet.id }),
         relatedBetId: bet.id,
       });
     } catch (error) {
@@ -567,7 +567,7 @@ async function acceptBetResult(userId: string, betId: string): Promise<AcceptRes
     await notifyClosingEarly(bet, participants);
   } else if (plan.stateUpdates.length && bet.creatorId) {
     try {
-      await client.models.Notification.create({
+      await createNotification({
         userId: bet.creatorId,
         type: 'BET_RESOLVED',
         ...notificationMeta('BET_RESOLVED'),
@@ -576,7 +576,7 @@ async function acceptBetResult(userId: string, betId: string): Promise<AcceptRes
         isRead: false,
         priority: 'MEDIUM',
         actionType: 'view_bet',
-        actionData: { betId },
+        actionData: JSON.stringify({ betId }),
         relatedBetId: betId,
         relatedUserId: userId,
       });
@@ -611,7 +611,7 @@ async function notifyClosingEarly(
       net = pending?.actualAmount ?? pending?.amount ?? 0;
     }
     try {
-      await client.models.Notification.create({
+      await createNotification({
         userId: participant.userId,
         type: 'BET_RESOLVED',
         ...notificationMeta('BET_RESOLVED'),
@@ -624,7 +624,7 @@ async function notifyClosingEarly(
         isRead: false,
         priority: 'HIGH',
         actionType: 'view_bet',
-        actionData: { betId: bet.id },
+        actionData: JSON.stringify({ betId: bet.id }),
         relatedBetId: bet.id,
       });
     } catch (error) {
@@ -831,7 +831,7 @@ async function adminResolveDispute(caller: Extract<Caller, { kind: 'user' }>, ar
 
   const creator = dispute.againstUserId;
   const filer = dispute.filedBy;
-  const action = { actionType: 'view_bet', actionData: { betId: dispute.betId }, relatedBetId: dispute.betId };
+  const action = { actionType: 'view_bet', actionData: JSON.stringify({ betId: dispute.betId }), relatedBetId: dispute.betId };
   if (upheld) {
     if (creator) await adjustTrustFor(creator, TRUST_CHANGES.LOST_DISPUTE_CREATOR, 'Lost dispute - bet resolved unfairly', dispute);
     if (filer) await adjustTrustFor(filer, TRUST_CHANGES.WON_DISPUTE_PARTICIPANT, 'Dispute upheld - you were right to challenge the resolution', dispute);
@@ -905,7 +905,7 @@ async function fileDispute(userId: string, args: FileDisputeArgs): Promise<FileD
   await touchBet(bet.id);
   if (bet.creatorId) {
     await notifyAbout(bet.creatorId, 'Bet Disputed', 'A participant has filed a dispute on your bet', 'HIGH', {
-      actionType: 'view_bet', actionData: { betId: bet.id }, relatedBetId: bet.id,
+      actionType: 'view_bet', actionData: JSON.stringify({ betId: bet.id }), relatedBetId: bet.id,
     });
   }
   return { status: 'filed', disputeId: dispute.id };
@@ -930,10 +930,10 @@ async function notifyAbout(
   title: string,
   message: string,
   priority: 'MEDIUM' | 'HIGH' | 'URGENT',
-  action: { actionType: string; actionData: Record<string, unknown>; relatedBetId?: string | null }
+  action: { actionType: string; actionData: string; relatedBetId?: string | null }
 ): Promise<void> {
   try {
-    await client.models.Notification.create({
+    await createNotification({
       userId, type: 'BET_DISPUTED', ...notificationMeta('BET_DISPUTED'), title, message, isRead: false, priority, ...action,
     });
   } catch (error) {
@@ -958,7 +958,7 @@ async function adjustTrust(userId: string, change: number, reason: string, relat
 
 async function notifyUser(userId: string, type: Parameters<typeof notificationMeta>[0], title: string, message: string): Promise<void> {
   try {
-    await client.models.Notification.create({ userId, type, ...notificationMeta(type), title, message, isRead: false, priority: 'HIGH' });
+    await createNotification({ userId, type, ...notificationMeta(type), title, message, isRead: false, priority: 'HIGH' });
   } catch (error) {
     console.warn(`[Money] ${type} notification failed for ${userId}:`, error);
   }
@@ -1138,7 +1138,7 @@ async function notify(
   actionData: Record<string, unknown>
 ): Promise<void> {
   try {
-    await client.models.Notification.create({
+    await createNotification({
       userId,
       type,
       ...notificationMeta(type),
@@ -1154,6 +1154,19 @@ async function notify(
 }
 
 // --- helpers ------------------------------------------------------------------------
+
+/**
+ * Write a notification and say so when AppSync refuses it. The client reports a refused
+ * write in `errors` instead of throwing, so the try/catch around each call never saw one:
+ * actionData passed as an object (AWSJSON takes JSON text) was refused on every bet
+ * notification this function raised, silently, until the 2026-11-22 sandbox check.
+ */
+async function createNotification(input: Record<string, unknown>): Promise<void> {
+  const { errors } = await client.models.Notification.create(input);
+  if (errors?.length) {
+    console.warn(`[Money] ${String(input.type)} notification for ${String(input.userId)} was refused:`, JSON.stringify(errors));
+  }
+}
 
 /**
  * Touch each user's row through AppSync so subscribers to User.onUpdate (the app's live
@@ -1184,7 +1197,7 @@ async function notifyPayout(entry: LedgerEntry, betTitle: string, betId: string)
   const fee = entry.platformFee ?? 0;
   const net = entry.delta;
   try {
-    await client.models.Notification.create({
+    await createNotification({
       userId: entry.userId,
       type: won ? 'BET_RESOLVED' : 'BET_CANCELLED',
       ...notificationMeta(won ? 'BET_RESOLVED' : 'BET_CANCELLED'),
@@ -1197,7 +1210,7 @@ async function notifyPayout(entry: LedgerEntry, betTitle: string, betId: string)
       isRead: false,
       priority: 'HIGH',
       actionType: 'view_bet',
-      actionData: { betId },
+      actionData: JSON.stringify({ betId }),
       relatedBetId: betId,
     });
   } catch (error) {

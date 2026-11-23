@@ -179,7 +179,7 @@ test('the feed hides muted categories but always shows money, results, refunds a
       note('friend', 'FRIEND_REQUEST_RECEIVED', 'FRIENDS'),
       // Written before categories existed: the category comes from the type.
       note('friend-old', 'FRIEND_REQUEST_ACCEPTED', null),
-      note('reminder', 'BET_DEADLINE_APPROACHING', 'REMINDERS'),
+      note('reminder', 'SQUARES_INVITATION_REMINDER', 'REMINDERS'),
       note('deposit', 'DEPOSIT_COMPLETED', 'MONEY'),
       note('joined', 'BET_JOINED', 'MY_BET_ACTIVITY'),
     ]),
